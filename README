@@ -1,0 +1,15 @@
+Dependencies
+
+- yaml-cpp version 0.5.1 or better.
+  It is available here: https://code.google.com/p/yaml-cpp/
+
+TODO
+
+- The Doxygen.in file needs to be made cmake configurable
+
+# mkdir build
+# cd build
+# cmake .. -DCMAKE_BUILD_TYPE=<type>
+
+where <type> is one of DEBUG or RELEASE.
+
