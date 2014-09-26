@@ -48,8 +48,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <sos/obj_idx.h>
-#include "obj_idx_priv.h"
+#include <sos/ods_idx.h>
+#include "ods_idx_priv.h"
 
 static const char *get_type(void)
 {
@@ -58,50 +58,56 @@ static const char *get_type(void)
 
 static const char *get_doc(void)
 {
-	return  "OBJ_KEY_UINT64: The key is an unsigned 64b long.\n"
+	return  "ODS_KEY_UINT64: The key is an unsigned 64b long.\n"
 		"                The comparator returns -1,1,0 if a <,>,= b respectively.\n";
 }
 
-static int uint64_comparator(obj_key_t a, obj_key_t b)
+static int uint64_comparator(ods_key_t a, ods_key_t b)
 {
-	assert(a->len == 8);
-	assert(b->len == 8);
-	if (*(uint64_t*)a->value < *(uint64_t*)b->value)
-		return -1;
-	if (*(uint64_t*)a->value > *(uint64_t*)b->value)
-		return 1;
-	return 0;
+	ods_key_value_t av = ods_key_value(a);
+	ods_key_value_t bv = ods_key_value(b);
+	assert(av->len == 8);
+	assert(bv->len == 8);
+	return (int)((*(uint64_t*)av->value) - (*(uint64_t*)bv->value));
 }
 
 static char sbuf[32];
 
-static const char *to_str(obj_key_t key)
+static const char *to_str(ods_key_t key)
 {
-	sprintf(sbuf, "0x%"PRIx64"", *(uint64_t *)key->value);
+	ods_key_value_t kv = ods_key_value(key);
+	sprintf(sbuf, "0x%"PRIx64"", *(uint64_t *)kv->value);
 	return sbuf;
 }
 
-static int from_str(obj_key_t key, const char *str)
+static int from_str(ods_key_t key, const char *str)
 {
+	ods_key_value_t kv = ods_key_value(key);
 	uint64_t v;
 	errno = 0;
 	v = strtoull(str, NULL, 0);
 	if (errno)
 		return -1;
-	memcpy(&key->value[0], &v, 8);
-	key->len = 8;
+	memcpy(kv->value, &v, 8);
+	kv->len = 8;
 	return 0;
 }
 
-static struct obj_idx_comparator key_comparator = {
+static size_t size(void)
+{
+	return sizeof(uint64_t);
+}
+
+static struct ods_idx_comparator key_comparator = {
 	get_type,
 	get_doc,
 	to_str,
 	from_str,
+	size,
 	uint64_comparator
 };
 
-struct obj_idx_comparator *get(void)
+struct ods_idx_comparator *get(void)
 {
 	return &key_comparator;
 }

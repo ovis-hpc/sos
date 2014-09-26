@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -44,67 +44,51 @@
  * Author: Tom Tucker tom at ogc dot us
  */
 
-#ifndef _BPT_H_
-#define _BPT_H_
+#ifndef _ODS_ATOMIC_H_
+#define _ODS_ATOMIC_H_
 
-#include <sos/ods_idx.h>
-#include <sos/ods.h>
-#include "ods_idx_priv.h"
-
-#pragma pack(4)
-
-/**
- * B+ Tree Node Entry
- *
- * Describes a key and the object to which it refers. The key is an
- * obj_ref_t which refers to an arbitrarily sized ODS object that
- * contains an opaque key. The key comparitor is used to compare two
- * keys.
- */
-typedef struct bpn_entry {
-	/* Refers to the key object */
-	ods_ref_t key;
-
-	/* The node or record to which the key refers */
-	ods_ref_t ref;
-} *bpn_entry_t;
+typedef uint32_t ods_atomic_t;
 
 /*
- * B+ Tree Node
+ * Atomic increment/decrement
  */
-typedef struct bpt_node {
-	ods_ref_t parent;	/* NULL if root */
-	uint32_t count:16;
-	uint32_t is_leaf:16;
-	struct bpn_entry entries[];
-} *bpt_node_t;
+static inline ods_atomic_t ods_atomic_inc(ods_atomic_t *a) {
+	return __sync_add_and_fetch(a, 1);
+}
 
-typedef struct bpt_udata {
-	struct ods_idx_meta_data idx_udata;
-	uint32_t order;		/* The order or each internal node */
-	ods_ref_t root;		/* The root of the tree */
-} *bpt_udata_t;
+static inline ods_atomic_t ods_atomic_dec(ods_atomic_t *a) {
+	return __sync_sub_and_fetch(a, 1);
+}
 
 /*
- * In memory object that refers to a B+ Tree
+ * Atomic add/subtract
  */
-typedef struct bpt_s {
-	size_t order;		/* order of the tree */
-	ods_t ods;		/* The ods that contains the tree */
-	ods_ref_t root_ref;	/* The root of the tree */
-	ods_idx_compare_fn_t comparator;
-} *bpt_t;
+static inline ods_atomic_t ods_atomic_add(ods_atomic_t *a, int v) {
+	return __sync_add_and_fetch(a, v);
+}
 
-typedef struct bpt_iter {
-	ods_idx_t idx;
-	int ent;
-	ods_ref_t node_ref;
-} *bpt_iter_t;
+static inline ods_atomic_t ods_atomic_sub(ods_atomic_t *a, int v) {
+	return __sync_sub_and_fetch(a, v);
+}
 
-#define BPT_SIGNATURE "BTREE0100"
-#pragma pack()
+/*
+ * Atomic bitwise operations
+ */
+static inline ods_atomic_t ods_atomic_and(ods_atomic_t *a, int m) {
+	return __sync_and_and_fetch(a, m);
+}
 
-#define UDATA(_o_) ODS_PTR(struct bpt_udata *, _o_)
-#define NODE(_o_) ODS_PTR(bpt_node_t, _o_)
+static inline ods_atomic_t ods_atomic_nand(ods_atomic_t *a, int m) {
+	return __sync_nand_and_fetch(a, m);
+}
+
+static inline ods_atomic_t ods_atomic_or(ods_atomic_t *a, int m) {
+	return __sync_or_and_fetch(a, m);
+}
+
+static inline ods_atomic_t ods_atomic_xor(ods_atomic_t *a, int m) {
+	return __sync_xor_and_fetch(a, m);
+}
+
 
 #endif

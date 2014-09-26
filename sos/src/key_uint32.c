@@ -48,8 +48,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <sos/obj_idx.h>
-#include "obj_idx_priv.h"
+#include <sos/ods_idx.h>
+#include "ods_idx_priv.h"
 
 static const char *get_type(void)
 {
@@ -58,32 +58,32 @@ static const char *get_type(void)
 
 static const char *get_doc(void)
 {
-	return  "OBJ_KEY_UINT32: The key is an unsigned 32b long.\n"
+	return  "ODS_KEY_UINT32: The key is an unsigned 32b long.\n"
 		"                The comparator returns -1,0,1 for a <,=,> b respectively.\n";
 }
 
-static int uint32_comparator(obj_key_t a, obj_key_t b)
+static int uint32_comparator(ods_key_t a, ods_key_t b)
 {
-	assert(a->len == 4);
-	assert(b->len == 4);
-	if (*(uint32_t*)a->value < *(uint32_t*)b->value)
-		return -1;
-	if (*(uint32_t*)a->value > *(uint32_t*)b->value)
-		return 1;
-	return 0;
+	ods_key_value_t av = ods_key_value(a);
+	ods_key_value_t bv = ods_key_value(b);
+	assert(av->len == 4);
+	assert(bv->len == 4);
+	return (*(uint32_t*)av->value) - (*(uint32_t*)bv->value);
 }
 
 static char sbuf[32];
 
-static const char *to_str(obj_key_t key)
+static const char *to_str(ods_key_t key)
 {
-	assert(key->len == 4);
-	sprintf(sbuf, "0x%08x", *(uint32_t *)key->value);
+	ods_key_value_t kv = ods_key_value(key);
+	assert(kv->len == 4);
+	sprintf(sbuf, "0x%08x", *(uint32_t *)kv->value);
 	return sbuf;
 }
 
-static int from_str(obj_key_t key, const char *str)
+static int from_str(ods_key_t key, const char *str)
 {
+	ods_key_value_t kv = ods_key_value(key);
 	unsigned long lv;
 	uint32_t v;
 	errno = 0;
@@ -91,20 +91,26 @@ static int from_str(obj_key_t key, const char *str)
 	if (errno)
 		return -1;
 	v = (uint32_t)lv;
-	memcpy(&key->value[0], &v, 4);
-	key->len = 4;
+	memcpy(kv->value, &v, 4);
+	kv->len = 4;
 	return 0;
 }
 
-static struct obj_idx_comparator key_comparator = {
+static size_t size(void)
+{
+	return sizeof(uint32_t);
+}
+
+static struct ods_idx_comparator key_comparator = {
 	get_type,
 	get_doc,
 	to_str,
 	from_str,
+	size,
 	uint32_comparator
 };
 
-struct obj_idx_comparator *get(void)
+struct ods_idx_comparator *get(void)
 {
 	return &key_comparator;
 }

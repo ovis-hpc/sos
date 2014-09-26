@@ -43,77 +43,79 @@
  * Author: Tom Tucker tom at ogc dot us
  */
 
-#ifndef _OBJ_IDX_PRIV_H_
-#define _OBJ_IDX_PRIV_H_
+#ifndef _ODS_IDX_PRIV_H_
+#define _ODS_IDX_PRIV_H_
+#include <stdlib.h>
 #include <sos/rbt.h>
 #include <sos/ods.h>
 
-struct obj_idx_provider {
+struct ods_idx_provider {
 	const char *(*get_type)(void);
 	int (*init)(ods_t ods, va_list argp);
-	int (*open)(obj_idx_t idx);
-	void (*close)(obj_idx_t idx);
-	void (*commit)(obj_idx_t idx);
-	int (*insert)(obj_idx_t idx, obj_key_t uk, obj_ref_t obj);
-	int (*update)(obj_idx_t idx, obj_key_t uk, obj_ref_t obj);
-	int (*delete)(obj_idx_t idx, obj_key_t key, obj_ref_t *ref);
-	int (*find)(obj_idx_t idx, obj_key_t key, obj_ref_t *ref);
-	int (*find_lub)(obj_idx_t idx, obj_key_t key, obj_ref_t *ref);
-	int (*find_glb)(obj_idx_t idx, obj_key_t key, obj_ref_t *ref);
-	obj_iter_t (*iter_new)(obj_idx_t idx);
-	void (*iter_delete)(obj_iter_t i);
-	int (*iter_find)(obj_iter_t iter, obj_key_t key);
-	int (*iter_find_lub)(obj_iter_t iter, obj_key_t key);
-	int (*iter_find_glb)(obj_iter_t iter, obj_key_t key);
-	int (*iter_begin)(obj_iter_t iter);
-	int (*iter_end)(obj_iter_t iter);
-	int (*iter_next)(obj_iter_t iter);
-	int (*iter_prev)(obj_iter_t iter);
-	obj_key_t (*iter_key)(obj_iter_t iter);
-	obj_ref_t (*iter_ref)(obj_iter_t iter);
+	int (*open)(ods_idx_t idx);
+	void (*close)(ods_idx_t idx);
+	void (*commit)(ods_idx_t idx);
+	int (*insert)(ods_idx_t idx, ods_key_t uk, ods_ref_t obj);
+	int (*update)(ods_idx_t idx, ods_key_t uk, ods_ref_t obj);
+	int (*delete)(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
+	int (*find)(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
+	int (*find_lub)(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
+	int (*find_glb)(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
+	ods_iter_t (*iter_new)(ods_idx_t idx);
+	void (*iter_delete)(ods_iter_t i);
+	int (*iter_find)(ods_iter_t iter, ods_key_t key);
+	int (*iter_find_lub)(ods_iter_t iter, ods_key_t key);
+	int (*iter_find_glb)(ods_iter_t iter, ods_key_t key);
+	int (*iter_begin)(ods_iter_t iter);
+	int (*iter_end)(ods_iter_t iter);
+	int (*iter_next)(ods_iter_t iter);
+	int (*iter_prev)(ods_iter_t iter);
+	ods_key_t (*iter_key)(ods_iter_t iter);
+	ods_ref_t (*iter_ref)(ods_iter_t iter);
+	void (*dbg_print_idx)(ods_idx_t idx);
 };
 
-struct obj_idx_comparator {
+struct ods_idx_comparator {
 	/** Return the name of the comparator */
 	const char *(*get_type)(void);
 	/** Return a description of how the key works  */
 	const char *(*get_doc)(void);
 	/** Return a string representation of the key value */
-	const char *(*to_str)(obj_key_t);
+	const char *(*to_str)(ods_key_t);
 	/** Set the key value from a string */
-	int (*from_str)(obj_key_t, const char *);
+	int (*from_str)(ods_key_t, const char *);
+	/* Return the size of the key data or -1 if variable */
+	size_t (*size)(void);
 	/** Compare two keys */
-	obj_idx_compare_fn_t compare_fn;
+	ods_idx_compare_fn_t compare_fn;
 };
 
 #pragma pack(1)
 #define OBJ_NAME_MAX	31
-struct obj_idx_meta_data {
+struct ods_idx_meta_data {
 	char signature[OBJ_NAME_MAX+1];
 	char type_name[OBJ_NAME_MAX+1];
 	char key_name[OBJ_NAME_MAX+1];
 };
 #pragma pack()
 
-struct obj_idx_class {
-	struct obj_idx_provider *prv;
-	struct obj_idx_comparator *cmp;
+struct ods_idx_class {
+	struct ods_idx_provider *prv;
+	struct ods_idx_comparator *cmp;
 	struct rbn rb_node;
 };
 
-struct obj_idx {
+struct ods_idx {
 	/** The index and key handler functions */
-	struct obj_idx_class *idx_class;
+	struct ods_idx_class *idx_class;
 	/** The ODS object store for the index */
 	ods_t ods;
 	/** Place for the index to store its private data */
 	void *priv;
 };
 
-struct obj_iter {
-	struct obj_idx *idx;
+struct ods_iter {
+	struct ods_idx *idx;
 };
-
-void *obj_idx_alloc(obj_idx_t idx, size_t sz);
 
 #endif

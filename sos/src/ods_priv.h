@@ -55,6 +55,7 @@
 
 #ifndef __ODS_PRIV_H
 #define __ODS_PRIV_H
+#include <sos/ods_atomic.h>
 #include <stdint.h>
 
 
@@ -84,31 +85,60 @@
  *
  */
 
-/* In memory pointer to base of ods region on disk */
-struct ods_obj_s;
+struct ods_map_s {
+	/*
+	 * Reference count for the map. One ref is held by ods_open
+	 * and another reference is held by any caller to
+	 * ods_begin. When ods_end is called, the ods_begin reference
+	 * is dropped. The ods_open reference is dropped when
+	 * ods_extend re-maps the backing file and when ods_close is
+	 * called.
+	 */
+	ods_atomic_t refcount;
+
+	/* The ODS for this map */
+	ods_t ods;
+
+	/*
+	 * The mapping generation number. Used to detect if another
+	 * process extended the map and we need to remap.
+	 */
+	uint64_t obj_gen;
+
+	/* Equivalent of obj_gen for pg_table mapping */
+	uint64_t pg_gen;
+
+	/* The object map size */
+	size_t obj_sz;
+
+	/* Pointer to the object data in memory */
+	struct ods_obj_data_s *obj_data;
+
+	/* The page-file map size */
+	size_t pg_sz;
+
+	/* Pointer to the page-file data in memory */
+	struct ods_pgt_s *pg_table;
+
+	LIST_ENTRY(ods_map_s) entry;
+};
+
 struct ods_s {
+	pthread_mutex_t lock;
+
 	/* That path to the file on disk */
 	char *path;
 
 	/* The open file descriptor */
 	int obj_fd;
-	/* The current map size in bytes */
 	size_t obj_sz;
 
 	/* The page-file file descriptor */
 	int pg_fd;
-	/* The page-file size */
 	size_t pg_sz;
 
-	/* The mapping generation number. Used to detect if another
-	 * process extended the map and we need to remap.*/
-	uint64_t obj_gen;
-	/* Pointer to the mapped memory */
-	struct ods_obj_s *obj;
-	/* Equivalent of obj_gen for pg_table mapping */
-	uint64_t pg_gen;
-	/* Pointer to the page-file data in memory */
-	struct ods_pgt_s *pg_table;
+	/* The current map */
+	ods_map_t map;
 };
 
 #define ODS_OBJ_SIGNATURE "OBJSTORE"
@@ -143,44 +173,44 @@ struct ods_pgt_s {
 	unsigned char pages[0];	 /* array of page control information */
 };
 
-struct ods_obj_s {
+struct ods_obj_data_s {
 	char signature[8];	 /* obj signature 'OBJSTORE' */
 	uint64_t version;	 /* The file format version number */
 	uint64_t gen;		 /* generation number */
 	uint64_t pg_free;	 /* first free page offset */
 	uint64_t blk_free[ODS_PAGE_SHIFT - ODS_GRAIN_SHIFT];
 };
-#define ODS_UDATA_SIZE (ODS_PAGE_SIZE - sizeof(struct ods_obj_s))
+#define ODS_UDATA_SIZE (ODS_PAGE_SIZE - sizeof(struct ods_obj_data_s))
 
-static inline int ods_page_is_allocated(ods_t ods, uint64_t page) {
-	unsigned char b = ods->pg_table->pages[page];
+static inline int ods_page_is_allocated(ods_map_t map, uint64_t page) {
+	unsigned char b = map->pg_table->pages[page];
 	return (0 != (b & ODS_F_ALLOCATED));
 }
 
-static inline int ods_page_is_free(ods_t ods, uint64_t page) {
-	unsigned char b = ods->pg_table->pages[page];
+static inline int ods_page_is_free(ods_map_t map, uint64_t page) {
+	unsigned char b = map->pg_table->pages[page];
 	return (0 == (b & ODS_F_ALLOCATED));
 }
 
-static inline uint64_t ods_page_next(ods_t ods, uint64_t page) {
-	unsigned char b = ods->pg_table->pages[page];
+static inline uint64_t ods_page_next(ods_map_t map, uint64_t page) {
+	unsigned char b = map->pg_table->pages[page];
 	if (0 == (b & ODS_F_NEXT))
 		return 0;
 	return page+1;
 }
 
-static inline uint64_t ods_page_prev(ods_t ods, uint64_t page) {
-	unsigned char b = ods->pg_table->pages[page];
+static inline uint64_t ods_page_prev(ods_map_t map, uint64_t page) {
+	unsigned char b = map->pg_table->pages[page];
 	if (0 == (b & ODS_F_PREV))
 		return 0;
 	return page-1;
 }
 
-static inline struct ods_pg_s *ods_obj_page_to_ptr(ods_t ods, uint64_t page) {
+static inline struct ods_pg_s *ods_page_to_ptr(ods_map_t map, uint64_t page) {
 	uint64_t off;
 	if (!page)
 		return NULL;
-	off = (uint64_t)ods->obj;
+	off = (uint64_t)map->obj_data;
 	return (struct ods_pg_s *)(off + (page << ODS_PAGE_SHIFT));
 }
 

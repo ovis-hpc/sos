@@ -55,19 +55,47 @@
 
 #ifndef __ODS_H
 #define __ODS_H
+#include <sys/queue.h>
 #include <stdint.h>
 #include <stdio.h>
-
+#include <sos/ods_atomic.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct ods_s *ods_t;
-typedef uint64_t obj_ref_t;
+typedef uint64_t ods_ref_t;
+typedef struct ods_map_s *ods_map_t;
+typedef struct ods_obj_s *ods_obj_t;
 
-extern ods_t ods_open(const char *path, int o_flag, ...);
-extern void *ods_get_user_data(ods_t ods, size_t *p_sz);
+/**
+ * \brief Open and optionally create an ODS object store
+ *
+ * \param path	The path to the ODS to be opened/created
+ * \param o_flags The open flags. These are the same as for \c open()
+  * \retval !0	The ODS handle
+ * \retval 0	An error occured opening/creating the ODS
+ */
+extern ods_t ods_open(const char *path, int o_flags, ...);
 
+/**
+ * \brief Acquire a pointer to the user-data for the ODS
+ *
+ * An ODS has storage pre-allocated for the storager of
+ * meta-data. This function returns a pointer to that storage.
+ *
+ * \param ods	The ODS ods handle
+ * \return A pointer to the user data.
+ */
+extern ods_obj_t _ods_get_user_data(ods_t ods);
+#define ods_get_user_data(ods) ({		\
+	ods_obj_t o = _ods_get_user_data(ods);	\
+	if (o) {				\
+		o->alloc_line = __LINE__;	\
+		o->alloc_func = __func__;	\
+	}					\
+	o;					\
+})
 
 #define ODS_COMMIT_ASYNC	0
 #define ODS_COMMIT_SYNC		1
@@ -106,28 +134,83 @@ extern void ods_close(ods_t ods, int flags);
 /**
  * \brief Allocate an object of the requested size
  *
+ * Allocates space in the persistent store for an object of at least
+ * \c sz bytes and initializes an in-memory object that refers to this
+ * ODS object. The application should use the ods_obj_get()
+ * function to add references to the object and ods_obj_put() to
+ * release these references. The ODS storage for the object is freed
+ * using the the ods_obj_delete() function.
+ *
  * \param ods	The ODS handle
  * \param sz	The desired size
  * \return	Pointer to an object of the requested size or NULL if there
  *		is an error.
  */
-extern void *ods_alloc(ods_t ods, size_t sz);
-
+extern ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz);
+#define ods_obj_alloc(ods, sz) ({		\
+	ods_obj_t o = _ods_obj_alloc(ods, sz);	\
+	if (o) {				\
+		o->alloc_line = __LINE__;	\
+		o->alloc_func = __func__;	\
+	}					\
+	o;					\
+})
 /**
- * \brief Release the resources associated with an object
+ * \brief Allocate an object of the requested size
+ *
+ * Allocates space in memory for an object of at least
+ * \c sz bytes and initializes an in-memory object that refers to this
+ * ODS object. The application should use the ods_obj_get()
+ * function to add references to the object and ods_obj_put() to
+ * release these references.
  *
  * \param ods	The ODS handle
- * \param ptr	Pointer to the object
+ * \param sz	The desired size
+ * \return	Pointer to an object of the requested size or NULL if there
+ *		is an error.
  */
-extern void ods_free(ods_t ods, void *ptr);
+extern ods_obj_t _ods_obj_malloc(ods_t ods, size_t sz);
+#define ods_obj_malloc(ods, sz) ({		\
+	ods_obj_t o = _ods_obj_malloc(ods, sz);	\
+	if (o) {				\
+		o->alloc_line = __LINE__;	\
+		o->alloc_func = __func__;	\
+	}					\
+	o;					\
+})
 
 /**
- * \brief Release the resources associated with an object
+ * \brief Free the storage for this object in the ODS
+ *
+ * This frees ODS resources associated with the object. The object
+ * reference and pointer will be set to zero. Use the \c
+ * ods_obj_put() function to release the in-memory resources for the
+ * object.
+ *
+ * \param obj	Pointer to the object
+ */
+extern void ods_obj_delete(ods_obj_t obj);
+
+/**
+ * \brief Free the storage for this reference in the ODS
+ *
+ * This frees ODS resources associated with the object.
  *
  * \param ods	The ODS handle
- * \param ref	A reference to the object
+ * \param ref	The ODS object reference
  */
-extern void ods_free_ref(ods_t ods, obj_ref_t ref);
+extern void ods_ref_delete(ods_t ods, ods_ref_t ref);
+
+/**
+ * \brief Drop a reference to the object
+ *
+ * Decrement the reference count on the object. If the reference count
+ * goes to zero, the in-memory resrouces associated with the object
+ * will be freed.
+ *
+ * \param obj	Pointer to the object
+ */
+extern void ods_obj_put(ods_obj_t obj);
 
 /**
  * \brief Extend the object store by the specified amount
@@ -185,47 +268,80 @@ typedef void (*ods_iter_fn_t)(ods_t ods, void *ptr, size_t sz, void *arg);
  */
 extern void ods_iter(ods_t ods, ods_iter_fn_t iter_fn, void *arg);
 
+/*
+ * Take a reference on an object
+ */
+ods_obj_t ods_obj_get(ods_obj_t obj);
+
+/*
+ * Put a reference on an object
+ */
+void ods_obj_put(ods_obj_t obj);
+
+/*
+ * Create a memory object from a persistent reference
+ */
+ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref);
+#define ods_ref_as_obj(ods, ref) ({			\
+	ods_obj_t o = _ods_ref_as_obj(ods, ref);	\
+	if (o) {					\
+		o->alloc_line = __LINE__;		\
+		o->alloc_func = __func__;		\
+	}						\
+	o;						\
+})
+
+
+/*
+ * Return an object's reference
+ */
+ods_ref_t ods_obj_ref(ods_obj_t obj);
+
+/* In memory pointer to base of ods region on disk */
+struct ods_obj_s {
+	ods_atomic_t refcount;
+	ods_t ods;
+	size_t size;		/* allocated size in store */
+	ods_ref_t ref;		/* persistent reference */
+	union {
+		void *ptr;
+		int8_t *int8;
+		uint8_t *uint8;
+		int16_t *int16;
+		uint16_t *uint16;
+		int32_t *int32;
+		uint32_t *uint32;
+		int64_t *int64;
+		uint64_t *uint64;
+		char *str;
+		unsigned char *bytes;
+		ods_atomic_t *lock;
+	} as;
+	ods_map_t map;
+	int alloc_line;
+	const char *alloc_func;
+	int put_line;
+	const char *put_func;
+	LIST_ENTRY(ods_obj_s) entry;
+};
+static inline void *ods_obj_as_ptr(ods_obj_t obj) {
+	return obj->as.ptr;
+}
 /**
  * \brief Return the size of an object
  *
  * This function returns the size of the object pointed to by the
  * 'obj' parameter.
  *
- * \param ods	The ODS handle
  * \param obj	Pointer to the object
- * \return sz	The size of the object in bytes
+ * \return sz	The allocated size of the object in bytes
  * \return -1	The 'obj' parameter does not point to an ODS object.
  */
-extern size_t ods_obj_size(ods_t ods, void *obj);
+static inline size_t ods_obj_size(ods_obj_t obj) {
+	return obj->size;
+}
 
-/**
- * Calculate allocation size, given the requested \a size.
- *
- * This is needed by SOS BLOB. SOS BLOB will memorize the allocated size so
- * that the space can be reused right away.
- * \param ods The ODS handle.
- * \param size The request size.
- * \return Allocation size.
- */
-extern uint64_t ods_get_alloc_size(ods_t ods, uint64_t size);
-
-/**
- * \brief Convert an object reference to a pointer
- *
- * \param ods	The ODS handle
- * \param ref	The object reference
- * \return Pointer to the object
- */
-extern void *ods_obj_ref_to_ptr(ods_t ods, obj_ref_t ref);
-
-/**
- * \brief convert an object pointer to a reference
- *
- * \param ods	The ODS handle
- * \param obj	Pointer to the object
- * \return obj_ref_t for the specified object
- */
-extern obj_ref_t ods_obj_ptr_to_ref(ods_t ods, void *obj);
+#define ODS_PTR(_typ_, _obj_) ((_typ_)_obj_->as.ptr)
 
 #ifdef __cplusplus
 }

@@ -49,8 +49,8 @@
 #include <string.h>
 #include <errno.h>
 #include <ctype.h>
-#include <sos/obj_idx.h>
-#include "obj_idx_priv.h"
+#include <sos/ods_idx.h>
+#include "ods_idx_priv.h"
 
 static const char *get_type(void)
 {
@@ -59,25 +59,28 @@ static const char *get_type(void)
 
 static const char *get_doc(void)
 {
-	return  "OBJ_KEY_SHA256: The key is a 256b SHA.\n"
+	return  "ODS_KEY_SHA256: The key is a 256b SHA.\n"
 		"                The comparator returns -1,1,0 if a <,>,= b respectively.\n";
 }
 
-static int sha256_comparator(obj_key_t a, obj_key_t b)
+static int sha256_comparator(ods_key_t a, ods_key_t b)
 {
-	assert(a->len == 32);
-	assert(b->len == 32);
-	return memcmp(a->value, b->value, 32);
+	ods_key_value_t av = ods_key_value(a);
+	ods_key_value_t bv = ods_key_value(b);
+	assert(av->len == 32);
+	assert(bv->len == 32);
+	return memcmp(av->value, bv->value, 32);
 }
 
 static char sbuf[128];
 
-static const char *to_str(obj_key_t key)
+static const char *to_str(ods_key_t key)
 {
+	ods_key_value_t kv = ods_key_value(key);
 	int i;
 	char *s = sbuf;
 	for (i = 0; i < 32; i++) {
-		sprintf(s, "%02X", key->value[i]);
+		sprintf(s, "%02X", kv->value[i]);
 		s += 2;
 	}
 	return sbuf;
@@ -90,28 +93,35 @@ static uint8_t char_to_num(const char c)
 	return (toupper(c) - 'A') + 10;
 }
 
-static int from_str(obj_key_t key, const char *str)
+static int from_str(ods_key_t key, const char *str)
 {
+	ods_key_value_t kv = ods_key_value(key);
 	int i;
 	uint8_t b;
 	for (i = 0; i < 32; i++) {
 		b = char_to_num(str[0]) << 4;
 		b |= char_to_num(str[1]);
 		str += 2;
-		key->value[i] = b;
+		kv->value[i] = b;
 	}
 	return 0;
 }
 
-static struct obj_idx_comparator key_comparator = {
+static size_t size(void)
+{
+	return 32;
+}
+
+static struct ods_idx_comparator key_comparator = {
 	get_type,
 	get_doc,
 	to_str,
 	from_str,
+	size,
 	sha256_comparator
 };
 
-struct obj_idx_comparator *get(void)
+struct ods_idx_comparator *get(void)
 {
 	return &key_comparator;
 }

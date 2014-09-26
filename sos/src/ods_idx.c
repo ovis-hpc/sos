@@ -52,14 +52,15 @@
 #include <limits.h>
 #include <fcntl.h>
 #include <sos/rbt.h>
-#include <sos/obj_idx.h>
-#include "obj_idx_priv.h"
+#include <sos/ods_idx.h>
+#include <sos/ods_atomic.h>
+#include "ods_idx_priv.h"
 
-static pthread_mutex_t obj_idx_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t ods_idx_lock = PTHREAD_MUTEX_INITIALIZER;
 
-struct obj_idx_type {
-	struct obj_idx_provider *provider;
-	struct obj_idx_key_provider *key;
+struct ods_idx_type {
+	struct ods_idx_provider *provider;
+	struct ods_idx_key_provider *key;
 	struct rbn rb_node;
 };
 
@@ -96,12 +97,12 @@ void *load_library(const char *library, const char *pfx, const char *sym)
 	return p;
 }
 
-struct obj_idx_class *get_idx_class(const char *type, const char *key)
+struct ods_idx_class *get_idx_class(const char *type, const char *key)
 {
 	struct rbn *rbn;
-	struct obj_idx_class *idx_class = NULL;
-	struct obj_idx_provider *prv;
-	struct obj_idx_comparator *cmp;
+	struct ods_idx_class *idx_class = NULL;
+	struct ods_idx_provider *prv;
+	struct ods_idx_comparator *cmp;
 	char *idx_classname;
 
 	idx_classname = malloc(strlen(type) + strlen(key) + 1);
@@ -109,15 +110,15 @@ struct obj_idx_class *get_idx_class(const char *type, const char *key)
 		return NULL;
 	sprintf(idx_classname, "%s:%s", type, key);
 
-	pthread_mutex_lock(&obj_idx_lock);
+	pthread_mutex_lock(&ods_idx_lock);
 	rbn = rbt_find(&dylib_tree, (void *)idx_classname);
 	if (rbn) {
-		idx_class = container_of(rbn, struct obj_idx_class, rb_node);
+		idx_class = container_of(rbn, struct ods_idx_class, rb_node);
 		goto out;
 	}
 
 	/* Attempt to load the provider */
-	prv = (struct obj_idx_provider *)
+	prv = (struct ods_idx_provider *)
 		load_library(type, "idx", "get");
 	if (!prv) {
 		errno = ENOENT;
@@ -125,7 +126,7 @@ struct obj_idx_class *get_idx_class(const char *type, const char *key)
 	}
 
 	/* Load the comparator */
-	cmp = (struct obj_idx_comparator *)
+	cmp = (struct ods_idx_comparator *)
 		load_library(key, "key", "get");
 	if (!cmp) {
 		errno = ENOENT;
@@ -146,17 +147,18 @@ struct obj_idx_class *get_idx_class(const char *type, const char *key)
 	free(idx_classname);
 
  out:
-	pthread_mutex_unlock(&obj_idx_lock);
+	pthread_mutex_unlock(&ods_idx_lock);
 	return idx_class;
 }
 
-int obj_idx_create(const char *path, int mode,
+int ods_idx_create(const char *path, int mode,
 		   const char *type, const char *key,
 		   ...)
 {
 	va_list argp;
-	struct obj_idx_class *idx_class;
-	struct obj_idx_meta_data *udata;
+	ods_obj_t obj;
+	struct ods_idx_class *idx_class;
+	struct ods_idx_meta_data *udata;
 	size_t udata_sz;
 	ods_t ods;
 
@@ -175,23 +177,27 @@ int obj_idx_create(const char *path, int mode,
 	}
 
 	/* Set up the IDX meta data in the ODS store. */
-	udata = ods_get_user_data(ods, &udata_sz);
+	obj = ods_get_user_data(ods);
+	udata_sz = ods_obj_size(obj);
+	udata = ods_obj_as_ptr(obj);
 	memset(udata, 0, udata_sz);
-	strcpy(udata->signature, OBJ_IDX_SIGNATURE);
+	strcpy(udata->signature, ODS_IDX_SIGNATURE);
 	strcpy(udata->type_name, type);
 	strcpy(udata->key_name, key);
 	errno = idx_class->prv->init(ods, argp);
+	ods_obj_put(obj);
 	ods_close(ods, ODS_COMMIT_ASYNC);
  out:
 	return errno;
 }
 
-obj_idx_t obj_idx_open(const char *path)
+ods_idx_t ods_idx_open(const char *path)
 {
-	obj_idx_t idx;
-	struct obj_idx_class *idx_class;
-	struct obj_idx_meta_data *udata;
+	ods_idx_t idx;
+	struct ods_idx_class *idx_class;
+	struct ods_idx_meta_data *udata;
 	size_t udata_sz;
+	ods_obj_t obj;
 	idx = calloc(1, sizeof *idx);
 	if (!idx)
 		return NULL;
@@ -200,13 +206,13 @@ obj_idx_t obj_idx_open(const char *path)
 	if (!idx->ods)
 		goto err_0;
 
-	udata = ods_get_user_data(idx->ods, &udata_sz);
-	if (strcmp(udata->signature, OBJ_IDX_SIGNATURE)) {
+	obj = ods_get_user_data(idx->ods);
+	udata = ods_obj_as_ptr(obj);
+	if (strcmp(udata->signature, ODS_IDX_SIGNATURE)) {
 		/* This file doesn't point to an index */
 		errno = EBADF;
 		goto err_1;
 	}
-
 	idx_class = get_idx_class(udata->type_name, udata->key_name);
 	if (!idx_class) {
 		/* The libraries necessary to handle this index
@@ -217,8 +223,10 @@ obj_idx_t obj_idx_open(const char *path)
 	idx->idx_class = idx_class;
 	if (idx_class->prv->open(idx))
 		goto err_1;
+	ods_obj_put(obj);
 	return idx;
  err_1:
+	ods_obj_put(obj);
 	ods_close(idx->ods, ODS_COMMIT_ASYNC);
  err_0:
 	free(idx);
@@ -226,7 +234,7 @@ obj_idx_t obj_idx_open(const char *path)
 
 }
 
-void obj_idx_close(obj_idx_t idx, int flags)
+void ods_idx_close(ods_idx_t idx, int flags)
 {
 	if (!idx)
 		return;
@@ -234,132 +242,160 @@ void obj_idx_close(obj_idx_t idx, int flags)
 	ods_close(idx->ods, flags);
 }
 
-void obj_idx_commit(obj_idx_t idx, int flags)
+void ods_idx_commit(ods_idx_t idx, int flags)
 {
 	if (!idx)
 		return;
 	ods_commit(idx->ods, flags);
 }
 
-int obj_idx_insert(obj_idx_t idx, obj_key_t key, obj_ref_t obj)
+int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_ref_t obj)
 {
 	return idx->idx_class->prv->insert(idx, key, obj);
 }
 
-int obj_idx_update(obj_idx_t idx, obj_key_t key, obj_ref_t obj)
+int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_ref_t obj)
 {
 	return idx->idx_class->prv->update(idx, key, obj);
 }
 
-int obj_idx_delete(obj_idx_t idx, obj_key_t key, obj_ref_t *ref)
+int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 {
 	return idx->idx_class->prv->delete(idx, key, ref);
 }
 
-int obj_idx_find(obj_idx_t idx, obj_key_t key, obj_ref_t *ref)
+int ods_idx_find(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 {
 	return idx->idx_class->prv->find(idx, key, ref);
 }
 
-int obj_idx_find_lub(obj_idx_t idx, obj_key_t key, obj_ref_t *ref)
+int ods_idx_find_lub(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 {
 	return idx->idx_class->prv->find_lub(idx, key, ref);
 }
 
-int obj_idx_find_glb(obj_idx_t idx, obj_key_t key, obj_ref_t *ref)
+int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 {
 	return idx->idx_class->prv->find_glb(idx, key, ref);
 }
 
-obj_iter_t obj_iter_new(obj_idx_t idx)
+ods_iter_t ods_iter_new(ods_idx_t idx)
 {
 	return idx->idx_class->prv->iter_new(idx);
 }
 
-void obj_iter_delete(obj_iter_t iter)
+void ods_iter_delete(ods_iter_t iter)
 {
 	return iter->idx->idx_class->prv->iter_delete(iter);
 }
 
-int obj_iter_find(obj_iter_t iter, obj_key_t key)
+int ods_iter_find(ods_iter_t iter, ods_key_t key)
 {
 	return iter->idx->idx_class->prv->iter_find(iter, key);
 }
 
-int obj_iter_find_lub(obj_iter_t iter, obj_key_t key)
+int ods_iter_find_lub(ods_iter_t iter, ods_key_t key)
 {
 	return iter->idx->idx_class->prv->iter_find_lub(iter, key);
 }
 
-int obj_iter_find_glb(obj_iter_t iter, obj_key_t key)
+int ods_iter_find_glb(ods_iter_t iter, ods_key_t key)
 {
 	return iter->idx->idx_class->prv->iter_find_glb(iter, key);
 }
 
-int obj_iter_begin(obj_iter_t iter)
+int ods_iter_begin(ods_iter_t iter)
 {
 	return iter->idx->idx_class->prv->iter_begin(iter);
 }
 
-int obj_iter_end(obj_iter_t iter)
+int ods_iter_end(ods_iter_t iter)
 {
 	return iter->idx->idx_class->prv->iter_end(iter);
 }
 
-int obj_iter_next(obj_iter_t iter)
+int ods_iter_next(ods_iter_t iter)
 {
 	return iter->idx->idx_class->prv->iter_next(iter);
 }
 
-int obj_iter_prev(obj_iter_t iter)
+int ods_iter_prev(ods_iter_t iter)
 {
 	return iter->idx->idx_class->prv->iter_prev(iter);
 }
 
-obj_key_t obj_iter_key(obj_iter_t iter)
+ods_key_t ods_iter_key(ods_iter_t iter)
 {
 	return iter->idx->idx_class->prv->iter_key(iter);
 }
 
-obj_ref_t obj_iter_ref(obj_iter_t iter)
+ods_ref_t ods_iter_ref(ods_iter_t iter)
 {
 	return iter->idx->idx_class->prv->iter_ref(iter);
 }
 
-void *obj_iter_obj(obj_iter_t iter)
+ods_key_t _ods_key_malloc(ods_idx_t idx, size_t sz)
 {
-	return ods_obj_ref_to_ptr(iter->idx->ods,
-				  iter->idx->idx_class->prv->iter_ref(iter));
+	ods_key_t key =
+		ods_obj_malloc(idx->ods,
+			       sz + sizeof(struct ods_key_value_s));
+	if (key)
+		*key->as.uint16 = sz;
+	return key;
 }
 
-obj_key_t obj_key_new(size_t sz)
+ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz)
 {
-	return calloc(sz + sizeof(struct obj_key), sizeof(unsigned char));
+	ods_key_t key =
+		ods_obj_alloc(idx->ods,
+			      sz + sizeof(struct ods_key_value_s));
+	if (key)
+		*key->as.uint16 = sz;
+	return key;
 }
 
-void obj_key_delete(obj_key_t key)
+void ods_key_copy(ods_key_t dst, ods_key_t src)
 {
-	free(key);
+	ods_key_value_t value = ods_key_value(src);
+	memcpy(dst->as.ptr, value, value->len + sizeof(*value));
 }
 
-void obj_key_set(obj_key_t key, void *value, size_t sz)
+size_t ods_key_set(ods_key_t key, void *value, size_t sz)
 {
-	memcpy(&key->value[0], value, sz);
-	key->len = sz;
+	ods_key_value_t v = key->as.ptr;
+	size_t count = (sz < ods_key_size(key) ? sz : ods_key_size(key));
+	memcpy(&v->value, value, count);
+	v->len = count;
+	return count;
 }
 
-const char *obj_key_to_str(obj_idx_t idx, obj_key_t key)
+const char *ods_key_to_str(ods_idx_t idx, ods_key_t key)
 {
 	return idx->idx_class->cmp->to_str(key);
 }
 
-int obj_key_from_str(obj_idx_t idx, obj_key_t key, const char *str)
+int ods_key_from_str(ods_idx_t idx, ods_key_t key, const char *str)
 {
 	return idx->idx_class->cmp->from_str(key, str);
 }
 
-int obj_key_cmp(obj_idx_t idx, obj_key_t a, obj_key_t b)
+int ods_key_cmp(ods_idx_t idx, ods_key_t a, ods_key_t b)
 {
 	return idx->idx_class->cmp->compare_fn(a, b);
+}
+
+size_t ods_idx_key_size(ods_idx_t idx)
+{
+	return idx->idx_class->cmp->size();
+}
+
+size_t ods_key_size(ods_key_t key)
+{
+	return ods_obj_size(key) - sizeof(struct ods_key_value_s);
+}
+
+size_t ods_key_len(ods_key_t key)
+{
+	return ((ods_key_value_t)key->as.ptr)->len;
 }
 

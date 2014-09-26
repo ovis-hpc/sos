@@ -44,8 +44,8 @@
  * Author: Tom Tucker tom at ogc dot us
  */
 #include <string.h>
-#include <sos/obj_idx.h>
-#include "obj_idx_priv.h"
+#include <sos/ods_idx.h>
+#include "ods_idx_priv.h"
 
 static const char *get_type(void)
 {
@@ -54,45 +54,55 @@ static const char *get_type(void)
 
 static const char *get_doc(void)
 {
-	return  "OBJ_KEY_STRING: The key is a string. The strncmp function is used\n"
+	return  "ODS_KEY_STRING: The key is a string. The strncmp function is used\n"
 		"                to compare the two keys. If the lengths of the two keys\n"
 		"                is not equal, but they are lexically equal, the function\n"
 		"                returns the difference in length between the two keys.\n";
 }
 
-static int string_comparator(obj_key_t a, obj_key_t b)
+static int string_comparator(ods_key_t a, ods_key_t b)
 {
+	ods_key_value_t av = ods_key_value(a);
+	ods_key_value_t bv = ods_key_value(b);
 	int res;
-	int cmp_len = a->len;
-	if (cmp_len > b->len)
-		cmp_len = b->len;
-	res = strncmp((const char *)a->value, (const char *)b->value, cmp_len);
+	int cmp_len = av->len;
+	if (cmp_len > bv->len)
+		cmp_len = bv->len;
+	res = strncmp((const char *)av->value, (const char *)bv->value, cmp_len);
 	if (res == 0)
-		return a->len - b->len;
+		return av->len - bv->len;
 	return res;
 }
 
-static const char *to_str(obj_key_t key)
+static const char *to_str(ods_key_t key)
 {
-	return (const char *)key->value;
+	ods_key_value_t kv = ods_key_value(key);
+	return (const char *)kv->value;
 }
 
-static int from_str(obj_key_t key, const char *str)
+static int from_str(ods_key_t key, const char *str)
 {
-	strcpy((char *)&key->value[0], str);
-	key->len = strlen(str)+1;
+	ods_key_value_t kv = ods_key_value(key);
+	strcpy((char *)&kv->value[0], str);
+	kv->len = strlen(str)+1;
 	return 0;
 }
 
-static struct obj_idx_comparator key_comparator = {
+static size_t size(void)
+{
+	return -1; /* means variable length */
+}
+
+static struct ods_idx_comparator key_comparator = {
 	get_type,
 	get_doc,
 	to_str,
 	from_str,
+	size,
 	string_comparator
 };
 
-struct obj_idx_comparator *get(void)
+struct ods_idx_comparator *get(void)
 {
 	return &key_comparator;
 }
