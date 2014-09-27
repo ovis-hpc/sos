@@ -74,8 +74,10 @@ void iter_tree(ods_idx_t idx)
 void usage(int argc, char *argv[])
 {
 	printf("usage: %s -p <path> -k <key_str> [-o <order>]\n"
+	       "       -x <idx_type>   The index type.\n"
 	       "       -k <key_str>    The key type string.\n"
 	       "       -p <path>       The path to the index files.\n"
+	       "       -i <iter_key>   The key value to test iterators.\n"
 	       "       -o <order>      The order of the B+ tree (default is 5).\n",
 	       argv[0]);
 	exit(1);
@@ -111,7 +113,7 @@ void rebuild_tree(ods_idx_t idx)
 	}
 }
 
-#define FMT "k:p:o:i:"
+#define FMT "k:p:o:x:i:"
 int main(int argc, char *argv[])
 {
 	ods_idx_t idx;
@@ -119,6 +121,7 @@ int main(int argc, char *argv[])
 	char *idx_path = NULL;
 	char *key_str = NULL;
 	char *iter_key = NULL;
+	char *idx_name = NULL;
 	ods_iter_t iter;
 	ods_key_t key;
 	ods_ref_t ref;
@@ -136,6 +139,9 @@ int main(int argc, char *argv[])
 		case 'o':
 			order = atoi(optarg);
 			break;
+		case 'x':
+			idx_name = strdup(optarg);
+			break;
 		case 'i':
 			iter_key = strdup(optarg);
 			break;
@@ -143,13 +149,17 @@ int main(int argc, char *argv[])
 			usage(argc, argv);
 		}
 	}
+	if (!idx_name)
+		idx_name = "BPTREE";
+
 	if (!idx_path || !key_str)
 		usage(argc, argv);
 
-	rc = ods_idx_create(idx_path, 0660, "BPTREE", key_str, order);
+	rc = ods_idx_create(idx_path, 0660, idx_name, key_str, order);
 	if (rc) {
-		printf("The index '%s' could not be created due to error %d.\n",
-		       idx_path, rc);
+		printf("The index '%s' of type '%s' could not be created due "
+		       "to error %d.\n",
+		       idx_path, idx_name, rc);
 		return rc;
 	}
 	idx = ods_idx_open(idx_path);
@@ -255,10 +265,17 @@ int main(int argc, char *argv[])
 		ods_obj_put(root);
 	}
 	idx->idx_class->prv->dbg_print_idx(idx);
-
+	rebuild_tree(idx);
+#if 0
 	static char *keys[] = {
-		"1", "3", "5", "7", "9", "11", "13", "15", "17", "19", "21"
+		"-1", "0", "1", "3", "5", "7", "9", "11", "13", "15", "17", "19", "21"
 	};
+#else
+	static char *keys[] = {
+		"4", "5", "6", "7", "8", "9"
+	};
+#endif
+#if 0
 	for (rc = 1; rc < sizeof(keys) / sizeof(keys[0]); rc++) {
 		size_t key_sz = ods_idx_key_size(idx);
 		if (key_sz == -1)
@@ -269,6 +286,35 @@ int main(int argc, char *argv[])
 		ods_idx_insert(idx, key, inode);
 		ods_obj_put(key);
 	}
+	idx->idx_class->prv->dbg_print_idx(idx);
+	for (rc = 0; rc < sizeof(keys) / sizeof(keys[0]); rc++) {
+		ods_ref_t obj_ref;
+		int rrc;
+		int k = strtoul(keys[rc], NULL, 0);
+		char ks[32];
+		sprintf(ks, "%d", k);
+		size_t key_sz = ods_idx_key_size(idx);
+		if (key_sz == -1)
+			key_sz = strlen(keys[rc]);
+		key = ods_key_malloc(idx, key_sz);
+		ods_key_from_str(idx, key, ks);
+		rrc = ods_idx_delete(idx, key, &obj_ref);
+		if (rrc)
+			printf("error key %s not found %d\n", ks, rrc);
+		ods_obj_put(key);
+	}
+	idx->idx_class->prv->dbg_print_idx(idx);
+	for (rc = 1; rc < sizeof(keys) / sizeof(keys[0]); rc++) {
+		size_t key_sz = ods_idx_key_size(idx);
+		if (key_sz == -1)
+			key_sz = strlen(keys[rc]);
+		key = ods_key_malloc(idx, key_sz);
+		ods_key_from_str(idx, key, keys[rc]);
+		inode = strtoul(keys[rc], NULL, 0);
+		ods_idx_insert(idx, key, inode);
+		ods_obj_put(key);
+	}
+#endif
 	idx->idx_class->prv->dbg_print_idx(idx);
 	for (rc = 0; rc < sizeof(keys) / sizeof(keys[0]); rc++) {
 		int rrc;
@@ -294,6 +340,9 @@ int main(int argc, char *argv[])
 		else
 			printf("<none>\n");
 		ods_obj_put(key);
+		idx->idx_class->prv->dbg_print_idx(idx);
+		ods_info();
 	}
+	idx->idx_class->prv->dbg_print_idx(idx);
 	return 0;
 }
