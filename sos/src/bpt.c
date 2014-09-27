@@ -323,8 +323,8 @@ static int bpt_find_lub(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	ods_obj_t leaf;
 	if (__find_lub(idx, key, &leaf_ref, &ent)) {
 		leaf = ods_ref_as_obj(idx->ods, leaf_ref);
-		ods_obj_put(leaf);
 		*ref = NODE(leaf)->entries[ent].ref;
+		ods_obj_put(leaf);
 		return 0;
 	}
 	return ENOENT;
@@ -910,11 +910,11 @@ static int entry_find(bpt_t t, ods_obj_t node, ods_key_t key, int *idx, ods_ref_
 
 static ods_obj_t leaf_right_most(bpt_t t, ods_obj_t node)
 {
+	ods_ref_t next_ref;
 	while (!NODE(node)->is_leaf) {
-		node = ods_ref_as_obj(t->ods,
-				      NODE(node)->entries[NODE(node)->count-1].ref);
-		if (!NODE(node)->is_leaf)
-			ods_obj_put(node);
+		next_ref = NODE(node)->entries[NODE(node)->count-1].ref;
+		ods_obj_put(node);
+		node = ods_ref_as_obj(t->ods, next_ref);
 	}
 	return node;
 }
@@ -955,7 +955,6 @@ loop:
 
 	if (!idx) {
 		node_ref = parent_ref;
-		ods_obj_put(node);
 		node = parent;
 		goto loop;
 	}
@@ -963,7 +962,6 @@ loop:
 	node = ods_ref_as_obj(t->ods, NODE(parent)->entries[idx-1].ref);
 	left = leaf_right_most(t, node);
 	ods_obj_put(parent);
-	ods_obj_put(node);
 	return left;
 }
 
@@ -1291,9 +1289,11 @@ static int bpt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	leaf = ods_ref_as_obj(t->ods, leaf_ref);
 	if (!leaf)
 		goto noent;
+
 	rc = entry_find(t, leaf, key, &ent, &obj_ref);
 	if (rc)
 		goto noent;
+
 	/* Ignore the caller's key once we've found the entry */
 	key = ods_ref_as_obj(t->ods, NODE(leaf)->entries[ent].key);
 
@@ -1305,6 +1305,7 @@ static int bpt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	ods_obj_put(udata);
 	return 0;
  noent:
+	ods_obj_put(leaf);
 	ods_obj_put(udata);
 	return ENOENT;
 }
