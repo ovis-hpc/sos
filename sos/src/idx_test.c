@@ -51,7 +51,7 @@
 #include <sys/fcntl.h>
 #include <string.h>
 #include <assert.h>
-#include "bpt.h"
+#include <sos/ods_idx.h>
 
 void iter_tree(ods_idx_t idx)
 {
@@ -113,7 +113,7 @@ void rebuild_tree(ods_idx_t idx)
 	}
 }
 
-#define FMT "k:p:o:x:i:"
+#define FMT "k:p:o:x:i:E"
 int main(int argc, char *argv[])
 {
 	ods_idx_t idx;
@@ -127,6 +127,7 @@ int main(int argc, char *argv[])
 	ods_ref_t ref;
 	int rc;
 	uint64_t inode;
+	int load_exit = 0;
 
 	while ((rc = getopt(argc, argv, FMT)) > 0) {
 		switch (rc) {
@@ -144,6 +145,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'i':
 			iter_key = strdup(optarg);
+			break;
+		case 'E':
+			load_exit = 1;
 			break;
 		default:
 			usage(argc, argv);
@@ -164,7 +168,11 @@ int main(int argc, char *argv[])
 	}
 	idx = ods_idx_open(idx_path);
 	rebuild_tree(idx);
-	idx->idx_class->prv->dbg_print_idx(idx);
+	if (load_exit) {
+		ods_idx_close(idx, ODS_COMMIT_SYNC);
+		exit(0);
+	}
+	ods_idx_print(idx, stdout);
 
 	/* Find the specified key and iterate until it doesn't match */
 	if (!iter_key)
@@ -222,11 +230,13 @@ int main(int argc, char *argv[])
 			       ods_key_to_str(idx, k));
 		}
 	}
-	idx->idx_class->prv->dbg_print_idx(idx);
+	ods_idx_print(idx, stdout);
+	ods_info();
 
 	/* Build another tree */
 	rebuild_tree(idx);
-	idx->idx_class->prv->dbg_print_idx(idx);
+	ods_idx_print(idx, stdout);
+	ods_info();
 
 	/* Delete the max in the tree until the tree is empty */
 	for (rc = ods_iter_end(iter); !rc; rc = ods_iter_end(iter)) {
@@ -240,15 +250,16 @@ int main(int argc, char *argv[])
 			       ods_key_to_str(idx, k));
 		}
 	}
-	idx->idx_class->prv->dbg_print_idx(idx);
+	ods_idx_print(idx, stdout);
+	ods_info();
 
 	/* Build another tree */
 	rebuild_tree(idx);
-	idx->idx_class->prv->dbg_print_idx(idx);
+	ods_idx_print(idx, stdout);
+	ods_info();
 
+#if 0
 	/* Delete an interior key until the tree is empty */
-	bpt_t t = idx->priv;
-	ods_obj_t root;
 	while (t->root_ref) {
 		root = ods_ref_as_obj(t->ods, t->root_ref);
 		int cnt = NODE(root)->count >> 1;
@@ -264,15 +275,18 @@ int main(int argc, char *argv[])
 		}
 		ods_obj_put(root);
 	}
-	idx->idx_class->prv->dbg_print_idx(idx);
+	ods_idx_print(idx, stdout);
 	rebuild_tree(idx);
+	ods_idx_print(idx, stdout);
+	ods_info();
+#endif
 #if 0
 	static char *keys[] = {
 		"-1", "0", "1", "3", "5", "7", "9", "11", "13", "15", "17", "19", "21"
 	};
 #else
 	static char *keys[] = {
-		"4", "5", "6", "7", "8", "9"
+		"3", "5", "6", "7", "8", "9"
 	};
 #endif
 #if 0
@@ -315,7 +329,8 @@ int main(int argc, char *argv[])
 		ods_obj_put(key);
 	}
 #endif
-	idx->idx_class->prv->dbg_print_idx(idx);
+	ods_idx_print(idx, stdout);
+	ods_info();
 	for (rc = 0; rc < sizeof(keys) / sizeof(keys[0]); rc++) {
 		int rrc;
 		ods_ref_t lub;
@@ -340,9 +355,6 @@ int main(int argc, char *argv[])
 		else
 			printf("<none>\n");
 		ods_obj_put(key);
-		idx->idx_class->prv->dbg_print_idx(idx);
-		ods_info();
 	}
-	idx->idx_class->prv->dbg_print_idx(idx);
 	return 0;
 }

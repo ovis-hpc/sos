@@ -374,6 +374,19 @@ static int bpt_find_glb(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	return ENOENT;
 }
 
+
+static ods_key_t key_new(ods_idx_t idx, ods_key_t key)
+{
+	ods_key_t akey = ods_key_alloc(idx, ods_key_len(key));
+	if (!akey) {
+		ods_extend(idx->ods, ods_size(idx->ods) * 2);
+		akey = ods_key_alloc(idx, ods_key_len(key));
+	}
+	if (akey)
+		ods_key_copy(akey, key);
+	return akey;
+}
+
 static ods_obj_t node_new(ods_idx_t idx, bpt_t t)
 {
 	size_t sz;
@@ -382,8 +395,12 @@ static ods_obj_t node_new(ods_idx_t idx, bpt_t t)
 
 	sz = sizeof(struct bpt_node) + (t->order * sizeof(struct bpn_entry));
 	obj = ods_obj_alloc(idx->ods, sz);
-	if (!obj)
-		return NULL;
+	if (!obj) {
+		ods_extend(idx->ods, ods_size(idx->ods) * 2);
+		obj = ods_obj_alloc(idx->ods, sz);
+		if (!obj)
+			return NULL;
+	}
 	n = obj->as.ptr;
 	memset(n, 0, sz);
 	return obj;
@@ -785,10 +802,9 @@ static int bpt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 
 	/* Check if this is a memory key and allocate an ODS key if so */
 	if (!ods_obj_ref(new_key)) {
-		ods_key_t key = ods_key_alloc(idx, ods_key_len(new_key));
+		ods_key_t key = key_new(idx, new_key);
 		if (!key)
 			goto err_1;
-		ods_key_copy(key, new_key);
 		new_key = key;
 	} else
 		ods_obj_get(new_key);
@@ -813,7 +829,7 @@ static int bpt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 	ods_obj_t new_leaf =
 		leaf_split_insert(idx, t, leaf, new_key, obj_ref);
 	if (!new_leaf)
-		goto err_1;
+		goto err_2;
 
 	parent = ods_ref_as_obj(t->ods, NODE(leaf)->parent);
 	if (!parent) {
@@ -854,12 +870,14 @@ static int bpt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 
  err_3:
 	/* TODO: Unsplit the leaf and put the tree back in order. */
- err_2:
+	assert(0);
 	ods_obj_delete(new_leaf);
 	ods_obj_put(new_leaf);
+ err_2:
+	ods_obj_delete(new_key);
+	ods_obj_put(new_key);
  err_1:
 	ods_obj_put(udata);
-	ods_obj_put(new_key);
 	return ENOMEM;
 }
 
