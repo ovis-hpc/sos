@@ -59,47 +59,47 @@ static ods_obj_t leaf_left(bpt_t t, uint64_t node_ref);
 static ods_obj_t leaf_right(bpt_t t, uint64_t node_ref);
 static int node_neigh(bpt_t t, ods_obj_t node, ods_obj_t *left, ods_obj_t *right);
 
-static void print_node(ods_idx_t idx, int ent, ods_obj_t n, int indent)
+static void print_node(ods_idx_t idx, int ent, ods_obj_t n, int indent, FILE *fp)
 {
 	bpt_t t = idx->priv;
 	int i;
 
 	if (!n) {
-		printf("<nil>\n");
+		fprintf(fp, "<nil>\n");
 		return;
 	}
 
 	/* Print this node */
 	if (NODE(n)->is_leaf && NODE(n)->parent)
 		indent += 4;
-	printf("%p - %*s%s[%d] | %p : ", (void *)(unsigned long)NODE(n)->parent,
-	       indent, "",
-	       (NODE(n)->is_leaf?"LEAF":"NODE"),
-	       ent, n->as.ptr);
+	fprintf(fp, "%p - %*s%s[%d] | %p : ", (void *)(unsigned long)NODE(n)->parent,
+		indent, "",
+		(NODE(n)->is_leaf?"LEAF":"NODE"),
+		ent, n->as.ptr);
 	for (i = 0; i < NODE(n)->count; i++) {
 		ods_key_t key = ods_ref_as_obj(t->ods, NODE(n)->entries[i].key);
-		printf("%s:%p, ",
+		fprintf(fp, "%s:%p, ",
 		       (key ? ods_key_to_str(idx, key) : "-"),
 		       (void *)(unsigned long)NODE(n)->entries[i].ref);
 		ods_obj_put(key);
 	}
-	printf("\n");
+	fprintf(fp, "\n");
 	fflush(stdout);
 	if (NODE(n)->is_leaf)
 		return;
 	/* Now print all it's children */
 	for (i = 0; i < NODE(n)->count; i++) {
 		ods_obj_t node = ods_ref_as_obj(t->ods, NODE(n)->entries[i].ref);
-		print_node(idx, i, node, indent + 2);
+		print_node(idx, i, node, indent + 2, fp);
 		ods_obj_put(node);
 	}
 }
 
-static void print_idx(ods_idx_t idx)
+static void print_idx(ods_idx_t idx, FILE *fp)
 {
 	bpt_t t = idx->priv;
 	ods_obj_t node = ods_ref_as_obj(t->ods, t->root_ref);
-	print_node(idx, 0, node, 0);
+	print_node(idx, 0, node, 0, fp);
 	ods_obj_put(node);
 }
 
@@ -530,7 +530,7 @@ static int verify_node(ods_idx_t idx, ods_obj_t n)
 		ods_key_t e1 = ods_ref_as_obj(t->ods, NODE(n)->entries[i].key);
 		ods_key_t e2 = ods_ref_as_obj(t->ods, NODE(n)->entries[i+1].key);
 		if (!(t->comparator(e2, e1) >= 0)) {
-			print_idx(idx);
+			print_idx(idx, stdout);
 			assert(0);
 		}
 		ods_obj_put(e1);
@@ -541,7 +541,7 @@ static int verify_node(ods_idx_t idx, ods_obj_t n)
 			midpoint--;
 		/* Make sure it has at least midpoint entries */
 		if (!NODE(n)->count >= midpoint) {
-			print_idx(idx);
+			print_idx(idx, stdout);
 			assert(0);
 		}
 	}
@@ -555,7 +555,7 @@ static int verify_node(ods_idx_t idx, ods_obj_t n)
 		ods_obj_t child = ods_ref_as_obj(t->ods, NODE(n)->entries[i].ref);
 		ods_key_t child_key = ods_ref_as_obj(t->ods, NODE(child)->entries[0].key);
 		if (!(t->comparator(parent_key, child_key) == 0)) {
-			print_idx(idx);
+			print_idx(idx, stdout);
 			assert(0);
 		}
 		ods_obj_put(parent_key);
@@ -1566,7 +1566,7 @@ static struct ods_idx_provider bpt_provider = {
 	.iter_prev = bpt_iter_prev,
 	.iter_key = bpt_iter_key,
 	.iter_ref = bpt_iter_ref,
-	.dbg_print_idx = print_idx
+	.print_idx = print_idx
 };
 
 struct ods_idx_provider *get(void)

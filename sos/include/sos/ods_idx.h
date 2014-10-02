@@ -612,6 +612,17 @@ ods_key_t ods_iter_key(ods_iter_t iter);
  */
 ods_ref_t ods_iter_ref(ods_iter_t iter);
 
+/*
+ * \brief Print a textual representation of the index
+ *
+ * Print a textual representation of the index to the specified FILE
+ * pointer. This function is intended for debug purposes when writing
+ * new index plugins.
+ *
+ * \param idx	The index handle
+ * \param file	The file pointer
+ */
+void ods_idx_print(ods_idx_t idx, FILE* fp);
 #ifdef __cplusplus
 }
 #endif

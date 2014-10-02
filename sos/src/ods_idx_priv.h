@@ -72,7 +72,7 @@ struct ods_idx_provider {
 	int (*iter_prev)(ods_iter_t iter);
 	ods_key_t (*iter_key)(ods_iter_t iter);
 	ods_ref_t (*iter_ref)(ods_iter_t iter);
-	void (*dbg_print_idx)(ods_idx_t idx);
+	void (*print_idx)(ods_idx_t idx, FILE *fp);
 };
 
 struct ods_idx_comparator {

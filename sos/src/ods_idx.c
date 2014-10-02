@@ -399,3 +399,7 @@ size_t ods_key_len(ods_key_t key)
 	return ((ods_key_value_t)key->as.ptr)->len;
 }
 
+void ods_idx_print(ods_idx_t idx, FILE *fp)
+{
+	idx->idx_class->prv->print_idx(idx, fp);
+}
