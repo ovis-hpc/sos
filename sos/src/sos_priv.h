@@ -1,0 +1,235 @@
+/*
+ * Copyright (c) 2012-2014 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2012-2014 Sandia Corporation. All rights reserved.
+ * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
+ * license for use of this work by or on behalf of the U.S. Government.
+ * Export of this program may require a license from the United States
+ * Government.
+ *
+ * This software is available to you under a choice of one of two
+ * licenses.  You may choose to be licensed under the terms of the GNU
+ * General Public License (GPL) Version 2, available from the file
+ * COPYING in the main directory of this source tree, or the BSD-type
+ * license below:
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *      Redistributions of source code must retain the above copyright
+ *      notice, this list of conditions and the following disclaimer.
+ *
+ *      Redistributions in binary form must reproduce the above
+ *      copyright notice, this list of conditions and the following
+ *      disclaimer in the documentation and/or other materials provided
+ *      with the distribution.
+ *
+ *      Neither the name of Sandia nor the names of any contributors may
+ *      be used to endorse or promote products derived from this software
+ *      without specific prior written permission.
+ *
+ *      Neither the name of Open Grid Computing nor the names of any
+ *      contributors may be used to endorse or promote products derived
+ *      from this software without specific prior written permission.
+ *
+ *      Modified source versions must be plainly marked as such, and
+ *      must not be misrepresented as being the original software.
+ *
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ * Author: Tom Tucker tom at ogc dot us
+ */
+
+#ifndef __SOS_PRIV_H
+#define __SOS_PRIV_H
+
+#include <stdint.h>
+#include <sys/queue.h>
+#include <endian.h>
+
+#include <sos/sos.h>
+#include <ods/ods.h>
+#include <ods/ods_idx.h>
+#include <ods/rbt.h>
+
+typedef enum sos_internal_schema_e {
+	SOS_ISCHEMA_OBJ = 0x80,
+	SOS_ISCHEMA_BYTE_ARRAY,
+	SOS_ISCHEMA_INT32_ARRAY,
+	SOS_ISCHEMA_INT64_ARRAY,
+	SOS_ISCHEMA_UINT32_ARRAY,
+	SOS_ISCHEMA_UINT64_ARRAY,
+	SOS_ISCHEMA_FLOAT_ARRAY,
+	SOS_ISCHEMA_DOUBLE_ARRAY,
+	SOS_ISCHEMA_LONG_DOUBLE_ARRAY,
+	SOS_ISCHEMA_OBJ_ARRAY,
+	SOS_SCHEMA_FIRST_USER,
+} sos_ischema_t;
+
+#define SOS_LATEST_VERSION 0x02000000
+#define SOS_SCHEMA_SIGNATURE 'SOSSCHMA'
+typedef struct sos_udata_s {
+	uint64_t signature;
+	uint32_t version;
+	uint32_t dict_len;
+	uint32_t first_schema;
+	ods_ref_t dict[0];
+} *sos_udata_t;
+#define SOS_UDATA(_o_) ODS_PTR(sos_udata_t, _o_)
+
+
+/*
+ * An object is counted array of bytes. Everything in the ODS store is an object.
+ *
+ * +----------+----------+--~~~~~---+
+ * | class_id | size     | data...  |
+ * +----------+----------+--~~~~~---+
+ */
+typedef struct sos_obj_data_s {
+	uint64_t schema;	/* An index into the container's schema dictionary */
+	// uint64_t size:56;	/* Size of the object in bytes, not including this header */
+	uint8_t data[0];
+} *sos_obj_data_t;
+
+struct sos_obj_s {
+	ods_atomic_t ref_count;
+	sos_schema_t schema;
+	ods_obj_t obj;
+	// sos_obj_data_t data;
+};
+
+#define SOS_OBJ(_o_) ODS_PTR(sos_obj_data_t, _o_)
+
+typedef struct sos_obj_ref_s {
+	ods_ref_t ods_ref;	/* The reference to the ODS */
+	ods_ref_t obj_ref;	/* The object reference */
+} *sos_obj_ref_t;
+#define SOS_OBJ_REF(_o_) ODS_PTR(sos_obj_ref_t, _o_)
+
+#define SOS_SIGNATURE "SOS_OBJ_STORE"
+#define SOS_OBJ_BE	1
+#define SOS_OBJ_LE	2
+
+#define SOS_ATTR_NAME	32
+typedef struct sos_attr_data_s {
+	char name[SOS_ATTR_NAME_LEN];
+	uint32_t type:8;
+	uint32_t id:8;
+	uint32_t pad:15;
+	uint32_t initial_count;
+	uint32_t indexed:1;
+	uint64_t offset;
+} *sos_attr_data_t;
+
+typedef size_t (*sos_attr_size_fn_t)(struct sos_attr_s *, sos_value_t);
+typedef char *(*sos_attr_to_str_fn_t)(struct sos_attr_s *, sos_obj_t, char *, size_t);
+typedef int (*sos_attr_from_str_fn_t)(struct sos_attr_s *, sos_obj_t, const char *);
+typedef void *(*sos_attr_key_value_fn_t)(struct sos_attr_s *, sos_value_t);
+
+typedef struct sos_attr_s {
+	sos_attr_data_t data;
+	struct sos_attr_data_s data_;
+
+	sos_schema_t schema;
+	ods_idx_t index;
+	const char *idx_type;
+	const char *key_type;
+	sos_attr_size_fn_t size_fn;
+	sos_attr_from_str_fn_t from_str_fn;
+	sos_attr_to_str_fn_t to_str_fn;
+	sos_attr_key_value_fn_t key_value_fn;
+
+	TAILQ_ENTRY(sos_attr_s) entry;
+} *sos_attr_t;
+
+#define SOS_SCHEMA_NAME_LEN	32
+typedef struct sos_schema_data_s {
+	char name[SOS_SCHEMA_NAME_LEN];
+	ods_atomic_t ref_count;
+	uint32_t id;		/* Index into the schema dictionary */
+	uint32_t attr_cnt;	/* Count of attributes in object class */
+	uint64_t obj_sz;	/* Size of object */
+	uint64_t schema_sz;	/* Size of schema */
+	ods_ref_t ods_path;	/* Path to the ODS containing objects of this type */
+	struct sos_attr_data_s attr_dict[0];
+} *sos_schema_data_t;
+
+typedef struct sos_schema_s *sos_schema_t;
+struct sos_schema_s {
+	ods_atomic_t ref_count;
+	sos_schema_data_t data;
+	struct sos_schema_data_s data_;
+	sos_t sos;
+	ods_obj_t schema_obj;
+	struct rbn rbn;
+	TAILQ_HEAD(sos_attr_list, sos_attr_s) attr_list;
+};
+#define SOS_SCHEMA(_o_) ODS_PTR(sos_schema_data_t, _o_)
+
+/*
+ * The container
+ */
+struct sos_container_s {
+	ods_atomic_t ref_count;
+	/* "Path" to the file. This is used as a prefix for all the
+	 *  real file paths */
+	char *path;
+	int o_flags;
+
+	/*
+	 * The schema dictionary and index
+	 */
+	ods_idx_t schema_idx;	/* Index schema by name */
+	ods_t schema_ods;	/* Contains the schema definitions */
+	struct rbt schema_rbt;	/* In memory schema tree */
+
+	/*
+	 * The object repository
+	 */
+	ods_t obj_ods;
+};
+
+/**
+ * \brief SOS extend size.
+ *
+ * SOS uses ODS to store its data. Once SOS failed to allocate an object from
+ * ODS, it will try to extend the ODS. This value indicates the size of each
+ * extension.
+ *
+ * \note Assumes to be 2^N.
+ */
+#define SOS_ODS_EXTEND_SZ (1024*1024)
+
+/**
+ * \brief Initial size of the ODS for SOS.
+ */
+#define SOS_INITIAL_SIZE (1024*1024)
+
+struct sos_iter_s {
+	sos_attr_t attr;
+	ods_iter_t iter;
+};
+
+/**
+ * Internal routines
+ */
+sos_obj_t __sos_init_obj(sos_schema_t schema, ods_obj_t ods_obj);
+sos_attr_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type);
+sos_attr_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type);
+sos_attr_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type);
+sos_attr_key_value_fn_t __sos_attr_key_value_fn_for_type(sos_type_t type);
+
+#endif

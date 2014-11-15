@@ -3,20 +3,15 @@ cmake_minimum_required(VERSION 2.6)
 include_directories(
 	"${PROJECT_BINARY_DIR}/../../"
 	"${PROJECT_SOURCE_DIR}/include"
+	"${PROJECT_SOURCE_DIR}/../ods/include"
 )
 
-add_library(sos ods_idx.c ods.c rbt.c)
-add_library(idx_BPTREE bpt.c)
-add_library(idx_BXTREE bxt.c)
-add_library(key_BLKMAP key_blkmap.c)
-add_library(key_SHA256 key_sha256.c)
-add_library(key_STRING key_str.c)
-add_library(key_UINT64 key_uint64.c)
-add_library(key_UINT32 key_uint32.c)
+add_library(sos sos_fn.c sos.c sos_key.c sos_iter.c)
+target_link_libraries(sos ods dl pthread)
 
-target_link_libraries(sos dl pthread)
-target_link_libraries(idx_BPTREE sos)
-target_link_libraries(idx_BXTREE sos)
+# add_executable(sos_test sos_test.c)
+# target_link_libraries(sos_test sos yaml)
 
-add_executable(idx_test idx_test.c)
-target_link_libraries(idx_test sos)
+add_executable(sos_cmd sos_cmd.c)
+target_link_libraries(sos_cmd sos yaml)
+
