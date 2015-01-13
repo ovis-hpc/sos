@@ -70,6 +70,7 @@ typedef struct ods_s *ods_t;
 typedef uint64_t ods_ref_t;
 typedef struct ods_map_s *ods_map_t;
 typedef struct ods_obj_s *ods_obj_t;
+extern int ods_debug;
 
 /**
  * \brief Create an object store
@@ -92,15 +93,19 @@ extern int ods_create(const char *path, int o_mode);
  */
 extern int ods_destroy(const char *path);
 
+typedef enum ods_perm_e {
+	ODS_PERM_RO = 0,
+	ODS_PERM_RW
+} ods_perm_t;
 /**
  * \brief Open and optionally create an ODS object store
  *
  * \param path	The path to the ODS to be opened.
- * \param o_flags The open flags. These are the same as for open(). Note that the O_CREAT flag will fail. See the ods_create() function.
+ * \param o_perm The requested read/write permissions.
  * \retval !0	The ODS handle
  * \retval 0	An error occured opening/creating the ODS
  */
-extern ods_t ods_open(const char *path, int o_flags);
+extern ods_t ods_open(const char *path, ods_perm_t o_perm);
 
 /**
  * \brief Obtain file stats for the ODS database
@@ -124,7 +129,8 @@ extern int ods_stat(ods_t ods, struct stat *sb);
 extern ods_obj_t _ods_get_user_data(ods_t ods);
 #define ods_get_user_data(ods) ({		\
 	ods_obj_t o = _ods_get_user_data(ods);	\
-	if (o) {				\
+	if (ods_debug && o) {				\
+		o->thread = pthread_self();	\
 		o->alloc_line = __LINE__;	\
 		o->alloc_func = __func__;	\
 	}					\
@@ -183,35 +189,52 @@ extern void ods_close(ods_t ods, int flags);
 extern ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz);
 #define ods_obj_alloc(ods, sz) ({		\
 	ods_obj_t o = _ods_obj_alloc(ods, sz);	\
-	if (o) {				\
+	if (ods_debug && o) {				\
+		o->thread = pthread_self();	\
 		o->alloc_line = __LINE__;	\
 		o->alloc_func = __func__;	\
 	}					\
 	o;					\
 })
+
 /**
- * \brief Allocate an object of the requested size
+ * \brief Allocate a memory object of the requested size
  *
  * Allocates space in memory for an object of at least
- * \c sz bytes and initializes an in-memory object that refers to this
+ * <tt>sz</tt> bytes and initializes an in-memory object that refers to this
  * ODS object. The application should use the ods_obj_get()
  * function to add references to the object and ods_obj_put() to
  * release these references.
  *
- * \param ods	The ODS handle
  * \param sz	The desired size
  * \return	Pointer to an object of the requested size or NULL if there
  *		is an error.
  */
-extern ods_obj_t _ods_obj_malloc(ods_t ods, size_t sz);
-#define ods_obj_malloc(ods, sz) ({		\
-	ods_obj_t o = _ods_obj_malloc(ods, sz);	\
-	if (o) {				\
+extern ods_obj_t _ods_obj_malloc(size_t sz);
+#define ods_obj_malloc(sz) ({		\
+	ods_obj_t o = _ods_obj_malloc(sz);	\
+	if (ods_debug && o) {			\
+		o->thread = pthread_self();	\
 		o->alloc_line = __LINE__;	\
 		o->alloc_func = __func__;	\
 	}					\
 	o;					\
 })
+
+#define ODS_OBJ(_name_, _data_, _sz_)		\
+	struct ods_obj_s _name_ = {		\
+		.refcount = 0,			\
+		.ods = NULL,			\
+		.size = _sz_,			\
+		.ref = 0,			\
+		.as.ptr = _data_,		\
+		.map = NULL,			\
+		.thread = pthread_self(),	\
+		.alloc_func = __func__ ,	\
+		.alloc_line = __LINE__,		\
+		.put_line = 0,			\
+		.put_func = NULL		\
+	}
 
 /**
  * \brief Free the storage for this object in the ODS
@@ -300,7 +323,9 @@ typedef void (*ods_iter_fn_t)(ods_t ods, void *ptr, size_t sz, void *arg);
  * \param arg		A void* argument that the user wants passed to
  *			the callback function.
  */
-extern void ods_iter(ods_t ods, ods_iter_fn_t iter_fn, void *arg);
+void ods_iter(ods_t ods, ods_iter_fn_t iter_fn, void *arg);
+
+ods_atomic_t ods_obj_count(ods_t ods);
 
 /*
  * Take a reference on an object
@@ -310,7 +335,14 @@ ods_obj_t ods_obj_get(ods_obj_t obj);
 /*
  * Put a reference on an object
  */
-void ods_obj_put(ods_obj_t obj);
+void _ods_obj_put(ods_obj_t obj);
+#define ods_obj_put(o) \
+	_ods_obj_put(o);			\
+	if (ods_debug && o) {			\
+		o->thread = pthread_self();	\
+		o->put_line = __LINE__;		\
+		o->put_func = __func__;		\
+	}					\
 
 /*
  * Create a memory object from a persistent reference
@@ -318,7 +350,8 @@ void ods_obj_put(ods_obj_t obj);
 ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref);
 #define ods_ref_as_obj(ods, ref) ({			\
 	ods_obj_t o = _ods_ref_as_obj(ods, ref);	\
-	if (o) {					\
+	if (ods_debug && o) {					\
+		o->thread = pthread_self();		\
 		o->alloc_line = __LINE__;		\
 		o->alloc_func = __func__;		\
 	}						\
@@ -346,7 +379,6 @@ union ods_obj_type_u {
 	ods_atomic_t *lock;
 };
 
-/* In memory pointer to base of ods region on disk */
 struct ods_obj_s {
 	ods_atomic_t refcount;
 	ods_t ods;
@@ -354,6 +386,7 @@ struct ods_obj_s {
 	ods_ref_t ref;		/* persistent reference */
 	union ods_obj_type_u as;
 	ods_map_t map;
+	pthread_t thread;
 	int alloc_line;
 	const char *alloc_func;
 	int put_line;
@@ -377,6 +410,18 @@ static inline size_t ods_obj_size(ods_obj_t obj) {
 	return obj->size;
 }
 
+/**
+ * \brief Verify that an object is valid
+ *
+ * Check that the provided object is valid for the given ODS.
+ *
+ * \param ods The ODS handle
+ * \param obj The object to validate
+ * \retval TRUE (!0) if the object is valid
+ * \retval FALSE (0) if the object is not valid
+ */
+int ods_obj_valid(ods_t ods, ods_obj_t obj);
+
 #define ODS_PTR(_typ_, _obj_) ((_typ_)_obj_->as.ptr)
 
 typedef struct ods_spin_s {
@@ -388,7 +433,10 @@ typedef struct ods_spin_s {
 		pthread_t thread;
 	} owner;
 } *ods_spin_t;
-ods_spin_t ods_spin_get(ods_atomic_t *lock_p);
+#define ods_spin_init(_name_, _lock_p_)					\
+	struct ods_spin_s ods_spin_s ## _name_ = { .lock_p = _lock_p_ };	\
+	ods_spin_t _name_ = &ods_spin_s ## _name_;
+
 int _ods_spin_lock(ods_spin_t s, int timeout);
 #define ods_spin_lock(_s_, _t_) ({			\
 	int rc = _ods_spin_lock(_s_, _t_);		\
@@ -403,6 +451,7 @@ int _ods_spin_lock(ods_spin_t s, int timeout);
 void ods_spin_unlock(ods_spin_t s);
 void ods_spin_put(ods_spin_t spin);
 void ods_info(ods_t ods, FILE *fp);
+
 
 #ifdef __cplusplus
 }

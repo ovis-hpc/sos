@@ -58,8 +58,6 @@
 #include <ods/ods_atomic.h>
 #include <stdint.h>
 
-
-
 /**
  * ods - A file backed object store
  *
@@ -136,6 +134,9 @@ struct ods_s {
 	/* That path to the file on disk */
 	char *path;
 
+	/* Open permissions */
+	ods_perm_t o_perm;
+
 	/* The open file descriptor */
 	int obj_fd;
 	size_t obj_sz;
@@ -148,6 +149,7 @@ struct ods_s {
 	ods_map_t map;
 
 	/* The object list */
+	ods_atomic_t obj_count;
 	LIST_HEAD(obj_list_head, ods_obj_s) obj_list;
 	LIST_HEAD(obj_free_list_head, ods_obj_s) obj_free_list;
 	LIST_HEAD(map_list_head, ods_map_s) map_list;

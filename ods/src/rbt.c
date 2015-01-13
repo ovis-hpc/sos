@@ -139,7 +139,7 @@ void rbt_init(struct rbt *t, rbn_comparator_t c)
  * still allowing the RBN to be embedded in the applications object
  * and avoiding a second allocation in rbn_ins.
  *
- * \param rbn The RBN to initialize
+ * \param n The RBN to initialize
  * \param key Pointer to the key
  */
 void rbn_init(struct rbn *n, void *key)
@@ -404,7 +404,8 @@ struct rbn *rbt_greatest_lt_or_eq(struct rbn *n)
 /**
  * \brief Find the largest node less than or equal to a key
  *
- * \param n	Pointer to the node
+ * \param t	Pointer to the tree
+ * \param key   Pointer to the key value
  * \return !0	Pointer to the lesser sibling
  * \return NULL	The node specified is the min
  */
@@ -443,8 +444,8 @@ struct rbn *rbt_find_glb(struct rbt *t, void *key)
  * \brief Return the smallest sibling greater than or equal
  *
  * \param n	Pointer to the node
- * \return !0	Pointer to the greater sibling
- * \return NULL	The node specified is the max
+ * \retval !0	Pointer to the greater sibling
+ * \retval NULL	The node specified is the max
  */
 struct rbn *rbt_least_gt_or_eq(struct rbn *n)
 {
@@ -458,9 +459,10 @@ struct rbn *rbt_least_gt_or_eq(struct rbn *n)
 /**
  * \brief Find the smallest node greater than or equal to a key
  *
- * \param n	Pointer to the node
- * \return !0	Pointer to the greater sibling
- * \return NULL	The node specified is the max
+ * \param t	Pointer to the tree
+ * \param key	Pointer to the key
+ * \retval !0	Pointer to the greater sibling
+ * \retval NULL	The node specified is the max
  */
 struct rbn *rbt_find_lub(struct rbt *t, void *key)
 {
@@ -499,8 +501,8 @@ struct rbn *rbt_find_lub(struct rbt *t, void *key)
  *
  * \param t	Pointer to the RBT.
  * \param key	Pointer to the key.
- * \return	Pointer to the node with the matching key.
- * \return	NULL if no node in the tree matches the key.
+ * \retval !NULL Pointer to the node with the matching key.
+ * \retval NULL  No node in the tree matches the key.
  */
 struct rbn *rbt_find(struct rbt *t, void *key)
 {

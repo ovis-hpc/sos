@@ -61,6 +61,7 @@ struct ods_idx_provider {
 	int (*find)(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
 	int (*find_lub)(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
 	int (*find_glb)(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
+	int (*stat)(ods_idx_t idx, ods_idx_stat_t sb);
 	ods_iter_t (*iter_new)(ods_idx_t idx);
 	void (*iter_delete)(ods_iter_t i);
 	int (*iter_find)(ods_iter_t iter, ods_key_t key);
@@ -70,6 +71,8 @@ struct ods_idx_provider {
 	int (*iter_end)(ods_iter_t iter);
 	int (*iter_next)(ods_iter_t iter);
 	int (*iter_prev)(ods_iter_t iter);
+	int (*iter_set)(ods_iter_t iter, const ods_pos_t pos);
+	int (*iter_pos)(ods_iter_t iter, ods_pos_t pos);
 	ods_key_t (*iter_key)(ods_iter_t iter);
 	ods_ref_t (*iter_ref)(ods_iter_t iter);
 	void (*print_idx)(ods_idx_t idx, FILE *fp);
@@ -111,11 +114,14 @@ struct ods_idx {
 	struct ods_idx_class *idx_class;
 	/** The ODS object store for the index */
 	ods_t ods;
+	/** The permissions the index was opened with */
+	ods_perm_t o_perm;
 	/** Place for the index to store its private data */
 	void *priv;
 };
 
 struct ods_iter {
+	ods_iter_flags_t flags;
 	struct ods_idx *idx;
 };
 

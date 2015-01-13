@@ -99,6 +99,44 @@ sos_iter_t sos_iter_new(sos_attr_t attr)
 	return NULL;
 }
 
+int sos_iter_flags_set(sos_iter_t iter, sos_iter_flags_t flags)
+{
+	return ods_iter_flags_set(iter->iter, flags);
+}
+
+sos_iter_flags_t sos_iter_flags_get(sos_iter_t iter)
+{
+	return (sos_iter_flags_t)ods_iter_flags_get(iter->iter);
+}
+
+uint64_t sos_iter_card(sos_iter_t iter)
+{
+	struct ods_idx_stat_s sb;
+	int rc = ods_idx_stat(ods_iter_idx(iter->iter), &sb);
+	if (rc)
+		return 0;
+	return sb.cardinality;
+}
+
+uint64_t sos_iter_dups(sos_iter_t iter)
+{
+	struct ods_idx_stat_s sb;
+	int rc = ods_idx_stat(ods_iter_idx(iter->iter), &sb);
+	if (rc)
+		return 0;
+	return sb.duplicates;
+}
+
+int sos_iter_pos(sos_iter_t iter, sos_pos_t pos)
+{
+	return ods_iter_pos(iter->iter, (ods_pos_t)pos);
+}
+
+int sos_iter_set(sos_iter_t iter, const sos_pos_t pos)
+{
+	return ods_iter_set(iter->iter, (ods_pos_t)pos);
+}
+
 void sos_iter_free(sos_iter_t iter)
 {
 	sos_schema_put(iter->attr->schema);
@@ -111,8 +149,24 @@ sos_obj_t sos_iter_obj(sos_iter_t i)
 	ods_ref_t ods_ref = ods_iter_ref(i->iter);
 	if (!ods_ref)
 		return NULL;
-	return __sos_init_obj(i->attr->schema,
+	return __sos_init_obj(i->attr->schema->sos,
+			      i->attr->schema,
 			      ods_ref_as_obj(i->attr->schema->sos->obj_ods, ods_ref));
+}
+
+int sos_iter_obj_remove(sos_iter_t iter)
+{
+	return ENOSYS;
+}
+
+const char *sos_iter_name(sos_iter_t i)
+{
+	return sos_attr_name(i->attr);
+}
+
+sos_attr_t sos_iter_attr(sos_iter_t i)
+{
+	return i->attr;
 }
 
 int sos_iter_next(sos_iter_t i)
@@ -135,12 +189,12 @@ int sos_iter_end(sos_iter_t i)
 	return ods_iter_end(i->iter);
 }
 
-int sos_iter_seek_sup(sos_iter_t i, sos_key_t key)
+int sos_iter_sup(sos_iter_t i, sos_key_t key)
 {
 	return ods_iter_find_lub(i->iter, key);
 }
 
-int sos_iter_seek_inf(sos_iter_t i, sos_key_t key)
+int sos_iter_inf(sos_iter_t i, sos_key_t key)
 {
 	return ods_iter_find_glb(i->iter, key);
 }
@@ -162,4 +216,230 @@ int sos_iter_seek(sos_iter_t i, sos_key_t key)
 sos_key_t sos_iter_key(sos_iter_t i)
 {
 	return ods_iter_key(i->iter);
+}
+static int lt_fn(sos_value_t obj_value, sos_value_t cond_value)
+{
+	int rc = sos_value_cmp(obj_value, cond_value);
+	return (rc < 0);
+}
+
+static int le_fn(sos_value_t obj_value, sos_value_t cond_value)
+{
+	int rc = sos_value_cmp(obj_value, cond_value);
+	return (rc <= 0);
+}
+
+static int eq_fn(sos_value_t obj_value, sos_value_t cond_value)
+{
+	int rc = sos_value_cmp(obj_value, cond_value);
+	return (rc == 0);
+}
+
+static int ne_fn(sos_value_t obj_value, sos_value_t cond_value)
+{
+	int rc = sos_value_cmp(obj_value, cond_value);
+	return (rc != 0);
+}
+
+static int ge_fn(sos_value_t obj_value, sos_value_t cond_value)
+{
+	int rc = sos_value_cmp(obj_value, cond_value);
+	return (rc >= 0);
+}
+
+static int gt_fn(sos_value_t obj_value, sos_value_t cond_value)
+{
+	int rc = sos_value_cmp(obj_value, cond_value);
+	return (rc > 0);
+}
+
+sos_filter_fn_t fn_table[] = {
+	[SOS_COND_LT] = lt_fn,
+	[SOS_COND_LE] = le_fn,
+	[SOS_COND_EQ] = eq_fn,
+	[SOS_COND_GE] = ge_fn,
+	[SOS_COND_GT] = gt_fn,
+	[SOS_COND_NE] = ne_fn,
+};
+
+sos_filter_t sos_filter_new(sos_iter_t iter)
+{
+	sos_filter_t f = calloc(1, sizeof *f);
+	if (f)
+		TAILQ_INIT(&f->cond_list);
+	f->iter = iter;
+	return f;
+}
+
+void sos_filter_free(sos_filter_t f)
+{
+	sos_filter_cond_t cond;
+	while (!TAILQ_EMPTY(&f->cond_list)) {
+		cond = TAILQ_FIRST(&f->cond_list);
+		TAILQ_REMOVE(&f->cond_list, cond, entry);
+		free(cond);
+	}
+	free(f);
+}
+
+int sos_filter_flags_set(sos_filter_t f, sos_iter_flags_t flags)
+{
+	return sos_iter_flags_set(f->iter, flags);
+}
+
+int sos_filter_cond_add(sos_filter_t f,
+			sos_attr_t attr, enum sos_cond_e cond_e, sos_value_t value)
+{
+	sos_filter_cond_t cond = malloc(sizeof *cond);
+	if (!cond)
+		return ENOMEM;
+	cond->attr = attr;
+	cond->cmp_fn = fn_table[cond_e];
+	cond->value = value;
+	cond->cond = cond_e;
+	TAILQ_INSERT_TAIL(&f->cond_list, cond, entry);
+	return 0;
+}
+
+sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt)
+{
+	sos_filter_cond_t cond;
+	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
+		struct sos_value_s v_;
+		sos_value_t obj_value = sos_value_init(&v_, obj, cond->attr);
+		int rc = cond->cmp_fn(obj_value, cond->value);
+		sos_value_put(obj_value);
+		if (!rc)
+			return cond;
+	}
+	return NULL;
+}
+
+static sos_obj_t next_match(sos_filter_t filt)
+{
+	int rc;
+	do {
+		sos_obj_t obj = sos_iter_obj(filt->iter);
+		sos_filter_cond_t cond = sos_filter_eval(obj, filt);
+		if (cond) {
+			sos_obj_put(obj);
+			if (cond->attr == filt->iter->attr
+			    && cond->cond <= SOS_COND_EQ)
+				/* On ordered index and the condition
+				 * requires a value <= */
+				break;
+			rc = sos_iter_next(filt->iter);
+		} else
+			return obj;
+	} while (rc == 0);
+	return NULL;
+}
+
+static sos_obj_t prev_match(sos_filter_t filt)
+{
+	int rc;
+	do {
+		sos_obj_t obj = sos_iter_obj(filt->iter);
+		sos_filter_cond_t cond = sos_filter_eval(obj, filt);
+		if (cond) {
+			sos_obj_put(obj);
+			if (cond->attr == filt->iter->attr
+			    && cond->cond >= SOS_COND_EQ)
+				/* On ordered index and the condition
+				 * requires a value >= */
+				break;
+			rc = sos_iter_prev(filt->iter);
+		} else
+			return obj;
+	} while (rc == 0);
+	return NULL;
+}
+
+sos_obj_t sos_filter_begin(sos_filter_t filt)
+{
+	sos_filter_cond_t cond;
+	sos_obj_t obj;
+	int rc;
+	SOS_KEY(key);
+
+	/* Find the filter attribute condition with the smallest cardinality */
+	rc = sos_iter_begin(filt->iter);
+	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
+		if (cond->attr != filt->iter->attr)
+			continue;
+		/* NB: this check presumes the index is in
+		 * increasing order. For all the built-in
+		 * types, this is the case, however, if the
+		 * user builds their own types/comparators,
+		 * this check is invalid */
+		if (cond->cond < SOS_COND_EQ)
+			continue;
+
+		sos_key_set(key, sos_value_as_key(cond->value),
+			    sos_value_size(cond->value));
+		rc = sos_iter_sup(filt->iter, key);
+	}
+	if (!rc)
+		return next_match(filt);
+	return NULL;
+}
+
+sos_obj_t sos_filter_next(sos_filter_t filt)
+{
+	int rc = sos_iter_next(filt->iter);
+	if (!rc)
+		return next_match(filt);
+	return NULL;
+}
+
+int sos_filter_set(sos_filter_t filt, const sos_pos_t pos)
+{
+	return sos_iter_set(filt->iter, pos);
+}
+
+int sos_filter_pos(sos_filter_t filt, sos_pos_t pos)
+{
+	return sos_iter_pos(filt->iter, pos);
+}
+
+sos_obj_t sos_filter_prev(sos_filter_t filt)
+{
+	int rc = sos_iter_prev(filt->iter);
+	if (!rc)
+		return prev_match(filt);
+	return NULL;
+}
+
+sos_obj_t sos_filter_end(sos_filter_t filt)
+{
+	sos_filter_cond_t cond;
+	sos_obj_t obj;
+	int rc;
+
+	rc = sos_iter_end(filt->iter);
+	SOS_KEY(key);
+	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
+		if (cond->attr != filt->iter->attr)
+			continue;
+
+		/* NB: this check presumes the index is in
+		 * increasing order. For all the built-in
+		 * types, this is the case, however, if the
+		 * user builds their own types/comparators,
+		 * this check is invalid */
+		if (cond->cond >= SOS_COND_EQ)
+			continue;
+
+		sos_key_set(key, sos_value_as_key(cond->value),
+			    sos_value_size(cond->value));
+		rc = sos_iter_inf(filt->iter, key);
+	}
+	if (!rc)
+		return prev_match(filt);
+	return NULL;
+}
+
+sos_obj_t sos_filter_obj(sos_filter_t filt)
+{
+	return sos_iter_obj(filt->iter);
 }

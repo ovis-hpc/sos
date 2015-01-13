@@ -105,7 +105,7 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 	struct ods_idx_comparator *cmp;
 	char *idx_classname;
 
-	idx_classname = malloc(strlen(type) + strlen(key) + 1);
+	idx_classname = malloc(strlen(type) + strlen(key) + 2);
 	if (!idx_classname)
 		return NULL;
 	sprintf(idx_classname, "%s:%s", type, key);
@@ -195,7 +195,7 @@ int ods_idx_create(const char *path, int mode,
 	return errno;
 }
 
-ods_idx_t ods_idx_open(const char *path, int o_flags)
+ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm)
 {
 	ods_idx_t idx;
 	struct ods_idx_class *idx_class;
@@ -205,8 +205,8 @@ ods_idx_t ods_idx_open(const char *path, int o_flags)
 	idx = calloc(1, sizeof *idx);
 	if (!idx)
 		return NULL;
-
-	idx->ods = ods_open(path, o_flags);
+	idx->o_perm = o_perm;
+	idx->ods = ods_open(path, o_perm);
 	if (!idx->ods)
 		goto err_0;
 
@@ -238,6 +238,11 @@ ods_idx_t ods_idx_open(const char *path, int o_flags)
 
 }
 
+int ods_idx_stat(ods_idx_t idx, ods_idx_stat_t stat)
+{
+	return idx->idx_class->prv->stat(idx, stat);
+}
+
 void ods_idx_close(ods_idx_t idx, int flags)
 {
 	if (!idx)
@@ -255,16 +260,22 @@ void ods_idx_commit(ods_idx_t idx, int flags)
 
 int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_ref_t obj)
 {
+	if (!idx->o_perm)
+		return EPERM;
 	return idx->idx_class->prv->insert(idx, key, obj);
 }
 
 int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_ref_t obj)
 {
+	if (!idx->o_perm)
+		return EPERM;
 	return idx->idx_class->prv->update(idx, key, obj);
 }
 
 int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 {
+	if (!idx->o_perm)
+		return EPERM;
 	return idx->idx_class->prv->delete(idx, key, ref);
 }
 
@@ -286,6 +297,24 @@ int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 ods_iter_t ods_iter_new(ods_idx_t idx)
 {
 	return idx->idx_class->prv->iter_new(idx);
+}
+
+ods_idx_t ods_iter_idx(ods_iter_t iter)
+{
+	return iter->idx;
+}
+
+int ods_iter_flags_set(ods_iter_t i, ods_iter_flags_t flags)
+{
+	if (flags & ~ODS_ITER_F_MASK)
+		return EINVAL;
+	i->flags = flags;
+	return 0;
+}
+
+ods_iter_flags_t ods_iter_flags_get(ods_iter_t i)
+{
+	return i->flags;
 }
 
 void ods_iter_delete(ods_iter_t iter)
@@ -328,6 +357,16 @@ int ods_iter_prev(ods_iter_t iter)
 	return iter->idx->idx_class->prv->iter_prev(iter);
 }
 
+int ods_iter_pos(ods_iter_t iter, ods_pos_t pos)
+{
+	return iter->idx->idx_class->prv->iter_pos(iter, pos);
+}
+
+int ods_iter_set(ods_iter_t iter, const ods_pos_t pos)
+{
+	return iter->idx->idx_class->prv->iter_set(iter, pos);
+}
+
 ods_key_t ods_iter_key(ods_iter_t iter)
 {
 	return iter->idx->idx_class->prv->iter_key(iter);
@@ -344,18 +383,11 @@ ods_obj_t ods_iter_obj(ods_iter_t iter)
 	return ods_ref_as_obj(iter->idx->ods, ref);
 }
 
-ods_key_t _ods_key_malloc(ods_idx_t idx, size_t sz)
-{
-	ods_key_t key =
-		ods_obj_malloc(idx->ods,
-			       sz + sizeof(struct ods_key_value_s));
-	if (key)
-		*key->as.uint16 = sz;
-	return key;
-}
-
 ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz)
 {
+	if (!idx->o_perm)
+		return NULL;
+
 	ods_key_t key =
 		ods_obj_alloc(idx->ods,
 			      sz + sizeof(struct ods_key_value_s));

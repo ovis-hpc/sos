@@ -1,10 +1,5 @@
 /*
- * Copyright (c) 2013 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2013 Sandia Corporation. All rights reserved.
- * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
- * license for use of this work by or on behalf of the U.S. Government.
- * Export of this program may require a license from the United States
- * Government.
+ * Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -23,10 +18,6 @@
  *      copyright notice, this list of conditions and the following
  *      disclaimer in the documentation and/or other materials provided
  *      with the distribution.
- *
- *      Neither the name of Sandia nor the names of any contributors may
- *      be used to endorse or promote products derived from this software
- *      without specific prior written permission.
  *
  *      Neither the name of Open Grid Computing nor the names of any
  *      contributors may be used to endorse or promote products derived
@@ -48,51 +39,81 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-/* File: sos.i */
-%module sos
-%include "cpointer.i"
-%{
-#define SWIG_FILE_WITH_INIT
-#include "sos.h"
-#include "obj_idx.h"
 
-#define OBJ_FIXED_KEY_SET_DEF(T) \
-void obj_key_set_ ## T (obj_key_t key, T v) \
-{ \
-	obj_key_set(key, &v, sizeof(v)); \
-}
+/*
+ * Author: Tom Tucker tom at ogc dot us
+ */
+#include <assert.h>
+#include <inttypes.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <ods/ods_idx.h>
+#include "ods_idx_priv.h"
 
-OBJ_FIXED_KEY_SET_DEF(int32_t)
-OBJ_FIXED_KEY_SET_DEF(int64_t)
-OBJ_FIXED_KEY_SET_DEF(uint32_t)
-OBJ_FIXED_KEY_SET_DEF(uint64_t)
-OBJ_FIXED_KEY_SET_DEF(float)
-OBJ_FIXED_KEY_SET_DEF(double)
-
-void obj_key_set_string(obj_key_t key, const char *str, size_t sz)
+static const char *get_type(void)
 {
-	obj_key_set(key, (void*)str, sz);
+	return "DOUBLE";
 }
 
-%}
+static const char *get_doc(void)
+{
+	return  "ODS_KEY_DOUBLE: The key is a floating point double.\n"
+		"                The comparator returns -1,1,0 if a <,>,= b respectively.\n";
+}
 
-%include "sos.h"
-%include "obj_idx.h"
+static int double_comparator(ods_key_t a, ods_key_t b)
+{
+	ods_key_value_t av = ods_key_value(a);
+	ods_key_value_t bv = ods_key_value(b);
+	assert(av->len == 8);
+	assert(bv->len == 8);
+	double res = *(double *)av->value - *(double *)bv->value;
+	if (res < 0)
+		return -1;
+	else if (res > 0)
+		return 1;
+	return 0;
+}
 
-void obj_key_set_int32_t (obj_key_t key, int32_t v);
-void obj_key_set_int64_t (obj_key_t key, int64_t v);
-void obj_key_set_uint32_t (obj_key_t key, uint32_t v);
-void obj_key_set_uint64_t (obj_key_t key, uint64_t v);
-void obj_key_set_float (obj_key_t key, float v);
-void obj_key_set_double (obj_key_t key, double v);
-void obj_key_set_string(obj_key_t key, const char *str, size_t sz);
+static char sbuf[32];
 
-/* These typedef will make swig knows standard integers */
-typedef char int8_t;
-typedef short int16_t;
-typedef int int32_t;
-typedef long long int64_t;
-typedef unsigned char uint8_t;
-typedef unsigned short uint16_t;
-typedef unsigned int uint32_t;
-typedef unsigned long long uint64_t;
+static const char *to_str(ods_key_t key)
+{
+	ods_key_value_t kv = ods_key_value(key);
+	sprintf(sbuf, "%f", *(double *)kv->value);
+	return sbuf;
+}
+
+static int from_str(ods_key_t key, const char *str)
+{
+	ods_key_value_t kv = ods_key_value(key);
+	double v;
+	errno = 0;
+	v = strtod(str, NULL);
+	if (errno)
+		return -1;
+	memcpy(kv->value, &v, 8);
+	kv->len = 8;
+	return 0;
+}
+
+static size_t size(void)
+{
+	return sizeof(double);
+}
+
+static struct ods_idx_comparator key_comparator = {
+	get_type,
+	get_doc,
+	to_str,
+	from_str,
+	size,
+	double_comparator
+};
+
+struct ods_idx_comparator *get(void)
+{
+	return &key_comparator;
+}
+

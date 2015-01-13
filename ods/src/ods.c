@@ -89,6 +89,11 @@ static void free_ref(ods_t ods, ods_ref_t ref);
 struct ods_pg_s mem_pg_table;
 struct ods_obj_data_s mem_obj_table;
 struct ods_map_s mem_map;
+#ifdef ODS_DEBUG
+int ods_debug = 0;
+#else
+int ods_debug = 1;
+#endif
 
 static inline size_t ods_page_count(ods_map_t map, size_t sz)
 {
@@ -206,14 +211,6 @@ static int init_obj(int obj_fd)
 	return 0;
 }
 
-ods_spin_t ods_spin_get(ods_atomic_t *lock_p)
-{
-	ods_spin_t spin = calloc(1, sizeof *spin);
-	if (spin)
-		spin->lock_p = lock_p;
-	return spin;
-}
-
 int _ods_spin_lock(ods_spin_t spin, int timeout)
 {
 	time_t start = time(NULL);
@@ -232,11 +229,6 @@ int _ods_spin_lock(ods_spin_t spin, int timeout)
 void ods_spin_unlock(ods_spin_t spin)
 {
 	ods_atomic_dec(spin->lock_p);
-}
-
-void ods_spin_put(ods_spin_t spin)
-{
-	free(spin);
 }
 
 /* Must be called with the ODS lock held */
@@ -260,7 +252,7 @@ static ods_map_t map_new(ods_t ods)
 		goto err_1;
 	pg_map = mmap(NULL, sb.st_size,
 		      PROT_READ | PROT_WRITE,
-		      MAP_FILE | MAP_SHARED,
+		      MAP_FILE | MAP_SHARED, /* | MAP_POPULATE, */
 		      ods->pg_fd, 0);
 	if (pg_map == MAP_FAILED)
 		goto err_1;
@@ -275,7 +267,7 @@ static ods_map_t map_new(ods_t ods)
 
 	obj_map = mmap(0, sb.st_size,
 		       PROT_READ | PROT_WRITE,
-		       MAP_FILE | MAP_SHARED,
+		       MAP_FILE | MAP_SHARED, /* | MAP_POPULATE, */
 		       ods->obj_fd, 0);
 	if (obj_map == MAP_FAILED)
 		goto err_2;
@@ -321,23 +313,45 @@ static ods_map_t _ods_map_get(ods_t ods)
 
 static ods_map_t ods_map_get(ods_t ods)
 {
-	ods_map_t map = NULL;
+	ods_map_t map;
 	pthread_spin_lock(&ods->lock);
 	map = _ods_map_get(ods);
 	pthread_spin_unlock(&ods->lock);
 	return map;
 }
 
+void show_stackframe()
+{
+	void *trace[16];
+	char **messages = (char **)NULL;
+	int i, trace_size = 0;
+
+	trace_size = backtrace(trace, 16);
+	messages = (char **)backtrace_symbols(trace, trace_size);
+	printf("[bt] Execution path:\n");
+	for (i=0; i< trace_size; ++i)
+		printf("%s\n", messages[i]);
+}
+
 static inline void map_put(ods_map_t map)
 {
 	if (!map)
 		return;
+	if (map->refcount <= 0)
+		show_stackframe();
 	if (!ods_atomic_dec(&map->refcount)) {
-		/* DEBUG: run through the object list and ensure no
-		   object has this as a reference */
-		ods_obj_t obj;
-		LIST_FOREACH(obj, &map->ods->obj_list, entry) {
-			assert(obj->map != map);
+		if (ods_debug) {
+			/* DEBUG: run through the object list and ensure no
+			   object has this as a reference */
+			ods_obj_t obj;
+			LIST_FOREACH(obj, &map->ods->obj_list, entry) {
+				if (obj->map == map) {
+					printf("FATAL ERROR: obj %p map %p ods %p\n",
+					       obj, map, map->ods);
+					ods_info(map->ods, stdout);
+					assert(1);
+				}
+			}
 		}
 		munmap(map->pg_table, map->pg_sz);
 		munmap(map->obj_data, map->obj_sz);
@@ -345,6 +359,14 @@ static inline void map_put(ods_map_t map)
 		free(map);
 	}
 }
+
+static void ods_map_put(ods_map_t map)
+{
+	pthread_spin_lock(&map->ods->lock);
+	map_put(map);
+	pthread_spin_unlock(&map->ods->lock);
+}
+
 int dirty_print_fn(struct rbn *rbn, void *udata, int level)
 {
 	FILE *fp = udata;
@@ -378,27 +400,29 @@ void ods_info(ods_t ods, FILE *fp)
 	fprintf(fp, "\n");
 
 	fprintf(fp, "Active Objects\n");
-	fprintf(fp, "          Ref            ODS            ODS            ODS            Alloc Alloc\n");
-	fprintf(fp, "Object    Count Size     Reference      Pointer        Map            Line  Func\n");
-	fprintf(fp, "---------- ---- -------- -------------- -------------- -------------- ----- ------------\n");
+	fprintf(fp, "              Ref            ODS            ODS            ODS                           Alloc Alloc\n");
+	fprintf(fp, "Object        Count Size     Reference      Pointer        Map            Thread         Line  Func\n");
+	fprintf(fp, "-------------- ---- -------- -------------- -------------- -------------- -------------- ----- ------------\n");
 	LIST_FOREACH(obj, &ods->obj_list, entry) {
-		fprintf(fp, "%10p %4d %8zu 0x%012lx %14p %14p %5d %s\n",
-		       obj,
-		       obj->refcount,
-		       obj->size, obj->ref, obj->as.ptr, obj->map,
+		fprintf(fp, "%14p %4d %8zu 0x%012lx %14p %14p %14p %5d %s\n",
+			obj,
+			obj->refcount,
+			obj->size, obj->ref, obj->as.ptr, obj->map,
+			(void *)obj->thread,
 			obj->alloc_line, obj->alloc_func);
 	}
 	fprintf(fp, "\n");
 
 	fprintf(fp, "Free Objects\n");
-	fprintf(fp, "                    ODS            Put   Put\n");
-	fprintf(fp, "Object     Size     Reference      Line  Func\n");
-	fprintf(fp, "---------- -------- -------------- ----- ------------\n");
+	fprintf(fp, "                        ODS                           Put   Put\n");
+	fprintf(fp, "Object         Size     Reference      Thread         Line  Func\n");
+	fprintf(fp, "-------------- -------- -------------- -------------- ----- ------------\n");
 	LIST_FOREACH(obj, &ods->obj_free_list, entry) {
-		fprintf(fp, "%10p %8zu 0x%012lx %5d %s\n",
-		       obj,
-		       obj->size, obj->ref,
-		       obj->put_line, obj->put_func);
+		fprintf(fp, "%14p %8zu 0x%012lx %14p %5d %s\n",
+			obj,
+			obj->size, obj->ref,
+			(void *)obj->thread,
+			obj->put_line, obj->put_func);
 	}
 	fprintf(fp, "\n");
 	fprintf(fp, "Dirty Tree\n\n");
@@ -436,16 +460,40 @@ ods_obj_t ods_obj_get(ods_obj_t obj)
 /*
  * Release a reference to an object
  */
-void ods_obj_put(ods_obj_t obj)
+void _ods_obj_put(ods_obj_t obj)
 {
 	if (obj && !ods_atomic_dec(&obj->refcount)) {
+		if (!obj->ods) {
+			/* This is a memory object */
+			free(obj);
+			return;
+		}
 		pthread_spin_lock(&obj->ods->lock);
+		assert(obj->refcount == 0);
 		LIST_REMOVE(obj, entry);
 		LIST_INSERT_HEAD(&obj->ods->obj_free_list, obj, entry);
-		pthread_spin_unlock(&obj->ods->lock);
-
 		map_put(obj->map);
+		pthread_spin_unlock(&obj->ods->lock);
 	}
+}
+
+/*
+ * Verify that an object is valid.
+ */
+int ods_obj_valid(ods_t ods, ods_obj_t obj)
+{
+	/* Iterate through the list of active objects to see if obj is present */
+	ods_obj_t o;
+	LIST_FOREACH(o, &ods->obj_list, entry) {
+		if (o == obj)
+			return 1;
+	}
+	return 0;
+}
+
+ods_atomic_t ods_obj_count(ods_t ods)
+{
+	return ods->obj_count;
 }
 
 static ods_obj_t obj_new(ods_t ods)
@@ -455,7 +503,8 @@ static ods_obj_t obj_new(ods_t ods)
 		obj = LIST_FIRST(&ods->obj_free_list);
 		LIST_REMOVE(obj, entry);
 	} else {
-		obj = calloc(1, sizeof *obj);
+		ods_atomic_inc(&ods->obj_count);
+		obj = malloc(sizeof *obj);
 	}
 	return obj;
 }
@@ -527,32 +576,25 @@ ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref)
 	if (!ref)
 		return NULL;
 
+	pthread_spin_lock(&ods->lock);
 	obj = obj_new(ods);
 	if (!obj)
-		return NULL;
+		goto err_0;
 	obj->ods = ods;
+	ods_map_t map = _ods_map_get(ods);
+	assert(map_is_ok(map));
+	if (obj_init(obj, map, ref))
+		goto err_1;
 
-	pthread_spin_lock(&ods->lock);
-	/* If the map is present and is still current, use it */
-	if (ods->map && map_is_ok(ods->map)) {
-		if (obj_init(obj, ods->map, ref))
-			goto err_0;
-	} else {
-		map_put(ods->map);
-		ods->map = map_new(ods);
-		if (!ods->map)
-			goto err_0;
-		if (obj_init(obj, ods->map, ref))
-			goto err_0;
-	}
 	update_dirty(ods, obj->ref, ods_obj_size(obj));
-	pthread_spin_unlock(&ods->lock);
 	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
-	return obj;
- err_0:
-	LIST_REMOVE(obj, entry);
 	pthread_spin_unlock(&ods->lock);
-	free(obj);
+	return obj;
+ err_1:
+	assert(0);
+	LIST_INSERT_HEAD(&obj->ods->obj_free_list, obj, entry);
+ err_0:
+	pthread_spin_unlock(&ods->lock);
 	return NULL;
 }
 
@@ -572,6 +614,9 @@ int ods_extend(ods_t ods, size_t sz)
 	size_t n_sz;
 	size_t new_pg_off;
 	int rc;
+
+	if (!ods->o_perm)
+		return EPERM;
 
 	pthread_spin_lock(&ods->lock);
 	/*
@@ -707,7 +752,7 @@ static int dirty_cmp(void *akey, void *bkey)
 	return (*(ods_ref_t*)akey - *(ods_ref_t*)bkey);
 }
 
-ods_t ods_open(const char *path, int o_flag)
+ods_t ods_open(const char *path, ods_perm_t o_perm)
 {
 	char tmp_path[PATH_MAX];
 	va_list argp;
@@ -717,28 +762,24 @@ ods_t ods_open(const char *path, int o_flag)
 	int pg_fd = -1;
 	int rc;
 
-	if (o_flag & O_CREAT) {
-		errno = EINVAL;
-		return NULL;
-	}
-
 	ods = calloc(1, sizeof *ods);
 	if (!ods) {
 		errno = ENOMEM;
 		return NULL;
 	}
+	ods->o_perm = o_perm;
 	pthread_spin_init(&ods->lock, 0);
 
 	/* Open the obj file */
 	sprintf(tmp_path, "%s%s", path, ODS_OBJ_SUFFIX);
-	obj_fd = open(tmp_path, o_flag);
+	obj_fd = open(tmp_path, O_RDWR);
 	if (obj_fd < 0)
 		goto err;
 	ods->obj_fd = obj_fd;
 
 	/* Open the page table file */
 	sprintf(tmp_path, "%s%s", path, ODS_PGTBL_SUFFIX);
-	pg_fd = open(tmp_path, o_flag);
+	pg_fd = open(tmp_path, O_RDWR);
 	if (pg_fd < 0)
 		goto err;
 	ods->pg_fd = pg_fd;
@@ -766,6 +807,7 @@ ods_t ods_open(const char *path, int o_flag)
 		goto err;
 	ods->pg_sz = sb.st_size;
 
+	ods->obj_count = 0;
 	LIST_INIT(&ods->obj_list);
 	LIST_INIT(&ods->obj_free_list);
 	LIST_INIT(&ods->map_list);
@@ -793,30 +835,33 @@ ods_obj_t _ods_get_user_data(ods_t ods)
 {
 	/* User data starts immediately after the object data header */
 	ods_ref_t user_ref = sizeof(struct ods_obj_data_s);
-	ods_obj_t obj = obj_new(ods);
-	if (!obj)
-		return NULL;
-	obj->ods = ods;
+	ods_obj_t obj;
 
 	pthread_spin_lock(&ods->lock);
+	obj = obj_new(ods);
+	if (!obj)
+		goto err_0;
+	obj->ods = ods;
+
 	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
 	/* If the map is present and is still current, use it */
 	if (ods->map) {
 		if (obj_init(obj, ods->map, user_ref))
-			goto err_0;
+			goto err_1;
 	} else {
 		ods->map = map_new(ods);
 		if (!ods->map)
-			goto err_0;
+			goto err_1;
 		if (obj_init(obj, ods->map, user_ref))
-		    goto err_0;
+		    goto err_1;
 	}
 	pthread_spin_unlock(&ods->lock);
 	return obj;
- err_0:
+ err_1:
 	LIST_REMOVE(obj, entry);
-	pthread_spin_unlock(&ods->lock);
 	free(obj);
+ err_0:
+	pthread_spin_unlock(&ods->lock);
 	return NULL;
 }
 
@@ -928,6 +973,12 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
 	ods_map_t map;
 	ods_obj_t obj = NULL;
 	ods_ref_t ref = 0;
+
+	if (!ods->o_perm) {
+		errno = EPERM;
+		return NULL;
+	}
+
 	pthread_spin_lock(&ods->lock);
 	map = _ods_map_get(ods);
 	if (!map)
@@ -948,22 +999,18 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
 	return obj;
 }
 
-ods_obj_t _ods_obj_malloc(ods_t ods, size_t sz)
+ods_obj_t _ods_obj_malloc(size_t sz)
 {
-	ods_obj_t obj = NULL;
-	obj = calloc(1, sizeof(*obj) + sz);
+	ods_obj_t obj;
+	obj = malloc(sz + sizeof(struct ods_obj_s));
 	if (!obj)
 		return NULL;
-	obj->ods = ods;
-	obj->as.ptr = (void *)(obj + 1);
+	obj->ods = NULL;
+	obj->as.ptr = obj + 1;
 	obj->ref = 0;
 	obj->refcount = 1;
 	obj->map = NULL;
 	obj->size = sz;
-
-	pthread_spin_lock(&ods->lock);
-	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
-	pthread_spin_unlock(&ods->lock);
 	return obj;
 }
 
@@ -1089,7 +1136,9 @@ void ods_commit(ods_t ods, int flags)
 	msync(map->obj_data, map->obj_sz, mflag);
 	msync(map->pg_table, map->pg_sz, mflag);
 #endif
+	pthread_spin_lock(&ods->lock);
 	map_put(map);
+	pthread_spin_unlock(&ods->lock);
 }
 
 /*
@@ -1102,8 +1151,13 @@ void ods_close(ods_t ods, int flags)
 	ods_map_t map;
 	if (!ods)
 		return;
+
+	/* Remove the ODS from the open list */
+	pthread_spin_lock(&ods_lock);
+	LIST_REMOVE(ods, entry);
+	pthread_spin_unlock(&ods_lock);
+
 	ods_commit(ods, flags);
-	map_put(ods->map);
 	close(ods->pg_fd);
 	close(ods->obj_fd);
 	free(ods->path);
@@ -1164,6 +1218,10 @@ void ods_obj_delete(ods_obj_t obj)
 {
 	uint64_t page;
 	ods_ref_t ref;
+	if (!obj->ods->o_perm) {
+		errno = EPERM;
+		return;
+	}
 	pthread_spin_lock(&obj->ods->lock);
 	ref = ods_obj_ref(obj);
 	if (ref)
@@ -1282,6 +1340,7 @@ void ods_dump(ods_t ods, FILE *fp)
 					ods_bkt_to_size(bkt), count);
 	}
 	fprintf(fp, "==============================- ODS End =================================\n");
+	ods_map_put(map);
 }
 
 /*
@@ -1327,47 +1386,3 @@ static void __attribute__ ((constructor)) ods_lib_init(void)
 {
 	pthread_spin_init(&ods_lock, 1);
 }
-
-#ifdef ODS_MAIN
-int main(int argc, char *argv[])
-{
-	ods_t ods;
-	void **p;
-	int count = 1024;
-	int i, big, small;
-
-	p = calloc(count, sizeof(uint64_t));
-	srandom(time(NULL));
-	ods = ods_open("ods_test/ods_data", O_RDWR | O_CREAT, 0666);
-	big = small = 0;
-
-	ods_dump(ods, stdout);
-
-	for (i = 0; i < count; i++) {
-		size_t sz = random() % (3 * 4096);
-		printf("%-12s %zu\n", (sz > 2048? "big" : "small"), sz);
-		if (sz > 2048)
-			big++;
-		else
-			small++;
-		p[i] = ods_alloc(ods, sz);
-		if (!p[i]) {
-			printf("Extending object store\n");
-			ods_dump(ods, stdout);
-			ods_extend(ods, 128*1024);
-			ods_dump(ods, stdout);
-		}
-	}
-
-	ods_dump(ods, stdout);
-
-	for (i = 0; i < count; i++)
-		ods_free(ods, p[i]);
-
-	ods_close(ods);
-
-	return 0;
-}
-
-#endif
-

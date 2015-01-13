@@ -1347,6 +1347,42 @@ ods_ref_t bpt_max_ref(bpt_t t)
 	return ref;
 }
 
+#define POS_PAD 0x45544552 /* 'ITER' */
+struct bpt_pos_s {
+	uint32_t pad;
+	uint32_t ent;
+	ods_ref_t node_ref;
+};
+
+static int bpt_iter_set(ods_iter_t oi, const ods_pos_t pos_)
+{
+	struct bpt_pos_s *pos = (struct bpt_pos_s *)pos_;
+	bpt_iter_t i = (bpt_iter_t)oi;
+	bpt_t t = i->idx->priv;
+
+	if (pos->pad != POS_PAD)
+		return EINVAL;
+
+	i->ent = pos->ent;
+	i->node_ref = pos->node_ref;
+	return 0;
+}
+
+static int bpt_iter_pos(ods_iter_t oi, ods_pos_t pos_)
+{
+	bpt_iter_t i = (bpt_iter_t)oi;
+	bpt_t t = i->idx->priv;
+	struct bpt_pos_s *pos = (struct bpt_pos_s *)pos_;
+
+	if (!i->node_ref)
+		return ENOENT;
+
+	pos->pad = POS_PAD;
+	pos->ent = i->ent;
+	pos->node_ref = i->node_ref;
+	return 0;
+}
+
 static ods_iter_t bpt_iter_new(ods_idx_t idx)
 {
 	bpt_iter_t iter = calloc(1, sizeof *iter);
@@ -1582,6 +1618,8 @@ static struct ods_idx_provider bpt_provider = {
 	.iter_end = bpt_iter_end,
 	.iter_next = bpt_iter_next,
 	.iter_prev = bpt_iter_prev,
+	.iter_set = bpt_iter_set,
+	.iter_pos = bpt_iter_pos,
 	.iter_key = bpt_iter_key,
 	.iter_ref = bpt_iter_ref,
 	.print_idx = print_idx

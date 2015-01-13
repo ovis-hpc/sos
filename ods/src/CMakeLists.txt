@@ -13,6 +13,7 @@ add_library(key_SHA256 key_sha256.c)
 add_library(key_STRING key_str.c)
 add_library(key_UINT64 key_uint64.c)
 add_library(key_UINT32 key_uint32.c)
+add_library(key_DOUBLE key_double.c)
 
 target_link_libraries(ods dl pthread)
 target_link_libraries(idx_BPTREE ods)

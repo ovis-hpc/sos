@@ -19,11 +19,13 @@
 
 /*
  * TODO:
- * 1. Clean up node objects at bxt_insert exit to avoid hanging onto mappings
  */
 pthread_mutex_t client_list_lock;
 LIST_HEAD(active_clients, bxt_s) client_list;
 
+static struct bxt_obj_el *alloc_el(bxt_t t);
+ods_atomic_t el_count;
+static void free_el(bxt_t t, struct bxt_obj_el *el);
 static ods_obj_t leaf_left(bxt_t t, uint64_t node_ref);
 static ods_obj_t leaf_right(bxt_t t, uint64_t node_ref);
 static int node_neigh(bxt_t t, ods_obj_t node, ods_obj_t *left, ods_obj_t *right);
@@ -183,8 +185,15 @@ static void bxt_close_(bxt_t t)
 		node = el->obj;
 		ods_obj_delete(node);
 		ods_obj_put(node);
+		free_el(t, el);
+	}
+
+	while (!LIST_EMPTY(&t->el_q)) {
+		el = LIST_FIRST(&t->el_q);
+		LIST_REMOVE(el, entry);
 		free(el);
 	}
+
 	free(t);
 }
 
@@ -284,7 +293,8 @@ static int bxt_update(ods_idx_t idx, ods_key_t key, ods_ref_t ref)
 	return 0;
 }
 
-static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key)
+static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
+			    ods_iter_flags_t flags)
 {
 	int i;
 	bxt_t t = idx->priv;
@@ -305,13 +315,18 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key)
 	ods_obj_put(leaf);
 	return NULL;
  found:
-	ods_obj_put(leaf);
-	return rec;
+	if (flags & ODS_ITER_F_UNIQUE) {
+		ods_obj_put(rec);
+		return leaf;
+	} else {
+		ods_obj_put(leaf);
+		return rec;
+	}
 }
 
 static int bxt_find_lub(ods_idx_t idx, ods_key_t key, ods_ref_t *obj_ref)
 {
-	ods_obj_t rec = __find_lub(idx, key);
+	ods_obj_t rec = __find_lub(idx, key, 0);
 	if (!rec)
 		return ENOENT;
 	*obj_ref = REC(rec)->obj_ref;
@@ -319,7 +334,8 @@ static int bxt_find_lub(ods_idx_t idx, ods_key_t key, ods_ref_t *obj_ref)
 	return 0;
 }
 
-static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key)
+static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
+			    ods_iter_flags_t flags)
 {
 	int i;
 	bxt_t t = idx->priv;
@@ -344,13 +360,18 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key)
 	ods_obj_put(leaf);
 	return NULL;
  out:
-	ods_obj_put(leaf);
-	return rec;
+	if (flags & ODS_ITER_F_UNIQUE) {
+		ods_obj_put(rec);
+		return leaf;
+	} else {
+		ods_obj_put(leaf);
+		return rec;
+	}
 }
 
 static int bxt_find_glb(ods_idx_t idx, ods_key_t key, ods_ref_t *obj_ref)
 {
-	ods_obj_t rec = __find_glb(idx, key);
+	ods_obj_t rec = __find_glb(idx, key, 0);
 	if (!rec)
 		return ENOENT;
 	*obj_ref = REC(rec)->obj_ref;
@@ -376,9 +397,28 @@ struct bxt_context {
 	LIST_HEAD(bxt_node_list, bxt_obj_el) nodes;
 };
 
+static struct bxt_obj_el *alloc_el(bxt_t t)
+{
+	struct bxt_obj_el *el;
+	if (!LIST_EMPTY(&t->el_q)) {
+		el = LIST_FIRST(&t->el_q);
+		LIST_REMOVE(el, entry);
+	} else {
+		ods_atomic_inc(&el_count);
+		el = malloc(sizeof *el);
+	}
+
+	return el;
+}
+
+static void free_el(bxt_t t, struct bxt_obj_el *el)
+{
+	LIST_INSERT_HEAD(&t->el_q, el, entry);
+}
+
 static struct bxt_obj_el *node_alloc(bxt_t t)
 {
-	struct bxt_obj_el *el = malloc(sizeof *el);
+	struct bxt_obj_el *el = alloc_el(t);
 	size_t sz = sizeof(struct bxt_node) +
 		(t->order * sizeof(struct bxn_entry));
 	el->obj = ods_obj_alloc(t->ods, sz);
@@ -386,7 +426,7 @@ static struct bxt_obj_el *node_alloc(bxt_t t)
 		ods_extend(t->ods, ods_size(t->ods) * 2);
 		el->obj = ods_obj_alloc(t->ods, sz);
 		if (!el->obj) {
-			free(el);
+			free_el(t, el);
 			goto err;
 		}
 	}
@@ -412,7 +452,7 @@ static ods_obj_t node_new(ods_idx_t idx, bxt_t t, bxt_udata_t udata, int cache)
 	if (cache == 0 && t->node_q_depth)
 		goto alloc_from_cache;
 
-	while (!udata || t->node_q_depth < udata->depth + 2) {
+	while (!udata || (t->node_q_depth < udata->depth + 2)) {
 		el = node_alloc(t);
 		if (!el)
 			goto out;
@@ -429,7 +469,7 @@ static ods_obj_t node_new(ods_idx_t idx, bxt_t t, bxt_udata_t udata, int cache)
 		ods_atomic_dec(&t->node_q_depth);
 		node = el->obj;
 		assert(0 == NODE(node)->is_leaf);
-		free(el);
+		free_el(t, el);
 	}
  out:
 	return node;
@@ -540,6 +580,7 @@ int leaf_insert(bxt_t t, ods_obj_t leaf, ods_obj_t new_rec, int ent, int dup)
 			ods_obj_put(next_rec);
 		}
 		REC(prev_rec)->next_ref = ods_obj_ref(new_rec);
+		ods_obj_put(prev_rec);
 	} else if (entry) {
 		/*
 		 * We are being inserted in front of this entry
@@ -839,13 +880,9 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 	ods_obj_t udata = ods_get_user_data(idx->ods);
 	ods_obj_t new_rec;
 	int is_dup, ent;
-	ods_spin_t lock = ods_spin_get(&UDATA(udata)->lock);
-	if (!lock)
-		return ENOMEM;
-	if (ods_spin_lock(lock, 10)) {
-		ods_spin_put(lock);
+	ods_spin_init(lock, &UDATA(udata)->lock);
+	if (ods_spin_lock(lock, -1))
 		return EBUSY;
-	}
 
 	if (!t->root_ref) {
 		leaf = node_new(idx, t, NULL, 0);
@@ -886,7 +923,6 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 		ods_obj_put(leaf);
 		ods_obj_put(new_rec);
 		ods_spin_unlock(lock);
-		ods_spin_put(lock);
 		ods_obj_put(udata);
 		return 0;
 	}
@@ -940,18 +976,31 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 	ods_obj_put(parent);
 	ods_obj_put(new_rec);
 	ods_spin_unlock(lock);
-	ods_spin_put(lock);
 	ods_obj_put(udata);
 	return 0;
 
  err_1:
 	ods_spin_unlock(lock);
-	ods_spin_put(lock);
 	ods_obj_put(udata);
 	return ENOMEM;
 }
 
-ods_obj_t bxt_min_rec(bxt_t t)
+static ods_obj_t min_in_subtree(bxt_t t, ods_ref_t root)
+{
+	ods_obj_t n;
+	ods_obj_t rec;
+
+	/* Walk to the left most leaf and return the 0-th entry  */
+	n = ods_ref_as_obj(t->ods, root);
+	while (!NODE(n)->is_leaf) {
+		ods_ref_t ref = N_ENT(n,0).node_ref;
+		ods_obj_put(n);
+		n = ods_ref_as_obj(t->ods, ref);
+	}
+	return n;
+}
+
+static ods_obj_t bxt_min_node(bxt_t t)
 {
 	ods_obj_t n;
 	ods_obj_t rec;
@@ -959,19 +1008,25 @@ ods_obj_t bxt_min_rec(bxt_t t)
 	if (!t->root_ref)
 		return 0;
 
-	/* Walk to the left most leaf and return the 0-th entry  */
-	n = ods_ref_as_obj(t->ods, t->root_ref);
+	return min_in_subtree(t, t->root_ref);
+}
+
+static ods_obj_t max_in_subtree(bxt_t t, ods_ref_t root)
+{
+	ods_obj_t n;
+	ods_obj_t rec;
+
+	/* Walk to the right most leaf and return the (count-1)-th entry  */
+	n = ods_ref_as_obj(t->ods, root);
 	while (!NODE(n)->is_leaf) {
-		ods_ref_t ref = N_ENT(n,0).node_ref;
+		ods_ref_t ref = N_ENT(n,NODE(n)->count-1).node_ref;
 		ods_obj_put(n);
 		n = ods_ref_as_obj(t->ods, ref);
 	}
-	rec = ods_ref_as_obj(t->ods, L_ENT(n,0).head_ref);
-	ods_obj_put(n);
-	return rec;
+	return n;
 }
 
-ods_obj_t bxt_max_rec(bxt_t t)
+static ods_obj_t bxt_max_node(bxt_t t)
 {
 	ods_obj_t n;
 	ods_obj_t rec;
@@ -986,9 +1041,7 @@ ods_obj_t bxt_max_rec(bxt_t t)
 		ods_obj_put(n);
 		n = ods_ref_as_obj(t->ods, ref);
 	}
-	rec = ods_ref_as_obj(t->ods, L_ENT(n,NODE(n)->count-1).tail_ref);
-	ods_obj_put(n);
-	return rec;
+	return n;
 }
 
 static ods_obj_t entry_find(bxt_t t, ods_obj_t node,
@@ -1014,15 +1067,80 @@ static ods_obj_t entry_find(bxt_t t, ods_obj_t node,
 	return NULL;
 }
 
-static ods_obj_t leaf_right_most(bxt_t t, ods_obj_t node)
+static ods_obj_t left_sibling(bxt_t t, ods_obj_t node)
 {
-	while (!NODE(node)->is_leaf) {
-		node = ods_ref_as_obj(t->ods,
-				      N_ENT(node,NODE(node)->count-1).node_ref);
-		if (!NODE(node)->is_leaf)
-			ods_obj_put(node);
+	int idx;
+	ods_ref_t node_ref;
+	ods_obj_t pparent, parent, left;
+
+	/*
+	 * Root has no left sibling
+	 */
+	node_ref = ods_obj_ref(node);
+	if (t->root_ref == node_ref)
+		return NULL;
+
+	/*
+	 * Walk up until we reach either the root, or a subtree that
+	 * contains a left node/subtree.
+	 */
+	parent = ods_ref_as_obj(t->ods, NODE(node)->parent);
+	while (parent) {
+		idx = find_ref_idx(parent, node_ref);
+		assert(idx < NODE(parent)->count);
+		if (idx > 0)
+			break;
+		else if (t->root_ref == ods_obj_ref(parent))
+			goto not_found;
+		pparent = ods_ref_as_obj(t->ods, NODE(parent)->parent);
+		node_ref = ods_obj_ref(parent);
+		ods_obj_put(parent);
+		parent = pparent;
 	}
-	return node;
+	left = max_in_subtree(t,  N_ENT(parent,idx-1).node_ref);
+	ods_obj_put(parent);
+	return left;
+ not_found:
+	ods_obj_put(parent);
+	return NULL;
+}
+
+static ods_obj_t right_sibling(bxt_t t, ods_obj_t node)
+{
+	int idx;
+	ods_ref_t node_ref;
+	ods_obj_t pparent, parent, right;
+
+	/*
+	 * Root has no right sibling
+	 */
+	node_ref = ods_obj_ref(node);
+	if (t->root_ref == node_ref)
+		return NULL;
+
+	/*
+	 * Walk up until we reach either the root, or a subtree that
+	 * contains a right node/subtree.
+	 */
+	parent = ods_ref_as_obj(t->ods, NODE(node)->parent);
+	while (parent) {
+		idx = find_ref_idx(parent, node_ref);
+		assert(idx < NODE(parent)->count);
+		if (idx < NODE(parent)->count - 1)
+			break;
+		else if (t->root_ref == ods_obj_ref(parent))
+			goto not_found;
+		pparent = ods_ref_as_obj(t->ods, NODE(parent)->parent);
+		node_ref = ods_obj_ref(parent);
+		ods_obj_put(parent);
+		parent = pparent;
+	}
+	right = min_in_subtree(t,  N_ENT(parent,idx+1).node_ref);
+	ods_obj_put(parent);
+	return right;
+ not_found:
+	ods_obj_put(parent);
+	return NULL;
 }
 
 static int node_neigh(bxt_t t, ods_obj_t node, ods_obj_t *left, ods_obj_t *right)
@@ -1349,13 +1467,11 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	int ent;
 	ods_obj_t leaf, rec;
 	int found;
-	ods_spin_t lock = ods_spin_get(&UDATA(udata)->lock);
-	if (!lock)
-		return ENOMEM;
-	if (ods_spin_lock(lock, 10)) {
-		ods_spin_put(lock);
+	ods_spin_init(lock, &UDATA(udata)->lock);
+
+	if (ods_spin_lock(lock, -1))
 		return EBUSY;
-	}
+
 	leaf = leaf_find(t, key);
 	if (!leaf)
 		goto noent;
@@ -1383,13 +1499,11 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	UDATA(udata)->root = t->root_ref;
 	ods_obj_put(rec);
 	ods_spin_unlock(lock);
-	ods_spin_put(lock);
 	ods_obj_put(udata);
 	return 0;
  noent:
 	ods_obj_put(leaf);
 	ods_spin_unlock(lock);
-	ods_spin_put(lock);
 	ods_obj_put(udata);
 	return ENOENT;
 }
@@ -1397,7 +1511,7 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 static ods_iter_t bxt_iter_new(ods_idx_t idx)
 {
 	bxt_iter_t iter = calloc(1, sizeof *iter);
-	iter->idx = idx;
+	iter->iter.idx = idx;
 	return (struct ods_iter *)iter;
 }
 
@@ -1406,52 +1520,135 @@ static void bxt_iter_delete(ods_iter_t i)
 	free(i);
 }
 
-static int bxt_iter_begin(ods_iter_t oi)
+static int _iter_begin_unique(bxt_iter_t i)
 {
 	ods_obj_t node;
-	bxt_iter_t i = (bxt_iter_t)oi;
-	bxt_t t = i->idx->priv;
+	bxt_t t = i->iter.idx->priv;
 	if (i->rec)
 		ods_obj_put(i->rec);
-	i->rec = bxt_min_rec(t);
+	i->ent = 0;
+	i->rec = bxt_min_node(t);
+	return i->rec ? 0 : ENOENT;
+}
+
+static int _iter_begin(bxt_iter_t i)
+{
+	ods_obj_t node;
+	bxt_t t = i->iter.idx->priv;
 	if (i->rec)
-		return 0;
-	return ENOENT;
+		ods_obj_put(i->rec);
+	node = bxt_min_node(t);
+	if (node && (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))) {
+		i->rec = ods_ref_as_obj(t->ods, L_ENT(node, 0).head_ref);
+		ods_obj_put(node);
+	} else
+		  i->rec = node;
+	return i->rec ? 0 : ENOENT;
+}
+
+static int bxt_iter_begin(ods_iter_t oi)
+{
+	bxt_iter_t i = (bxt_iter_t)oi;
+	if (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))
+		return _iter_begin(i);
+	return _iter_begin_unique(i);
+}
+
+static int _iter_end_unique(bxt_iter_t i)
+{
+	bxt_t t = i->iter.idx->priv;
+	if (i->rec)
+		ods_obj_put(i->rec);
+	i->rec = bxt_max_node(t);
+	if (i->rec)
+		i->ent = NODE(i->rec)->count-1;
+	return i->rec ? 0 : ENOENT;
+}
+
+static int _iter_end(bxt_iter_t i)
+{
+	ods_obj_t node;
+	bxt_t t = i->iter.idx->priv;
+	if (i->rec)
+		ods_obj_put(i->rec);
+	node = bxt_max_node(t);
+	if (node) {
+		i->ent = NODE(node)->count-1;
+		i->rec = ods_ref_as_obj(t->ods, L_ENT(node, i->ent).tail_ref);
+		ods_obj_put(node);
+	} else
+		i->rec = NULL;
+	return i->rec ? 0 : ENOENT;
 }
 
 static int bxt_iter_end(ods_iter_t oi)
 {
 	bxt_iter_t i = (bxt_iter_t)oi;
-	bxt_t t = i->idx->priv;
-	if (i->rec)
-		ods_obj_put(i->rec);
-	i->rec = bxt_max_rec(t);
-	if (i->rec)
-		return 0;
-	return ENOENT;
+	if (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))
+		return _iter_end(i);
+	return _iter_end_unique(i);
 }
 
-static ods_key_t bxt_iter_key(ods_iter_t oi)
+static ods_key_t _iter_key_unique(bxt_iter_t i)
 {
-	bxt_iter_t i = (bxt_iter_t)oi;
-	bxt_t t = i->idx->priv;
+	bxt_t t = i->iter.idx->priv;
+	ods_obj_t rec, key;
+	if (!i->rec)
+		return NULL;
+	rec = ods_ref_as_obj(t->ods, L_ENT(i->rec, i->ent).head_ref);
+	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
+	ods_obj_put(rec);
+	return key;
+}
+
+static ods_key_t _iter_key(bxt_iter_t i)
+{
+	bxt_t t = i->iter.idx->priv;
 	if (!i->rec)
 		return NULL;
 	return ods_ref_as_obj(t->ods, REC(i->rec)->key_ref);
 }
 
-static ods_ref_t bxt_iter_ref(ods_iter_t oi)
+static ods_key_t bxt_iter_key(ods_iter_t oi)
 {
 	bxt_iter_t i = (bxt_iter_t)oi;
+	if (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))
+		return _iter_key(i);
+	return _iter_key_unique(i);
+}
+
+static ods_ref_t _iter_ref_unique(bxt_iter_t i)
+{
+	bxt_t t = i->iter.idx->priv;
+	ods_ref_t ref;
+	ods_obj_t rec;
+	if (!i->rec)
+		return 0;
+	rec = ods_ref_as_obj(t->ods, L_ENT(i->rec, i->ent).head_ref);
+	ref = REC(rec)->obj_ref;
+	ods_obj_put(rec);
+	return ref;
+}
+
+static ods_ref_t _iter_ref(bxt_iter_t i)
+{
 	if (!i->rec)
 		return 0;
 	return REC(i->rec)->obj_ref;
 }
 
+static ods_ref_t bxt_iter_ref(ods_iter_t oi)
+{
+	bxt_iter_t i = (bxt_iter_t)oi;
+	if (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))
+		return _iter_ref(i);
+	return _iter_ref_unique(i);
+}
+
 static int bxt_iter_find(ods_iter_t oi, ods_key_t key)
 {
 	bxt_iter_t iter = (bxt_iter_t)oi;
-	bxt_t t = iter->idx->priv;
+	bxt_t t = iter->iter.idx->priv;
 	ods_obj_t leaf = leaf_find(t, key);
 	int found;
 	int i;
@@ -1465,64 +1662,155 @@ static int bxt_iter_find(ods_iter_t oi, ods_key_t key)
 		ods_obj_put(leaf);
 		return ENOENT;
 	}
-	iter->rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
+	if (0 == (oi->flags & ODS_ITER_F_UNIQUE)) {
+		iter->rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
+		ods_obj_put(leaf);
+		iter->ent = i;
+	} else {
+		iter->rec = leaf;
+		iter->ent = i;
+	}
 	return 0;
 }
 
 static int bxt_iter_find_lub(ods_iter_t oi, ods_key_t key)
 {
 	bxt_iter_t iter = (bxt_iter_t)oi;
-	iter->rec = __find_lub(iter->idx, key);
-	if (iter->rec)
-		return 0;
-	return ENOENT;
+	iter->rec = __find_lub(iter->iter.idx, key, iter->iter.flags);
+	return iter->rec ? 0 : ENOENT;
 }
 
 static int bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
 {
 	bxt_iter_t iter = (bxt_iter_t)oi;
-	iter->rec = __find_glb(iter->idx, key);
-	if (iter->rec)
-		return 0;
-	return ENOENT;
+	iter->rec = __find_glb(iter->iter.idx, key, iter->iter.flags);
+	return iter->rec ? 0 : ENOENT;
+}
+
+static int _iter_next_unique(bxt_iter_t i)
+{
+	bxt_t t = i->iter.idx->priv;
+	ods_obj_t right;
+
+	if (!i->rec)
+		return ENOENT;
+
+	if (i->ent < NODE(i->rec)->count - 1)
+		i->ent++;
+	else {
+		right = right_sibling(t, i->rec);
+		ods_obj_put(i->rec);
+		i->rec = right;
+		i->ent = 0;
+	}
+	return i->rec ? 0 : ENOENT;
+}
+
+static int _iter_next(bxt_iter_t i)
+{
+	bxt_t t = i->iter.idx->priv;
+	ods_obj_t next_rec;
+
+	if (i->rec) {
+		next_rec = ods_ref_as_obj(t->ods,
+					  REC(i->rec)->next_ref);
+		ods_obj_put(i->rec);
+		i->rec = next_rec;
+	}
+	return i->rec ? 0 : ENOENT;
 }
 
 static int bxt_iter_next(ods_iter_t oi)
 {
 	bxt_iter_t i = (bxt_iter_t)oi;
-	bxt_t t = i->idx->priv;
-	ods_obj_t next_rec;
+	if (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))
+		return _iter_next(i);
+	return _iter_next_unique(i);
+}
+
+static int _iter_prev_unique(bxt_iter_t i)
+{
+	bxt_t t = i->iter.idx->priv;
+	ods_obj_t left;
 
 	if (!i->rec)
-		goto not_found;
+		return ENOENT;
 
-	next_rec = ods_ref_as_obj(t->ods, REC(i->rec)->next_ref);
-	ods_obj_put(i->rec);
-	i->rec = next_rec;
-	if (!i->rec)
-		goto not_found;
-	return 0;
- not_found:
-	return ENOENT;
+	if (i->ent > 0)
+		i->ent--;
+	else {
+		left = left_sibling(t, i->rec);
+		ods_obj_put(i->rec);
+		i->rec = left;
+		if (left)
+			i->ent = NODE(left)->count - 1;
+	}
+	return i->rec ? 0 : ENOENT;
+}
+
+static int _iter_prev(bxt_iter_t i)
+{
+	bxt_t t = i->iter.idx->priv;
+	ods_obj_t prev_rec;
+
+	if (i->rec) {
+		prev_rec = ods_ref_as_obj(t->ods, REC(i->rec)->prev_ref);
+		ods_obj_put(i->rec);
+		i->rec = prev_rec;
+	}
+	return i->rec ? 0 : ENOENT;
 }
 
 static int bxt_iter_prev(ods_iter_t oi)
 {
 	bxt_iter_t i = (bxt_iter_t)oi;
-	bxt_t t = i->idx->priv;
-	ods_obj_t prev_rec;
+	if (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))
+		return _iter_prev(i);
+	return _iter_prev_unique(i);
+}
 
-	if (!i->rec)
-		goto not_found;
+#define POS_PAD 0x54584220 /* 'BXT ' */
 
-	prev_rec = ods_ref_as_obj(t->ods, REC(i->rec)->prev_ref);
-	ods_obj_put(i->rec);
-	i->rec = prev_rec;
-	if (!i->rec)
-		goto not_found;
+struct bxt_pos_s {
+	uint32_t pad;
+	uint32_t ent;
+	ods_ref_t rec_ref;
+};
+
+static int bxt_iter_set(ods_iter_t oi, const ods_pos_t pos_)
+{
+	struct bxt_pos_s *pos = (struct bxt_pos_s *)pos_;
+	bxt_iter_t i = (bxt_iter_t)oi;
+	bxt_t t = i->iter.idx->priv;
+	ods_obj_t rec;
+
+	if (pos->pad != POS_PAD)
+		return EINVAL;
+
+	rec = ods_ref_as_obj(t->ods, pos->rec_ref);
+	if (!rec)
+		return EINVAL;
+
+	if (i->rec)
+		ods_obj_put(i->rec);
+
+	i->rec = rec;
+	i->ent = pos->ent;
 	return 0;
- not_found:
-	return ENOENT;
+}
+
+static int bxt_iter_pos(ods_iter_t oi, ods_pos_t pos_)
+{
+	bxt_iter_t i = (bxt_iter_t)oi;
+	bxt_t t = i->iter.idx->priv;
+	struct bxt_pos_s *pos = (struct bxt_pos_s *)pos_;
+
+	if (!i->rec)
+		return ENOENT;
+	pos->pad = POS_PAD;
+	pos->ent = i->ent;
+	pos->rec_ref = ods_obj_ref(i->rec);
+	return 0;
 }
 
 static const char *bxt_get_type(void)
@@ -1533,6 +1821,16 @@ static const char *bxt_get_type(void)
 static void bxt_commit(ods_idx_t idx)
 {
 	ods_commit(idx->ods, ODS_COMMIT_SYNC);
+}
+
+int bxt_stat(ods_idx_t idx, ods_idx_stat_t sb)
+{
+	bxt_t t = idx->priv;
+	ods_obj_t udata = ods_get_user_data(idx->ods);
+	sb->cardinality = UDATA(udata)->card;
+	sb->duplicates = UDATA(udata)->dups;
+	ods_obj_put(udata);
+	return 0;
 }
 
 static struct ods_idx_provider bxt_provider = {
@@ -1547,6 +1845,7 @@ static struct ods_idx_provider bxt_provider = {
 	.find = bxt_find,
 	.find_lub = bxt_find_lub,
 	.find_glb = bxt_find_glb,
+	.stat = bxt_stat,
 	.iter_new = bxt_iter_new,
 	.iter_delete = bxt_iter_delete,
 	.iter_find = bxt_iter_find,
@@ -1556,6 +1855,8 @@ static struct ods_idx_provider bxt_provider = {
 	.iter_end = bxt_iter_end,
 	.iter_next = bxt_iter_next,
 	.iter_prev = bxt_iter_prev,
+	.iter_set = bxt_iter_set,
+	.iter_pos = bxt_iter_pos,
 	.iter_key = bxt_iter_key,
 	.iter_ref = bxt_iter_ref,
 	.print_idx = print_idx,

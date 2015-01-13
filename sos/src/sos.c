@@ -52,6 +52,51 @@
 /*
  * Author: Tom Tucker tom at ogc dot us
  */
+/**
+ * \mainpage Scalable Object Store Documentation
+ *
+ * \section intro Introduction
+ *
+ * The Scalable Object Storage (SOS) Service is a high performance
+ * storage engine designed to efficiently store structured data to
+ * persistent media.
+ *
+ * \subsection coll Collection
+ *
+ * A SOS Object Store is called a Collection. A Collection is
+ * identified by a name that looks like a POSIX Filesytem path. This
+ * allows Collections to be organized into a hierarchical name
+ * space. This is a convenience and does not mean that a Container is
+ * necessarily stored in a Filesytem.
+ *
+ * \subsection schema Schema
+ *
+ * Inside a Container are Schemas, Objects, and Indices. A Schema
+ * defines the format of an Object. There can be any number of Schema
+ * in the Container such that a single Container may contain Objects
+ * of many different types. The Container has a directory of
+ * Schemas. When Objects are created, the Schema handle is specified
+ * to inform the object store of the size and format of the object and
+ * whether or not one or more of it's attributes has an Index.
+ *
+ * \subsection object Object
+ *
+ * An Object is an instance of a Schema. An Object is a collection of
+ * Attributes. An Attribute has a Name and a Type. There are built-in
+ * types for an Attribute and user-defined types. The built in types
+ * include the familiar <tt>int</tt>, <tt>long</tt>, <tt>double</tt>
+ * types as well as arrays of these types. A special Attribute type is
+ * <tt>SOS_TYPE_OBJ</tt>, which is a <tt>Reference</tt> to another Object. This
+ * allows complex data structures like linked lists to be implemented
+ * in the Container.
+ *
+ * The user-defined types are Objects. An Object's type is essentially
+ * it's Schema ID and Schema Name.
+ *
+ * An Index is a strategy for quickly finding an Object in a container
+ * based on the value of one of it's Attributes. Whether or not an
+ * Attribute has an Index is specified by the Object's Schema.
+ */
 
 #include <sys/queue.h>
 #include <sys/types.h>
@@ -81,6 +126,7 @@ static uint32_t type_sizes[] = {
 	[SOS_TYPE_FLOAT] = 4,
 	[SOS_TYPE_DOUBLE] = 8,
 	[SOS_TYPE_LONG_DOUBLE] = 16,
+	[SOS_TYPE_TIMESTAMP] = 8,
 	[SOS_TYPE_OBJ] = 16,
 	[SOS_TYPE_BYTE_ARRAY] = 8,
 	[SOS_TYPE_INT32_ARRAY] = 8,
@@ -92,6 +138,61 @@ static uint32_t type_sizes[] = {
 	[SOS_TYPE_LONG_DOUBLE_ARRAY] = 8,
 	[SOS_TYPE_OBJ_ARRAY] = 8,
 };
+
+static uint32_t element_sizes[] = {
+	[SOS_TYPE_INT32] = 4,
+	[SOS_TYPE_INT64] = 8,
+	[SOS_TYPE_UINT32] = 4,
+	[SOS_TYPE_UINT64] = 8,
+	[SOS_TYPE_FLOAT] = 4,
+	[SOS_TYPE_DOUBLE] = 8,
+	[SOS_TYPE_LONG_DOUBLE] = 16,
+	[SOS_TYPE_OBJ] = 16,
+	[SOS_TYPE_BYTE_ARRAY] = 1,
+	[SOS_TYPE_INT32_ARRAY] = 4,
+	[SOS_TYPE_INT64_ARRAY] = 8,
+	[SOS_TYPE_UINT32_ARRAY] = 4,
+	[SOS_TYPE_UINT64_ARRAY] = 8,
+	[SOS_TYPE_FLOAT_ARRAY] = 4,
+	[SOS_TYPE_DOUBLE_ARRAY] = 8,
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = 16,
+	[SOS_TYPE_OBJ_ARRAY] = 8,
+};
+
+/**
+ * \page schema_overview Schema Overview
+ *
+ * Objects in a SOS container are described by a schema. Every object
+ * in a SOS database is associated with a schema. A container may have
+ * any number of schema and therefore objects of different types can
+ * be stored in the same container. A schema consists of a unique name
+ * and a set of attribute specifications that describe the object.
+ *
+ * Schema are created with the sos_schema_new() function. After a
+ * schema is created it must be associated with one or more containers
+ * with the sos_schema_add() function. Once a schema has been added to
+ * a container, it can be used to create objects using the
+ * sos_obj_new() function.
+ *
+ * Attributes are identified by their name and by the order in which
+ * they were added to the schema. To manipulate or query a schema
+ * attribute the attribute handle is required. The attribute handle is
+ * returned by the sos_schema_attr_by_id() or sos_schema_attr_by_name()
+ * functions.
+ *
+ * - sos_schema_new()	     Create a schema
+ * - sos_schema_attr_add()   Add an attribute to a schema
+ * - sos_schema_index_add()  Add an index to an attribute
+ * - sos_schema_add()	     Add a schema to a container
+ * - sos_schema_find()	     Find the schema with the specified name
+ * - sos_schema_delete()     Remove a schema from the container
+ * - sos_schema_get()        Take a reference on a schema
+ * - sos_schema_put()        Drop a reference on a schema
+ * - sos_schema_name()	     Get the schema's name
+ * - sos_schema_attr_count() Returns the number of attributes in the schema.
+ * - sos_schema_attr_by_id() Returns the attribute by ordinal id
+ * - sos_schema_attr_by_name() Returns the attribute with the specified name
+ */
 
 static sos_attr_t _attr_by_name(sos_schema_t schema, const char *name)
 {
@@ -156,6 +257,7 @@ const char *key_types[] = {
 	[SOS_TYPE_FLOAT] = "FLOAT",
 	[SOS_TYPE_DOUBLE] = "DOUBLE",
 	[SOS_TYPE_LONG_DOUBLE] = "LONG_DOUBLE",
+	[SOS_TYPE_TIMESTAMP] = "UINT64",
 	[SOS_TYPE_OBJ] = NULL,
 	[SOS_TYPE_BYTE_ARRAY] = "STRING",
  	[SOS_TYPE_INT32_ARRAY] = NULL,
@@ -184,8 +286,7 @@ static sos_attr_t attr_new(sos_schema_t schema, sos_type_t type)
 	return attr;
 }
 
-int sos_attr_add(sos_schema_t schema, const char *name,
-		 sos_type_t type, int initial_count)
+int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type)
 {
 	sos_attr_t attr;
 	sos_attr_t prev = NULL;
@@ -211,11 +312,14 @@ int sos_attr_add(sos_schema_t schema, const char *name,
 	strcpy(attr->data->name, name);
 	attr->data->type = type;
 	attr->data->id = schema->data->attr_cnt++;
-	attr->data->initial_count = initial_count;
 	if (prev)
 		attr->data->offset = prev->data->offset + type_sizes[prev->data->type];
 	else
 		attr->data->offset = sizeof(struct sos_obj_data_s);
+
+	uint32_t a_size = sos_attr_size(attr);
+	if (a_size > schema->data->key_sz)
+		schema->data->key_sz = a_size;
 	schema->data->obj_sz = attr->data->offset + type_sizes[attr->data->type];
 
 	/* Append new attribute to tail of list */
@@ -223,7 +327,7 @@ int sos_attr_add(sos_schema_t schema, const char *name,
 	return 0;
 }
 
-int sos_index_add(sos_schema_t schema, const char *name)
+int sos_schema_index_add(sos_schema_t schema, const char *name)
 {
 	sos_attr_t attr;
 
@@ -239,18 +343,18 @@ int sos_index_add(sos_schema_t schema, const char *name)
 	return 0;
 }
 
-int sos_index_cfg_type(sos_schema_t schema, const char *name,
-		       const char *idx_type, const char *key_type, ...)
+int sos_schema_index_cfg(sos_schema_t schema, const char *name,
+			 const char *idx_type, const char *key_type, ...)
 {
 	return ENOSYS;
 }
 
-sos_attr_t sos_attr_by_name(sos_schema_t schema, const char *name)
+sos_attr_t sos_schema_attr_by_name(sos_schema_t schema, const char *name)
 {
 	return _attr_by_name(schema, name);
 }
 
-sos_attr_t sos_attr_by_id(sos_schema_t schema, int attr_id)
+sos_attr_t sos_schema_attr_by_id(sos_schema_t schema, int attr_id)
 {
 	return _attr_by_idx(schema, attr_id);
 }
@@ -270,8 +374,13 @@ const char *sos_attr_name(sos_attr_t attr)
 	return attr->data->name;
 }
 
+sos_schema_t sos_attr_schema(sos_attr_t attr)
+{
+	return attr->schema;
+}
+
 struct sos_schema_s sos_obj_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_obj_ischema.data_,
 	.data_ = {
@@ -282,7 +391,7 @@ struct sos_schema_s sos_obj_ischema = {
 	},
 };
 struct sos_schema_s sos_byte_array_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_byte_array_ischema.data_,
 	.data_ = {
@@ -293,7 +402,7 @@ struct sos_schema_s sos_byte_array_ischema = {
 	},
 };
 struct sos_schema_s sos_int32_array_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_int32_array_ischema.data_,
 	.data_ = {
@@ -304,7 +413,7 @@ struct sos_schema_s sos_int32_array_ischema = {
 	},
 };
 struct sos_schema_s sos_int64_array_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_int64_array_ischema.data_,
 	.data_ = {
@@ -315,7 +424,7 @@ struct sos_schema_s sos_int64_array_ischema = {
 	},
 };
 struct sos_schema_s sos_uint32_array_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_uint32_array_ischema.data_,
 	.data_ = {
@@ -326,7 +435,7 @@ struct sos_schema_s sos_uint32_array_ischema = {
 	},
 };
 struct sos_schema_s sos_uint64_array_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_uint64_array_ischema.data_,
 	.data_ = {
@@ -337,7 +446,7 @@ struct sos_schema_s sos_uint64_array_ischema = {
 	},
 };
 struct sos_schema_s sos_float_array_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_float_array_ischema.data_,
 	.data_ = {
@@ -348,7 +457,7 @@ struct sos_schema_s sos_float_array_ischema = {
 	},
 };
 struct sos_schema_s sos_double_array_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_double_array_ischema.data_,
 	.data_ = {
@@ -359,7 +468,7 @@ struct sos_schema_s sos_double_array_ischema = {
 	},
 };
 struct sos_schema_s sos_long_double_array_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_long_double_array_ischema.data_,
 	.data_ = {
@@ -370,7 +479,7 @@ struct sos_schema_s sos_long_double_array_ischema = {
 	},
 };
 struct sos_schema_s sos_obj_array_ischema = {
-	.sos = (void *)-1,
+	.sos = NULL,
 	.ref_count = 1,
 	.data = &sos_obj_array_ischema.data_,
 	.data_ = {
@@ -408,74 +517,137 @@ sos_schema_t get_ischema(sos_type_t type)
 	}
 }
 
-sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr)
+int sos_attr_is_ref(sos_attr_t attr)
 {
-	ods_obj_t array_obj;
+	return attr->data->type >= SOS_TYPE_OBJ;
+}
+
+int sos_attr_is_array(sos_attr_t attr)
+{
+	return attr->data->type >= SOS_TYPE_ARRAY;
+}
+
+static sos_value_t mem_value_init(sos_value_t val, sos_attr_t attr)
+{
 	size_t elem_count;
 	sos_schema_t schema;
-	sos_value_t val = calloc(1, sizeof *val);
-	if (!val)
-		return NULL;
 
+	val->attr = attr;
+	if (sos_attr_is_ref(attr)) {
+		errno = EINVAL;
+		return NULL;
+	}
+	val->data = &val->data_;
+	return val;
+}
+
+sos_value_t sos_value_new()
+{
+	return calloc(1, sizeof(struct sos_value_s));
+}
+
+void sos_value_free(sos_value_t v)
+{
+	free(v);
+}
+
+sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr)
+{
+	sos_value_t value = sos_value_new();
+	if (value)
+		value = sos_value_init(value, obj, attr);
+	return value;
+}
+
+sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
+{
+	ods_obj_t ref_obj;
+	sos_schema_t schema;
+
+	if (!obj)
+		return mem_value_init(val, attr);
+
+	val->attr = attr;
 	val->obj = sos_obj_get(obj);
 	val->data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
-
-	if (attr->data->type < SOS_TYPE_OBJ)
+	if (!sos_attr_is_ref(attr))
 		return val;
+	/* Follow the reference to the object */
+	ref_obj = ods_ref_as_obj(obj->sos->obj_ods, val->data->prim.ref_);
+	if (!ref_obj)
+		return NULL;
+	val->obj = __sos_init_obj(obj->sos, get_ischema(attr->data->type), ref_obj);
+	val->data = (sos_value_data_t)&SOS_OBJ(ref_obj)->data[0];
+	return val;
+}
 
-	elem_count = attr->data->initial_count;
-	array_obj = ods_ref_as_obj(obj->schema->sos->obj_ods,
-				   val->data->prim.uint64_);
-	schema = get_ischema(attr->data->type);
-	if (!array_obj) {
-		size_t size =
-			sizeof(struct sos_obj_data_s)
-			+ sizeof(uint32_t) /* element count */
-			+ (elem_count * schema->data->obj_sz); /* array elements */
-		array_obj = ods_obj_alloc(obj->schema->sos->obj_ods, size);
-		if (!array_obj)
-			goto err;
-		struct sos_array_s *data =
-			(struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
-		data->count = elem_count;
+size_t sos_array_count(sos_value_t val)
+{
+	return val->data->array.count;
+}
 
-		val->data->prim.uint64_ = ods_obj_ref(array_obj);
+sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count)
+{
+	ods_obj_t array_obj;
+	sos_schema_t schema;
+	if (!sos_attr_is_array(attr)) {
+		errno = EINVAL;
+		return NULL;
 	}
-	sos_obj_put(val->obj);
-	val->obj = __sos_init_obj(schema, array_obj);
+	schema = get_ischema(attr->data->type);
+	size_t size =
+		sizeof(struct sos_obj_data_s)
+		+ sizeof(uint32_t) /* element count */
+		+ (count * schema->data->obj_sz); /* array elements */
+
+	array_obj = ods_obj_alloc(obj->sos->obj_ods, size);
+	if (!array_obj)
+		goto err;
+
+	val->attr = attr;
+	val->data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
+
+	struct sos_array_s *array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
+	array->count = count;
+	val->data->prim.ref_ = ods_obj_ref(array_obj);
+	val->obj = __sos_init_obj(obj->sos, schema, array_obj);
 	if (!val->obj)
 		goto err;
 	val->data = (sos_value_data_t)&SOS_OBJ(array_obj)->data[0];
 	return val;
  err:
 	errno = ENOMEM;
-	free(val);
 	return NULL;
 }
 
 void sos_value_put(sos_value_t value)
 {
-	if (value->obj)
+	if (!value)
+		return;
+	if (value->obj) {
 		sos_obj_put(value->obj);
-	free(value);
+	} else {
+		if (value->data != &value->data_)
+			free(value->data);
+	}
 }
 
-sos_value_t sos_value_by_name(sos_schema_t schema, sos_obj_t obj,
-				    const char *name, int *attr_id)
+sos_value_t sos_value_by_name(sos_value_t value, sos_schema_t schema, sos_obj_t obj,
+			      const char *name, int *attr_id)
 {
 	int i;
-	sos_attr_t attr = sos_attr_by_name(schema, name);
+	sos_attr_t attr = sos_schema_attr_by_name(schema, name);
 	if (!attr)
 		return NULL;
-	return sos_value(obj, attr);
+	return sos_value_init(value, obj, attr);
 }
 
-sos_value_t sos_value_by_id(sos_obj_t obj, int attr_id)
+sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id)
 {
-	sos_attr_t attr = sos_attr_by_id(obj->schema, attr_id);
+	sos_attr_t attr = sos_schema_attr_by_id(obj->schema, attr_id);
 	if (!attr)
 		return NULL;
-	return sos_value(obj, attr);
+	return sos_value_init(value, obj, attr);
 }
 
 int sos_attr_index(sos_attr_t attr)
@@ -483,24 +655,74 @@ int sos_attr_index(sos_attr_t attr)
 	return attr->data->indexed;
 }
 
-size_t sos_value_size(sos_attr_t attr, sos_value_t value)
+size_t sos_attr_size(sos_attr_t attr)
 {
-	return attr->size_fn(attr, value);
+	return type_sizes[attr->data->type];
 }
 
-void *sos_value_as_key(sos_attr_t attr, sos_value_t value)
+size_t sos_value_size(sos_value_t value)
 {
-	return attr->key_value_fn(attr, value);
+	return value->attr->size_fn(value);
 }
 
-const char *sos_value_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
+void *sos_value_as_key(sos_value_t value)
 {
-	return attr->to_str_fn(attr, obj, str, len);
+	return value->attr->key_value_fn(value);
 }
 
-int sos_value_from_str(sos_obj_t obj, sos_attr_t attr, const char *str)
+const char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
 {
-	return attr->from_str_fn(attr, obj, str);
+	struct sos_value_s v_;
+	sos_value_t v = sos_value_init(&v_, obj, attr);
+	if (!v)
+		return NULL;
+	char *s = v->attr->to_str_fn(v, str, len);
+	sos_value_put(v);
+	return s;
+}
+
+const char *sos_value_to_str(sos_value_t v, char *str, size_t len)
+{
+	return v->attr->to_str_fn(v, str, len);
+}
+
+int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char **endptr)
+{
+	int rc;
+	sos_value_t v;
+	struct sos_value_s v_;
+	if (!sos_attr_is_array(attr)) {
+		v = sos_value_init(&v_, obj, attr);
+		if (v) {
+			rc = sos_value_from_str(v, str, endptr);
+			sos_value_put(v);
+		} else
+			rc = EINVAL;
+	} else if (sos_attr_type(attr) == SOS_TYPE_BYTE_ARRAY) {
+		v = sos_value_init(&v_, obj, attr);
+		size_t sz = strlen(str) + 1;
+		if (v && sos_array_count(v) < sz) {
+			/* Too short, delete and re-alloc */
+			sos_obj_delete(v->obj);
+			sos_obj_put(v->obj);
+			v = NULL;
+		}
+		if (!v) {
+			/* The array has not been allocated yet */
+			v = sos_array_new(&v_, attr, obj, sz);
+			if (!v)
+				return ENOMEM;
+			rc = sos_value_from_str(v, str, endptr);
+			sos_value_put(v);
+		}
+	} else
+		rc = EINVAL;
+	return rc;
+}
+
+int sos_value_from_str(sos_value_t v, const char *str, char **endptr)
+{
+	return v->attr->from_str_fn(v, str, endptr);
 }
 
 static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
@@ -530,7 +752,7 @@ static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
 		attr->index = ods_idx_open(make_index_path(sos->path,
 							   schema->data->name,
 							   attr->data->name),
-					   sos->o_flags);
+					   sos->o_perm);
 		if (!attr->index)
 			goto err;
 	}
@@ -651,7 +873,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 		attr->index = ods_idx_open(make_index_path(sos->path,
 							   schema->data->name,
 							   attr->data->name),
-					   sos->o_flags);
+					   sos->o_perm);
 	}
 	schema->data = schema_obj->as.ptr;
 	rc = ods_idx_insert(sos->schema_idx, schema_key,
@@ -680,6 +902,54 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	ods_obj_put(udata);
 	return rc;
 }
+
+sos_schema_t sos_schema_first(sos_t sos)
+{
+	return LIST_FIRST(&sos->schema_list);
+}
+
+sos_schema_t sos_schema_next(sos_schema_t schema)
+{
+	return LIST_NEXT(schema, entry);
+}
+
+int sos_schema_delete(sos_t sos, const char *name)
+{
+	return ENOSYS;
+}
+
+/**
+ * \page container_overview Container Overview
+ *
+ * SOS Container group Schmema, Objects, and Indices together into a
+ * single namespace. The root of the namespace is the container's
+ * name. Containers are created with the sos_container_new(). SOS
+ * implements the POSIX security model. When a Container is created,
+ * it inherits the owner and group of the process that created the
+ * container. The sos_container_new() function takes an o_mode
+ * parameter that identifies the standard POSIX umask to specify RO/RW
+ * access for owner/group/other.
+ *
+ * The sos_container_open() function opens a previously created
+ * container. The user/group of the process opening the container must
+ * have adequate permission to provide the requested R/W access. The
+ * sos_container_open() function returns a sos_t container handle that
+ * is used in subsequent SOS API.
+ *
+ * Changes to a container are opportunistically commited to stable
+ * storage. An application can initiate a commit to storage with the
+ * sos_container_commit() function.
+ *
+ * - sos_container_new() Create a new Container
+ * - sos_container_open() Open a previously created Container
+ * - sos_container_close() Close a container
+ * - sos_container_commit() Commit a Container's contents to stable storage
+ * - sos_container_delete() Destroy a Container and all of it's contents
+ * - sos_container_info() - Print Container information to a FILE pointer
+ * NB: These may be deprecated
+ * - sos_container_get() - Take a counted reference on the Container
+ * - sos_container_put() - Put a counted reference on the Container
+ */
 
 /**
  * Create a new container
@@ -751,24 +1021,57 @@ int sos_container_new(const char *path, int o_mode)
 	return rc;
 }
 
+int sos_container_delete(sos_t c)
+{
+	return ENOSYS;
+}
+
+int sos_container_commit(sos_t sos, sos_commit_t flags)
+{
+	sos_schema_t schema;
+	sos_attr_t attr;
+	int commit;
+
+	if (flags == SOS_COMMIT_SYNC)
+		commit = ODS_COMMIT_SYNC;
+	else
+		commit = ODS_COMMIT_ASYNC;
+
+	/* Commit the schema idx and ods */
+	ods_commit(sos->schema_ods, commit);
+	ods_idx_commit(sos->schema_idx, commit);
+
+	/* Commit the object ods */
+	ods_commit(sos->obj_ods, commit);
+
+	/* Commit all the attribute indices */
+	LIST_FOREACH(schema, &sos->schema_list, entry) {
+		TAILQ_FOREACH(attr, &schema->attr_list, entry) {
+			if (attr->index)
+				ods_idx_commit(attr->index, commit);
+		}
+	}
+}
+
 const char *type_names[] = {
-	"INT32",
-	"INT64",
-	"UINT32",
-	"UINT64",
-	"FLOAT",
-	"DOUBLE",
-	"LONG_DOUBLE",
-	"OBJ",
-	"BYTE_ARRAY",
-	"INT32_ARRAY",
-	"INT64_ARRAY",
-	"UINT32_ARRAY",
-	"UINT64_ARRAY",
-	"FLOAT_ARRAY",
-	"DOUBLE_ARRAY",
-	"LONG_DOUBLE_ARRAY",
-	"OBJ_ARRAY",
+	[SOS_TYPE_INT32] = "INT32",
+	[SOS_TYPE_INT64] = "INT64",
+	[SOS_TYPE_UINT32] = "UINT32",
+	[SOS_TYPE_UINT64] = "UINT64",
+	[SOS_TYPE_FLOAT] = "FLOAT",
+	[SOS_TYPE_DOUBLE] = "DOUBLE",
+	[SOS_TYPE_LONG_DOUBLE] = "LONG_DOUBLE",
+	[SOS_TYPE_TIMESTAMP] = "TIMESTAMP",
+	[SOS_TYPE_OBJ] = "OBJ",
+	[SOS_TYPE_BYTE_ARRAY] = "BYTE_ARRAY",
+	[SOS_TYPE_INT32_ARRAY] = "INT32_ARRAY",
+	[SOS_TYPE_INT64_ARRAY] = "INT64_ARRAY",
+	[SOS_TYPE_UINT32_ARRAY] = "UINT32_ARRAY",
+	[SOS_TYPE_UINT64_ARRAY] = "UINT64_ARRAY",
+	[SOS_TYPE_FLOAT_ARRAY] = "FLOAT_ARRAY",
+	[SOS_TYPE_DOUBLE_ARRAY] = "DOUBLE_ARRAY",
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = "LONG_DOUBLE_ARRAY",
+	[SOS_TYPE_OBJ_ARRAY] = "OBJ_ARRAY"
 };
 
 const char *type_name(sos_type_t t)
@@ -778,12 +1081,9 @@ const char *type_name(sos_type_t t)
 	return "corrupted!";
 }
 
-int print_schema(struct rbn *n, void *fp_, int level)
+void sos_schema_print(sos_schema_t schema, FILE *fp)
 {
-	FILE *fp = fp_;
 	sos_attr_t attr;
-
-	sos_schema_t schema = container_of(n, struct sos_schema_s, rbn);
 	fprintf(fp, "schema :\n");
 	fprintf(fp, "    name      : %s\n", schema->data->name);
 	fprintf(fp, "    schema_sz : %ld\n", schema->data->schema_sz);
@@ -792,9 +1092,24 @@ int print_schema(struct rbn *n, void *fp_, int level)
 		fprintf(fp, "    -attribute : %s\n", attr->data->name);
 		fprintf(fp, "        type          : %s\n", type_name(attr->data->type));
 		fprintf(fp, "        idx           : %d\n", attr->data->id);
-		fprintf(fp, "        initial_count : %d\n", attr->data->initial_count);
 		fprintf(fp, "        indexed       : %d\n", attr->data->indexed);
 		fprintf(fp, "        offset        : %ld\n", attr->data->offset);
+	}
+}
+
+int print_schema(struct rbn *n, void *fp_, int level)
+{
+	FILE *fp = fp_;
+	sos_attr_t attr;
+
+	sos_schema_t schema = container_of(n, struct sos_schema_s, rbn);
+	sos_schema_print(schema, fp);
+
+	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
+		if (attr->index) {
+			ods_idx_info(attr->index, fp);
+			ods_info(ods_idx_ods(attr->index), fp);
+		}
 	}
 	return 0;
 }
@@ -802,6 +1117,10 @@ int print_schema(struct rbn *n, void *fp_, int level)
 void sos_container_info(sos_t sos, FILE *fp)
 {
 	rbt_traverse(&sos->schema_rbt, print_schema, fp);
+	ods_idx_info(sos->schema_idx, fp);
+	ods_info(ods_idx_ods(sos->schema_idx), fp);
+	ods_info(sos->obj_ods, fp);
+	ods_info(sos->schema_ods, fp);
 }
 
 void free_schema(sos_schema_t schema)
@@ -824,6 +1143,20 @@ void free_schema(sos_schema_t schema)
 void free_sos(sos_t sos, sos_commit_t flags)
 {
 	struct rbn *rbn;
+	sos_obj_t obj;
+
+	assert(sos->ref_count == 0);
+
+	/* There should be no objects on the active list */
+	assert(LIST_EMPTY(&sos->obj_list));
+
+	/* Iterate through the object free list and free all the objects */
+	while (!LIST_EMPTY(&sos->obj_free_list)) {
+		obj = LIST_FIRST(&sos->obj_free_list);
+		LIST_REMOVE(obj, entry);
+		free(obj);
+	}
+
 	/* Iterate through all the schema and free each one */
 	while (NULL != (rbn = rbt_min(&sos->schema_rbt))) {
 		rbt_del(&sos->schema_rbt, rbn);
@@ -845,7 +1178,7 @@ int schema_cmp(void *a, void *b)
 	return strcmp((char *)a, (char *)b);
 }
 
-int sos_container_open(const char *path, int o_flags, sos_t *p_c)
+int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *p_c)
 {
 	char tmp_path[PATH_MAX];
 	sos_t sos;
@@ -855,25 +1188,31 @@ int sos_container_open(const char *path, int o_flags, sos_t *p_c)
 	sos = calloc(1, sizeof(*sos));
 	if (!sos)
 		return ENOMEM;
+
+	pthread_mutex_init(&sos->lock, NULL);
+	sos->ref_count = 1;
+	LIST_INIT(&sos->obj_list);
+	LIST_INIT(&sos->obj_free_list);
+
 	sos->path = strdup(path);
-	sos->o_flags = o_flags;
+	sos->o_perm = (ods_perm_t)o_perm;
 	rbt_init(&sos->schema_rbt, schema_cmp);
 
 	/* Open the ODS containing the schema objects */
 	sprintf(tmp_path, "%s/schemas", path);
-	sos->schema_ods = ods_open(tmp_path, o_flags);
+	sos->schema_ods = ods_open(tmp_path, sos->o_perm);
 	if (!sos->schema_ods)
 		goto err;
 
 	/* Open the index on the schema objects */
 	sprintf(tmp_path, "%s/schema_idx", path);
-	sos->schema_idx = ods_idx_open(tmp_path, o_flags);
+	sos->schema_idx = ods_idx_open(tmp_path, sos->o_perm);
 	if (!sos->schema_idx)
 		goto err;
 
 	/* Create the ODS to contain the objects */
 	sprintf(tmp_path, "%s/objects", path);
-	sos->obj_ods = ods_open(tmp_path, o_flags);
+	sos->obj_ods = ods_open(tmp_path, sos->o_perm);
 	if (!sos->obj_ods)
 		goto err;
 
@@ -892,31 +1231,44 @@ int sos_container_open(const char *path, int o_flags, sos_t *p_c)
 		sos_schema_t schema = init_schema(sos, schema_obj);
 		if (!schema)
 			goto err;
+		LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
 	}
 	*p_c = sos;
-	sos->ref_count = 1;
 	return 0;
  err:
-	free_sos(sos, SOS_COMMIT_ASYNC);
+	sos_container_put(sos);
 	return ENOENT;
+}
+
+int sos_container_stat(sos_t sos, struct stat *sb)
+{
+	return ods_stat(sos->obj_ods, sb);
+}
+
+int sos_container_extend(sos_t sos, size_t new_size)
+{
+	return ods_extend(sos->obj_ods, new_size);
 }
 
 void sos_container_close(sos_t sos, sos_commit_t flags)
 {
-	free_sos(sos, flags);
+	sos_container_put(sos);
 }
 
-sos_obj_t __sos_init_obj(sos_schema_t schema, ods_obj_t ods_obj)
+sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj)
 {
 	sos_obj_t sos_obj;
-	if (!schema->sos) {
-		errno = EINVAL;
-		return NULL;
-	}
-	sos_obj = calloc(1, sizeof *sos_obj);
+	pthread_mutex_lock(&sos->lock);
+	if (!LIST_EMPTY(&sos->obj_free_list)) {
+		sos_obj = LIST_FIRST(&sos->obj_free_list);
+		LIST_REMOVE(sos_obj, entry);
+	} else
+		sos_obj = malloc(sizeof *sos_obj);
+	pthread_mutex_unlock(&sos->lock);
 	if (!sos_obj)
 		return NULL;
 	SOS_OBJ(ods_obj)->schema = schema->data->id;
+	sos_obj->sos = sos_container_get(sos);
 	sos_obj->obj = ods_obj;
 	ods_atomic_inc(&schema->data->ref_count);
 	sos_obj->schema = sos_schema_get(schema);
@@ -929,17 +1281,50 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 {
 	ods_obj_t ods_obj;
 	sos_obj_t sos_obj;
+
+	if (!schema->sos)
+		return NULL;
+
+	/* NB: The lock protects multiple threads from attempting to
+	 * extend on store expansion */
+	pthread_mutex_lock(&schema->sos->lock);
 	ods_obj = ods_obj_alloc(schema->sos->obj_ods, schema->data->obj_sz);
-	if (!ods_obj)
-		goto err;
-	sos_obj = __sos_init_obj(schema, ods_obj);
+	if (!ods_obj) {
+		int rc = ods_extend(schema->sos->obj_ods, 1024 * 1024 * 1024);
+		if (rc)
+			goto err_0;
+		ods_obj = ods_obj_alloc(schema->sos->obj_ods, schema->data->obj_sz);
+		if (!ods_obj)
+			goto err_0;
+	}
+	pthread_mutex_unlock(&schema->sos->lock);
+	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj);
 	if (!sos_obj)
-		goto err;
+		goto err_1;
 	return sos_obj;
- err:
+ err_1:
 	ods_obj_delete(ods_obj);
 	ods_obj_put(ods_obj);
+ err_0:
 	return NULL;
+}
+
+void sos_obj_delete(sos_obj_t obj)
+{
+	sos_attr_t attr;
+	TAILQ_FOREACH(attr, &obj->schema->attr_list, entry) {
+		struct sos_value_s v_;
+		sos_value_t value;
+		if (!sos_attr_is_array(attr))
+			continue;
+		value = sos_value_init(&v_, obj, attr);
+		if (!value)
+			continue;
+		ods_ref_delete(obj->sos->obj_ods, value->data->prim.ref_);
+		sos_value_put(value);
+	}
+	ods_obj_delete(obj->obj);
+	obj->obj = NULL;
 }
 
 sos_t sos_container_get(sos_t sos)
@@ -963,6 +1348,9 @@ sos_schema_t sos_schema_get(sos_schema_t schema)
 
 void sos_schema_put(sos_schema_t schema)
 {
+	/* Ignore for internal schemas */
+	if (!schema->sos)
+		return;
 	if (schema && !ods_atomic_dec(&schema->ref_count)) {
 		sos_container_put(schema->sos);
 		free_schema(schema);
@@ -978,34 +1366,43 @@ sos_obj_t sos_obj_get(sos_obj_t obj)
 void sos_obj_put(sos_obj_t obj)
 {
 	if (obj && !ods_atomic_dec(&obj->ref_count)) {
-		sos_schema_put(obj->schema);
+		sos_t sos = obj->sos;
+		sos_schema_t schema = obj->schema;
 		ods_obj_put(obj->obj);
-		free(obj);
+		pthread_mutex_lock(&sos->lock);
+		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
+		pthread_mutex_unlock(&sos->lock);
+		sos_container_put(sos);
+		sos_schema_put(schema);
 	}
 }
 
-int sos_obj_index(sos_t sos, sos_obj_t obj)
+int sos_obj_remove(sos_obj_t obj)
 {
 	sos_value_t value;
 	sos_attr_t attr;
 	size_t key_sz;
-	ods_key_t key;
 	int rc;
+	ods_ref_t ref;
+	sos_key_t key;
 
 	TAILQ_FOREACH(attr, &obj->schema->attr_list, entry) {
+		sos_key_t mkey;
+		struct sos_value_s v_;
+		sos_value_t value;
 		if (!attr->data->indexed)
 			continue;
 		assert(attr->index);
-		value = sos_value(obj, attr);
-		key_sz = sos_value_size(attr, value);
-		key = ods_key_malloc(attr->index, key_sz);
+		value = sos_value_init(&v_, obj, attr);
+		key_sz = sos_value_size(value);
+		key = sos_key_new(key_sz);
 		if (!key) {
 			sos_value_put(value);
 			return ENOMEM;
 		}
-		ods_key_set(key, sos_value_as_key(attr, value), key_sz);
-		rc = ods_idx_insert(attr->index, key, ods_obj_ref(obj->obj));
-		ods_obj_put(key);
+		ods_key_set(key, sos_value_as_key(value), key_sz);
+		rc = ods_idx_delete(attr->index, key, &ref);
+		sos_key_put(key);
 		sos_value_put(value);
 		if (rc)
 			return rc;
@@ -1014,20 +1411,48 @@ int sos_obj_index(sos_t sos, sos_obj_t obj)
 	return 0;
 }
 
-int sos_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr, const char *attr_value)
+int sos_obj_index(sos_obj_t obj)
 {
-	return sos_value_from_str(sos_obj, attr, attr_value);
+	struct sos_value_s v_;
+	sos_value_t value;
+	sos_attr_t attr;
+	size_t key_sz;
+	SOS_KEY(key);
+	int rc;
+
+	TAILQ_FOREACH(attr, &obj->schema->attr_list, entry) {
+		if (!attr->data->indexed)
+			continue;
+		assert(attr->index);
+		value = sos_value_init(&v_, obj, attr);
+		key_sz = sos_value_size(value);
+		ods_key_set(key, sos_value_as_key(value), key_sz);
+		rc = ods_idx_insert(attr->index, key, ods_obj_ref(obj->obj));
+		sos_value_put(value);
+		if (rc)
+			goto err;
+	}
+	return 0;
+ err:
+	ods_obj_put(key);
+	return rc;
 }
 
-int sos_attr_by_name_from_str(sos_schema_t schema, sos_obj_t sos_obj,
-			      const char *attr_name, const char *attr_value)
+int sos_set_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr, const char *attr_value, char **endptr)
+{
+	return sos_obj_attr_from_str(sos_obj, attr, attr_value, endptr);
+}
+
+int sos_set_attr_by_name_from_str(sos_obj_t sos_obj,
+				  const char *attr_name, const char *attr_value,
+				  char **endptr)
 {
 	sos_value_t value;
 	sos_attr_t attr;
-	attr = sos_attr_by_name(schema, attr_name);
+	attr = sos_schema_attr_by_name(sos_obj->schema, attr_name);
 	if (!attr)
 		return ENOENT;
 
-	return sos_attr_from_str(sos_obj, attr, attr_value);
+	return sos_set_attr_from_str(sos_obj, attr, attr_value, endptr);
 }
 

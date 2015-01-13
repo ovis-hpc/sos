@@ -1,0 +1,36 @@
+$def with(title, header, rows, card)
+
+<style>
+table {
+    border-collapse: collapse;
+}
+
+table, th, td {
+    border: 1px solid black;
+    text-align: right;
+    padding-left: .25em;
+    padding-right: .25em;
+}
+</style>
+
+<table border="1">
+
+$if title:
+    <caption>$title</caption>
+
+$if header:
+    <tr>
+    $for head in header:
+        <th>$head</th>
+    </tr>
+
+$if rows:
+    $for row in rows:
+        <tr>
+        $for col in row:
+            <td>$col</td>
+	$if header:
+	    $if len(row) < len(header):
+	        <td colspan=$(len(header)-len(row))></td>
+        </tr>
+</table>

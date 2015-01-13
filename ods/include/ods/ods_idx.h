@@ -55,6 +55,12 @@ extern "C" {
 
 typedef struct ods_idx *ods_idx_t;
 typedef struct ods_iter *ods_iter_t;
+typedef struct ods_pos_s {
+	/* iterator position */
+	char data[16];
+} *ods_pos_t;
+
+extern int ods_debug;
 
 #define ODS_IDX_SIGNATURE	"ODSIDX00"
 #define ODS_IDX_BPTREE		"BPTREE"
@@ -120,12 +126,12 @@ int ods_idx_create(const char *path, int mode,
  * functions respectively.
  *
  * \param path	The path to the ODS store
- * \param o_mode The permission flags, see the open() system call.
+ * \param o_perm The requested read/write permissions
  * \retval !0	The ods_idx_t handle for the index
  * \retval 0	The index file could not be opened. See the
  *		errno for the reason.
  */
-ods_idx_t ods_idx_open(const char *path, int o_mode);
+ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm);
 
 /**
  * \brief Close an object index
@@ -234,12 +240,34 @@ typedef ods_obj_t ods_key_t;
 ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz);
 #define ods_key_alloc(idx, sz) ({		\
 	ods_key_t k = _ods_key_alloc(idx, sz);	\
-	if (k) {				\
+	if (ods_debug && k) {				\
 		k->alloc_line = __LINE__;	\
 		k->alloc_func = __func__;	\
 	}					\
 	k;					\
 })
+
+/**
+ * \brief Define an ODS stack key
+ *
+ * A key that is up to 256 bytes in length that is allocated on the
+ * current stack frame. If your application uses keys that are greater
+ * than this length, use the ods_key_malloc() function or redefine the
+ * SOS_STACK_KEY_SIZE macro and recompile your application.
+ *
+ * Do not use the ods_obj_put() function to release keys of this type,
+ * they will be automatically destroyed when the containing function
+ * returns.
+ *
+ * \param _name_	The variable name to use to refer to the key.
+ */
+#define ODS_STACK_KEY_SIZE 256
+#define ODS_KEY(_name_)					\
+	struct ods_key_value_s  ## _name_ {		\
+		uint16_t len;				\
+		unsigned char value[ODS_STACK_KEY_SIZE];\
+	} _name_ ## _ ## data;				\
+	ODS_OBJ(_name_, &_name_ ## _ ## data, 256);	\
 
 /**
  * \brief Create a memory key
@@ -252,15 +280,19 @@ ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz);
  * these keys comes from memory. See the ods_key_alloc() function for
  * keys that are stored in the ODS.
  *
- * \param idx	The index handle in which the key is being allocated
+ * If the size of the key is known to be less than 254 bytes, the
+ * ODS_KEY() macro is useful for defining an ODS key that is allocated
+ * on the stack and is automatically destroyed when the containing
+ * function returns.
+ *
  * \param sz	The maximum size in bytes of the key value
  * \retval !0	ods_key_t pointer to the key
  * \retval 0	Insufficient resources
  */
-ods_key_t _ods_key_malloc(ods_idx_t idx, size_t sz);
-#define ods_key_malloc(idx, sz) ({		\
-	ods_key_t k = _ods_key_malloc(idx, sz);	\
-	if (k) {				\
+#define ods_key_malloc(sz) ({			\
+	ods_key_t k = _ods_obj_malloc(sz + sizeof(struct ods_key_value_s)); \
+	if (ods_debug && k) {				\
+		*k->as.uint16 = sz;		\
 		k->alloc_line = __LINE__;	\
 		k->alloc_func = __func__;	\
 	}					\
@@ -472,6 +504,25 @@ int ods_idx_find_lub(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
  */
 int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
 
+
+typedef struct ods_idx_stat_s {
+	uint64_t cardinality;
+	uint64_t duplicates;
+} *ods_idx_stat_t;
+
+/**
+ * \brief Get index statistics
+ *
+ * Queries index statistics and returns them in the provided
+ * statistics buffer.
+ *
+ * \param idx The index handle
+ * \param sb Pointer to the idx_stat buffer
+ * \retval 0 Success
+ * \retval EINVAL the idx handle is invalid
+ */
+int ods_idx_stat(ods_idx_t idx, ods_idx_stat_t sb);
+
 /**
  * \brief Create an iterator
  *
@@ -490,6 +541,13 @@ int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
  * \retval 0 Insufficient resources
  */
 ods_iter_t ods_iter_new(ods_idx_t idx);
+
+/**
+ * \brief Return the index associated with the iterator
+ * \param iter The iterator handle
+ * \retval ods_idx_t used to create the iterator
+ */
+ods_idx_t ods_iter_idx(ods_iter_t iter);
 
 /**
  * \brief Destroy an iterator
@@ -512,11 +570,30 @@ void ods_iter_delete(ods_iter_t iter);
  *
  * \param iter	The iterator handle
  * \param key	The key for the search
- * \retval ENOENT The specified key was not found in the index
- * \retval 0	The iterator position now points to the object associated
- *		with the specified key
+ * \returns 0 Success
+ * \returns ENOENT The key was not found
  */
 int ods_iter_find(ods_iter_t iter, ods_key_t key);
+
+/**
+ * \brief Set the iterator cursor position
+ *
+ * \param iter The iterator handle
+ * \param pos  The desired iterator position
+ * \retval 0   Success
+ * \retval EINVAL The specified position is invalid
+ */
+int ods_iter_set(ods_iter_t iter, const ods_pos_t pos);
+
+/**
+ * \brief Get the current iterator position
+ *
+ * \param iter The iterator handle
+ * \param pos The ods_pos_t structure that will receive the iterator position
+ * \retval 0 Success
+ * \retval ENOENT The iterator cursor is not at a valid position.
+ */
+int ods_iter_pos(ods_iter_t iter, ods_pos_t pos);
 
 /**
  * \brief Position an iterator at the least-upper-bound of the \c key.
@@ -524,10 +601,8 @@ int ods_iter_find(ods_iter_t iter, ods_key_t key);
  * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
  * the object reference and associated key.
  *
- * \retval ENOENT if there is no least-upper-bound record.
- * \retval 0 if there the iterator successfully positioned at the
- *		least-upper-bound record.
- *
+ * \retval 0 Success
+ * \retval ENOENT There is no least-upper-bound
  */
 int ods_iter_find_lub(ods_iter_t iter, ods_key_t key);
 
@@ -537,12 +612,35 @@ int ods_iter_find_lub(ods_iter_t iter, ods_key_t key);
  * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
  * the object reference and associated key.
  *
- * \retval ENOENT if there is no greatest-lower-bound record.
- * \retval 0 if there the iterator successfully positioned at the
- *		least-upper-bound record.
- *
+ * \retval 0 Success
+ * \retval ENOENT There is no greatest-lower-bound
  */
 int ods_iter_find_glb(ods_iter_t iter, ods_key_t key);
+
+typedef enum ods_iter_flags_e {
+	ODS_ITER_F_ALL = 0,
+	/** The iterator will skip duplicate keys in the index */
+	ODS_ITER_F_UNIQUE = 1,
+	ODS_ITER_F_MASK = 1
+} ods_iter_flags_t;
+
+/**
+ * \brief Set iterator behavior flags
+ *
+ * \param i The iterator
+ * \param flags The iterator flags
+ * \retval 0 The flags were set successfully
+ * \retval EINVAL The iterator or flags were invalid
+ */
+int ods_iter_flags_set(ods_iter_t i, ods_iter_flags_t flags);
+
+/**
+ * \brief Get the iterator behavior flags
+ *
+ * \param i The iterator
+ * \retval The ods_iter_flags_t for the iterator
+ */
+ods_iter_flags_t ods_iter_flags_get(ods_iter_t i);
 
 /**
  * \brief Position the iterator cursor at the first object in the index
@@ -554,13 +652,13 @@ int ods_iter_find_glb(ods_iter_t iter, ods_key_t key);
  * the object reference and associated key.
  *
  * \param iter	The iterator handle.
- * \return ENOENT The index is empty
- * \return 0 The cursor is positioned at the first object in the index
+ * \retval 0 Success
+ * \retval ENOENT The index is empty
  */
 int ods_iter_begin(ods_iter_t iter);
 
 /**
- * \brief Position the iterator cursor at the last object in the index
+ * \brief Position the iterator at the last object in the index
  *
  * Positions the cursor at the last object in the index. Calling
  * ods_iter_next() will return ENOENT.
@@ -569,8 +667,8 @@ int ods_iter_begin(ods_iter_t iter);
  * the object reference and associated key.
  *
  * \param iter	The iterator handle.
+ * \retval 0 Success
  * \retval ENOENT The index is empty
- * \retval 0 The cursor is positioned at the last object in the index
  */
 int ods_iter_end(ods_iter_t iter);
 
@@ -581,8 +679,8 @@ int ods_iter_end(ods_iter_t iter);
  * the object reference and associated key.
  *
  * \param iter	The iterator handle
- * \return ENOENT The cursor is at the end of the index
- * \return 0	The cursor is positioned at the next object
+ * \retval 0 Success
+ * \retval ENOENT At the end of the index or the index is empty
  */
 int ods_iter_next(ods_iter_t iter);
 
@@ -593,8 +691,8 @@ int ods_iter_next(ods_iter_t iter);
  * the object reference and associated key.
  *
  * \param iter	The iterator handle
- * \return ENOENT The cursor is at the beginning of the index
- * \return 0	The cursor is positioned at the next object
+ * \retval 0 Success
+ * \retval ENOENT Already at the beginning of the index or the index is empty
  */
 int ods_iter_prev(ods_iter_t iter);
 
@@ -625,7 +723,7 @@ ods_ref_t ods_iter_ref(ods_iter_t iter);
  */
 ods_obj_t ods_iter_obj(ods_iter_t iter);
 
-/*
+/**
  * \brief Print a textual representation of the index
  *
  * Print a textual representation of the index to the specified FILE
@@ -633,7 +731,7 @@ ods_obj_t ods_iter_obj(ods_iter_t iter);
  * new index plugins.
  *
  * \param idx	The index handle
- * \param file	The file pointer
+ * \param fp	The file pointer
  */
 void ods_idx_print(ods_idx_t idx, FILE* fp);
 /*

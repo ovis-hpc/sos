@@ -61,50 +61,23 @@
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
 
-/**
- * \mainpage Scalable Object Store Documentation
- *
- * \section intro Introduction
- *
- * The Scalable Object Storage Service is a high performance storage
- * engine designed to store structured data to persistent media very
- * efficiently. The design criteria are that objects can be searched
- * for and iterated over for a set of pre-specified object
- * attributes. Iteration can be in both the forward and backward
- * direction and the object attribute key can be formatted by the user
- * or consist of the attribute value. This allows for indexes that
- * automatically bin data, for example, an index that takes a metric
- * value and stores it such that it's key consists of it's standard
- * deviation from the mean. Any number of objects can have the same
- * key.
- *
- * # SOS Storage
- *
- * - sos_open()    Create or re-open an object store.
- * - sos_close()   Close an object store and release it's in-core resources.
- * - sos_commit()  Commit all changes to the object store to persistent storage.
- *
- * # SOS Object Classes
- *
- * - sos_obj_new()	Create a new object
- * - sos_obj_add()	Add the object to the the associated indices.
- * - sos_obj_delete()	Remove an object from the object store.
- *
+/** \defgroup schema SOS Schema
+ * @{
  */
 
+/** \defgroup schema_types Schema Types
+ * @{
+ */
 typedef struct sos_container_s *sos_t;
 typedef struct sos_attr_s *sos_attr_t;
 typedef struct sos_schema_s *sos_schema_t;
 typedef struct sos_obj_s *sos_obj_t;
 
-#define SOS_ATTR_NAME_LEN	32
-#define SOS_SCHEMA_NAME_LEN	32
-
-/** \defgroup class SOS Object Classes
- * @{
- */
+#define SOS_ATTR_NAME_LEN	64
+#define SOS_SCHEMA_NAME_LEN	64
 
 typedef enum sos_type_e {
+	/** All types up to the arrays are fixed size */
 	SOS_TYPE_INT32 = 0,
 	SOS_TYPE_INT64,
 	SOS_TYPE_UINT32,
@@ -112,10 +85,12 @@ typedef enum sos_type_e {
 	SOS_TYPE_FLOAT,
 	SOS_TYPE_DOUBLE,
 	SOS_TYPE_LONG_DOUBLE,
+	SOS_TYPE_TIMESTAMP,
 	SOS_TYPE_OBJ,
+	/** Arrays are variable sized */
 	SOS_TYPE_BYTE_ARRAY,
-	SOS_TYPE_FIRST_ARRAY = SOS_TYPE_BYTE_ARRAY,
- 	SOS_TYPE_INT32_ARRAY,
+	SOS_TYPE_ARRAY = SOS_TYPE_BYTE_ARRAY,
+	SOS_TYPE_INT32_ARRAY,
 	SOS_TYPE_INT64_ARRAY,
 	SOS_TYPE_UINT32_ARRAY,
 	SOS_TYPE_UINT64_ARRAY,
@@ -127,20 +102,30 @@ typedef enum sos_type_e {
 } sos_type_t;
 
 #pragma pack(1)
+union sos_array_element_u {
+	uint8_t byte_[0];
+	uint16_t uint16_[0];
+	uint32_t uint32_[0];
+	uint64_t uint64_[0];
+	int16_t int16_[0];
+	int32_t int32_[0];
+	int64_t int64_[0];
+	float float_[0];
+	double double_[0];
+	long double long_double_[0];
+};
+
 struct sos_array_s {
 	uint32_t count;
-	union {
-		unsigned char byte_[0];
-		uint16_t uint16_[0];
-		uint32_t uint32_[0];
-		uint64_t uint64_[0];
-		int16_t int16_[0];
-		int32_t int32_[0];
-		int64_t int64_[0];
-		float float_[0];
-		double double_[0];
-		long double long_double_[0];
-	};
+	union sos_array_element_u data;
+};
+
+union sos_timestamp_u {
+	uint64_t time;
+	struct sos_timestamp_s {
+		uint32_t usecs;	/* NB: presumes LE byte order for comparison order */
+		uint32_t secs;
+	} fine;
 };
 
 union sos_primary_u {
@@ -154,6 +139,8 @@ union sos_primary_u {
 	float float_;
 	double double_;
 	long double long_double_;
+	union sos_timestamp_u timestamp_;
+	ods_ref_t ref_;
 };
 
 typedef union sos_value_data_u {
@@ -163,42 +150,47 @@ typedef union sos_value_data_u {
 
 typedef struct sos_value_s {
 	sos_obj_t obj;
+	sos_attr_t attr;
+	union sos_value_data_u data_;
 	sos_value_data_t data;
 } *sos_value_t;
 
+enum sos_cond_e {
+	SOS_COND_LT,
+	SOS_COND_LE,
+	SOS_COND_EQ,
+	SOS_COND_GE,
+	SOS_COND_GT,
+	SOS_COND_NE,
+};
+
 #pragma pack()
+/** @} */
 
-char *sos_type_to_str(enum sos_type_e type);
-
-/**
- * @}
- */
-
-/** \defgroup schema SOS Schema
+/** \defgroup schema_funcs Schema Functions
  * @{
  */
-/**
- * \brief Create/Define Object Schemas
- */
-
 /**
  * \brief Create a schema
  *
  * A schema defines a SOS object. Every object in a SOS database is
- * associated with a schema via an internal schema_id. This ID is used
- * internally to define how objects are indexed and accessed.
+ * associated with a schema via an internal schema_id.
  *
- * After a schema is created it must be associated with a
- * container. See the sos_schema_add() function to add a schema to a
+ * After a schema is created it must be associated with one or more
+ * containers. See the sos_schema_add() function to add a schema to a
  * container so that objects of that type can subsequently be created
  * in the container. Once a schema has been added, it can be looked up
- * with the sos_schema_find() command. The schema is provided to the
- * sos_obj_new() function when new objects are created.
+ * with the sos_schema_find() function.
+ *
+ * Objects are created with the sos_obj_new() function. This function
+ * takes a schema-handle as it's argument. The schema-id is saved
+ * internally with the object data. An object is therefore
+ * self-describing.
  *
  * \param name	The name of the schema. This name must be unique
  * within the container.
  * \returns	A pointer to the new schema or a NULL pointer if there
- * is an error.
+ * is an error. The errno variable is set to provide detail on the error.
  */
 sos_schema_t sos_schema_new(const char *name);
 
@@ -232,6 +224,20 @@ int sos_schema_add(sos_t sos, sos_schema_t schema);
 sos_schema_t sos_schema_find(sos_t sos, const char *name);
 
 /**
+ * \brief Print the schema to a File pointer
+ *
+ * This convenience function formats the schema definition in YAML an
+ * writes it to the specified FILE pointer. For example:
+ *
+ *     sos_schema_t schema = sos_container_find(sos, "Sample");
+ *     sos_schema_print(schema, stdout);
+ *
+ * \param schema The schema handle
+ * \param fp A FILE pointer
+ */
+void sos_schema_print(sos_schema_t schema, FILE *fp);
+
+/**
  * \brief Remove a schema from a container
  *
  * Remove the schema with the specified name from the container. If
@@ -245,7 +251,10 @@ sos_schema_t sos_schema_find(sos_t sos, const char *name);
  * specified schema
  * \retval ENOENT No schema was found with the specified name
  */
-int sos_schema_del(sos_t sos, const char *name);
+int sos_schema_delete(sos_t sos, const char *name);
+
+sos_schema_t sos_schema_first(sos_t sos);
+sos_schema_t sos_schema_next(sos_schema_t schema);
 
 /**
  * \brief Take a reference on a schema
@@ -253,20 +262,19 @@ int sos_schema_del(sos_t sos, const char *name);
  * SOS schema are reference counted. This function takes a reference
  * on a SOS schema and returns a pointer to the same. The typical
  * calling sequence is:
- * <code>
- *    sos_schema_t my_schema_ptr = sos_schema_get(schema);
- * </code>
+ *
+ *     sos_schema_t my_schema_ptr = sos_schema_get(schema);
+ *
  *
  * This allows for the schema to be safely pointed to from multiple
  * places. The sos_schema_put() function is used to drop a reference on
  * the schema. For example:
- * <code>
- *    sos_schema_put(my_schema_ptr);
- *    my_schema_ptr = NULL;
- * </code>
+ *
+ *     sos_schema_put(my_schema_ptr);
+ *     my_schema_ptr = NULL;
  *
  * \param schema	The SOS schema handle
- * \retval The schema handle
+ * \returns The schema handle
  */
 sos_schema_t sos_schema_get(sos_schema_t schema);
 
@@ -280,8 +288,24 @@ sos_schema_t sos_schema_get(sos_schema_t schema);
  */
 void sos_schema_put(sos_schema_t schema);;
 
-int sos_schema_attr_count(sos_schema_t schema);
+/**
+ * \brief Returns the schema's name
+ * \param schema The schema handle.
+ * \returns The schema's name.
+ */
 const char *sos_schema_name(sos_schema_t schema);
+
+/**
+ * \brief Return the number of attributes in the schema.
+ *
+ * This function returns the number of attributes in the schema. See
+ * the sos_schema_attr_by_id() function for an example that iterates
+ * through all attributes defined in the schema.
+ *
+ * \param schema The schema handle.
+ * \retval The number of attributes in the schema.
+ */
+int sos_schema_attr_count(sos_schema_t schema);
 
 /**
  * \brief Add an attribute to a schema
@@ -291,17 +315,14 @@ const char *sos_schema_name(sos_schema_t schema);
  *
  * \param schema	The schema
  * \param name		The attribute name
- * \param type		The attribte type
- * \param initial_len	If the attribute type is an array, this specifies the
- *			initial array size. It may be 0.
+ * \param type		The attribute type
  * \retval 0		Success
  * \retval ENOMEM	Insufficient resources
  * \retval EEXIST	An attribute with that name already exists
  * \retval EINUSE	The schema is already a member of a container
  * \retval EINVAL	A parameter was invalid
  */
-int sos_attr_add(sos_schema_t schema, const char *name,
-		 sos_type_t type, int initial_len);
+int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type);
 
 /**
  * \brief Add an index to an attribute
@@ -316,7 +337,7 @@ int sos_attr_add(sos_schema_t schema, const char *name,
  * \retval ENOENT	The specified attribute does not exist.
  * \retval EINVAL	One or more parameters was invalid.
  */
-int sos_index_add(sos_schema_t schema, const char *name);
+int sos_schema_index_add(sos_schema_t schema, const char *name);
 
 /**
  * \brief Configure the index for an attribute
@@ -346,23 +367,53 @@ int sos_index_add(sos_schema_t schema, const char *name);
  * \retval ENOENT	The specified attribute does not exist.
  * \retval EINVAL	One or more parameters was invalid.
  */
-int sos_index_cfg(sos_schema_t schema, const char *name,
-		  const char *idx_type, const char *key_type, ...);
+int sos_schema_index_cfg(sos_schema_t schema, const char *name,
+			 const char *idx_type, const char *key_type, ...);
 
+/**
+ * \brief Find an attribute by name
+ * \param schema	The schema handle
+ * \param name		The attribute's name
+ * \returns The attribute handle or NULL if the attribute was not found.
+ */
+sos_attr_t sos_schema_attr_by_name(sos_schema_t schema, const char *name);
 
+/**
+ * \brief Find an attribute by id
+ *
+ * This function is useful for iterating through all attributes in the
+ * schema as shown in the following code fragment:
+ *
+ *     for (i = 0; i < sos_schema_attr_count(schema); i++) {
+ *        sos_attr_t attr = sos_schema_attr_by_id(i);
+ *        ... code to manipulate attribute ...
+ *     }
+ *
+ * \param schema	The schema handle
+ * \param attr_id	The attribute's ordinal id
+ * \returns The attribute handle or NULL if the attribute was not found.
+ */
+sos_attr_t sos_schema_attr_by_id(sos_schema_t schema, int attr_id);
 
-
+/**
+ * \brief Return the attribute's ordinal ID.
+ *
+ * \param attr	The attribute handle.
+ * \returns The attribute id.
+ */
 int sos_attr_id(sos_attr_t attr);
 
-sos_attr_t sos_attr_by_name(sos_schema_t schema, const char *name);
-sos_attr_t sos_attr_by_id(sos_schema_t schema, int attr_id);
-
+/**
+ * \brief Return the attribute's name
+ * \returns The attribute name
+ */
 const char *sos_attr_name(sos_attr_t attr);
-sos_type_t sos_attr_type(sos_attr_t attr);
 
-int sos_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr, const char *attr_value);
-int sos_attr_by_name_from_str(sos_schema_t schema, sos_obj_t sos_obj,
-			      const char *attr_name, const char *attr_value);
+/**
+ * \brief Return the attribute's type
+ * \returns The attribute type
+ */
+sos_type_t sos_attr_type(sos_attr_t attr);
 
 /**
  * \brief Test if an attribute has an index.
@@ -373,11 +424,74 @@ int sos_attr_by_name_from_str(sos_schema_t schema, sos_obj_t sos_obj,
  */
 int sos_attr_index(sos_attr_t attr);
 
-/**
- * @}
- */
+size_t sos_attr_size(sos_attr_t attr);
 
-/** \defgroup store SOS Storage
+/**
+ * \brief Return the schema of an attribute
+ *
+ * \param attr The attribute handle
+ * \returns The schema handle
+ */
+sos_schema_t sos_attr_schema(sos_attr_t attr);
+
+/**
+ * \brief Set an object attribute's value from a string
+ *
+ * This convenience function uses the attribute's string processing
+ * functions to interpret a value specified as a character
+ * string.
+ *
+ * For example:
+ *
+ *      sos_attr_t an_int = sos_schema_attr_by_name(schema, "my_int_attr");
+ *      int rc = sos_set_attr_from_str(an_obj, an_int, "1234");
+ *      if (!rc)
+ *          printf("Success!!\n");
+ *
+ * \param sos_obj	The object handle.
+ * \param attr		The attribute handle
+ * \param attr_value	The attribute value
+ * \param endptr Receives the point in the str argumeent where parsing stopped.
+ *               This parameter may be NULL.
+ * \retval 0 Success
+ * \retval EINVAL The string format was invalid for the attribute type
+ * \retval ENOSYS There is no string formatter for this attribute type
+ */
+int sos_set_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr,
+			  const char *attr_value, char **endptr);
+
+/**
+ * \brief Set an object attribute's value from a string
+ *
+ * This convenience function set's an object's attribute value specified as a
+ * string. The attribute to set is specified by name.
+ *
+ * For example:
+ *
+ *     int rc = sos_set_attr_by_name_from_str(an_obj, "my_int_attr", "1234");
+ *     if (!rc)
+ *        printf("Success!!\n");
+ *
+ * See the sos_set_attr_from_str() function to set the value with a string if
+ * the attribute handle is known.
+ *
+ * \param sos_obj	The object handle
+ * \param attr_name	The attribute name
+ * \param attr_value	The attribute value as a string
+ * \param endptr Receives the point in the str argumeent where parsing stopped.
+ *               This parameter may be NULL.
+ * \retval 0 Success
+ * \retval EINVAL The string format was invalid for the attribute type
+ * \retval ENOSYS There is no string formatter for this attribute type
+ */
+int sos_set_attr_by_name_from_str(sos_obj_t sos_obj,
+				  const char *attr_name, const char *attr_value,
+				  char **endptr);
+
+/** @} */
+/** @} */
+
+/** \defgroup container SOS Storage Containers
  * @{
  */
 
@@ -395,27 +509,31 @@ int sos_attr_index(sos_attr_t attr);
  *
  * \param path		Pathname for the Container.
  * \param o_mode	The file mode for the Container.
- * \retval 0 		The container was successfully created.
+ * \retval 0		The container was successfully created.
  * \retval EINVAL	A parameter was invalid
  * \retval EPERM	The user has insufficient permission
  * \retval EEXIST	A container already exists at the specified path
  */
 int sos_container_new(const char *path, int o_mode);
 
+typedef enum sos_perm_e {
+	SOS_PERM_RO = 0,
+	SOS_PERM_RW,
+} sos_perm_t;
 /**
  * \brief Open a Container
  *
- * Open a SOS container. If successfull, the <tt>c<tt> parameter will
+ * Open a SOS container. If successfull, the <tt>c</tt> parameter will
  * contain a valid sos_t handle on exit.
  *
  * \param path		Pathname for the Container. See sos_container_new()
- * \param o_flags	Permission flags, see the open() system call.
+ * \param o_perm	The requested read/write permissions
  * \param pc		Pointer to a sos_t handle.
  * \retval 0		Success.
  * \retval EPERM	The user has insufficient privilege to open the container.
  * \retval ENOENT	The container does not exist
  */
-int sos_container_open(const char *path, int o_flags, sos_t *pc);
+int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *pc);
 
 /**
  * \brief Delete storage associated with a Container
@@ -426,17 +544,36 @@ int sos_container_open(const char *path, int o_flags, sos_t *pc);
  * names of the associated files. sos_destroy will also close \c sos, as the
  * files should be closed before removed.
  *
- * \param c 	The container handle
+ * \param c	The container handle
  * \retval 0	The container was deleted
  * \retval EPERM The user has insufficient privilege
  * \retval EINUSE The container is in-use by other clients
  */
-int sos_container_del(sos_t c);
+int sos_container_delete(sos_t c);
 
 typedef enum sos_commit_e {
+	/** Returns immediately, the sync to storage will be completed
+	 *  asynchronously */
 	SOS_COMMIT_ASYNC,
+	/** Does not return until the sync is complete */
 	SOS_COMMIT_SYNC
 } sos_commit_t;
+
+/**
+ * \brief Extend the size of a Container
+ *
+ * Expand the size of  Container's object store. This function cannot
+ * be used to make the container smaller. See the
+ * sos_container_truncate() function.
+ *
+ * \param sos	The container handle
+ * \param new_size The desired size of the container
+ * \retval 0 The container was successfully extended.
+ * \retval ENOSPC There is insufficient storage to extend the container
+ * \retval EINVAL The container is currently larger than the requested size
+ */
+int sos_container_extend(sos_t sos, size_t new_size);
+int sos_container_stat(sos_t sos, struct stat *sb);
 
 /**
  * \brief Close a Container
@@ -482,17 +619,15 @@ void sos_container_info(sos_t sos, FILE* fp);
  * SOS container are reference counted. This function takes a reference
  * on a SOS container and returns a pointer to the same. The typical
  * calling sequence is:
- * <code>
- *    sos_t my_sos_ptr = sos_container_get(sos);
- * </code>
+ *
+ *     sos_t my_sos_ptr = sos_container_get(sos);
  *
  * This allows for the container to be safely pointed to from multiple
  * places. The sos_container_put() function is used to drop a reference on
  * the container. For example:
- * <code>
- *    sos_container_put(my_sos_ptr);
- *    my_sos_ptr = NULL;
- * </code>
+ *
+ *     sos_container_put(my_sos_ptr);
+ *     my_sos_ptr = NULL;
  *
  * \param sos	The SOS container handle
  * \retval The container handle
@@ -510,13 +645,29 @@ sos_t sos_container_get(sos_t sos);
  */
 void sos_container_put(sos_t sos);
 
-/**
- * @}
- */
+/** @} */
 
-/**
- * \defgroup objects SOS Objects
+/** \defgroup objects SOS Objects
  * @{
+ */
+/**
+ *
+ * An object is a persistent instance of attribute values described by
+ * a schema. While a schema is a collection of attributes, an object
+ * is a collection of values. Each value in the object is described by
+ * an attribute in the schema. The attribute identifies the type of
+ * each value in the object.
+ *
+ * - sos_obj_new()	 Create a new object in the container
+ * - sos_obj_delete()    Delete an object from the container
+ * - sos_obj_get()	 Take a reference on an object
+ * - sos_obj_put()	 Drop a reference on an object
+ * - sos_obj_index()	 Add an object to it's indices
+ * - sos_obj_remove()	 Remove an object from it's indices
+ * - sos_value_by_name() Get the value handle by name
+ * - sos_value_by_id()   Get the value handle by id
+ * - sos_value_to_str()	 Get the value as a string
+ * - sos_value_from_str() Set the value from a string
  */
 
 /**
@@ -541,13 +692,21 @@ void sos_container_put(sos_t sos);
  * \returns NULL if there is an error
  */
 sos_obj_t sos_obj_new(sos_schema_t schema);
+
 /**
  * \brief Release the storage consumed by the object in the SOS object store.
  *
- * \param sos	Handle for the SOS
+ * Deletes the object and any arrays to which the object refers. It
+ * does not delete an object that is referred to by this object,
+ * i.e. SOS_TYPE_OBJ_REF attribute values.
+ *
+ * This function does not drop any references on the memory resources
+ * for this object. Object references must still be dropped with the
+ * sos_obj_put() function.
+ *
  * \param obj	Pointer to the object
  */
-void sos_obj_delete(sos_t sos, sos_obj_t obj);
+void sos_obj_delete(sos_obj_t obj);
 
 /**
  * \brief Take a reference on an object
@@ -555,17 +714,15 @@ void sos_obj_delete(sos_t sos, sos_obj_t obj);
  * SOS objects are reference counted. This function takes a reference
  * on a SOS object and returns a pointer to the object. The typical
  * calling sequence is:
- * <code>
- *    sos_obj_t my_obj_ptr = sos_obj_get(obj);
- * </code>
+ *
+ *     sos_obj_t my_obj_ptr = sos_obj_get(obj);
  *
  * This allows for the object to be safely pointed to from multiple
  * places. The sos_obj_put() function is used to drop a reference on
- * an SOS object. For example:
- * <code>
- *    sos_obj_put(my_obj_ptr);
- *    my_obj_ptr = NULL;
- * </code>
+ * a SOS object. For example:
+ *
+ *     sos_obj_put(my_obj_ptr);
+ *     my_obj_ptr = NULL;
  *
  * \param obj	The SOS object handle
  * \retval The object handle
@@ -592,88 +749,179 @@ void sos_obj_put(sos_obj_t obj);
  * function should only be called after all attributes that have
  * indexes have had their values set.
  *
- * \param sos	The container handle
- * \param obj	Handle for the object to add
+  * \param obj	Handle for the object to add
  *
  * \retval 0	Success
  * \retval -1	An error occurred. Refer to errno for detail.
  */
-int sos_obj_index(sos_t s, sos_obj_t obj);
+int sos_obj_index(sos_obj_t obj);
 
 /**
  * \brief Remove an object from the SOS
  *
  * This removes an object from all indexes of which it is a
- * member. The object itself is not destroyed. Use the 
+ * member. The object itself is not destroyed. Use the
  * sos_obj_delete() function to release the storage consumed by the
  * object itself.
  *
- * \param sos	Handle for the SOS
  * \param obj	Handle for the object to remove
  *
  * \returns 0 on success.
  * \returns Error code on error.
  */
-int sos_obj_remove(sos_t s, sos_obj_t obj);
+int sos_obj_remove(sos_obj_t obj);
 
 /**
- * @}
- */
-
-/**
- * \section value SOS Object Value Functions
- * @{
- */
-
-/**
- * \brief Get the SOS value handle by name
+ * \brief Initialize a value with an object's attribute data
  *
+ * Returns an object value handle for the specified attribute
+ * name. If the <tt>attr_id</tt> parameter is non-null, the parameter
+ * is filled in with associated attribute id.
+ *
+ * \param value Pointer to the value to be initialized
+ * \param schema The schema handle
+ * \param obj The object handle
+ * \param name The attribute name
+ * \param attr_id A pointer to the attribute id
+ * \retval Pointer to the sos_value_t handle
+ * \retval NULL if the specified attribute does not exist.
  */
-sos_value_t sos_value_by_name(sos_schema_t schema, sos_obj_t obj,
+sos_value_t sos_value_by_name(sos_value_t value, sos_schema_t schema, sos_obj_t obj,
 			      const char *name, int *attr_id);
 
-
 /**
- * \brief Get the SOS value handle by ID
+ * \brief Initialize a value with an object's attribute data
  *
  * Returns the sos_value_t for the attribute with the specified
  * id.
  *
+ * \param value Pointer to the value to be initialized
  * \param obj		The SOS object handle
  * \param attr_id	The Id for the attribute.
  * \retval Pointer to the sos_value_t handle
  * \retval NULL if the specified attribute does not exist.
  */
-sos_value_t sos_value_by_id(sos_obj_t obj, int attr_id);
+sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id);
+
+int sos_attr_is_ref(sos_attr_t attr);
+int sos_attr_is_array(sos_attr_t attr);
+size_t sos_array_count(sos_value_t val);
+sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count);
+sos_value_t sos_value_new();
+void sos_value_free(sos_value_t v);
+
+/**
+ * \brief Initialize a value with an object's attribute data
+ *
+ * \param value Pointer to the value to be initialized
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \retval The value handle
+ */
+sos_value_t sos_value_init(sos_value_t value, sos_obj_t obj, sos_attr_t attr);
 
 sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr);
 
 /**
+ * \brief Compare two value
+ *
+ * Compares <tt>a</tt> and <tt>b</tt> and returns <0 if a < b, 0 if
+ * a == b, and >0 if a > b
+ *
+ * \param a The lhs
+ * \param b The rhs
+ * \returns The result as described above
+ */
+int sos_value_cmp(sos_value_t a, sos_value_t b);
+
+/**
  * \brief Get the size of an attribute value
  *
- * \param attr	The attribute handle
  * \param value The value handle
  *
  * \returns The size of the attribute value
  */
-size_t sos_value_size(sos_attr_t attr, sos_value_t value);
-
-const char *sos_value_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len);
-int sos_value_from_str(sos_obj_t obj, sos_attr_t attr, const char *str);
+size_t sos_value_size(sos_value_t value);
 
 /**
- * @}
+ * \brief Format an object attribute as a string
+ *
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \param str Pointer to the string to receive the formatted value
+ * \param len The size of the string in bytes.
+ * \returns A pointer to the str argument or NULL if there was a
+ *          formatting error.
  */
+const char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len);
 
 /**
- * @}
+ * \brief Set the object attribute from a string
+ *
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \param str The input string value to parse
+ * \param endptr Receives the point in the str argumeent where parsing stopped.
+ *               This parameter may be NULL.
+ * \retval 0 The string was successfully parsed and the value set
+ * \retval EINVAL The string was incorrectly formatted for this value
+ *                type.
  */
+int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char **endptr);
 
 /**
- * \defgroup keys SOS Keys
+ * \brief Format a value as a string
+ *
+ * \param value The value handle
+ * \param str Pointer to the string to receive the formatted value
+ * \param len The size of the string in bytes.
+ * \returns A pointer to the str argument or NULL if there was a
+ *          formatting error.
+ */
+const char *sos_value_to_str(sos_value_t value, char *str, size_t len);
+
+/**
+ * \brief Set the value from a string
+ *
+ * \param value The value handle
+ * \param str The input string value to parse
+ * \param endptr Receives the point in the str argumeent where parsing stopped.
+ *               This parameter may be NULL.
+ * \retval 0 The string was successfully parsed and the value set
+ * \retval EINVAL The string was incorrectly formatted for this value
+ *                type.
+ */
+int sos_value_from_str(sos_value_t value, const char *str, char **endptr);
+
+/** @} */
+
+/** \defgroup keys SOS Keys
  * @{
  */
 typedef struct ods_obj_s *sos_key_t;
+
+/**
+ * \brief Define a SOS stack key
+ *
+ * A key that is up to 256 bytes in length that is allocated on the
+ * current stack frame. If your application uses keys that are greater
+ * than this length, use the sos_key_malloc() function or redefine the
+ * SOS_STACK_KEY_SIZE macro and recompile your application.
+ *
+ * Do not use the sos_obj_put() function to release keys of this type,
+ * they will be automatically destroyed when the containing function
+ * returns.
+ *
+ * \param _name_	The variable name to use to refer to the key.
+ */
+#define SOS_STACK_KEY_SIZE 256
+#define SOS_KEY(_name_)					\
+	struct sos_key_value_s  ## _name_ {		\
+		uint16_t len;				\
+		unsigned char value[SOS_STACK_KEY_SIZE];\
+	} _name_ ## _ ## data;				\
+	ODS_OBJ(_name_ ## _ ## key_s, &_name_ ## _ ## data, 256);	\
+	sos_key_t _name_ = &_name_ ## _ ## key_s;
 
 /**
  * \brief Create a memory key
@@ -682,16 +930,29 @@ typedef struct ods_obj_s *sos_key_t;
  * help with getting and setting it's value based on the key type used
  * on an index.
  *
- * A memory key is used to look up objects in a SOS attribute's
- * index. The storage for these keys comes from memory and is not
- * persistent.
+ * A memory key is used to look up objects in the ODS. The storage for
+ * these keys comes from memory. See the ods_key_alloc() function for
+ * keys that are stored in the ODS.
  *
- * \param attr	The attribute handle
+ * If the size of the key is known to be less than 254 bytes, the
+ * ODS_KEY() macro is useful for defining an ODS key that is allocated
+ * on the stack and is automatically destroyed when the containing
+ * function returns.
+ *
  * \param sz	The maximum size in bytes of the key value
- * \retval !0	sos_key_t pointer to the key
+ * \retval !0	ods_key_t pointer to the key
  * \retval 0	Insufficient resources
  */
-sos_key_t sos_key_malloc(sos_attr_t attr, size_t sz);
+#define sos_key_new(sz) ({		\
+	ods_key_t k = ods_key_malloc(sz);	\
+	if (k) {				\
+		k->alloc_line = __LINE__;	\
+		k->alloc_func = __func__;	\
+	}					\
+	k;					\
+})
+
+#define sos_key_put(key) ods_obj_put(key)
 
 /**
  * \brief Set the value of a key
@@ -711,7 +972,7 @@ size_t sos_key_set(sos_key_t key, void *value, size_t sz);
 /**
  * \brief Set the value of a key from a string
  *
- * \param idx	The index handle
+ * \param attr	The attribute handle
  * \param key	The key
  * \param str	Pointer to a string
  * \retval 0	if successful
@@ -722,7 +983,7 @@ int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
 /**
  * \brief Return a string representation of the key value
  *
- * \param idx	The index handle
+ * \param attr	The attribute handle
  * \param key	The key
  * \return A const char * representation of the key value.
  */
@@ -777,17 +1038,18 @@ size_t sos_key_len(sos_key_t key);
  */
 unsigned char *sos_key_value(sos_key_t key);
 
-void *sos_value_as_key(sos_attr_t attr, sos_value_t value);
-/**
- * @}
- */
+void *sos_value_as_key(sos_value_t value);
 
-/* @}
-/**
- * \defgroup iter SOS Iterators
+/** @} */
+
+/** \defgroup iter SOS Iterators
  * @{
  */
 typedef struct sos_iter_s *sos_iter_t;
+struct sos_pos {
+	char data[16];
+};
+typedef struct sos_pos *sos_pos_t;
 
 /**
  * \brief Create a new SOS iterator
@@ -820,22 +1082,29 @@ void sos_iter_free(sos_iter_t iter);
 const char *sos_iter_name(sos_iter_t iter);
 
 /**
+ * \brief Return the attribute handle used to create the iterator
+ *
+ * \param iter The iterator handle
+ * \returns The attribute handle
+ */
+sos_attr_t sos_iter_attr(sos_iter_t iter);
+
+/**
  * \brief Compare iterator object's key with other key.
  *
  * This function compare the key of the object pointed by the iterator with the
  * other key. This is a convenience routine and is equivalent to the
  * following code sequence:
- * <code>
- *    sos_key_t iter_key = sos_iter_key(iter);
- *    int rc = sos_key_cmp(attr, iter_key, other);
- *    sos_key_put(iter_key);
- * </code>
+ *
+ *     sos_key_t iter_key = sos_iter_key(iter);
+ *     int rc = sos_key_cmp(attr, iter_key, other);
+ *     sos_key_put(iter_key);
  *
  * \param iter	The iterator handle
  * \param other	The other key
- * \return <0	iter < other
- * \return 0	iter == other
- * \return >0	iter > other
+ * \retval <0	iter < other
+ * \retval 0	iter == other
+ * \retval >0	iter > other
  */
 int sos_iter_key_cmp(sos_iter_t iter, ods_key_t other);
 
@@ -846,8 +1115,8 @@ int sos_iter_key_cmp(sos_iter_t iter, ods_key_t other);
  * \param key   The key for the iterator. The appropriate index will
  *		be searched to find the object that matches the key.
  *
- * \returns 0 Iterator is positioned at matching object.
- * \returns ENOENT No matching object was found.
+ * \retval 0 Iterator is positioned at matching object.
+ * \retval ENOENT No matching object was found.
  */
 int sos_iter_seek(sos_iter_t iter, ods_key_t key);
 
@@ -857,10 +1126,10 @@ int sos_iter_seek(sos_iter_t iter, ods_key_t key);
  * \param i Pointer to the iterator
  * \param key The key.
  *
- * \returns 0 if the iterator is positioned at the infinum
- * \returns ENOENT if the infimum does not exist
+ * \retval 0 if the iterator is positioned at the infinum
+ * \retval ENOENT if the infimum does not exist
  */
-int sos_iter_seek_inf(sos_iter_t i, ods_key_t key);
+int sos_iter_inf(sos_iter_t i, ods_key_t key);
 
 /**
  * \brief Position the iterator at the supremum of the specified key
@@ -868,27 +1137,87 @@ int sos_iter_seek_inf(sos_iter_t i, ods_key_t key);
  * \param i Pointer to the iterator
  * \param key The key.
  *
- * \return 0 The iterator is positioned at the supremum
- * \return ENOENT No supremum exists
+ * \retval 0 The iterator is positioned at the supremum
+ * \retval ENOENT No supremum exists
  */
-int sos_iter_seek_sup(sos_iter_t i, ods_key_t key);
+int sos_iter_sup(sos_iter_t i, ods_key_t key);
+
+typedef enum sos_iter_flags_e {
+	SOS_ITER_F_ALL = ODS_ITER_F_ALL,
+	/** The iterator will skip duplicate keys in the index */
+	SOS_ITER_F_UNIQUE = ODS_ITER_F_UNIQUE,
+	SOS_ITER_F_MASK = ODS_ITER_F_MASK
+} sos_iter_flags_t;
+
+/**
+ * \brief Set iterator behavior flags
+ *
+ * \param i The iterator
+ * \param flags The iterator flags
+ * \retval 0 The flags were set successfully
+ * \retval EINVAL The iterator or flags were invalid
+ */
+int sos_iter_flags_set(sos_iter_t i, sos_iter_flags_t flags);
+
+/**
+ * \brief Get the iterator behavior flags
+ *
+ * \param i The iterator
+ * \retval The sos_iter_flags_t for the iterator
+ */
+sos_iter_flags_t sos_iter_flags_get(sos_iter_t i);
+
+/**
+ * \brief Return the number of positions in the iterator
+ * \returns The cardinality of the iterator
+ */
+uint64_t sos_iter_card(sos_iter_t i);
+
+/**
+ * \brief Return the number of duplicates in the index
+ * \returns The count of duplicates
+ */
+uint64_t sos_iter_dups(sos_iter_t i);
+
+/**
+ * \brief Returns the current iterator position
+ *
+ * \param i The iterator handle
+ * \param pos The sos_pos_t that will receive the position value.
+ * \returns The current iterator position or 0 if position is invalid
+ */
+int sos_iter_pos(sos_iter_t i, sos_pos_t pos);
+
+/**
+ * \brief Sets the current iterator position
+ *
+ * \param i The iterator handle
+ * \param pos The iterator cursor position
+ * \retval 0 Success
+ * \retval ENOENT if the specified position is invalid
+ */
+int sos_iter_set(sos_iter_t i, const sos_pos_t pos);
 
 /**
  * \brief Position the iterator at next object in the index
  *
- * \param i The iterator handle
+ * Advance the iterator position to the next entry.
  *
- * \return 0 The iterator is positioned at the next object in the index
- * \return ENOENT No more entries in the index
+ * \param iter The iterator handle
+ *
+ * \retval 0 The iterator is positioned at the next object in the index
+ * \retval ENOENT No more entries in the index
  */
-int sos_iter_next(sos_iter_t iter);
+ int sos_iter_next(sos_iter_t iter);
 
 /**
  * \brief Retrieve the next object from the iterator
  *
+ * Advance the iterator position to the previous entry.
+ *
  * \param i Iterator handle
  *
- * \returns 0  The iterator is positioned at the previous
+ * \returns 0  The iterator is positioned at the previous entry
  * \returns ENOENT If no more matching records were found.
  */
 int sos_iter_prev(sos_iter_t i);
@@ -945,9 +1274,25 @@ sos_obj_t sos_iter_obj(sos_iter_t iter);
  */
 int sos_iter_obj_remove(sos_iter_t iter);
 
-/**
- * \section mgmt SOS Data Management Services
- *
+typedef struct sos_filter_cond_s *sos_filter_cond_t;
+typedef struct sos_filter_s *sos_filter_t;
+
+sos_filter_t sos_filter_new(sos_iter_t iter);
+void sos_filter_free(sos_filter_t f);
+int sos_filter_cond_add(sos_filter_t f, sos_attr_t attr, enum sos_cond_e cond_e, sos_value_t value);
+sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt);
+sos_obj_t sos_filter_begin(sos_filter_t filt);
+sos_obj_t sos_filter_next(sos_filter_t filt);
+sos_obj_t sos_filter_prev(sos_filter_t filt);
+sos_obj_t sos_filter_end(sos_filter_t filt);
+int sos_filter_pos(sos_filter_t filt, sos_pos_t pos);
+int sos_filter_set(sos_filter_t filt, const sos_pos_t pos);
+sos_obj_t sos_filter_obj(sos_filter_t filt);
+int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags);
+
+/** @} */
+
+/** \defgroup mgmt SOS Data Management Services
  * @{
  */
 
@@ -1010,7 +1355,6 @@ int sos_chown(sos_t sos, uid_t owner, gid_t group);
  */
 sos_t sos_rotate(sos_t sos, int N);
 
-
 /**
  * \brief Similar to sos_roate(), but keep indices.
  *
@@ -1059,8 +1403,6 @@ int sos_post_rotation(sos_t sos, const char *env_var);
  */
 sos_t sos_reinit(sos_t sos, uint64_t sz);
 
-/**
- * @}
- */
+/** @} */
 
 #endif

@@ -106,7 +106,7 @@ void rebuild_tree(ods_idx_t idx)
 		size_t key_sz = ods_idx_key_size(idx);
 		if (key_sz == -1)
 			key_sz = strlen(s);
-		key = ods_key_malloc(idx, key_sz);
+		key = ods_key_malloc(key_sz);
 		ods_key_from_str(idx, key, nlstrip(s));
 		int rc = ods_idx_insert(idx, key, inode);
 		assert(rc == 0);
@@ -175,7 +175,7 @@ int main(int argc, char *argv[])
 	}
 
  skip_create:
-	idx = ods_idx_open(idx_path, O_RDWR);
+	idx = ods_idx_open(idx_path, ODS_PERM_RW);
 	rebuild_tree(idx);
 	if (load_exit) {
 		ods_idx_close(idx, ODS_COMMIT_SYNC);
@@ -270,7 +270,7 @@ int main(int argc, char *argv[])
 		size_t key_sz = ods_idx_key_size(idx);
 		if (key_sz == -1)
 			key_sz = strlen(keys[rc]);
-		key = ods_key_malloc(idx, key_sz);
+		key = ods_key_malloc(key_sz);
 		ods_key_from_str(idx, key, keys[rc]);
 		inode = strtoul(keys[rc], NULL, 0);
 		ods_idx_insert(idx, key, inode);
@@ -288,7 +288,7 @@ int main(int argc, char *argv[])
 		size_t key_sz = ods_idx_key_size(idx);
 		if (key_sz == -1)
 			key_sz = strlen(keys[rc]);
-		key = ods_key_malloc(idx, key_sz);
+		key = ods_key_malloc(key_sz);
 		ods_key_from_str(idx, key, ks);
 		rrc = ods_idx_find_glb(idx, key, &glb);
 		if (!rrc)

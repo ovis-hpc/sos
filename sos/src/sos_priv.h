@@ -80,7 +80,7 @@ typedef enum sos_internal_schema_e {
 } sos_ischema_t;
 
 #define SOS_LATEST_VERSION 0x02000000
-#define SOS_SCHEMA_SIGNATURE 'SOSSCHMA'
+#define SOS_SCHEMA_SIGNATURE 0x534f535348434D41 // 'SOSSCHMA'
 typedef struct sos_udata_s {
 	uint64_t signature;
 	uint32_t version;
@@ -89,7 +89,6 @@ typedef struct sos_udata_s {
 	ods_ref_t dict[0];
 } *sos_udata_t;
 #define SOS_UDATA(_o_) ODS_PTR(sos_udata_t, _o_)
-
 
 /*
  * An object is counted array of bytes. Everything in the ODS store is an object.
@@ -100,15 +99,15 @@ typedef struct sos_udata_s {
  */
 typedef struct sos_obj_data_s {
 	uint64_t schema;	/* An index into the container's schema dictionary */
-	// uint64_t size:56;	/* Size of the object in bytes, not including this header */
 	uint8_t data[0];
 } *sos_obj_data_t;
 
 struct sos_obj_s {
 	ods_atomic_t ref_count;
+	sos_t sos;
 	sos_schema_t schema;
 	ods_obj_t obj;
-	// sos_obj_data_t data;
+	LIST_ENTRY(sos_obj_s) entry;
 };
 
 #define SOS_OBJ(_o_) ODS_PTR(sos_obj_data_t, _o_)
@@ -123,21 +122,19 @@ typedef struct sos_obj_ref_s {
 #define SOS_OBJ_BE	1
 #define SOS_OBJ_LE	2
 
-#define SOS_ATTR_NAME	32
 typedef struct sos_attr_data_s {
 	char name[SOS_ATTR_NAME_LEN];
 	uint32_t type:8;
 	uint32_t id:8;
 	uint32_t pad:15;
-	uint32_t initial_count;
 	uint32_t indexed:1;
 	uint64_t offset;
 } *sos_attr_data_t;
 
-typedef size_t (*sos_attr_size_fn_t)(struct sos_attr_s *, sos_value_t);
-typedef char *(*sos_attr_to_str_fn_t)(struct sos_attr_s *, sos_obj_t, char *, size_t);
-typedef int (*sos_attr_from_str_fn_t)(struct sos_attr_s *, sos_obj_t, const char *);
-typedef void *(*sos_attr_key_value_fn_t)(struct sos_attr_s *, sos_value_t);
+typedef size_t (*sos_value_size_fn_t)(sos_value_t);
+typedef char *(*sos_value_to_str_fn_t)(sos_value_t, char *, size_t);
+typedef int (*sos_value_from_str_fn_t)(sos_value_t, const char *, char **);
+typedef void *(*sos_value_key_value_fn_t)(sos_value_t);
 
 typedef struct sos_attr_s {
 	sos_attr_data_t data;
@@ -147,20 +144,20 @@ typedef struct sos_attr_s {
 	ods_idx_t index;
 	const char *idx_type;
 	const char *key_type;
-	sos_attr_size_fn_t size_fn;
-	sos_attr_from_str_fn_t from_str_fn;
-	sos_attr_to_str_fn_t to_str_fn;
-	sos_attr_key_value_fn_t key_value_fn;
+	sos_value_size_fn_t size_fn;
+	sos_value_from_str_fn_t from_str_fn;
+	sos_value_to_str_fn_t to_str_fn;
+	sos_value_key_value_fn_t key_value_fn;
 
 	TAILQ_ENTRY(sos_attr_s) entry;
 } *sos_attr_t;
 
-#define SOS_SCHEMA_NAME_LEN	32
 typedef struct sos_schema_data_s {
 	char name[SOS_SCHEMA_NAME_LEN];
 	ods_atomic_t ref_count;
 	uint32_t id;		/* Index into the schema dictionary */
 	uint32_t attr_cnt;	/* Count of attributes in object class */
+	uint32_t key_sz;	/* Size of largest indexed attribute */
 	uint64_t obj_sz;	/* Size of object */
 	uint64_t schema_sz;	/* Size of schema */
 	ods_ref_t ods_path;	/* Path to the ODS containing objects of this type */
@@ -175,6 +172,7 @@ struct sos_schema_s {
 	sos_t sos;
 	ods_obj_t schema_obj;
 	struct rbn rbn;
+	LIST_ENTRY(sos_schema_s) entry;
 	TAILQ_HEAD(sos_attr_list, sos_attr_s) attr_list;
 };
 #define SOS_SCHEMA(_o_) ODS_PTR(sos_schema_data_t, _o_)
@@ -183,11 +181,13 @@ struct sos_schema_s {
  * The container
  */
 struct sos_container_s {
+	pthread_mutex_t lock;
 	ods_atomic_t ref_count;
+
 	/* "Path" to the file. This is used as a prefix for all the
 	 *  real file paths */
 	char *path;
-	int o_flags;
+	ods_perm_t o_perm;
 
 	/*
 	 * The schema dictionary and index
@@ -200,6 +200,25 @@ struct sos_container_s {
 	 * The object repository
 	 */
 	ods_t obj_ods;
+
+	LIST_HEAD(obj_list_head, sos_obj_s) obj_list;
+	LIST_HEAD(obj_free_list_head, sos_obj_s) obj_free_list;
+	LIST_HEAD(schema_list, sos_schema_s) schema_list;
+};
+
+typedef int (*sos_filter_fn_t)(sos_value_t a, sos_value_t b);
+struct sos_filter_cond_s {
+	sos_attr_t attr;
+	sos_value_t value;
+	sos_iter_t iter;
+	sos_filter_fn_t cmp_fn;
+	enum sos_cond_e cond;
+	TAILQ_ENTRY(sos_filter_cond_s) entry;
+};
+
+struct sos_filter_s {
+	sos_iter_t iter;
+	TAILQ_HEAD(sos_cond_list, sos_filter_cond_s) cond_list;
 };
 
 /**
@@ -226,10 +245,10 @@ struct sos_iter_s {
 /**
  * Internal routines
  */
-sos_obj_t __sos_init_obj(sos_schema_t schema, ods_obj_t ods_obj);
-sos_attr_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type);
-sos_attr_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type);
-sos_attr_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type);
-sos_attr_key_value_fn_t __sos_attr_key_value_fn_for_type(sos_type_t type);
+sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj);
+sos_value_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type);
+sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type);
+sos_value_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type);
+sos_value_key_value_fn_t __sos_attr_key_value_fn_for_type(sos_type_t type);
 
 #endif

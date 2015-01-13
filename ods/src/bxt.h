@@ -82,15 +82,17 @@ typedef struct bxt_s {
 	 * The node_q keeps a Q of nodes for allocation.
 	 */
 	ods_atomic_t node_q_depth;
-	LIST_HEAD(node_q_head, bxt_obj_el) node_q;
+	LIST_HEAD(node_node_q_head, bxt_obj_el) node_q;
+	LIST_HEAD(node_el_q_head, bxt_obj_el) el_q;
 
 	/* Link for the active client list */
 	LIST_ENTRY(bxt_s) entry;
 } *bxt_t;
 
 typedef struct bxt_iter {
-	ods_idx_t idx;
+	struct ods_iter iter;
 	ods_obj_t rec;
+	int ent;
 } *bxt_iter_t;
 
 #define BXT_SIGNATURE "BXTREE01"

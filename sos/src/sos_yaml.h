@@ -12,7 +12,6 @@ enum keyword_e {
 	COUNT_KW,
 	TIME_FUNC_KW,
 	RANDOM_FUNC_KW,
-	LENGTH_KW,
 };
 
 struct keyword {
@@ -33,7 +32,6 @@ struct keyword keyword_table[] = {
 	{ "INT32_ARRAY", SOS_TYPE_INT32_ARRAY },
 	{ "INT64", SOS_TYPE_INT64 },
 	{ "INT64_ARRAY", SOS_TYPE_INT64_ARRAY },
-	{ "LENGTH", LENGTH_KW },
 	{ "LONG_DOUBLE", SOS_TYPE_LONG_DOUBLE },
 	{ "LONG_DOUBLE_ARRAY", SOS_TYPE_LONG_DOUBLE_ARRAY },
 	{ "NAME", NAME_KW },
@@ -42,6 +40,7 @@ struct keyword keyword_table[] = {
 	{ "RANDOM()", RANDOM_FUNC_KW },
 	{ "SCHEMA", SCHEMA_KW },
 	{ "TIME()", TIME_FUNC_KW },
+	{ "TIMESTAMP", SOS_TYPE_TIMESTAMP },
 	{ "TRUE", TRUE_KW },
 	{ "TYPE", TYPE_KW },
 	{ "UINT32", SOS_TYPE_UINT32 },

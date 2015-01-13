@@ -1,0 +1,34 @@
+schema:
+  - name : Job
+  - attribute: JobId
+    type: uint64
+    indexed: true
+  - attribute: StartTime
+    type: timestamp
+    indexed: true
+  - attribute: EndTime
+    type: uint32
+    indexed: true
+  - attribute: UID
+    type: uint32
+    indexed: true
+  - attribute: JobSize
+    type: uint64
+  - attribute: CompHead
+    type: obj
+  - attribute: CompTail
+    type: obj
+  - attribute: Name
+    type: byte_array
+schema:
+  - name: Component
+  - attribute: CompId
+    type: uint64
+  - attribute: NextComp
+    type: obj
+  - attribute: PrevComp
+    type: obj
+  - attribute: SampleHead
+    type: obj
+  - attribute: SampleTail
+    type: obj

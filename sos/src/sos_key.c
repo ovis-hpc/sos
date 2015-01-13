@@ -74,11 +74,6 @@
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
-sos_key_t sos_key_malloc(sos_attr_t attr, size_t sz)
-{
-	return ods_key_malloc(attr->index, sz);
-}
-
 size_t sos_key_set(sos_key_t key, void *value, size_t sz)
 {
 	return ods_key_set(key, value, sz);
@@ -119,9 +114,4 @@ unsigned char* sos_key_value(sos_key_t key)
 {
 	ods_key_value_t kv = ods_key_value(key);
 	return kv->value;
-}
-
-void sos_key_put(sos_key_t key)
-{
-	ods_obj_put(key);
 }

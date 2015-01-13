@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.6)
 project(ods)
 
 #cmake .. -DCMAKE_BUILD_TYPE=DEBUG
-SET(CMAKE_CXX_FLAGS_DEBUG "-pg -ggdb -Wall -Werror -std=c++0x")
+SET(CMAKE_CXX_FLAGS_DEBUG "-pg -ggdb -Wall -Werror -std=c++0x -DODS_DEBUG")
 #cmake .. -DCMAKE_BUILD_TYPE=RELEASE
 SET(CMAKE_CXX_FLAGS_RELEASE "-g -Wall -Werror -std=c++0x -O3 -fpic -mssse3 -mfpmath=sse -march=core2")
 
@@ -17,4 +17,4 @@ include_directories(
 )
 
 add_subdirectory(src)
-add_subdirectory(swig)
+#add_subdirectory(swig)

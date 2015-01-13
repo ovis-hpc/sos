@@ -1,0 +1,403 @@
+schema:
+        - name: Sample
+        - attribute : Time
+          type: timestamp
+          indexed: true
+        - attribute: JobId
+          type: uint64
+          indexed: true
+        - attribute: CompId
+          type: uint64
+          indexed: true
+        - attribute: NextSample
+          type: obj
+        - attribute: PrevSample
+          type: obj
+        - attribute: ipogif0_tx_bytes
+          type: uint64
+        - attribute: ipogif0_rx_bytes
+          type: uint64
+        - attribute: RDMA_rx_bytes
+          type: uint64
+        - attribute: RDMA_nrx
+          type: uint64
+        - attribute: RDMA_tx_bytes
+          type: uint64
+        - attribute: RDMA_ntx
+          type: uint64
+        - attribute: SMSG_rx_bytes
+          type: uint64
+        - attribute: SMSG_nrx
+          type: uint64
+        - attribute: SMSG_tx_bytes
+          type: uint64
+        - attribute: SMSG_ntx
+          type: uint64
+        - attribute: current_freemem
+          type: uint64
+        - attribute: loadavg_total_processes
+          type: uint64
+        - attribute: loadavg_running_processes
+          type: uint64
+        - attribute: loadavg_5min(x100)
+          type: uint64
+        - attribute: loadavg_latest(x100)
+          type: uint64
+        - attribute: nr_writeback
+          type: uint64
+        - attribute: nr_dirty
+          type: uint64
+        - attribute: lockless_write_bytes#stats.snx11001
+          type: uint64
+        - attribute: lockless_read_bytes#stats.snx11001
+          type: uint64
+        - attribute: direct_write#stats.snx11001
+          type: uint64
+        - attribute: direct_read#stats.snx11001
+          type: uint64
+        - attribute: inode_permission#stats.snx11001
+          type: uint64
+        - attribute: removexattr#stats.snx11001
+          type: uint64
+        - attribute: listxattr#stats.snx11001
+          type: uint64
+        - attribute: getxattr#stats.snx11001
+          type: uint64
+        - attribute: setxattr#stats.snx11001
+          type: uint64
+        - attribute: alloc_inode#stats.snx11001
+          type: uint64
+        - attribute: statfs#stats.snx11001
+          type: uint64
+        - attribute: getattr#stats.snx11001
+          type: uint64
+        - attribute: flock#stats.snx11001
+          type: uint64
+        - attribute: lockless_truncate#stats.snx11001
+          type: uint64
+        - attribute: truncate#stats.snx11001
+          type: uint64
+        - attribute: setattr#stats.snx11001
+          type: uint64
+        - attribute: fsync#stats.snx11001
+          type: uint64
+        - attribute: seek#stats.snx11001
+          type: uint64
+        - attribute: mmap#stats.snx11001
+          type: uint64
+        - attribute: close#stats.snx11001
+          type: uint64
+        - attribute: open#stats.snx11001
+          type: uint64
+        - attribute: ioctl#stats.snx11001
+          type: uint64
+        - attribute: brw_write#stats.snx11001
+          type: uint64
+        - attribute: brw_read#stats.snx11001
+          type: uint64
+        - attribute: write_bytes#stats.snx11001
+          type: uint64
+        - attribute: read_bytes#stats.snx11001
+          type: uint64
+        - attribute: writeback_failed_pages#stats.snx11001
+          type: uint64
+        - attribute: writeback_ok_pages#stats.snx11001
+          type: uint64
+        - attribute: writeback_from_pressure#stats.snx11001
+          type: uint64
+        - attribute: writeback_from_writepage#stats.snx11001
+          type: uint64
+        - attribute: dirty_pages_misses#stats.snx11001
+          type: uint64
+        - attribute: dirty_pages_hits#stats.snx11001
+          type: uint64
+        - attribute: lockless_write_bytes#stats.snx11002
+          type: uint64
+        - attribute: lockless_read_bytes#stats.snx11002
+          type: uint64
+        - attribute: direct_write#stats.snx11002
+          type: uint64
+        - attribute: direct_read#stats.snx11002
+          type: uint64
+        - attribute: inode_permission#stats.snx11002
+          type: uint64
+        - attribute: removexattr#stats.snx11002
+          type: uint64
+        - attribute: listxattr#stats.snx11002
+          type: uint64
+        - attribute: getxattr#stats.snx11002
+          type: uint64
+        - attribute: setxattr#stats.snx11002
+          type: uint64
+        - attribute: alloc_inode#stats.snx11002
+          type: uint64
+        - attribute: statfs#stats.snx11002
+          type: uint64
+        - attribute: getattr#stats.snx11002
+          type: uint64
+        - attribute: flock#stats.snx11002
+          type: uint64
+        - attribute: lockless_truncate#stats.snx11002
+          type: uint64
+        - attribute: truncate#stats.snx11002
+          type: uint64
+        - attribute: setattr#stats.snx11002
+          type: uint64
+        - attribute: fsync#stats.snx11002
+          type: uint64
+        - attribute: seek#stats.snx11002
+          type: uint64
+        - attribute: mmap#stats.snx11002
+          type: uint64
+        - attribute: close#stats.snx11002
+          type: uint64
+        - attribute: open#stats.snx11002
+          type: uint64
+        - attribute: ioctl#stats.snx11002
+          type: uint64
+        - attribute: brw_write#stats.snx11002
+          type: uint64
+        - attribute: brw_read#stats.snx11002
+          type: uint64
+        - attribute: write_bytes#stats.snx11002
+          type: uint64
+        - attribute: read_bytes#stats.snx11002
+          type: uint64
+        - attribute: writeback_failed_pages#stats.snx11002
+          type: uint64
+        - attribute: writeback_ok_pages#stats.snx11002
+          type: uint64
+        - attribute: writeback_from_pressure#stats.snx11002
+          type: uint64
+        - attribute: writeback_from_writepage#stats.snx11002
+          type: uint64
+        - attribute: dirty_pages_misses#stats.snx11002
+          type: uint64
+        - attribute: dirty_pages_hits#stats.snx11002
+          type: uint64
+        - attribute: lockless_write_bytes#stats.snx11003
+          type: uint64
+        - attribute: lockless_read_bytes#stats.snx11003
+          type: uint64
+        - attribute: direct_write#stats.snx11003
+          type: uint64
+        - attribute: direct_read#stats.snx11003
+          type: uint64
+        - attribute: inode_permission#stats.snx11003
+          type: uint64
+        - attribute: removexattr#stats.snx11003
+          type: uint64
+        - attribute: listxattr#stats.snx11003
+          type: uint64
+        - attribute: getxattr#stats.snx11003
+          type: uint64
+        - attribute: setxattr#stats.snx11003
+          type: uint64
+        - attribute: alloc_inode#stats.snx11003
+          type: uint64
+        - attribute: statfs#stats.snx11003
+          type: uint64
+        - attribute: getattr#stats.snx11003
+          type: uint64
+        - attribute: flock#stats.snx11003
+          type: uint64
+        - attribute: lockless_truncate#stats.snx11003
+          type: uint64
+        - attribute: truncate#stats.snx11003
+          type: uint64
+        - attribute: setattr#stats.snx11003
+          type: uint64
+        - attribute: fsync#stats.snx11003
+          type: uint64
+        - attribute: seek#stats.snx11003
+          type: uint64
+        - attribute: mmap#stats.snx11003
+          type: uint64
+        - attribute: close#stats.snx11003
+          type: uint64
+        - attribute: open#stats.snx11003
+          type: uint64
+        - attribute: ioctl#stats.snx11003
+          type: uint64
+        - attribute: brw_write#stats.snx11003
+          type: uint64
+        - attribute: brw_read#stats.snx11003
+          type: uint64
+        - attribute: write_bytes#stats.snx11003
+          type: uint64
+        - attribute: read_bytes#stats.snx11003
+          type: uint64
+        - attribute: writeback_failed_pages#stats.snx11003
+          type: uint64
+        - attribute: writeback_ok_pages#stats.snx11003
+          type: uint64
+        - attribute: writeback_from_pressure#stats.snx11003
+          type: uint64
+        - attribute: writeback_from_writepage#stats.snx11003
+          type: uint64
+        - attribute: dirty_pages_misses#stats.snx11003
+          type: uint64
+        - attribute: dirty_pages_hits#stats.snx11003
+          type: uint64
+        - attribute: SAMPLE_totaloutput_optB (B/s)
+          type: uint64
+        - attribute: SAMPLE_bteout_optB (B/s)
+          type: uint64
+        - attribute: SAMPLE_bteout_optA (B/s)
+          type: uint64
+        - attribute: SAMPLE_fmaout (B/s)
+          type: uint64
+        - attribute: SAMPLE_totalinput (B/s)
+          type: uint64
+        - attribute: SAMPLE_totaloutput_optA (B/s)
+          type: uint64
+        - attribute: totaloutput_optB
+          type: uint64
+        - attribute: bteout_optB
+          type: uint64
+        - attribute: bteout_optA
+          type: uint64
+        - attribute: fmaout
+          type: uint64
+        - attribute: totalinput
+          type: uint64
+        - attribute: totaloutput_optA
+          type: uint64
+        - attribute: Z-_SAMPLE_GEMINI_LINK_CREDIT_STALL (% x10e6)
+          type: uint64
+        - attribute: Z+_SAMPLE_GEMINI_LINK_CREDIT_STALL (% x10e6)
+          type: uint64
+        - attribute: Y-_SAMPLE_GEMINI_LINK_CREDIT_STALL (% x10e6)
+          type: uint64
+        - attribute: Y+_SAMPLE_GEMINI_LINK_CREDIT_STALL (% x10e6)
+          type: uint64
+        - attribute: X-_SAMPLE_GEMINI_LINK_CREDIT_STALL (% x10e6)
+          type: uint64
+        - attribute: X+_SAMPLE_GEMINI_LINK_CREDIT_STALL (% x10e6)
+          type: uint64
+        - attribute: Z-_SAMPLE_GEMINI_LINK_INQ_STALL (% x10e6)
+          type: uint64
+        - attribute: Z+_SAMPLE_GEMINI_LINK_INQ_STALL (% x10e6)
+          type: uint64
+        - attribute: Y-_SAMPLE_GEMINI_LINK_INQ_STALL (% x10e6)
+          type: uint64
+        - attribute: Y+_SAMPLE_GEMINI_LINK_INQ_STALL (% x10e6)
+          type: uint64
+        - attribute: X-_SAMPLE_GEMINI_LINK_INQ_STALL (% x10e6)
+          type: uint64
+        - attribute: X+_SAMPLE_GEMINI_LINK_INQ_STALL (% x10e6)
+          type: uint64
+        - attribute: Z-_SAMPLE_GEMINI_LINK_PACKETSIZE_AVE (B)
+          type: uint64
+        - attribute: Z+_SAMPLE_GEMINI_LINK_PACKETSIZE_AVE (B)
+          type: uint64
+        - attribute: Y-_SAMPLE_GEMINI_LINK_PACKETSIZE_AVE (B)
+          type: uint64
+        - attribute: Y+_SAMPLE_GEMINI_LINK_PACKETSIZE_AVE (B)
+          type: uint64
+        - attribute: X-_SAMPLE_GEMINI_LINK_PACKETSIZE_AVE (B)
+          type: uint64
+        - attribute: X+_SAMPLE_GEMINI_LINK_PACKETSIZE_AVE (B)
+          type: uint64
+        - attribute: Z-_SAMPLE_GEMINI_LINK_USED_BW (% x10e6)
+          type: uint64
+        - attribute: Z+_SAMPLE_GEMINI_LINK_USED_BW (% x10e6)
+          type: uint64
+        - attribute: Y-_SAMPLE_GEMINI_LINK_USED_BW (% x10e6)
+          type: uint64
+        - attribute: Y+_SAMPLE_GEMINI_LINK_USED_BW (% x10e6)
+          type: uint64
+        - attribute: X-_SAMPLE_GEMINI_LINK_USED_BW (% x10e6)
+          type: uint64
+        - attribute: X+_SAMPLE_GEMINI_LINK_USED_BW (% x10e6)
+          type: uint64
+        - attribute: Z-_SAMPLE_GEMINI_LINK_BW (B/s)
+          type: uint64
+        - attribute: Z+_SAMPLE_GEMINI_LINK_BW (B/s)
+          type: uint64
+        - attribute: Y-_SAMPLE_GEMINI_LINK_BW (B/s)
+          type: uint64
+        - attribute: Y+_SAMPLE_GEMINI_LINK_BW (B/s)
+          type: uint64
+        - attribute: X-_SAMPLE_GEMINI_LINK_BW (B/s)
+          type: uint64
+        - attribute: X+_SAMPLE_GEMINI_LINK_BW (B/s)
+          type: uint64
+        - attribute: Z-_recvlinkstatus (1)
+          type: uint64
+        - attribute: Z+_recvlinkstatus (1)
+          type: uint64
+        - attribute: Y-_recvlinkstatus (1)
+          type: uint64
+        - attribute: Y+_recvlinkstatus (1)
+          type: uint64
+        - attribute: X-_recvlinkstatus (1)
+          type: uint64
+        - attribute: X+_recvlinkstatus (1)
+          type: uint64
+        - attribute: Z-_sendlinkstatus (1)
+          type: uint64
+        - attribute: Z+_sendlinkstatus (1)
+          type: uint64
+        - attribute: Y-_sendlinkstatus (1)
+          type: uint64
+        - attribute: Y+_sendlinkstatus (1)
+          type: uint64
+        - attribute: X-_sendlinkstatus (1)
+          type: uint64
+        - attribute: X+_sendlinkstatus (1)
+          type: uint64
+        - attribute: Z-_credit_stall (ns)
+          type: uint64
+        - attribute: Z+_credit_stall (ns)
+          type: uint64
+        - attribute: Y-_credit_stall (ns)
+          type: uint64
+        - attribute: Y+_credit_stall (ns)
+          type: uint64
+        - attribute: X-_credit_stall (ns)
+          type: uint64
+        - attribute: X+_credit_stall (ns)
+          type: uint64
+        - attribute: Z-_inq_stall (ns)
+          type: uint64
+        - attribute: Z+_inq_stall (ns)
+          type: uint64
+        - attribute: Y-_inq_stall (ns)
+          type: uint64
+        - attribute: Y+_inq_stall (ns)
+          type: uint64
+        - attribute: X-_inq_stall (ns)
+          type: uint64
+        - attribute: X+_inq_stall (ns)
+          type: uint64
+        - attribute: Z-_packets (1)
+          type: uint64
+        - attribute: Z+_packets (1)
+          type: uint64
+        - attribute: Y-_packets (1)
+          type: uint64
+        - attribute: Y+_packets (1)
+          type: uint64
+        - attribute: X-_packets (1)
+          type: uint64
+        - attribute: X+_packets (1)
+          type: uint64
+        - attribute: Z-_traffic (B)
+          type: uint64
+        - attribute: Z+_traffic (B)
+          type: uint64
+        - attribute: Y-_traffic (B)
+          type: uint64
+        - attribute: Y+_traffic (B)
+          type: uint64
+        - attribute: X-_traffic (B)
+          type: uint64
+        - attribute: X+_traffic (B)
+          type: uint64
+        - attribute: nettopo_mesh_coord_Z
+          type: uint64
+        - attribute: nettopo_mesh_coord_Y
+          type: uint64
+        - attribute: nettopo_mesh_coord_X
+          type: uint64

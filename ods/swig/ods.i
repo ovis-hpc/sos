@@ -63,15 +63,14 @@ ods_obj_t ods_get_user_data(ods_t ods);
 void ods_commit(ods_t ods, int flags);
 void ods_close(ods_t ods, int flags);
 ods_obj_t ods_obj_alloc(ods_t ods, size_t sz);
-ods_obj_t ods_obj_malloc(ods_t ods, size_t sz);
+// ods_obj_t ods_obj_malloc(ods_t ods, size_t sz);
 void ods_obj_delete(ods_obj_t obj);
 void ods_ref_delete(ods_t ods, ods_ref_t ref);
-void ods_obj_put(ods_obj_t obj);
 int ods_extend(ods_t ods, size_t sz);
 size_t ods_size(ods_t ods);
 void ods_dump(ods_t ods, FILE *fp);
 ods_obj_t ods_obj_get(ods_obj_t obj);
-void ods_obj_put(ods_obj_t obj);
+void _ods_obj_put(ods_obj_t obj);
 ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref);
 ods_ref_t ods_obj_ref(ods_obj_t obj);
 
@@ -110,7 +109,7 @@ typedef struct ods_key_value_s {
 typedef ods_obj_t ods_key_t;
 
 ods_key_t ods_key_alloc(ods_idx_t idx, size_t sz);
-ods_key_t ods_key_malloc(ods_idx_t idx, size_t sz);
+// ods_key_t ods_key_malloc(ods_idx_t idx, size_t sz);
 size_t ods_key_set(ods_key_t key, void *value, size_t sz);
 static inline ods_key_value_t ods_key_value(ods_key_t key) { return key->as.ptr; }
 int ods_key_from_str(ods_idx_t idx, ods_key_t key, const char *str);

@@ -1,0 +1,20 @@
+$def with(title, header, rows, card)
+
+{
+"recordsTotal" : $(card),
+"recordsFiltered": $(card),
+"$(title)" : [
+$if rows:
+    $ first = True
+    $for row in rows:
+        $if not first:
+	    ,
+	$ first = False
+        {
+        $for col_no in range(0, len(header)):
+	    $if col_no > 0:
+	        ,
+	    "$(header[col_no])":"$(row[col_no])"
+        }
+]}
+
