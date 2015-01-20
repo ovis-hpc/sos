@@ -1,0 +1,7 @@
+#ifndef __SOS_CONFIG_H
+#define __SOS_CONFIG_H
+#define SOS_VERSION_MAJOR @SOS_VERSION_MAJOR@
+#define SOS_VERSION_MINOR @SOS_VERSION_MINOR@
+#define SOS_CONFIG_PATH "SOS_CONFIG_PATH" /* environment variable to set configuration path */
+#define SOS_CONFIG_PATH_DEFAULT "@SOS_CONFIG_PATH_DEFAULT@" /* default root */
+#endif
