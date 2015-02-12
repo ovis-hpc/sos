@@ -73,8 +73,9 @@ typedef struct sos_attr_s *sos_attr_t;
 typedef struct sos_schema_s *sos_schema_t;
 typedef struct sos_obj_s *sos_obj_t;
 
-#define SOS_ATTR_NAME_LEN	64
+#define SOS_CONTAINER_NAME_LEN  64
 #define SOS_SCHEMA_NAME_LEN	64
+#define SOS_ATTR_NAME_LEN	64
 
 typedef enum sos_type_e {
 	/** All types up to the arrays are fixed size */
@@ -195,6 +196,27 @@ enum sos_cond_e {
 sos_schema_t sos_schema_new(const char *name);
 
 /**
+ * \brief Create a copy of a schema
+ *
+ * Create a replica of a schema that is not associated with a
+ * container. This function is useful for adding a schema from one
+ * container to another container.
+ *
+ * \param schema
+ * \retval A pointer to the new schema
+ * \retval NULL Insufficient resources
+ */
+sos_schema_t sos_schema_dup(sos_schema_t schema);
+
+/**
+ * \brief Return number of schema in container
+ *
+ * \param sos The container handle
+ * \retval The number of schema in the container
+ */
+size_t sos_schema_count(sos_t sos);
+
+/**
  * \brief Add a schema to a container
  *
  * A a new schema to the container. A schema with the same name must
@@ -286,7 +308,7 @@ sos_schema_t sos_schema_get(sos_schema_t schema);
  *
  * \param schema	The schema handle
  */
-void sos_schema_put(sos_schema_t schema);;
+void sos_schema_put(sos_schema_t schema);
 
 /**
  * \brief Returns the schema's name
@@ -394,6 +416,11 @@ sos_attr_t sos_schema_attr_by_name(sos_schema_t schema, const char *name);
  * \returns The attribute handle or NULL if the attribute was not found.
  */
 sos_attr_t sos_schema_attr_by_id(sos_schema_t schema, int attr_id);
+
+sos_attr_t sos_schema_attr_first(sos_schema_t schema);
+sos_attr_t sos_schema_attr_last(sos_schema_t schema);
+sos_attr_t sos_schema_attr_next(sos_attr_t attr);
+sos_attr_t sos_schema_attr_prev(sos_attr_t attr);
 
 /**
  * \brief Return the attribute's ordinal ID.
@@ -664,10 +691,12 @@ void sos_container_put(sos_t sos);
  * - sos_obj_put()	 Drop a reference on an object
  * - sos_obj_index()	 Add an object to it's indices
  * - sos_obj_remove()	 Remove an object from it's indices
+ * - sos_value()	 Return a value given object and attribute handles.
  * - sos_value_by_name() Get the value handle by name
  * - sos_value_by_id()   Get the value handle by id
  * - sos_value_to_str()	 Get the value as a string
  * - sos_value_from_str() Set the value from a string
+ * - sos_value_init()	 Initializes a stack variable as a value.
  */
 
 /**
@@ -681,7 +710,7 @@ void sos_container_put(sos_t sos);
  *
  * This call will automatically extend the size of the backing store
  * to accomodate the new object. This call will fail if there is
- * insufficient disk space. Use the sos_obj_add() to add the object
+ * insufficient disk space. Use the sos_obj_index() to add the object
  * to all indices defined by it's object class.
  *
  * See the sos_schema_find() function call for information on how to
@@ -905,7 +934,7 @@ typedef struct ods_obj_s *sos_key_t;
  *
  * A key that is up to 256 bytes in length that is allocated on the
  * current stack frame. If your application uses keys that are greater
- * than this length, use the sos_key_malloc() function or redefine the
+ * than this length, use the sos_key_new() function or redefine the
  * SOS_STACK_KEY_SIZE macro and recompile your application.
  *
  * Do not use the sos_obj_put() function to release keys of this type,
@@ -1118,7 +1147,7 @@ int sos_iter_key_cmp(sos_iter_t iter, ods_key_t other);
  * \retval 0 Iterator is positioned at matching object.
  * \retval ENOENT No matching object was found.
  */
-int sos_iter_seek(sos_iter_t iter, ods_key_t key);
+int sos_iter_find(sos_iter_t iter, ods_key_t key);
 
 /**
  * \brief Position the iterator at the infimum of the specified key.
@@ -1291,7 +1320,7 @@ sos_obj_t sos_filter_obj(sos_filter_t filt);
 int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags);
 
 /** @} */
-
+#if 0
 /** \defgroup mgmt SOS Data Management Services
  * @{
  */
@@ -1404,5 +1433,6 @@ int sos_post_rotation(sos_t sos, const char *env_var);
 sos_t sos_reinit(sos_t sos, uint64_t sz);
 
 /** @} */
+#endif
 
 #endif

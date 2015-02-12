@@ -290,7 +290,7 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 	/* Build the index filter */
 	struct clause_s *clause;
 	TAILQ_FOREACH(clause, &clause_list, entry) {
-		rc = add_filter(schema, index_name, filt, clause->str);
+		rc = add_filter(schema, filt, clause->str);
 		if (rc)
 			return rc;
 	}
@@ -983,8 +983,10 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, char *str)
 	int primary;
 
 	int rc = sscanf(str, "%64[^:]:%16[^:]:%64s", attr_name, cond_str, value_str);
-	if (rc != 3)
+	if (rc != 3) {
+		printf("Error %d parsing the filter clause '%s'.\n", rc, str);
 		return EINVAL;
+	}
 
 	/*
 	 * Get the condition

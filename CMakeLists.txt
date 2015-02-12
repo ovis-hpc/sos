@@ -25,5 +25,6 @@ configure_file (
 # add_subdirectory(css)
 add_subdirectory(ods)
 add_subdirectory(sos)
+# add_subdirectory(sosd)
 add_subdirectory(doc)
 

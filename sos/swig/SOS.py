@@ -250,8 +250,8 @@ class Iterator:
                 return Object(obj, self.attr.schema)
         return None
 
-    def seek(self, key):
-        rc = sos.sos_iter_seek(self.iter_, key.key)
+    def find(self, key):
+        rc = sos.sos_iter_find(self.iter_, key.key)
         if rc == 0:
             obj = sos.sos_iter_obj(self.iter_)
             if obj:

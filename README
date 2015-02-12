@@ -1,11 +1,13 @@
 DEPENDENCIES
 
-- yaml-cpp version 0.5.1 or better.
-  It is available here: https://code.google.com/p/yaml-cpp/
+- Python-2.7
+- libyaml-0-2
+- libyaml-0-2-dbg [optional]
+- libyaml-dev
 
 TODO
 
-- The Doxygen.in file needs to be made cmake configurable
+- Implement object linking code
 
 BUILD
 

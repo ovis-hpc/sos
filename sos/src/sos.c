@@ -186,6 +186,7 @@ static uint32_t element_sizes[] = {
  * - sos_schema_add()	     Add a schema to a container
  * - sos_schema_find()	     Find the schema with the specified name
  * - sos_schema_delete()     Remove a schema from the container
+ * - sos_schema_count()	     Returns the number of schema in the container
  * - sos_schema_get()        Take a reference on a schema
  * - sos_schema_put()        Drop a reference on a schema
  * - sos_schema_name()	     Get the schema's name
@@ -226,6 +227,7 @@ sos_schema_t sos_schema_new(const char *name)
 		strcpy(schema->data->name, name);
 		TAILQ_INIT(&schema->attr_list);
 	}
+	schema->ref_count = 1;
 	return schema;
 }
 
@@ -275,6 +277,7 @@ static sos_attr_t attr_new(sos_schema_t schema, sos_type_t type)
 	sos_attr_t attr = calloc(1, sizeof *attr);
 	if (!attr)
 		goto out;
+	attr->data = &attr->data_;
 	attr->schema = schema;
 	attr->size_fn = __sos_attr_size_fn_for_type(type);
 	attr->to_str_fn = __sos_attr_to_str_fn_for_type(type);
@@ -308,7 +311,6 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type)
 	attr = attr_new(schema, type);
 	if (!attr)
 		return ENOMEM;
-	attr->data = &attr->data_;
 	strcpy(attr->data->name, name);
 	attr->data->type = type;
 	attr->data->id = schema->data->attr_cnt++;
@@ -359,6 +361,26 @@ sos_attr_t sos_schema_attr_by_id(sos_schema_t schema, int attr_id)
 	return _attr_by_idx(schema, attr_id);
 }
 
+sos_attr_t sos_schema_attr_first(sos_schema_t schema)
+{
+	return TAILQ_FIRST(&schema->attr_list);
+}
+
+sos_attr_t sos_schema_attr_last(sos_schema_t schema)
+{
+	return TAILQ_LAST(&schema->attr_list, sos_attr_list);
+}
+
+sos_attr_t sos_schema_attr_next(sos_attr_t attr)
+{
+	return TAILQ_NEXT(attr, entry);
+}
+
+sos_attr_t sos_schema_attr_prev(sos_attr_t attr)
+{
+	return TAILQ_PREV(attr, sos_attr_list, entry);
+}
+
 sos_type_t sos_attr_type(sos_attr_t attr)
 {
 	return attr->data->type;
@@ -381,6 +403,7 @@ sos_schema_t sos_attr_schema(sos_attr_t attr)
 
 struct sos_schema_s sos_obj_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_obj_ischema.data_,
 	.data_ = {
@@ -392,6 +415,7 @@ struct sos_schema_s sos_obj_ischema = {
 };
 struct sos_schema_s sos_byte_array_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_byte_array_ischema.data_,
 	.data_ = {
@@ -403,6 +427,7 @@ struct sos_schema_s sos_byte_array_ischema = {
 };
 struct sos_schema_s sos_int32_array_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_int32_array_ischema.data_,
 	.data_ = {
@@ -414,6 +439,7 @@ struct sos_schema_s sos_int32_array_ischema = {
 };
 struct sos_schema_s sos_int64_array_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_int64_array_ischema.data_,
 	.data_ = {
@@ -425,6 +451,7 @@ struct sos_schema_s sos_int64_array_ischema = {
 };
 struct sos_schema_s sos_uint32_array_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_uint32_array_ischema.data_,
 	.data_ = {
@@ -436,6 +463,7 @@ struct sos_schema_s sos_uint32_array_ischema = {
 };
 struct sos_schema_s sos_uint64_array_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_uint64_array_ischema.data_,
 	.data_ = {
@@ -447,6 +475,7 @@ struct sos_schema_s sos_uint64_array_ischema = {
 };
 struct sos_schema_s sos_float_array_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_float_array_ischema.data_,
 	.data_ = {
@@ -458,6 +487,7 @@ struct sos_schema_s sos_float_array_ischema = {
 };
 struct sos_schema_s sos_double_array_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_double_array_ischema.data_,
 	.data_ = {
@@ -469,6 +499,7 @@ struct sos_schema_s sos_double_array_ischema = {
 };
 struct sos_schema_s sos_long_double_array_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_long_double_array_ischema.data_,
 	.data_ = {
@@ -480,6 +511,7 @@ struct sos_schema_s sos_long_double_array_ischema = {
 };
 struct sos_schema_s sos_obj_array_ischema = {
 	.sos = NULL,
+	.flags = SOS_SCHEMA_F_INTERNAL,
 	.ref_count = 1,
 	.data = &sos_obj_array_ischema.data_,
 	.data_ = {
@@ -725,6 +757,41 @@ int sos_value_from_str(sos_value_t v, const char *str, char **endptr)
 	return v->attr->from_str_fn(v, str, endptr);
 }
 
+
+sos_schema_t sos_schema_dup(sos_schema_t schema)
+{
+	sos_schema_t dup;
+	sos_attr_t attr, src_attr;
+	int idx;
+
+	if (!schema)
+		return NULL;
+	dup = calloc(1, sizeof(*schema));
+	if (!dup)
+		return NULL;
+	dup->ref_count = 1;
+	TAILQ_INIT(&dup->attr_list);
+	dup->data = &dup->data_;
+	*dup->data = *schema->data;
+	TAILQ_FOREACH(src_attr, &schema->attr_list, entry) {
+		attr = attr_new(dup, src_attr->data->type);
+		if (!attr)
+			goto err;
+		*attr->data = *src_attr->data;
+		TAILQ_INSERT_TAIL(&dup->attr_list, attr, entry);
+	}
+	rbn_init(&dup->rbn, dup->data->name);
+	return dup;
+ err:
+	while (!TAILQ_EMPTY(&dup->attr_list)) {
+		attr = TAILQ_FIRST(&schema->attr_list);
+		TAILQ_REMOVE(&dup->attr_list, attr, entry);
+		free(attr);
+	}
+	free(dup);
+	return NULL;
+}
+
 static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
 {
 	sos_attr_t attr;
@@ -758,6 +825,7 @@ static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
 	}
 	rbn_init(&schema->rbn, schema->data->name);
 	rbt_ins(&sos->schema_rbt, &schema->rbn);
+	sos->schema_count++;
 	return schema;
  err:
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
@@ -884,6 +952,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	SOS_UDATA(udata)->dict_len += 1;
 	rbn_init(&schema->rbn, schema->data->name);
 	rbt_ins(&sos->schema_rbt, &schema->rbn);
+	sos->schema_count++;
 
 	ods_obj_put(sos_obj_ref);
 	ods_obj_put(schema_key);
@@ -1125,6 +1194,10 @@ void sos_container_info(sos_t sos, FILE *fp)
 
 void free_schema(sos_schema_t schema)
 {
+	/* Drop our reference on the container */
+	if (schema->sos)
+		sos_container_put(schema->sos);
+
 	/* Drop our reference on the schema object */
 	if (schema->schema_obj)
 		ods_obj_put(schema->schema_obj);
@@ -1197,6 +1270,7 @@ int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *p_c)
 	sos->path = strdup(path);
 	sos->o_perm = (ods_perm_t)o_perm;
 	rbt_init(&sos->schema_rbt, schema_cmp);
+	sos->schema_count = 0;
 
 	/* Open the ODS containing the schema objects */
 	sprintf(tmp_path, "%s/schemas", path);
@@ -1340,6 +1414,11 @@ void sos_container_put(sos_t sos)
 	}
 }
 
+size_t sos_schema_count(sos_t sos)
+{
+	return sos->schema_count;
+}
+
 sos_schema_t sos_schema_get(sos_schema_t schema)
 {
 	ods_atomic_inc(&schema->ref_count);
@@ -1349,12 +1428,10 @@ sos_schema_t sos_schema_get(sos_schema_t schema)
 void sos_schema_put(sos_schema_t schema)
 {
 	/* Ignore for internal schemas */
-	if (!schema->sos)
+	if (!schema || (schema->flags & SOS_SCHEMA_F_INTERNAL))
 		return;
-	if (schema && !ods_atomic_dec(&schema->ref_count)) {
-		sos_container_put(schema->sos);
+	if (!ods_atomic_dec(&schema->ref_count))
 		free_schema(schema);
-	}
 }
 
 sos_obj_t sos_obj_get(sos_obj_t obj)

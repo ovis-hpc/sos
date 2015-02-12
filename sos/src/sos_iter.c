@@ -74,7 +74,6 @@
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
-/* Create a new iterator */
 sos_iter_t sos_iter_new(sos_attr_t attr)
 {
 	sos_iter_t i;
@@ -208,7 +207,7 @@ int sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
 	return rc;
 }
 
-int sos_iter_seek(sos_iter_t i, sos_key_t key)
+int sos_iter_find(sos_iter_t i, sos_key_t key)
 {
 	return ods_iter_find(i->iter, key);
 }

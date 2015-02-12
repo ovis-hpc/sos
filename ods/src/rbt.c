@@ -132,6 +132,18 @@ void rbt_init(struct rbt *t, rbn_comparator_t c)
 }
 
 /**
+ * \brief Returns TRUE if the tree is empty.
+ *
+ * \param t	Pointer to the rbt.
+ * \retval 0	The tree is not empty
+ * \retval 1	The tree is empty
+ */
+int rbt_empty(struct rbt *t)
+{
+	return (t->root == NULL);
+}
+
+/**
  * \brief Initialize an RBN node.
  *
  * Initialize an RBN node. This is a convenience function to avoid

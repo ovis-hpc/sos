@@ -165,8 +165,10 @@ typedef struct sos_schema_data_s {
 } *sos_schema_data_t;
 
 typedef struct sos_schema_s *sos_schema_t;
+#define SOS_SCHEMA_F_INTERNAL	0x01
 struct sos_schema_s {
 	ods_atomic_t ref_count;
+	uint32_t flags;
 	sos_schema_data_t data;
 	struct sos_schema_data_s data_;
 	sos_t sos;
@@ -195,6 +197,7 @@ struct sos_container_s {
 	ods_idx_t schema_idx;	/* Index schema by name */
 	ods_t schema_ods;	/* Contains the schema definitions */
 	struct rbt schema_rbt;	/* In memory schema tree */
+	size_t schema_count;
 
 	/*
 	 * The object repository

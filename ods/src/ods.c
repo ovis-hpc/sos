@@ -131,6 +131,7 @@ static inline int ods_bkt(ods_map_t map, size_t sz)
 	size_t bkt_sz;
 	int bkt = 0;
 	for (bkt_sz = ODS_GRAIN_SIZE; sz > bkt_sz; bkt_sz <<= 1, bkt++);
+	assert(bkt < (ODS_PAGE_SHIFT - ODS_GRAIN_SHIFT));
 	return bkt;
 }
 
@@ -983,7 +984,7 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
 	map = _ods_map_get(ods);
 	if (!map)
 		goto out;
-	if (sz < ODS_PAGE_SIZE)
+	if (sz < (ODS_PAGE_SIZE >> 1))
 		ref = ods_ptr_to_ref(map, alloc_blk(map, sz));
 	else
 		ref = ods_ptr_to_ref(map, alloc_pages(map, sz, -1));

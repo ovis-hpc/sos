@@ -330,7 +330,7 @@ void sos_iter_free(sos_iter_t iter);
 const char *sos_iter_name(sos_iter_t iter);
 sos_attr_t sos_iter_attr(sos_iter_t iter);
 int sos_iter_key_cmp(sos_iter_t iter, sos_key_t other);
-int sos_iter_seek(sos_iter_t iter, sos_key_t key);
+int sos_iter_find(sos_iter_t iter, sos_key_t key);
 int sos_iter_inf(sos_iter_t i, sos_key_t key);
 int sos_iter_sup(sos_iter_t i, sos_key_t key);
 int sos_iter_next(sos_iter_t iter);
