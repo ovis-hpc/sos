@@ -23,3 +23,8 @@ add_executable(idx_test idx_test.c)
 target_link_libraries(idx_test ods)
 add_executable(rand_test rand_test.c)
 target_link_libraries(rand_test ods)
+
+FILE(GLOB files "${CMAKE_CURRENT_BINARY_DIR}/*.so")
+INSTALL(FILES ${files} DESTINATION lib)
+
+
