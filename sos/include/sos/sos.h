@@ -244,6 +244,8 @@ int sos_schema_add(sos_t sos, sos_schema_t schema);
  * that name does not exist in the container.
  */
 sos_schema_t sos_schema_find(sos_t sos, const char *name);
+sos_schema_t sos_schema_by_name(sos_t sos, const char *name);
+sos_schema_t sos_schema_by_id(sos_t sos, const int id);
 
 /**
  * \brief Print the schema to a File pointer
@@ -316,6 +318,7 @@ void sos_schema_put(sos_schema_t schema);
  * \returns The schema's name.
  */
 const char *sos_schema_name(sos_schema_t schema);
+const char *sos_schema_id(sos_schema_t schema);
 
 /**
  * \brief Return the number of attributes in the schema.

@@ -124,9 +124,9 @@ typedef struct sos_obj_ref_s {
 
 typedef struct sos_attr_data_s {
 	char name[SOS_ATTR_NAME_LEN];
+	uint32_t id;
 	uint32_t type:8;
-	uint32_t id:8;
-	uint32_t pad:15;
+	uint32_t pad:23;
 	uint32_t indexed:1;
 	uint64_t offset;
 } *sos_attr_data_t;
@@ -174,6 +174,7 @@ struct sos_schema_s {
 	sos_t sos;
 	ods_obj_t schema_obj;
 	struct rbn rbn;
+	sos_attr_t *dict;
 	LIST_ENTRY(sos_schema_s) entry;
 	TAILQ_HEAD(sos_attr_list, sos_attr_s) attr_list;
 };

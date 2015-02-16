@@ -208,6 +208,10 @@ static sos_attr_t _attr_by_name(sos_schema_t schema, const char *name)
 static sos_attr_t _attr_by_idx(sos_schema_t schema, int attr_id)
 {
 	sos_attr_t attr;
+	if (attr_id < 0 || attr_id >= schema->data->attr_cnt)
+		return NULL;
+	if (schema->dict)
+		return schema->dict[attr_id];
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
 		if (attr->data->id == attr_id)
 			return attr;
@@ -239,6 +243,11 @@ int sos_schema_attr_count(sos_schema_t schema)
 const char *sos_schema_name(sos_schema_t schema)
 {
 	return schema->data->name;
+}
+
+int sos_schema_id(sos_schema_t schema)
+{
+	return schema->data->id;
 }
 
 static char * make_index_path(char *container_path,
@@ -618,6 +627,29 @@ size_t sos_array_count(sos_value_t val)
 	return val->data->array.count;
 }
 
+/*
+ * Allocate an ODS object of the requested size and extend the store if necessary
+ * NB: The lock protects multiple threads from attempting to extend if the
+ * store requires expansion
+ */
+static ods_obj_t __obj_new(ods_t ods, size_t size, pthread_mutex_t *lock)
+{
+	int rc;
+	ods_obj_t ods_obj;
+	size_t extend_size = (size < SOS_ODS_EXTEND_SZ ? SOS_ODS_EXTEND_SZ : size << 4);
+	pthread_mutex_lock(lock);
+	ods_obj = ods_obj_alloc(ods, size);
+	if (!ods_obj) {
+		int rc = ods_extend(ods, extend_size);
+		if (rc)
+			goto err_0;
+		ods_obj = ods_obj_alloc(ods, size);
+	}
+ err_0:
+	pthread_mutex_unlock(lock);
+	return ods_obj;
+}
+
 sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count)
 {
 	ods_obj_t array_obj;
@@ -632,7 +664,7 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 		+ sizeof(uint32_t) /* element count */
 		+ (count * schema->data->obj_sz); /* array elements */
 
-	array_obj = ods_obj_alloc(obj->sos->obj_ods, size);
+	array_obj = __obj_new(obj->sos->obj_ods, size, &obj->sos->lock);
 	if (!array_obj)
 		goto err;
 
@@ -773,21 +805,28 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 	TAILQ_INIT(&dup->attr_list);
 	dup->data = &dup->data_;
 	*dup->data = *schema->data;
+	dup->dict = calloc(dup->data->attr_cnt, sizeof(sos_attr_t));
+	if (!dup->dict)
+		goto err_0;
+	idx = 0;
 	TAILQ_FOREACH(src_attr, &schema->attr_list, entry) {
 		attr = attr_new(dup, src_attr->data->type);
 		if (!attr)
-			goto err;
+			goto err_1;
+		schema->dict[idx++] = attr;
 		*attr->data = *src_attr->data;
 		TAILQ_INSERT_TAIL(&dup->attr_list, attr, entry);
 	}
 	rbn_init(&dup->rbn, dup->data->name);
 	return dup;
- err:
+ err_1:
+	free(schema->dict);
 	while (!TAILQ_EMPTY(&dup->attr_list)) {
 		attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&dup->attr_list, attr, entry);
 		free(attr);
 	}
+ err_0:
 	free(dup);
 	return NULL;
 }
@@ -808,10 +847,14 @@ static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
 	schema->schema_obj = schema_obj;
 	schema->sos = sos_container_get(sos);
 	schema->data = schema_obj->as.ptr;
+	schema->dict = calloc(schema->data->attr_cnt, sizeof(sos_attr_t));
+	if (!schema->dict)
+		goto err_0;
 	for (idx = 0; idx < schema->data->attr_cnt; idx++) {
 		attr = attr_new(schema, schema->data->attr_dict[idx].type);
 		if (!attr)
-			goto err;
+			goto err_1;
+		schema->dict[idx] = attr;
 		attr->data = &schema->data->attr_dict[idx];
 		TAILQ_INSERT_TAIL(&schema->attr_list, attr, entry);
 		if (!attr->data->indexed)
@@ -821,19 +864,21 @@ static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
 							   attr->data->name),
 					   sos->o_perm);
 		if (!attr->index)
-			goto err;
+			goto err_1;
 	}
 	rbn_init(&schema->rbn, schema->data->name);
 	rbt_ins(&sos->schema_rbt, &schema->rbn);
 	sos->schema_count++;
 	return schema;
- err:
+ err_1:
+	free(schema->dict);
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
 		free(attr);
 	}
 	ods_obj_put(schema_obj);
+ err_0:
 	free(schema);
 	return NULL;
 }
@@ -846,6 +891,16 @@ sos_schema_t sos_schema_find(sos_t sos, const char *name)
 		return NULL;
 	schema = container_of(rbn, struct sos_schema_s, rbn);
 	return sos_schema_get(schema);
+}
+
+sos_schema_t sos_schema_by_name(sos_t sos, const char *name)
+{
+	return sos_schema_find(sos, name);
+}
+
+sos_schema_t sos_schema_by_id(sos_t sos, int id)
+{
+	
 }
 
 int sos_schema_add(sos_t sos, sos_schema_t schema)
@@ -884,12 +939,12 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	/* Compute the size of the schema data */
 	size = sizeof(struct sos_schema_data_s);
 	size += schema->data->attr_cnt * sizeof(struct sos_attr_data_s);
-	schema_obj = ods_obj_alloc(sos->schema_ods, size);
+	schema_obj = __obj_new(sos->schema_ods, size, &sos->lock);
 	if (!schema_obj) {
 		rc = ENOMEM;
 		goto err_0;
 	}
-	sos_obj_ref = ods_obj_alloc(ods_idx_ods(sos->schema_idx), sizeof *sos_obj_ref);
+	sos_obj_ref = __obj_new(ods_idx_ods(sos->schema_idx), sizeof *sos_obj_ref, &sos->lock);
 	if (!sos_obj_ref)
 		goto err_1;
 	SOS_OBJ_REF(sos_obj_ref)->ods_ref = 0;
@@ -915,18 +970,22 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 
 	idx = 0;
 	offset = 0;
+	schema->dict = calloc(schema->data->attr_cnt, sizeof(sos_attr_t));
+	if (!schema->dict)
+		goto err_3;
 	/*
 	 * Iterate through the attribute definitions and add them to
 	 * the schema object
 	 */
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
-		sos_attr_data_t attr_data = &SOS_SCHEMA(schema_obj)->attr_dict[idx++];
+		sos_attr_data_t attr_data = &SOS_SCHEMA(schema_obj)->attr_dict[idx];
 		*attr_data = *attr->data;
 		attr->data = attr_data;
 		if (attr->data->indexed && !attr->key_type) {
 			rc = EINVAL;
 			goto err_3;
 		}
+		schema->dict[idx++] = attr;
 		if (!attr->data->indexed)
 			continue;
 		rc = ods_idx_create(make_index_path(sos->path,
@@ -1358,20 +1417,9 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 
 	if (!schema->sos)
 		return NULL;
-
-	/* NB: The lock protects multiple threads from attempting to
-	 * extend on store expansion */
-	pthread_mutex_lock(&schema->sos->lock);
-	ods_obj = ods_obj_alloc(schema->sos->obj_ods, schema->data->obj_sz);
-	if (!ods_obj) {
-		int rc = ods_extend(schema->sos->obj_ods, 1024 * 1024 * 1024);
-		if (rc)
-			goto err_0;
-		ods_obj = ods_obj_alloc(schema->sos->obj_ods, schema->data->obj_sz);
-		if (!ods_obj)
-			goto err_0;
-	}
-	pthread_mutex_unlock(&schema->sos->lock);
+	ods_obj = __obj_new(schema->sos->obj_ods, schema->data->obj_sz, &schema->sos->lock);
+	if (!ods_obj)
+		goto err_0;
 	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj);
 	if (!sos_obj)
 		goto err_1;
