@@ -318,7 +318,7 @@ void sos_schema_put(sos_schema_t schema);
  * \returns The schema's name.
  */
 const char *sos_schema_name(sos_schema_t schema);
-const char *sos_schema_id(sos_schema_t schema);
+int sos_schema_id(sos_schema_t schema);
 
 /**
  * \brief Return the number of attributes in the schema.
