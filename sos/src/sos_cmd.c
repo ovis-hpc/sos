@@ -54,9 +54,10 @@
 #include <ods/ods_atomic.h>
 #include "sos_yaml.h"
 
-const char *short_options = "I:M:C:O:y:S:X:V:F:T:s:o:icql";
+const char *short_options = "f:I:M:C:O:y:S:X:V:F:T:s:o:icql";
 
 struct option long_options[] = {
+	{"format",      required_argument,  0,  'f'},
 	{"info",	no_argument,	    0,  'i'},
 	{"create",	no_argument,	    0,  'c'},
 	{"query",	no_argument,        0,  'q'},
@@ -100,6 +101,10 @@ void usage(int argc, char *argv[])
 	printf("    -q             Query the container.\n");
 	printf("       -S <schema> Object type to query.\n");
 	printf("       -X <index>  Attribute's index to query.\n");
+	printf("       [-f <fmt>]  Specifies the format of the output data. Valid formats are:\n");
+	printf("                   table  - Tabular format, one row per object. [default]\n");
+	printf("                   csv    - Comma separated file with a single header row defining columns\n");
+	printf("                   json   - JSON Objects.\n");
 	printf("       [-F <rule>] Add a filter rule to the index.\n");
 	printf("       [-V <col>]  Add an object attribute (i.e. column) to the output.\n");
 	exit(1);
@@ -225,6 +230,126 @@ int add_clause(const char *str)
 	return 0;
 }
 
+enum query_fmt {
+	TABLE_FMT,
+	CSV_FMT,
+	JSON_FMT
+} format;
+
+void table_header(FILE *outp)
+{
+	struct col_s *col;
+	/* Print the header labels */
+	TAILQ_FOREACH(col, &col_list, entry)
+		fprintf(outp, "%-*s ", col->width, col->name);
+	fprintf(outp, "\n");
+
+	/* Print the header separators */
+	TAILQ_FOREACH(col, &col_list, entry) {
+		int i;
+		for (i = 0; i < col->width; i++)
+			fprintf(outp, "-");
+		fprintf(outp, " ");
+	}
+	fprintf(outp, "\n");
+}
+
+void csv_header(FILE *outp)
+{
+	struct col_s *col;
+	int first = 1;
+	/* Print the header labels */
+	fprintf(outp, "# ");
+	TAILQ_FOREACH(col, &col_list, entry) {
+		if (!first)
+			fprintf(outp, ",");
+		fprintf(outp, "%s", col->name);
+		first = 0;
+	}
+	fprintf(outp, "\n");
+}
+
+void json_header(FILE *outp)
+{
+	fprintf(outp, "{ \"data\" : [\n");
+}
+
+void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
+{
+	struct col_s *col;
+	sos_attr_t attr;
+	static char str[80];
+	TAILQ_FOREACH(col, &col_list, entry) {
+		attr = sos_schema_attr_by_id(schema, col->id);
+		fprintf(outp, "%*s ", col->width,
+			sos_obj_attr_to_str(obj, attr, str, 80));
+	}
+	fprintf(outp, "\n");
+}
+
+void csv_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
+{
+	struct col_s *col;
+	int first = 1;
+	sos_attr_t attr;
+	static char str[80];
+	TAILQ_FOREACH(col, &col_list, entry) {
+		attr = sos_schema_attr_by_id(schema, col->id);
+		if (!first)
+			fprintf(outp, ",");
+		fprintf(outp, "%s", sos_obj_attr_to_str(obj, attr, str, 80));
+		first = 0;
+	}
+	fprintf(outp, "\n");
+}
+
+void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
+{
+	struct col_s *col;
+	static int first_row = 1;
+	int first = 1;
+	sos_attr_t attr;
+	static char str[80];
+	if (!first_row)
+		fprintf(outp, ",\n");
+	first_row = 0;
+	fprintf(outp, "{");
+	TAILQ_FOREACH(col, &col_list, entry) {
+		attr = sos_schema_attr_by_id(schema, col->id);
+		if (!first)
+			fprintf(outp, ",");
+		fprintf(outp, "\"%s\" : \"%s\"", col->name, sos_obj_attr_to_str(obj, attr, str, 80));
+		first = 0;
+	}
+	fprintf(outp, "}");
+}
+
+void table_footer(FILE *outp, int rec_count, int iter_count)
+{
+	struct col_s *col;
+	int i;
+	/* Print the footer separators */
+	TAILQ_FOREACH(col, &col_list, entry) {
+		int i;
+		for (i = 0; i < col->width; i++)
+			fprintf(outp, "-");
+		fprintf(outp, " ");
+	}
+	fprintf(outp, "\n");
+	fprintf(outp, "Records %d/%d.\n", rec_count, iter_count);
+}
+
+void csv_footer(FILE *outp, int rec_count, int iter_count)
+{
+	fprintf(outp, "# Records %d/%d.\n", rec_count, iter_count);
+}
+
+void json_footer(FILE *outp, int rec_count, int iter_count)
+{
+	fprintf(outp, "], \"%s\" : %d, \"%s\" : %d}\n",
+		"totalRecords", rec_count, "recordCount", iter_count);
+}
+
 int query(sos_t sos, const char *schema_name, const char *index_name)
 {
 	sos_schema_t schema;
@@ -273,20 +398,6 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 			col->width = col_widths[sos_attr_type(attr)];
 	}
 
-	/* Print the header labels */
-	TAILQ_FOREACH(col, &col_list, entry)
-		printf("%-*s ", col->width, col->name);
-	printf("\n");
-
-	/* Print the header separators */
-	TAILQ_FOREACH(col, &col_list, entry) {
-		int i;
-		for (i = 0; i < col->width; i++)
-			printf("-");
-		printf(" ");
-	}
-	printf("\n");
-
 	/* Build the index filter */
 	struct clause_s *clause;
 	TAILQ_FOREACH(clause, &clause_list, entry) {
@@ -294,31 +405,52 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 		if (rc)
 			return rc;
 	}
+
+	switch (format) {
+	case JSON_FMT:
+		json_header(stdout);
+		break;
+	case CSV_FMT:
+		csv_header(stdout);
+		break;
+	default:
+		table_header(stdout);
+		break;
+	}
+
 	int rec_count;
 	int iter_count;
 	sos_obj_t obj;
+	void (*printer)(FILE *outp, sos_schema_t schema, sos_obj_t obj);
+	switch (format) {
+	case JSON_FMT:
+		printer = json_row;
+		break;
+	case CSV_FMT:
+		printer = csv_row;
+		break;
+	default:
+		printer = table_row;
+		break;
+	}
+
 	for (rec_count = 0, iter_count = 0, obj = sos_filter_begin(filt);
-	     obj;
-	     obj = sos_filter_next(filt), iter_count++) {
-		char str[80];
-		TAILQ_FOREACH(col, &col_list, entry) {
-			attr = sos_schema_attr_by_id(schema, col->id);
-			printf("%-*s ", col->width,
-			       sos_obj_attr_to_str(obj, attr, str, 80));
-		}
+	     obj; obj = sos_filter_next(filt), iter_count++) {
+		printer(stdout, schema, obj);
 		rec_count++;
-		printf("\n");
 		sos_obj_put(obj);
 	}
-	/* Print the header separators */
-	TAILQ_FOREACH(col, &col_list, entry) {
-		int i;
-		for (i = 0; i < col->width; i++)
-			printf("-");
-		printf(" ");
+	switch (format) {
+	case JSON_FMT:
+		json_footer(stdout, rec_count, iter_count);
+		break;
+	case CSV_FMT:
+		csv_footer(stdout, rec_count, iter_count);
+		break;
+	default:
+		table_footer(stdout, rec_count, iter_count);	
+		break;
 	}
-	printf("\n");
-	printf("Records %d/%d.\n", rec_count, iter_count);
 	return 0;
 }
 
@@ -1071,6 +1203,19 @@ int main(int argc, char **argv)
 			break;
 		case 'q':
 			action |= QUERY;
+			break;
+		case 'f':
+			if (0 == strcasecmp("table", optarg))
+				format = TABLE_FMT;
+			else if (0 == strcasecmp("csv", optarg))
+				format = CSV_FMT;
+			else if (0 == strcasecmp("json", optarg))
+				format = JSON_FMT;
+			else {
+				fprintf(stderr, "Ignoring unrecognized output format '%s'\n",
+					optarg);
+				format = TABLE_FMT;
+			}
 			break;
 		case 'C':
 			path = optarg;
