@@ -288,7 +288,7 @@ static ods_map_t map_new(ods_t ods)
 	return NULL;
 }
 
-static int map_is_ok(ods_map_t map)
+static inline int map_is_ok(ods_map_t map)
 {
 	/* Make certain the generation number is still good */
 	if ((map->pg_gen != map->pg_table->gen) ||
@@ -302,22 +302,6 @@ static inline ods_map_t map_get(ods_map_t map)
 {
 	ods_atomic_inc(&map->refcount);
 	assert(map->refcount > 1);
-	return map;
-}
-
-static ods_map_t _ods_map_get(ods_t ods)
-{
-	if (!ods->map)
-		ods->map = map_new(ods);
-	return ods->map;
-}
-
-static ods_map_t ods_map_get(ods_t ods)
-{
-	ods_map_t map;
-	pthread_spin_lock(&ods->lock);
-	map = _ods_map_get(ods);
-	pthread_spin_unlock(&ods->lock);
 	return map;
 }
 
@@ -357,8 +341,31 @@ static inline void map_put(ods_map_t map)
 		munmap(map->pg_table, map->pg_sz);
 		munmap(map->obj_data, map->obj_sz);
 		LIST_REMOVE(map, entry);
+		if (map->ods->map == map)
+			map->ods->map = NULL;
 		free(map);
 	}
+}
+
+static ods_map_t _ods_map_get(ods_t ods)
+{
+	if (ods->map) {
+		if (!map_is_ok(ods->map)) {
+			map_put(ods->map);
+			ods->map = map_new(ods);
+		}
+	} else
+		ods->map = map_new(ods);
+	return ods->map;
+}
+
+static ods_map_t ods_map_get(ods_t ods)
+{
+	ods_map_t map;
+	pthread_spin_lock(&ods->lock);
+	map = _ods_map_get(ods);
+	pthread_spin_unlock(&ods->lock);
+	return map;
 }
 
 static void ods_map_put(ods_map_t map)
@@ -436,12 +443,20 @@ void ods_info(ods_t ods, FILE *fp)
 
 static int obj_init(ods_obj_t obj, ods_map_t map, ods_ref_t ref)
 {
+	assert(ref);
 	obj->as.ptr = ods_ref_to_ptr(map, ref);
 	if (!obj->as.ptr)
 		return 1;
 	obj->ref = ref;
 	obj->refcount = 1;
 	obj->map = map_get(map);
+	/*
+	 * NB: This check is handling a special case where the
+	 * reference refers to the udata section in the header of the
+	 * object store. In that case, the ref is not in the section
+	 * managed by allocation/deallocation, instead it is
+	 * essentially an address constant.
+	 */
 	if (ref != sizeof(struct ods_obj_data_s))
 		obj->size = ods_ref_size(map, ref);
 	else
@@ -1356,6 +1371,8 @@ void ods_iter(ods_t ods, ods_iter_fn_t iter_fn, void *arg)
 	char *next;
 	size_t sz;
 	ods_map_t map;
+	ods_obj_t obj;
+
 	map = ods_map_get(ods);
 	for(i = 1; i < map->pg_table->count; i++) {
 		if (!(map->pg_table->pages[i] & ODS_F_ALLOCATED))
@@ -1368,7 +1385,9 @@ void ods_iter(ods_t ods, ods_iter_fn_t iter_fn, void *arg)
 			for (; blk < next; blk += sz) {
 				if (blk_is_free(map, bkt, blk))
 					continue;
-				iter_fn(ods, blk, sz, arg);
+				obj = ods_ref_as_obj(ods, ods_ptr_to_ref(map, blk));
+				iter_fn(ods, obj, arg);
+				ods_obj_put(obj);
 			}
 		} else {
 			for (start = end = i;
@@ -1376,8 +1395,9 @@ void ods_iter(ods_t ods, ods_iter_fn_t iter_fn, void *arg)
 				     (0 != (map->pg_table->pages[end] & ODS_F_NEXT));
 			     end++);
 			pg = ods_page_to_ptr(map, start);
-			sz = (end - start + 1) << ODS_PAGE_SHIFT;
-			iter_fn(ods, pg, sz, arg);
+			obj = ods_ref_as_obj(ods, ods_ptr_to_ref(map, pg));
+			iter_fn(ods, obj, arg);
+			ods_obj_put(obj);
 			i = end;
 		}
 	}

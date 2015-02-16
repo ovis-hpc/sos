@@ -305,11 +305,11 @@ extern void ods_dump(ods_t ods, FILE *fp);
  * \brief The callback function called by the ods_iter() function
  *
  * \param ods	The ODS handle
- * \param ptr	Pointer to the object
+ * \param obj	The object handle
  * \param sz	The size of the object
  * \param arg	The 'arg' passed into ods_iter()
  */
-typedef void (*ods_iter_fn_t)(ods_t ods, void *ptr, size_t sz, void *arg);
+typedef void (*ods_iter_fn_t)(ods_t ods, ods_obj_t obj, void *arg);
 
 /**
  * \brief Iterate over all objects in the ODS
