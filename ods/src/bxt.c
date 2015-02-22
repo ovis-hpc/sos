@@ -310,10 +310,9 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 		ods_obj_put(entry_key);
 		if (rc <= 0)
 			goto found;
-		ods_obj_put(rec);
+		if (i < NODE(leaf)->count - 1)
+			ods_obj_put(rec);
 	}
-	ods_obj_put(leaf);
-	return NULL;
  found:
 	if (flags & ODS_ITER_F_UNIQUE) {
 		ods_obj_put(rec);
@@ -345,7 +344,7 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
 	if (!leaf)
 		goto out;
 
-	for (i = NODE(leaf)->count - 1; i >= 0; i--) {
+	for (i = NODE(leaf)->count - 1; i > 0; i--) {
 		rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).tail_ref);
 		ods_key_t entry_key =
 			ods_ref_as_obj(t->ods, REC(rec)->key_ref);
@@ -357,8 +356,7 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
 		}
 		goto out;
 	}
-	ods_obj_put(leaf);
-	return NULL;
+	rec = ods_ref_as_obj(t->ods, L_ENT(leaf,0).tail_ref);
  out:
 	if (flags & ODS_ITER_F_UNIQUE) {
 		ods_obj_put(rec);
