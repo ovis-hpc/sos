@@ -611,7 +611,7 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 	val->attr = attr;
 	val->obj = sos_obj_get(obj);
 	val->data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
-	if (!sos_attr_is_ref(attr))
+	if (!sos_attr_is_array(attr))
 		return val;
 	/* Follow the reference to the object */
 	ref_obj = ods_ref_as_obj(obj->sos->obj_ods, val->data->prim.ref_);
@@ -734,7 +734,7 @@ void *sos_value_as_key(sos_value_t value)
 	return value->attr->key_value_fn(value);
 }
 
-const char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
+char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
 {
 	struct sos_value_s v_;
 	sos_value_t v = sos_value_init(&v_, obj, attr);
@@ -817,7 +817,8 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 		*attr->data = *src_attr->data;
 		TAILQ_INSERT_TAIL(&dup->attr_list, attr, entry);
 	}
-	rbn_init(&dup->rbn, dup->data->name);
+	rbn_init(&dup->name_rbn, dup->data->name);
+	rbn_init(&dup->id_rbn, &dup->data->id);
 	return dup;
  err_1:
 	free(schema->dict);
@@ -866,8 +867,10 @@ static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
 		if (!attr->index)
 			goto err_1;
 	}
-	rbn_init(&schema->rbn, schema->data->name);
-	rbt_ins(&sos->schema_rbt, &schema->rbn);
+	rbn_init(&schema->name_rbn, schema->data->name);
+	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
+	rbn_init(&schema->id_rbn, &schema->data->id);
+	rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
 	sos->schema_count++;
 	return schema;
  err_1:
@@ -883,24 +886,24 @@ static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
 	return NULL;
 }
 
-sos_schema_t sos_schema_find(sos_t sos, const char *name)
+sos_schema_t sos_schema_by_name(sos_t sos, const char *name)
 {
 	sos_schema_t schema;
-	struct rbn *rbn = rbt_find(&sos->schema_rbt, (void *)name);
+	struct rbn *rbn = rbt_find(&sos->schema_name_rbt, (void *)name);
 	if (!rbn)
 		return NULL;
-	schema = container_of(rbn, struct sos_schema_s, rbn);
+	schema = container_of(rbn, struct sos_schema_s, name_rbn);
 	return sos_schema_get(schema);
 }
 
-sos_schema_t sos_schema_by_name(sos_t sos, const char *name)
+sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id)
 {
-	return sos_schema_find(sos, name);
-}
-
-sos_schema_t sos_schema_by_id(sos_t sos, int id)
-{
-	
+	sos_schema_t schema;
+	struct rbn *rbn = rbt_find(&sos->schema_id_rbt, (void *)&id);
+	if (!rbn)
+		return NULL;
+	schema = container_of(rbn, struct sos_schema_s, id_rbn);
+	return sos_schema_get(schema);
 }
 
 int sos_schema_add(sos_t sos, sos_schema_t schema)
@@ -922,7 +925,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 		return EBUSY;
 
 	/* Check to see if a schema by this name is already in the container */
-	if (sos_schema_find(sos, schema->data->name))
+	if (sos_schema_by_name(sos, schema->data->name))
 		return EEXIST;
 
 	udata = ods_get_user_data(sos->schema_ods);
@@ -1009,8 +1012,13 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 		goto err_3;
 	SOS_UDATA(udata)->dict[SOS_UDATA(udata)->dict_len] = ods_obj_ref(schema_obj);
 	SOS_UDATA(udata)->dict_len += 1;
-	rbn_init(&schema->rbn, schema->data->name);
-	rbt_ins(&sos->schema_rbt, &schema->rbn);
+
+	rbn_init(&schema->name_rbn, schema->data->name);
+	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
+
+	rbn_init(&schema->id_rbn, &schema->data->id);
+	rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
+
 	sos->schema_count++;
 
 	ods_obj_put(sos_obj_ref);
@@ -1216,6 +1224,7 @@ void sos_schema_print(sos_schema_t schema, FILE *fp)
 	fprintf(fp, "    name      : %s\n", schema->data->name);
 	fprintf(fp, "    schema_sz : %ld\n", schema->data->schema_sz);
 	fprintf(fp, "    obj_sz    : %ld\n", schema->data->obj_sz);
+	fprintf(fp, "    id        : %d\n", schema->data->id);
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
 		fprintf(fp, "    -attribute : %s\n", attr->data->name);
 		fprintf(fp, "        type          : %s\n", type_name(attr->data->type));
@@ -1230,7 +1239,7 @@ int print_schema(struct rbn *n, void *fp_, int level)
 	FILE *fp = fp_;
 	sos_attr_t attr;
 
-	sos_schema_t schema = container_of(n, struct sos_schema_s, rbn);
+	sos_schema_t schema = container_of(n, struct sos_schema_s, name_rbn);
 	sos_schema_print(schema, fp);
 
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
@@ -1244,7 +1253,7 @@ int print_schema(struct rbn *n, void *fp_, int level)
 
 void sos_container_info(sos_t sos, FILE *fp)
 {
-	rbt_traverse(&sos->schema_rbt, print_schema, fp);
+	rbt_traverse(&sos->schema_name_rbt, print_schema, fp);
 	ods_idx_info(sos->schema_idx, fp);
 	ods_info(ods_idx_ods(sos->schema_idx), fp);
 	ods_info(sos->obj_ods, fp);
@@ -1290,9 +1299,9 @@ void free_sos(sos_t sos, sos_commit_t flags)
 	}
 
 	/* Iterate through all the schema and free each one */
-	while (NULL != (rbn = rbt_min(&sos->schema_rbt))) {
-		rbt_del(&sos->schema_rbt, rbn);
-		sos_schema_put(container_of(rbn, struct sos_schema_s, rbn));
+	while (NULL != (rbn = rbt_min(&sos->schema_name_rbt))) {
+		rbt_del(&sos->schema_name_rbt, rbn);
+		sos_schema_put(container_of(rbn, struct sos_schema_s, name_rbn));
 	}
 	if (sos->path)
 		free(sos->path);
@@ -1305,9 +1314,14 @@ void free_sos(sos_t sos, sos_commit_t flags)
 	free(sos);
 }
 
-int schema_cmp(void *a, void *b)
+int schema_name_cmp(void *a, void *b)
 {
 	return strcmp((char *)a, (char *)b);
+}
+
+int schema_id_cmp(void *a, void *b)
+{
+	return *(uint32_t *)a - *(uint32_t *)b;
 }
 
 int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *p_c)
@@ -1328,7 +1342,8 @@ int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *p_c)
 
 	sos->path = strdup(path);
 	sos->o_perm = (ods_perm_t)o_perm;
-	rbt_init(&sos->schema_rbt, schema_cmp);
+	rbt_init(&sos->schema_name_rbt, schema_name_cmp);
+	rbt_init(&sos->schema_id_rbt, schema_id_cmp);
 	sos->schema_count = 0;
 
 	/* Open the ODS containing the schema objects */
@@ -1355,7 +1370,6 @@ int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *p_c)
 	 */
 	iter = ods_iter_new(sos->schema_idx);
 	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_next(iter)) {
-		int idx;
 		ods_obj_t obj_ref = ods_iter_obj(iter);
 		ods_obj_t schema_obj =
 			ods_ref_as_obj(sos->schema_ods,
@@ -1364,6 +1378,7 @@ int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *p_c)
 		sos_schema_t schema = init_schema(sos, schema_obj);
 		if (!schema)
 			goto err;
+		sos->schema_count++;
 		LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
 	}
 	*p_c = sos;
@@ -1429,6 +1444,49 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 	ods_obj_put(ods_obj);
  err_0:
 	return NULL;
+}
+
+sos_ref_t sos_obj_ref(sos_obj_t obj)
+{
+	if (obj->obj)
+		return ods_obj_ref(obj->obj);
+	return 0;
+}
+
+sos_obj_t sos_obj_from_ref(sos_t sos, sos_ref_t ref)
+{
+	ods_obj_t ods_obj;
+	if (0 == ref)
+		return NULL;
+
+	ods_obj = ods_ref_as_obj(sos->obj_ods, ref);
+	if (!ods_obj)
+		return NULL;
+
+	/* Get the schema id from the SOS object */
+	sos_obj_data_t sos_obj = ods_obj->as.ptr;
+	sos_schema_t schema = sos_schema_by_id(sos, sos_obj->schema);
+	if (!schema)
+		return NULL;
+
+	return __sos_init_obj(sos, schema, ods_obj);
+}
+
+sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val)
+{
+	ods_ref_t ref;
+	if (sos_attr_type(ref_val->attr) != SOS_TYPE_OBJ)
+		return NULL;
+
+	if (0 == ref_val->data->prim.ref_)
+		return NULL;
+
+	return sos_obj_from_ref(sos, ref_val->data->prim.ref_);
+}
+
+sos_schema_t sos_obj_schema(sos_obj_t obj)
+{
+	return sos_schema_get(obj->schema);
 }
 
 void sos_obj_delete(sos_obj_t obj)
@@ -1563,12 +1621,7 @@ int sos_obj_index(sos_obj_t obj)
 	return rc;
 }
 
-int sos_set_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr, const char *attr_value, char **endptr)
-{
-	return sos_obj_attr_from_str(sos_obj, attr, attr_value, endptr);
-}
-
-int sos_set_attr_by_name_from_str(sos_obj_t sos_obj,
+int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
 				  char **endptr)
 {
@@ -1578,6 +1631,18 @@ int sos_set_attr_by_name_from_str(sos_obj_t sos_obj,
 	if (!attr)
 		return ENOENT;
 
-	return sos_set_attr_from_str(sos_obj, attr, attr_value, endptr);
+	return sos_obj_attr_from_str(sos_obj, attr, attr_value, endptr);
+}
+
+char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj,
+				  const char *attr_name, char *str, size_t len)
+{
+	sos_value_t value;
+	sos_attr_t attr;
+	attr = sos_schema_attr_by_name(sos_obj->schema, attr_name);
+	if (!attr)
+		return NULL;
+
+	return sos_obj_attr_to_str(sos_obj, attr, str, len);
 }
 

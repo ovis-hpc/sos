@@ -122,6 +122,9 @@ class Object:
             elif t == sos.SOS_TYPE_BYTE_ARRAY:
                 self.__dict__[an_] = sos.value_as_str(v)
                 self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
+            elif t == sos.SOS_TYPE_OBJ:
+                self.__dict__[an_] = sos.value_as_str(v)
+                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
             else:
                 self.__dict__[an_] = ""
                 self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]

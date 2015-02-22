@@ -229,6 +229,7 @@ static char *timestamp_to_str_fn(sos_value_t v, char *str, size_t len)
 	size_t sz;
 	time_t ts;
 
+	memset(&tm_, 0, sizeof(tm_));
 	/* NB: time_t is 8B on some machines and 4B on others. This is
 	 * _not_ a 64b/32b issue, it's an OS choice and is not part of
 	 * the C standards. Therefore fine.secs must be assigned to a
@@ -246,7 +247,15 @@ static char *timestamp_to_str_fn(sos_value_t v, char *str, size_t len)
 
 static char *obj_to_str_fn(sos_value_t v, char *str, size_t len)
 {
-	return "not supported";
+	sos_t sos = (v->obj ? v->obj->sos : NULL);
+	sos_obj_t obj = (sos ? sos_obj_from_value(sos, v) : NULL);
+	str[0] = '\0';
+	snprintf(str, len, "%s@%lx",
+		 (obj ? sos_schema_name(obj->schema) : "???"),
+		 v->data->prim.ref_);
+	if (obj)
+		sos_obj_put(obj);
+	return str;
 }
 
 static char *byte_array_to_str_fn(sos_value_t v, char *str, size_t len)
@@ -403,6 +412,7 @@ int timestamp_from_str_fn(sos_value_t v, const char *value, char **endptr)
 	char *s;
 	int rc;
 	struct tm tm;
+	memset(&tm, 0, sizeof(tm));
 	s = strptime(value, "%Y/%m/%d %H:%M:%S", &tm);
 	if (!s)
 		return EINVAL;

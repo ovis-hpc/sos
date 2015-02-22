@@ -181,7 +181,7 @@ enum sos_cond_e {
  * containers. See the sos_schema_add() function to add a schema to a
  * container so that objects of that type can subsequently be created
  * in the container. Once a schema has been added, it can be looked up
- * with the sos_schema_find() function.
+ * with the sos_schema_by_name() and sos_schema_by_id() functions.
  *
  * Objects are created with the sos_obj_new() function. This function
  * takes a schema-handle as it's argument. The schema-id is saved
@@ -243,9 +243,8 @@ int sos_schema_add(sos_t sos, sos_schema_t schema);
  * \returns A pointer to the schema or a NULL pointer if a schema with
  * that name does not exist in the container.
  */
-sos_schema_t sos_schema_find(sos_t sos, const char *name);
 sos_schema_t sos_schema_by_name(sos_t sos, const char *name);
-sos_schema_t sos_schema_by_id(sos_t sos, const int id);
+sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id);
 
 /**
  * \brief Print the schema to a File pointer
@@ -467,42 +466,16 @@ sos_schema_t sos_attr_schema(sos_attr_t attr);
 /**
  * \brief Set an object attribute's value from a string
  *
- * This convenience function uses the attribute's string processing
- * functions to interpret a value specified as a character
- * string.
- *
- * For example:
- *
- *      sos_attr_t an_int = sos_schema_attr_by_name(schema, "my_int_attr");
- *      int rc = sos_set_attr_from_str(an_obj, an_int, "1234");
- *      if (!rc)
- *          printf("Success!!\n");
- *
- * \param sos_obj	The object handle.
- * \param attr		The attribute handle
- * \param attr_value	The attribute value
- * \param endptr Receives the point in the str argumeent where parsing stopped.
- *               This parameter may be NULL.
- * \retval 0 Success
- * \retval EINVAL The string format was invalid for the attribute type
- * \retval ENOSYS There is no string formatter for this attribute type
- */
-int sos_set_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr,
-			  const char *attr_value, char **endptr);
-
-/**
- * \brief Set an object attribute's value from a string
- *
  * This convenience function set's an object's attribute value specified as a
  * string. The attribute to set is specified by name.
  *
  * For example:
  *
- *     int rc = sos_set_attr_by_name_from_str(an_obj, "my_int_attr", "1234");
+ *     int rc = sos_obj_attr_by_name_from_str(an_obj, "my_int_attr", "1234");
  *     if (!rc)
  *        printf("Success!!\n");
  *
- * See the sos_set_attr_from_str() function to set the value with a string if
+ * See the sos_obj_attr_from_str() function to set the value with a string if
  * the attribute handle is known.
  *
  * \param sos_obj	The object handle
@@ -514,7 +487,7 @@ int sos_set_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr,
  * \retval EINVAL The string format was invalid for the attribute type
  * \retval ENOSYS There is no string formatter for this attribute type
  */
-int sos_set_attr_by_name_from_str(sos_obj_t sos_obj,
+int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
 				  char **endptr);
 
@@ -726,6 +699,46 @@ void sos_container_put(sos_t sos);
 sos_obj_t sos_obj_new(sos_schema_t schema);
 
 /**
+ * \brief Returns an Object's schema
+ * \param obj The object handle
+ * \retval The schema used to create the object.
+ */
+sos_schema_t sos_obj_schema(sos_obj_t obj);
+
+typedef ods_ref_t sos_ref_t;
+sos_ref_t sos_obj_ref(sos_obj_t obj);
+
+/**
+ * \brief  Return the object associated with the value
+ *
+ * This function will return a sos_obj_t for the object that is referred
+ * to by ref_val. Use the function sos_obj_from_ref() to obtain an
+ * object from a raw sos_ref_t value.
+ *
+ * \param sos The container handle
+ * \param ref_val A value handle to an attribute of type SOS_TYPE_OBJ
+ * \retval The object to which the reference refers.
+ * \retval NULL The reference did not point to a well formed object, or the schema
+ *              in the object header was not part of the container.
+ */
+sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val);
+
+/**
+ * \brief  Return the object associated with the reference
+ *
+ * This function will return a sos_obj_t for the object that is referred
+ * to by 'ref'. Use the function sos_obj_from_value() to obtain an
+ * object from a sos_value_t value.
+ *
+ * \param sos The container handle
+ * \param ref The object reference
+ * \retval The object to which the reference refers.
+ * \retval NULL The reference did not point to a well formed object, or the schema
+ *              in the object header was not part of the container.
+ */
+sos_obj_t sos_obj_from_ref(sos_t sos, sos_ref_t ref);
+
+/**
  * \brief Release the storage consumed by the object in the SOS object store.
  *
  * Deletes the object and any arrays to which the object refers. It
@@ -852,6 +865,17 @@ void sos_value_free(sos_value_t v);
  */
 sos_value_t sos_value_init(sos_value_t value, sos_obj_t obj, sos_attr_t attr);
 
+/**
+ * \brief Return a value for the specified object's attribute.
+ *
+ * This function returns a sos_value_t for an object's attribute.
+ * The reference on this value should be dropped with sos_value_put()
+ * when the application is finished with the value.
+ *
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \returns The value of the object's attribute.
+ */
 sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr);
 
 /**
@@ -885,7 +909,7 @@ size_t sos_value_size(sos_value_t value);
  * \returns A pointer to the str argument or NULL if there was a
  *          formatting error.
  */
-const char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len);
+char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len);
 
 /**
  * \brief Set the object attribute from a string
@@ -963,11 +987,11 @@ typedef struct ods_obj_s *sos_key_t;
  * on an index.
  *
  * A memory key is used to look up objects in the ODS. The storage for
- * these keys comes from memory. See the ods_key_alloc() function for
- * keys that are stored in the ODS.
+ * these keys comes from memory. See the sos_key_new() function for
+ * keys that are stored in the Container.
  *
  * If the size of the key is known to be less than 254 bytes, the
- * ODS_KEY() macro is useful for defining an ODS key that is allocated
+ * SOS_KEY() macro is useful for defining a SOS key that is allocated
  * on the stack and is automatically destroyed when the containing
  * function returns.
  *
@@ -1044,6 +1068,12 @@ int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b);
  * \return The native size of the attribute index's keys in bytes
  */
 size_t sos_attr_key_size(sos_attr_t attr);
+
+int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
+				  const char *attr_name, const char *attr_value,
+				  char **endptr);
+char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj, const char *attr_name,
+				  char *str, size_t len);
 
 /**
  * \brief Return the maximum size of this key's value
@@ -1138,7 +1168,7 @@ sos_attr_t sos_iter_attr(sos_iter_t iter);
  * \retval 0	iter == other
  * \retval >0	iter > other
  */
-int sos_iter_key_cmp(sos_iter_t iter, ods_key_t other);
+int sos_iter_key_cmp(sos_iter_t iter, sos_key_t other);
 
 /**
  * \brief Position the iterator at the specified key
@@ -1150,7 +1180,7 @@ int sos_iter_key_cmp(sos_iter_t iter, ods_key_t other);
  * \retval 0 Iterator is positioned at matching object.
  * \retval ENOENT No matching object was found.
  */
-int sos_iter_find(sos_iter_t iter, ods_key_t key);
+int sos_iter_find(sos_iter_t iter, sos_key_t key);
 
 /**
  * \brief Position the iterator at the infimum of the specified key.
@@ -1161,7 +1191,7 @@ int sos_iter_find(sos_iter_t iter, ods_key_t key);
  * \retval 0 if the iterator is positioned at the infinum
  * \retval ENOENT if the infimum does not exist
  */
-int sos_iter_inf(sos_iter_t i, ods_key_t key);
+int sos_iter_inf(sos_iter_t i, sos_key_t key);
 
 /**
  * \brief Position the iterator at the supremum of the specified key
@@ -1172,7 +1202,7 @@ int sos_iter_inf(sos_iter_t i, ods_key_t key);
  * \retval 0 The iterator is positioned at the supremum
  * \retval ENOENT No supremum exists
  */
-int sos_iter_sup(sos_iter_t i, ods_key_t key);
+int sos_iter_sup(sos_iter_t i, sos_key_t key);
 
 typedef enum sos_iter_flags_e {
 	SOS_ITER_F_ALL = ODS_ITER_F_ALL,
@@ -1282,7 +1312,7 @@ int sos_iter_end(sos_iter_t i);
  * with the key.
  *
  * \param iter	The iterator handle
- * \return ods_key_t at the current position
+ * \return sos_key_t at the current position
  */
 sos_key_t sos_iter_key(sos_iter_t iter);
 

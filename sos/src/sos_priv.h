@@ -173,7 +173,8 @@ struct sos_schema_s {
 	struct sos_schema_data_s data_;
 	sos_t sos;
 	ods_obj_t schema_obj;
-	struct rbn rbn;
+	struct rbn name_rbn;
+	struct rbn id_rbn;
 	sos_attr_t *dict;
 	LIST_ENTRY(sos_schema_s) entry;
 	TAILQ_HEAD(sos_attr_list, sos_attr_s) attr_list;
@@ -197,7 +198,8 @@ struct sos_container_s {
 	 */
 	ods_idx_t schema_idx;	/* Index schema by name */
 	ods_t schema_ods;	/* Contains the schema definitions */
-	struct rbt schema_rbt;	/* In memory schema tree */
+	struct rbt schema_name_rbt;	/* In memory schema tree by name */
+	struct rbt schema_id_rbt;	/* In memory schema tree by id */
 	size_t schema_count;
 
 	/*

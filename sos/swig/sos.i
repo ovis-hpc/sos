@@ -228,7 +228,8 @@ typedef struct sos_value_s {
 void sos_schema_print(sos_schema_t schema, FILE *fp);
 sos_schema_t sos_schema_new(const char *name);
 int sos_schema_add(sos_t sos, sos_schema_t schema);
-sos_schema_t sos_schema_find(sos_t sos, const char *name);
+sos_schema_t sos_schema_by_name(sos_t sos, const char *name);
+sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id);
 int sos_schema_delete(sos_t sos, const char *name);
 sos_schema_t sos_schema_get(sos_schema_t schema);
 void sos_schema_put(sos_schema_t schema);;
@@ -242,6 +243,10 @@ sos_attr_t sos_schema_attr_by_name(sos_schema_t schema, const char *name);
 sos_attr_t sos_schema_attr_by_id(sos_schema_t schema, int attr_id);
 sos_schema_t sos_schema_first(sos_t sos);
 sos_schema_t sos_schema_next(sos_schema_t schema);
+sos_attr_t sos_schema_attr_first(sos_schema_t schema);
+sos_attr_t sos_schema_attr_last(sos_schema_t schema);
+sos_attr_t sos_schema_attr_next(sos_attr_t attr);
+sos_attr_t sos_schema_attr_prev(sos_attr_t attr);
 
 int sos_attr_id(sos_attr_t attr);
 const char *sos_attr_name(sos_attr_t attr);
@@ -250,8 +255,8 @@ int sos_attr_index(sos_attr_t attr);
 sos_schema_t sos_attr_schema(sos_attr_t attr);
 size_t sos_attr_size(sos_attr_t attr);
 
-int sos_set_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr, const char *attr_value, char **endptr);
-int sos_set_attr_by_name_from_str(sos_obj_t sos_obj,
+int sos_obj_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr, const char *attr_value, char **endptr);
+int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value, char **endptr);
 int sos_container_new(const char *path, int o_mode);
 typedef enum sos_perm_e {
@@ -281,6 +286,8 @@ sos_obj_t sos_obj_get(sos_obj_t obj);
 void sos_obj_put(sos_obj_t obj);
 int sos_obj_index(sos_obj_t obj);
 int sos_obj_remove(sos_obj_t obj);
+sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val);
+sos_obj_t sos_obj_from_ref(sos_t sos, sos_ref_t ref);
 sos_value_t sos_value_by_name(sos_value_t value, sos_schema_t schema, sos_obj_t obj,
 			      const char *name, int *attr_id);
 sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id);
@@ -340,14 +347,6 @@ int sos_iter_end(sos_iter_t i);
 sos_key_t sos_iter_key(sos_iter_t iter);
 sos_obj_t sos_iter_obj(sos_iter_t iter);
 int sos_iter_obj_remove(sos_iter_t iter);
-
-// int sos_verify_index(sos_t sos, int attr_id);
-// int sos_rebuild_index(sos_t sos, int attr_id);
-// int sos_chown(sos_t sos, uid_t owner, gid_t group);
-// sos_t sos_rotate(sos_t sos, int N);
-// sos_t sos_rotate_i(sos_t sos, int N);
-// int sos_post_rotation(sos_t sos, const char *env_var);
-// sos_t sos_reinit(sos_t sos, uint64_t sz);
 
 %pythoncode %{
 %}
