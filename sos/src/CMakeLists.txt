@@ -23,8 +23,11 @@ target_link_libraries(sos ods dl pthread)
 add_executable(sos_cmd sos_cmd.c)
 target_link_libraries(sos_cmd sos yaml)
 
-# add_executable(job_cmd job_cmd.c)
-# target_link_libraries(job_cmd sos)
+add_executable(job_add job_add.c)
+target_link_libraries(job_add sos)
+
+add_executable(job_query job_query.c)
+target_link_libraries(job_query sos)
 
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/sos_cmd DESTINATION bin)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/libsos.so DESTINATION lib)

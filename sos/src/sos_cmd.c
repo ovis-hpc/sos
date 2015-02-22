@@ -360,7 +360,7 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 	struct col_s *col;
 	sos_filter_t filt;
 
-	schema = sos_schema_find(sos, schema_name);
+	schema = sos_schema_by_name(sos, schema_name);
 	if (!schema) {
 		printf("The schema '%s' was not found.\n", schema_name);
 		return ENOENT;
@@ -448,7 +448,7 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 		csv_footer(stdout, rec_count, iter_count);
 		break;
 	default:
-		table_footer(stdout, rec_count, iter_count);	
+		table_footer(stdout, rec_count, iter_count);
 		break;
 	}
 	return 0;
@@ -768,16 +768,20 @@ void *add_proc(void *arg)
 
 	while (!import_done || !TAILQ_EMPTY(&queue->queue)) {
 		pthread_mutex_lock(&queue->lock);
-		while (!queue->depth) {
+		while (!queue->depth && !import_done) {
 			rc = pthread_cond_wait(&queue->wait, &queue->lock);
 			if (rc == EINTR)
 				continue;
 		}
-		work = TAILQ_FIRST(&queue->queue);
-		TAILQ_REMOVE(&queue->queue, work, entry);
-		queue->depth--;
+		if (!TAILQ_EMPTY(&queue->queue)) {
+			work = TAILQ_FIRST(&queue->queue);
+			TAILQ_REMOVE(&queue->queue, work, entry);
+			queue->depth--;
+		} else
+			work = NULL;
 		pthread_mutex_unlock(&queue->lock);
-
+		if (import_done && !work)
+			break;
 		cols = 0;
 		for (tok = work->buf; *tok != '\0'; tok = next_tok) {
 			int id = col_map[cols];
@@ -823,7 +827,7 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 	ods_atomic_t prev_recs = 0;
 	int items_queued = 0;
 	/* Get the schema */
-	schema = sos_schema_find(sos, schema_name);
+	schema = sos_schema_by_name(sos, schema_name);
 	if (!schema) {
 		printf("The schema '%s' was not found.\n", schema_name);
 		return ENOENT;
@@ -1010,7 +1014,7 @@ int add_object(sos_t sos, FILE* fp)
 			case SCHEMA_VALUE:
 				if (schema)
 					sos_schema_put(schema);
-				schema = sos_schema_find(sos, kw_.str);
+				schema = sos_schema_by_name(sos, kw_.str);
 				if (!schema) {
 					printf("The schema '%s' was not found.\n",
 					       kw_.str);
@@ -1054,8 +1058,9 @@ int add_object(sos_t sos, FILE* fp)
 					}
 				} else
 					attr_value = strdup(kw_.str);
-				rc = sos_set_attr_by_name_from_str(sos_obj,
-								   attr_name, attr_value, NULL);
+				rc = sos_obj_attr_by_name_from_str(sos_obj,
+								   attr_name, attr_value,
+								   NULL);
 				if (rc) {
 					printf("Error %d setting attribute '%s' to '%s'.\n",
 					       rc, attr_name, attr_value);
@@ -1113,8 +1118,19 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, char *str)
 	char cond_str[16];
 	char value_str[64];
 	int primary;
+	int rc;
 
-	int rc = sscanf(str, "%64[^:]:%16[^:]:%64s", attr_name, cond_str, value_str);
+	/*
+	 * See if str the special keyword 'unique'
+	 */
+	if (strcasestr(str, "unique")) {
+		rc = sos_filter_flags_set(filt, SOS_ITER_F_UNIQUE);
+		if (rc)
+			printf("Error %d setting the filter flags.\n", rc);
+		return rc;
+	}
+
+	rc = sscanf(str, "%64[^:]:%16[^:]:%64[^\t\n]", attr_name, cond_str, value_str);
 	if (rc != 3) {
 		printf("Error %d parsing the filter clause '%s'.\n", rc, str);
 		return EINVAL;

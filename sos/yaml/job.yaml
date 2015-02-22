@@ -7,7 +7,7 @@ schema:
     type: timestamp
     indexed: true
   - attribute: EndTime
-    type: uint32
+    type: timestamp
     indexed: true
   - attribute: UID
     type: uint32
@@ -21,7 +21,7 @@ schema:
   - attribute: Name
     type: byte_array
 schema:
-  - name: Component
+  - name: CompRef
   - attribute: CompId
     type: uint64
   - attribute: NextComp
