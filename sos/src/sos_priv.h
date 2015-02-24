@@ -136,7 +136,7 @@ typedef char *(*sos_value_to_str_fn_t)(sos_value_t, char *, size_t);
 typedef int (*sos_value_from_str_fn_t)(sos_value_t, const char *, char **);
 typedef void *(*sos_value_key_value_fn_t)(sos_value_t);
 
-typedef struct sos_attr_s {
+struct sos_attr_s {
 	sos_attr_data_t data;
 	struct sos_attr_data_s data_;
 
@@ -150,7 +150,7 @@ typedef struct sos_attr_s {
 	sos_value_key_value_fn_t key_value_fn;
 
 	TAILQ_ENTRY(sos_attr_s) entry;
-} *sos_attr_t;
+};
 
 typedef struct sos_schema_data_s {
 	char name[SOS_SCHEMA_NAME_LEN];
@@ -164,7 +164,6 @@ typedef struct sos_schema_data_s {
 	struct sos_attr_data_s attr_dict[0];
 } *sos_schema_data_t;
 
-typedef struct sos_schema_s *sos_schema_t;
 #define SOS_SCHEMA_F_INTERNAL	0x01
 struct sos_schema_s {
 	ods_atomic_t ref_count;
