@@ -411,9 +411,9 @@ size_t ods_key_set(ods_key_t key, void *value, size_t sz)
 	return count;
 }
 
-const char *ods_key_to_str(ods_idx_t idx, ods_key_t key)
+const char *ods_key_to_str(ods_idx_t idx, ods_key_t key, char *buf)
 {
-	return idx->idx_class->cmp->to_str(key);
+	return idx->idx_class->cmp->to_str(key, buf);
 }
 
 int ods_key_from_str(ods_idx_t idx, ods_key_t key, const char *str)
@@ -429,6 +429,11 @@ int ods_key_cmp(ods_idx_t idx, ods_key_t a, ods_key_t b)
 size_t ods_idx_key_size(ods_idx_t idx)
 {
 	return idx->idx_class->cmp->size();
+}
+
+size_t ods_idx_key_str_size(ods_idx_t idx)
+{
+	return idx->idx_class->cmp->str_size();
 }
 
 size_t ods_key_size(ods_key_t key)

@@ -336,11 +336,19 @@ int ods_key_from_str(ods_idx_t idx, ods_key_t key, const char *str);
 /**
  * \brief Return a string representation of the key value
  *
+ * The string buffer passed in is assumed to be at least
+ * ods_idx_key_str_size() bytes long. If the ods_idx_key_str_size()
+ * function returns 0, then the key is variable size. In this
+ * case, the <tt>buf</tt> parameter is ignored and ods_key_to_str()
+ * function will return a buffer that it allocates internally and must
+ * be freed by the caller.
+ *
  * \param idx	The index handle
  * \param key	The key
+ * \param buf   The string buffer to contain the value
  * \return A const char * representation of the key value.
  */
-const char *ods_key_to_str(ods_idx_t idx, ods_key_t key);
+const char *ods_key_to_str(ods_idx_t idx, ods_key_t key, char *buf);
 
 /**
  * \brief Compare two keys using the index's compare function
@@ -365,6 +373,17 @@ int ods_key_cmp(ods_idx_t idx, ods_key_t a, ods_key_t b);
  * \return The native size of the index's keys in bytes
  */
 size_t ods_idx_key_size(ods_idx_t idx);
+
+/**
+ * \brief Return the size of the key as a string
+ *
+ * Returns the size of the string buffer (including the terminating '\0')
+ * required to contain the key when formatted as a character string.
+ *
+ * \param idx
+ * \retval Buffer size
+ */
+size_t ods_idx_key_str_size(ods_idx_t idx);
 
 /**
  * \brief Return the max size of this key's value

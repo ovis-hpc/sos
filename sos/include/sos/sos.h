@@ -531,12 +531,12 @@ typedef enum sos_perm_e {
  *
  * \param path		Pathname for the Container. See sos_container_new()
  * \param o_perm	The requested read/write permissions
- * \param pc		Pointer to a sos_t handle.
- * \retval 0		Success.
+ * \retval !NULL	The sos_t handle for the container.
+ * \retval NULL		An error occured, consult errno for the reason.
  * \retval EPERM	The user has insufficient privilege to open the container.
  * \retval ENOENT	The container does not exist
  */
-int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *pc);
+sos_t sos_container_open(const char *path, sos_perm_t o_perm);
 
 /**
  * \brief Delete storage associated with a Container
@@ -689,7 +689,7 @@ void sos_container_put(sos_t sos);
  * insufficient disk space. Use the sos_obj_index() to add the object
  * to all indices defined by it's object class.
  *
- * See the sos_schema_find() function call for information on how to
+ * See the sos_schema_by_name() function call for information on how to
  * obtain a schema handle.
  *
  * \param schema	The schema handle
@@ -864,6 +864,8 @@ void sos_value_free(sos_value_t v);
  * \retval The value handle
  */
 sos_value_t sos_value_init(sos_value_t value, sos_obj_t obj, sos_attr_t attr);
+#define SOS_VALUE(_name_)				\
+	struct sos_value_s  _name_ ## __, *_name_ = &_name_ ## __;
 
 /**
  * \brief Return a value for the specified object's attribute.
@@ -1185,6 +1187,9 @@ int sos_iter_find(sos_iter_t iter, sos_key_t key);
 /**
  * \brief Position the iterator at the infimum of the specified key.
  *
+ * Position the iterator at the object whose key is the greatest
+ * lower bound of the specified key.
+ *
  * \param i Pointer to the iterator
  * \param key The key.
  *
@@ -1195,6 +1200,9 @@ int sos_iter_inf(sos_iter_t i, sos_key_t key);
 
 /**
  * \brief Position the iterator at the supremum of the specified key
+ *
+ * Position the iterator at the object whose key is the least
+ * upper bound of the specified key.
  *
  * \param i Pointer to the iterator
  * \param key The key.

@@ -80,16 +80,16 @@ class Object:
     table_fmt = 3
     def_fmt = json_fmt
 
-    def __init__(self, obj, schema, str_fmt=None):
+    def __init__(self, obj, str_fmt=None):
         if not str_fmt:
             self.str_fmt = self.def_fmt
         else:
             self.str_fmt = str_fmt
         self.obj = obj
-        self.schema = schema
+        self.schema = Schema(sos.sos_obj_schema(obj))
         self.values = {}
         self.col_widths = {}
-        for attr_name, attr in schema.attrs.iteritems():
+        for attr_name, attr in self.schema.attrs.iteritems():
             self.col_widths[attr_name] = attr.col_width
             v = sos.sos_value(obj, attr.attr)
             t = attr.sos_type
@@ -225,7 +225,7 @@ class Iterator:
         if rc == 0:
             obj = sos.sos_iter_obj(self.iter_)
             if obj:
-                return Object(obj, self.attr.schema)
+                return Object(obj)
         else:
             return None
 
@@ -234,7 +234,7 @@ class Iterator:
         if rc == 0:
             obj = sos.sos_iter_obj(self.iter_)
             if obj:
-                return Object(obj, self.attr.schema)
+                return Object(obj)
         return None
 
     def next(self):
@@ -242,7 +242,7 @@ class Iterator:
         if rc == 0:
             obj = sos.sos_iter_obj(self.iter_)
             if obj:
-                return Object(obj, self.attr.schema)
+                return Object(obj)
         return None
 
     def prev(self):
@@ -250,7 +250,7 @@ class Iterator:
         if rc == 0:
             obj = sos.sos_iter_obj(self.iter_)
             if obj:
-                return Object(obj, self.attr.schema)
+                return Object(obj)
         return None
 
     def find(self, key):
@@ -258,7 +258,7 @@ class Iterator:
         if rc == 0:
             obj = sos.sos_iter_obj(self.iter_)
             if obj:
-                return Object(obj, self.attr.schema)
+                return Object(obj)
         return None
 
     def sup(self, key):
@@ -266,7 +266,7 @@ class Iterator:
         if rc == 0:
             obj = sos.sos_iter_obj(self.iter_)
             if obj:
-                return Object(obj, self.attr.schema)
+                return Object(obj)
         return None
 
     def inf(self, key):
@@ -274,7 +274,7 @@ class Iterator:
         if rc == 0:
             obj = sos.sos_iter_obj(self.iter_)
             if obj:
-                return Object(obj, self.attr.schema)
+                return Object(obj)
         return None
 
     def pos(self):
@@ -292,6 +292,24 @@ class Iterator:
 
     def duplicates(self):
         return sos.sos_iter_dups(self.iter_)
+
+    def minkey(self):
+        rc = sos.sos_iter_begin(self.iter_)
+        if rc:
+            return ""
+        key = sos.sos_iter_key(self.iter_)
+        rv = sos.sos_key_to_str(self.attr.attr, key)
+        sos.sos_key_put(key)
+        return rv;
+
+    def maxkey(self):
+        rc = sos.sos_iter_end(self.iter_)
+        if rc:
+            return ""
+        key = sos.sos_iter_key(self.iter_)
+        rv = sos.sos_key_to_str(self.attr.attr, key)
+        sos.sos_key_put(key)
+        return rv;
 
 class Filter:
     comparators = {
@@ -340,31 +358,31 @@ class Filter:
     def begin(self):
         obj = sos.sos_filter_begin(self.filt)
         if obj:
-            return Object(obj, self.iter_.attr.schema)
+            return Object(obj)
         return None
 
     def end(self):
         obj = sos.sos_filter_end(self.filt)
         if obj:
-            return Object(obj, self.iter_.attr.schema)
+            return Object(obj)
         return None
 
     def next(self):
         obj = sos.sos_filter_next(self.filt)
         if obj:
-            return Object(obj, self.iter_.attr.schema)
+            return Object(obj)
         return None
 
     def prev(self):
         obj = sos.sos_filter_prev(self.filt)
         if obj:
-            return Object(obj, self.iter_.attr.schema)
+            return Object(obj)
         return None
 
     def obj(self):
         obj = sos.sos_filter_obj(self.filt)
         if obj:
-            return Object(obj, self.iter_.attr.schema)
+            return Object(obj)
 
     def pos(self):
         rc = sos.sos_filter_pos(self.filt, self.pos_)
@@ -486,7 +504,7 @@ class Container:
         self.schemas = {}
         try:
             self.path = path
-            self.container = sos.container_open(path, mode)
+            self.container = sos.sos_container_open(path, mode)
             if self.container == None:
                 raise Error('The container "{0}" could not be opened.'.format(path))
             self.schemas = {}
@@ -543,6 +561,6 @@ def dump_schema_objects(schema):
         o = iter.next()
 
 if __name__ == "__main__":
-    c = Container("/SOS/bluewaters")
+    c = Container("/DATA/bwx")
     for schema_name, schema in c.schemas.iteritems():
         dump_schema_objects(schema)

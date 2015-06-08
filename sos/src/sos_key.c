@@ -86,7 +86,16 @@ int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
 
 const char *sos_key_to_str(sos_attr_t attr, sos_key_t key)
 {
-	return ods_key_to_str(attr->index, key);
+#if 0
+	char *str = malloc(80);
+	struct sos_value_s val_;
+	struct ods_key_value_s *kv = key->as.ptr;
+	val_.attr = attr;
+	val_.data = (sos_attr_data_t)&kv->value[0];
+	return sos_value_to_str(&val_, str, 80);
+#endif
+	char *keystr = malloc(ods_idx_key_str_size(attr->index));
+	return ods_key_to_str(attr->index, key, keystr);
 }
 
 int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)

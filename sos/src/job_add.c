@@ -69,18 +69,18 @@ const char *short_options = "C:j:s:e:c:n:u:";
 struct option long_options[] = {
 	{"comp_file",   required_argument,  0,  'c'},
 	{"container",   required_argument,  0,  'C'},
-	{"job",         required_argument,  0,  'j'},
+	{"job_id",      required_argument,  0,  'j'},
 	{"start",       required_argument,  0,  's'},
 	{"end",         required_argument,  0,  'e'},
-	{"uid",         required_argument,  0,  'u'},
-	{"name",        required_argument,  0,  'n'},
+	{"user_name",   required_argument,  0,  'u'},
+	{"job_name",    required_argument,  0,  'n'},
 	{0,             0,                  0,    0}
 };
 
 void usage(int argc, char *argv[])
 {
 	printf("usage: %s -C <container> -j <job_id> -s <start_time> "
-	       "-e <end_time> -c <comp_file> -n <name> -u <uid>.\n", argv[0]);
+	       "-e <end_time> -c <comp_file> -n <name> -u <uname>.\n", argv[0]);
 	printf("       <container>  The path to the container\n"
 	       "       <job_id>     A unique Job Id (64b integer)\n"
 	       "       <start_time> The time the job started specified as follows:\n"
@@ -89,7 +89,7 @@ void usage(int argc, char *argv[])
 	       "       <comp_file>  A text file containing a newline separated list of\n"
 	       "                    Component Id (64b integers)\n"
 	       "       <name>       A text name for the Job\n"
-	       "       <uid>        A Unix user-id\n");
+	       "       <uname>      The user name\n");
 	exit(1);
 }
 
@@ -248,13 +248,13 @@ sos_obj_t job_new(sos_t sos, char *id, char *start, char *end, char *uid, char *
 		goto err;
 	}
 	/* Set the UID */
-	rc = sos_obj_attr_by_name_from_str(job_obj, "UID", uid, NULL);
+	rc = sos_obj_attr_by_name_from_str(job_obj, "UserName", uid, NULL);
 	if (rc) {
 		printf("Error %d setting UID from the string %s.\n", rc, uid);
 		goto err;
 	}
 	/* Set the Name */
-	rc = sos_obj_attr_by_name_from_str(job_obj, "Name", name, NULL);
+	rc = sos_obj_attr_by_name_from_str(job_obj, "JobName", name, NULL);
 	if (rc) {
 		printf("Error %d setting Name from the string %s.\n", rc, name);
 		goto err;
@@ -332,13 +332,13 @@ int main(int argc, char *argv[])
 			usage(argc, argv);
 		}
 	}
-	if (!path || !start_str || !end_str || !job_str || !uid_str || !name_str)
+	if (!path /* || !start_str || !end_str || !job_str || !uid_str || !name_str */)
 		usage(argc, argv);
 
-	rc = sos_container_open(path, SOS_PERM_RW, &sos);
-	if (rc) {
+	sos = sos_container_open(path, SOS_PERM_RW);
+	if (!sos) {
 		perror("could not open container:");
-		return rc;
+		return errno;
 	}
 	comp_schema = sos_schema_by_name(sos, "CompRef");
 	if (!comp_schema) {
@@ -350,6 +350,24 @@ int main(int argc, char *argv[])
 		printf("The 'Sample' schema was not found.\n");
 		return ENOENT;
 	}
+	char *s;
+	char buf[128];
+	s = fgets(buf, sizeof(buf), comp_file);
+	job_str = strdup(s);
+	s = fgets(buf, sizeof(buf), comp_file);
+	uid_str = strdup(s);
+	s = strchr(uid_str, '\n');
+	if (s)
+		*s = '\0';
+	s = fgets(buf, sizeof(buf), comp_file);
+	start_str = strdup(s);
+	s = fgets(buf, sizeof(buf), comp_file);
+	end_str = strdup(s);
+	s = fgets(buf, sizeof(buf), comp_file);
+	name_str = strdup(s);
+	s = strchr(name_str, '\n');
+	if (s)
+		*s = '\0';
 	job_obj = job_new(sos, job_str, start_str, end_str, uid_str, name_str);
 	if (!job_obj)
 		usage(argc, argv);

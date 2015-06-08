@@ -46,16 +46,6 @@
 #include <stdio.h>
 #include <sys/queue.h>
 #include <sos/sos.h>
-#include "sos_priv.h"
-
-sos_t container_open(char const *path, int o_perm)
-{
-	sos_t sos;
-	int rc = sos_container_open((const char *)path, o_perm, &sos);
-	if (!rc)
-		return sos;
-	return NULL;
-}
 
 const char *value_as_str(sos_value_t value)
 {
@@ -116,7 +106,6 @@ sos_obj_t sos_filter_obj(sos_filter_t filt);
 int sos_filter_flags_set(sos_filter_t f, sos_iter_flags_t flags);
 
 void container_info(sos_t sos);
-sos_t container_open(const char *path, int o_mode);
 
 typedef char int8_t;
 typedef short int16_t;
@@ -224,6 +213,18 @@ typedef struct sos_value_s {
 } *sos_value_t;
 
 #pragma pack()
+typedef enum sos_perm_e {
+	SOS_PERM_RO = 0,
+	SOS_PERM_RW,
+} sos_perm_t;
+typedef enum sos_commit_e {
+	SOS_COMMIT_ASYNC,
+	SOS_COMMIT_SYNC
+} sos_commit_t;
+
+typedef struct ods_obj_s *ods_obj_t;
+typedef ods_obj_t ods_key_t;
+typedef ods_key_t sos_key_t;
 
 void sos_schema_print(sos_schema_t schema, FILE *fp);
 sos_schema_t sos_schema_new(const char *name);
@@ -259,17 +260,9 @@ int sos_obj_attr_from_str(sos_obj_t sos_obj, sos_attr_t attr, const char *attr_v
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value, char **endptr);
 int sos_container_new(const char *path, int o_mode);
-typedef enum sos_perm_e {
-	SOS_PERM_RO = 0,
-	SOS_PERM_RW,
-} sos_perm_t;
-int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *pc);
+sos_t sos_container_open(const char *path, sos_perm_t o_perm);
 int sos_container_delete(sos_t c);
 
-typedef enum sos_commit_e {
-	SOS_COMMIT_ASYNC,
-	SOS_COMMIT_SYNC
-} sos_commit_t;
 
 void sos_container_close(sos_t c, sos_commit_t flags);
 int sos_container_commit(sos_t c, sos_commit_t flags);
@@ -280,6 +273,7 @@ void sos_container_put(sos_t sos);
 #define SOS_OBJ_BE	1
 #define SOS_OBJ_LE	2
 
+sos_schema_t sos_obj_schema(sos_obj_t obj);
 sos_obj_t sos_obj_new(sos_schema_t schema);
 void sos_obj_delete(sos_obj_t obj);
 sos_obj_t sos_obj_get(sos_obj_t obj);
@@ -303,9 +297,9 @@ void sos_value_put(sos_value_t value);
 const char *sos_value_to_str(sos_value_t value, char *str, size_t len);
 int sos_value_from_str(sos_value_t value, const char* str, char **endptr);
 
-typedef ods_key_t sos_key_t;
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
 int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
+%newobject sos_key_to_str;
 const char *sos_key_to_str(sos_attr_t attr, sos_key_t key);
 int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b);
 size_t sos_attr_key_size(sos_attr_t attr);

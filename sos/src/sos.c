@@ -1087,6 +1087,68 @@ int sos_schema_delete(sos_t sos, const char *name)
  * - sos_container_put() - Put a counted reference on the Container
  */
 
+/* This function effectively implements 'mkdir -p' */
+static int make_all_dir(const char *inp_path, mode_t omode)
+{
+	struct stat sb;
+	mode_t numask, oumask;
+	int first, last, retval;
+	char *p, *path;
+
+	p = path = strdup(inp_path);
+	if (!p) {
+		errno = ENOMEM;
+		return 1;
+	}
+
+	oumask = 0;
+	retval = 0;
+	if (p[0] == '/')
+		++p;
+
+	for (first = 1, last = 0; !last ; ++p) {
+		if (p[0] == '\0')
+			last = 1;
+		else if (p[0] != '/')
+			continue;
+		*p = '\0';
+		if (!last && p[1] == '\0')
+			last = 1;
+		if (first) {
+			oumask = umask(0);
+			numask = oumask & ~(S_IWUSR | S_IXUSR);
+			(void)umask(numask);
+			first = 0;
+		}
+		if (last)
+			(void)umask(oumask);
+		if (mkdir(path, last ? omode : S_IRWXU | S_IRWXG | S_IRWXO) < 0) {
+			if (errno == EEXIST || errno == EISDIR) {
+				if (stat(path, &sb) < 0) {
+					retval = 1;
+					break;
+				} else if (!S_ISDIR(sb.st_mode)) {
+					if (last)
+						errno = EEXIST;
+					else
+						errno = ENOTDIR;
+					retval = 1;
+					break;
+				}
+			} else {
+				retval = 1;
+				break;
+			}
+		}
+		if (!last)
+			*p = '/';
+	}
+	if (!first && !last)
+		(void)umask(oumask);
+	free(path);
+	return retval;
+}
+
 /**
  * Create a new container
  */
@@ -1105,7 +1167,7 @@ int sos_container_new(const char *path, int o_mode)
 		x_mode |= S_IXUSR;
 	if (x_mode & (S_IWOTH | S_IROTH))
 		x_mode |= S_IXOTH;
-	rc = mkdir(path, x_mode);
+	rc = make_all_dir(path, x_mode);
 	if (rc) {
 		rc = errno;
 		goto err_0;
@@ -1324,7 +1386,7 @@ int schema_id_cmp(void *a, void *b)
 	return *(uint32_t *)a - *(uint32_t *)b;
 }
 
-int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *p_c)
+sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 {
 	char tmp_path[PATH_MAX];
 	sos_t sos;
@@ -1332,8 +1394,10 @@ int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *p_c)
 	ods_iter_t iter;
 
 	sos = calloc(1, sizeof(*sos));
-	if (!sos)
-		return ENOMEM;
+	if (!sos) {
+		errno = ENOMEM;
+		return NULL;
+	}
 
 	pthread_mutex_init(&sos->lock, NULL);
 	sos->ref_count = 1;
@@ -1381,11 +1445,11 @@ int sos_container_open(const char *path, sos_perm_t o_perm, sos_t *p_c)
 		sos->schema_count++;
 		LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
 	}
-	*p_c = sos;
-	return 0;
+	return sos;
  err:
 	sos_container_put(sos);
-	return ENOENT;
+	errno = ENOENT;
+	return NULL;
 }
 
 int sos_container_stat(sos_t sos, struct stat *sb)

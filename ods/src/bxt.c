@@ -36,10 +36,12 @@ void dump_node(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *f
 	fprintf(fp, "%p - %*s%s[%d] | %p : ", (void *)(unsigned long)NODE(n)->parent,
 	       indent, "", "NODE", ent, n->as.ptr);
 	for (i = 0; i < NODE(n)->count; i++) {
+		char *keystr = malloc(ods_idx_key_str_size(idx));
 		ods_key_t key = ods_ref_as_obj(t->ods, N_ENT(n,i).key_ref);
 		fprintf(fp, "%s:%p, ",
-		       (key ? ods_key_to_str(idx, key) : "-"),
-		       (void *)(unsigned long)N_ENT(n, i).node_ref);
+			(key ? ods_key_to_str(idx, key, keystr) : "-"),
+			(void *)(unsigned long)N_ENT(n, i).node_ref);
+		free(keystr);
 		ods_obj_put(key);
 	}
 	fprintf(fp, "\n");

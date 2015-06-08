@@ -59,14 +59,16 @@ void iter_tree(ods_idx_t idx)
 	ods_ref_t ref;
 	ods_iter_t i = ods_iter_new(idx);
 	int rc;
+	char *keystr = malloc(ods_idx_key_str_size(idx));
 	for (rc = ods_iter_begin(i); !rc; rc = ods_iter_next(i)) {
 		key = ods_iter_key(i);
 		ref = ods_iter_ref(i);
-		printf("%s, ", ods_key_to_str(idx, key));
+		printf("%s, ", ods_key_to_str(idx, key, keystr));
 		rc = ods_idx_find(idx, key, &ref);
 		ods_obj_put(key);
 		assert(ref);
 	}
+	free(keystr);
 	printf("\n");
 	ods_iter_delete(i);
 }
@@ -191,11 +193,12 @@ int main(int argc, char *argv[])
 	printf("All matches...\n");
 	iter = ods_iter_new(idx);
 	ods_key_from_str(idx, key, iter_key);
+	char *keystr = malloc(ods_idx_key_str_size(idx));
 	for (rc = ods_iter_find(iter, key); !rc; rc = ods_iter_next(iter)) {
 		ods_key_t k = ods_iter_key(iter);
 		if (ods_key_cmp(idx, key, k))
 			break;
-		printf("key %s\n", ods_key_to_str(idx, k));
+		printf("key %s\n", ods_key_to_str(idx, k, keystr));
 	}
 	printf("... End matches.\n");
 
@@ -207,7 +210,7 @@ int main(int argc, char *argv[])
 		ods_key_t k = ods_iter_key(iter);
 		if (ods_key_cmp(idx, key, k))
 			break;
-		printf("key %s obj %p\n", ods_key_to_str(idx, k),
+		printf("key %s obj %p\n", ods_key_to_str(idx, k, keystr),
 		       (void *)ods_iter_ref(iter));
 	}
 	printf("... End matches.\n");
@@ -220,7 +223,7 @@ int main(int argc, char *argv[])
 		ods_key_t k = ods_iter_key(iter);
 		if (ods_key_cmp(idx, key, k))
 			break;
-		printf("key %s obj %p\n", ods_key_to_str(idx, k),
+		printf("key %s obj %p\n", ods_key_to_str(idx, k, keystr),
 		       (void *)ods_iter_ref(iter));
 	}
 	printf("... End matches.\n");
@@ -230,13 +233,13 @@ int main(int argc, char *argv[])
 	iter = ods_iter_new(idx);
 	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_begin(iter)) {
 		ods_key_t k = ods_iter_key(iter);
-		printf("delete %s\n", ods_key_to_str(idx, k));
+		printf("delete %s\n", ods_key_to_str(idx, k, keystr));
 		rc = ods_idx_delete(idx, k, &ref);
 		ods_obj_put(k);
 		if (rc) {
 			printf("FAILURE: The key '%s' is in the iterator, "
 			       "but could not be deleted.\n",
-			       ods_key_to_str(idx, k));
+			       ods_key_to_str(idx, k, keystr));
 		}
 	}
 	ods_idx_print(idx, stdout);
@@ -250,13 +253,13 @@ int main(int argc, char *argv[])
 	/* Delete the max in the tree until the tree is empty */
 	for (rc = ods_iter_end(iter); !rc; rc = ods_iter_end(iter)) {
 		ods_key_t k = ods_iter_key(iter);
-		printf("delete %s\n", ods_key_to_str(idx, k));
+		printf("delete %s\n", ods_key_to_str(idx, k, keystr));
 		rc = ods_idx_delete(idx, k, &ref);
 		ods_obj_put(k);
 		if (rc) {
 			printf("FAILURE: The key '%s' is in the iterator, "
 			       "but could not be deleted.\n",
-			       ods_key_to_str(idx, k));
+			       ods_key_to_str(idx, k, keystr));
 		}
 	}
 	ods_idx_print(idx, stdout);

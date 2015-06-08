@@ -87,9 +87,7 @@ static int blkmap_comparator(ods_key_t a, ods_key_t b)
 	return memcmp(av->value, bv->value, 15);
 }
 
-static char sbuf[128];
-
-static const char *to_str(ods_key_t key)
+static const char *to_str(ods_key_t key, char *sbuf)
 {
 	ods_key_value_t kv = ods_key_value(key);
 	int i;
@@ -131,12 +129,18 @@ static size_t size(void)
 	return 32;
 }
 
+static size_t str_size(void)
+{
+	return 257;
+}
+
 static struct ods_idx_comparator key_comparator = {
 	get_type,
 	get_doc,
 	to_str,
 	from_str,
 	size,
+	str_size,
 	blkmap_comparator
 };
 

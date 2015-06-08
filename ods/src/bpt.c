@@ -77,10 +77,12 @@ static void print_node(ods_idx_t idx, int ent, ods_obj_t n, int indent, FILE *fp
 		(NODE(n)->is_leaf?"LEAF":"NODE"),
 		ent, n->as.ptr);
 	for (i = 0; i < NODE(n)->count; i++) {
+		char *keystr = malloc(ods_idx_key_str_size(idx));
 		ods_key_t key = ods_ref_as_obj(t->ods, NODE(n)->entries[i].key);
 		fprintf(fp, "%s:%p, ",
-		       (key ? ods_key_to_str(idx, key) : "-"),
-		       (void *)(unsigned long)NODE(n)->entries[i].ref);
+			(key ? ods_key_to_str(idx, key, keystr) : "-"),
+			(void *)(unsigned long)NODE(n)->entries[i].ref);
+		free(keystr);
 		ods_obj_put(key);
 	}
 	fprintf(fp, "\n");

@@ -60,14 +60,16 @@ void iter_tree(ods_idx_t idx)
 	ods_ref_t ref;
 	ods_iter_t i = ods_iter_new(idx);
 	int rc;
+	char *keystr = malloc(ods_idx_key_str_size(idx));
 	for (rc = ods_iter_begin(i); !rc; rc = ods_iter_next(i)) {
 		key = ods_iter_key(i);
 		ref = ods_iter_ref(i);
-		printf("%s, ", ods_key_to_str(idx, key));
+		printf("%s, ", ods_key_to_str(idx, key, keystr));
 		rc = ods_idx_find(idx, key, &ref);
 		ods_obj_put(key);
 		assert(ref);
 	}
+	free(keystr);
 	printf("\n");
 	ods_iter_delete(i);
 }

@@ -13,6 +13,7 @@
 	position: absolute;
 	z-index: 9999;
 	-moz-box-sizing: border-box;
+	overflow-x: hide;
 	box-sizing: border-box;
 	display:none;
 }

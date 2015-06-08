@@ -240,7 +240,7 @@ static char *timestamp_to_str_fn(sos_value_t v, char *str, size_t len)
 	tm = localtime_r(&ts, tm);
 	sz = strftime(str, len, "%Y/%m/%d %H:%M:%S", tm);
 	if (sz < len)
-		snprintf(&str[sz], len - sz, " %d",
+		snprintf(&str[sz], len - sz, ".%d",
 			 v->data->prim.timestamp_.fine.usecs);
 	return str;
 }
@@ -408,17 +408,32 @@ int long_double_from_str_fn(sos_value_t v, const char *value, char **endptr)
 
 int timestamp_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	uint32_t usecs;
+	uint32_t secs, usecs;
 	char *s;
 	int rc;
 	struct tm tm;
 	memset(&tm, 0, sizeof(tm));
-	s = strptime(value, "%Y/%m/%d %H:%M:%S", &tm);
-	if (!s)
-		return EINVAL;
-	usecs = strtoul(s, endptr, 0);
-	v->data->prim.timestamp_.fine.secs = mktime(&tm);
-	v->data->prim.timestamp_.fine.usecs = usecs;
+	if (!strchr(value, '/')) {
+		if (strchr(value, '.')) {
+			/* Treat as a float, time since epoch + microseconds */
+			double ts = strtod(value, endptr);
+			v->data->prim.timestamp_.fine.secs = (int)ts;
+			v->data->prim.timestamp_.fine.usecs = 
+				(uint32_t)((double)(ts - (int)ts) * 1.0e6);
+		} else {
+			/* Treat this like an epoch timestamp */
+			v->data->prim.timestamp_.fine.secs = strtoul(value, endptr, 0);
+			v->data->prim.timestamp_.fine.usecs = 0;
+		}
+	} else {
+		/* Treat this like a formatted data/time string */
+		s = strptime(value, "%Y/%m/%d %H:%M:%S", &tm);
+		if (!s)
+			return EINVAL;
+		usecs = strtoul(s, endptr, 0);
+		v->data->prim.timestamp_.fine.secs = mktime(&tm);
+		v->data->prim.timestamp_.fine.usecs = usecs;
+	}
 	return 0;
 }
 

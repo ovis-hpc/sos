@@ -85,11 +85,13 @@ struct ods_idx_comparator {
 	/** Return a description of how the key works  */
 	const char *(*get_doc)(void);
 	/** Return a string representation of the key value */
-	const char *(*to_str)(ods_key_t);
+	const char *(*to_str)(ods_key_t, char *buf);
 	/** Set the key value from a string */
 	int (*from_str)(ods_key_t, const char *);
 	/* Return the size of the key data or -1 if variable */
 	size_t (*size)(void);
+	/* Return the size of the key if formatted as a string */
+	size_t (*str_size)(void);
 	/** Compare two keys */
 	ods_idx_compare_fn_t compare_fn;
 };

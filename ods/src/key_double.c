@@ -76,9 +76,7 @@ static int double_comparator(ods_key_t a, ods_key_t b)
 	return 0;
 }
 
-static char sbuf[32];
-
-static const char *to_str(ods_key_t key)
+static const char *to_str(ods_key_t key, char *sbuf)
 {
 	ods_key_value_t kv = ods_key_value(key);
 	sprintf(sbuf, "%f", *(double *)kv->value);
@@ -103,12 +101,18 @@ static size_t size(void)
 	return sizeof(double);
 }
 
+static size_t str_size(void)
+{
+	return 64;
+}
+
 static struct ods_idx_comparator key_comparator = {
 	get_type,
 	get_doc,
 	to_str,
 	from_str,
 	size,
+	str_size,
 	double_comparator
 };
 

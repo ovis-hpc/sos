@@ -755,6 +755,7 @@ void queue_work(struct obj_entry_s *work)
 }
 
 ods_atomic_t records;
+size_t col_count;
 int *col_map;
 sos_attr_t *attr_map;
 
@@ -765,6 +766,7 @@ void *add_proc(void *arg)
 	char *tok, *next_tok;
 	int rc;
 	int cols;
+	int last_secs = 0;
 
 	while (!import_done || !TAILQ_EMPTY(&queue->queue)) {
 		pthread_mutex_lock(&queue->lock);
@@ -784,6 +786,12 @@ void *add_proc(void *arg)
 			break;
 		cols = 0;
 		for (tok = work->buf; *tok != '\0'; tok = next_tok) {
+			if (cols >= col_count) {
+				printf("Warning: line contains more columns "
+				       "than are in column map.\n\"%s\"",
+				       work->buf);
+				break;
+			}
 			int id = col_map[cols];
 			if (id < 0) {
 				while (*tok != ',' && *tok != '\0')
@@ -797,6 +805,7 @@ void *add_proc(void *arg)
 			struct sos_value_s v_;
 			sos_value_t v = sos_value_init(&v_, work->obj, attr_map[cols]);
 			rc = value_from_str(attr_map[cols], v, tok, &next_tok);
+			sos_value_put(v);
 			if (rc) {
 				printf("Warning: formatting error setting %s = %s.\n",
 				       sos_attr_name(attr_map[cols]), tok);
@@ -826,6 +835,7 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 	char *inp, *tok;
 	ods_atomic_t prev_recs = 0;
 	int items_queued = 0;
+
 	/* Get the schema */
 	schema = sos_schema_by_name(sos, schema_name);
 	if (!schema) {
@@ -839,6 +849,7 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 			cols ++;
 
 	/* Allocate a column map to contain the mapping */
+	col_count = cols;
 	col_map = calloc(cols, sizeof(int));
 	attr_map = calloc(cols, sizeof(sos_attr_t));
 	for (cols =  0, tok = strtok(col_spec, ","); tok; tok = strtok(NULL, ",")) {
@@ -892,8 +903,10 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 		pthread_mutex_unlock(&drain_lock);
 		work = alloc_work();
 		work->obj = sos_obj_new(schema);
-		if (!work->obj)
+		if (!work->obj) {
+			printf("Memory allocation failure!\n");
 			break;
+		}
 		inp = fgets(work->buf, sizeof(work->buf), fp);
 		if (!inp)
 			break;
@@ -1292,10 +1305,10 @@ int main(int argc, char **argv)
 		mode = O_RDONLY;
 	else
 		mode = O_RDWR;
-	rc = sos_container_open(path, mode, &sos);
-	if (rc) {
+	sos = sos_container_open(path, mode);
+	if (!sos) {
 		printf("Error %d opening the container %s.\n",
-		       rc, path);
+		       errno, path);
 		exit(1);
 	}
 

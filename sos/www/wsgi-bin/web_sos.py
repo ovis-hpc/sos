@@ -2,10 +2,15 @@ import os
 import web
 import SOS
 import os
+import datetime
 import tempfile
+from numpy import array
 import matplotlib
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import matplotlib.cbook as cbook
 import StringIO, Image
 
 urls = (
@@ -14,7 +19,7 @@ urls = (
     '/container', 'SosContainer',
     '/schema', 'SosSchema',
     '/graph', 'SosGraph',
-    '/directory', 'SosDir'
+    '/directory', 'SosDir',
     )
 
 class SosDir:
@@ -24,16 +29,29 @@ class SosDir:
         of the containers available for use. Note that even if the
         directory is there, this will skip the container if the
         requesting user does not have access rights.
+
+        The OVIS store is organized like this:
+        {sos_root}/{container_name}/{timestamped version}
         """
         carray = []
         try:
             dirs = os.listdir(sos_root)
             # Check each subdirectory for files that constitute a container
-            for c in dirs:
+            for ovc in dirs:
                 try:
-                    files = os.listdir(sos_root + '/' + c)
-                    if 'schemas.OBJ' in files:
-                        carray.append([ c ])
+                    ovc_path = sos_root + '/' + ovc
+                    try:
+                        versions = os.listdir(ovc_path)
+                        for v in versions:
+                            v_path = ovc_path + '/' + v
+                            try:
+                                files = os.listdir(v_path)
+                                if 'schemas.OBJ' in files:
+                                    carray.append([ ovc + '/' + v ])
+                            except Exception as e:
+                                pass
+                    except:
+                        pass
                 except:
                     pass
             return render.table_json('directory', [ 'name' ], carray, len(carray))
@@ -149,15 +167,22 @@ class SosSchema(SosRequest):
             if attr.indexed():
                 row.append(attr.iterator().cardinality())
                 row.append(attr.iterator().duplicates())
+                row.append(attr.iterator().minkey())
+                row.append(attr.iterator().maxkey())
             else:
-                row.append("")
-                row.append("")
+                row += [ "", "", "", "" ]
             rows.append(row)
         if self.encoding() == self.JSON:
             web.header('Content-Type', 'application/json')
-            return render.table_json("attrs", [ "name", "id", "sos_type", "indexed" ],
+            return render.table_json("attrs",
+                                     [ "name", "id", "sos_type",
+                                       "indexed", "card", "dups",
+                                       "min_key", "max_key" ],
                                      rows, len(rows));
-        return render.table("Attribute Table", [ "Name", "Id", "Type", "Indexed" ], rows, len(rows))
+        return render.table("Attribute Table",
+                            [ "Name", "Id", "Type",
+                              "Indexed", "Card", "Dups", "MinKey", "MaxKey" ],
+                            rows, len(rows))
 
 class SosInfo:
     def GET(self):
@@ -352,8 +377,17 @@ class SosGraph(SosQuery):
             series[attr_name] = []
 
         count = 0
+        maxDt = datetime.datetime.fromtimestamp(0)
+        minDt = datetime.datetime.now()
         while obj and count < self.count:
-            x_axis.append(float(obj.values[self.x_axis]))
+            t = obj.values[self.x_axis]
+            dt = datetime.datetime.fromtimestamp(t.seconds()) + datetime.timedelta(seconds=count)
+            # dt = datetime.datetime.now() + datetime.timedelta(seconds=count)
+            if dt < minDt:
+                minDt = dt
+            if dt > maxDt:
+                maxDt = dt
+            x_axis.append(dt)
             for attr_name in self.view_cols:
                 if attr_name == self.index_name:
                     continue
@@ -366,12 +400,16 @@ class SosGraph(SosQuery):
             obj = self.filt.next()
 
         figure = Figure(figsize=(14,5))
-        axis = figure.add_axes([0.1, 0.1, 0.8, 0.8])
+        axis = figure.add_axes([0.1, 0.3, 0.8, .6])
         mfc = [ 'b', 'g', 'r', 'c', 'm', 'y', 'k' ]
         ls = []
         for c in mfc:
             ls.append(c + 'o-')
         line_no = 0
+        # axis.set_autoscalex_on(True)
+        # axis.set_xlim(auto=True)
+        # axis.set_xbound(lower=minDt, upper=maxDt)
+        axis.set_xmargin(.01)
         for attr_name in self.view_cols:
             if line_no >= len(mfc):
                 line_no = 0
@@ -382,6 +420,18 @@ class SosGraph(SosQuery):
         axis.legend()
         axis.set_title(self.schema().name())
         axis.set_ylabel('Binkus: {0} recs'.format(len(x_axis)))
+        minutes = mdates.MinuteLocator()
+        seconds = mdates.SecondLocator()
+        dateFmt = mdates.DateFormatter("%H")
+        # axis.xaxis.set_major_locator(mdates.MinuteLocator())
+        # axis.xaxis.set_major_formatter(mdates.DateFormatter("%M"))
+        # axis.xaxis.set_minor_locator(mdates.SecondLocator())
+        # axis.xaxis.set_minor_formatter(mdates.DateFormatter("%S"))
+
+
+        # axis.format_xdata = mdates.DateFormatter("%H:%M:%S")
+        axis.grid(True)
+        figure.autofmt_xdate()
 
         canvas = FigureCanvasAgg(figure)
         imgdata = StringIO.StringIO()
@@ -394,7 +444,7 @@ if __name__ == "__main__":
     app = web.application(urls, globals())
     app.run()
 
-sos_root = '/DATA'
+sos_root = '/SOS_ROOT'
 rootdir = os.path.abspath(os.path.dirname(__file__)) + '/../'
 render = web.template.render(rootdir+'templates/')
 app = web.application(urls, globals(), autoreload=False)

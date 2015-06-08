@@ -78,13 +78,11 @@ static int uint64_comparator(ods_key_t a, ods_key_t b)
 	return 0;
 }
 
-static char sbuf[32];
-
-static const char *to_str(ods_key_t key)
+static const char *to_str(ods_key_t key, char *buf)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	sprintf(sbuf, "0x%"PRIx64"", *(uint64_t *)kv->value);
-	return sbuf;
+	sprintf(buf, "0x%"PRIx64"", *(uint64_t *)kv->value);
+	return buf;
 }
 
 static int from_str(ods_key_t key, const char *str)
@@ -105,12 +103,18 @@ static size_t size(void)
 	return sizeof(uint64_t);
 }
 
+static size_t str_size(void)
+{
+	return 32;
+}
+
 static struct ods_idx_comparator key_comparator = {
 	get_type,
 	get_doc,
 	to_str,
 	from_str,
 	size,
+	str_size,
 	uint64_comparator
 };
 

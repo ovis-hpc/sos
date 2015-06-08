@@ -62,62 +62,236 @@
 #include <sos/sos.h>
 #include <ods/ods_atomic.h>
 #include <ods/rbt.h>
+#include <limits.h>
+#include <float.h>
+#include <math.h>
+#include <sos/job.h>
 #include "sos_yaml.h"
 
-const char *short_options = "C:j:s:e:u:";
+const char *short_options = "C:j:a:b:t:u:V:cdv";
 
 struct option long_options[] = {
 	{"container",   required_argument,  0,  'C'},
 	{"job",         required_argument,  0,  'j'},
 	{"uid",         required_argument,  0,  'u'},
-	{"start",       required_argument,  0,  's'},
-	{"end",         required_argument,  0,  's'},
+	{"after",       required_argument,  0,  'a'},
+	{"before",      required_argument,  0,  'b'},
+	{"by_component",no_argument,        0,  'c'},
+	{"by_time",     no_argument,        0,  't'},
+	{"diff",        no_argument,        0,  'd'},
+	{"verbose",     no_argument,        0,  'v'},
+	{"view",        required_argument,  0,  'V'},
+	{"bin-width",   required_argument,  0,  'w'},
 	{0,             0,                  0,    0}
 };
 
 void usage(int argc, char *argv[])
 {
-	printf("%s: -j <job_id> -s <start_time> "
-	       "-e <end_time> -u <uid>\n", argv[0]);
+	printf("%s: Query Jobs and Job Sample data in a Container:\n"
+	       "    -C <container>  The Container name\n"
+	       "    -j <job_id>     An optional Job Id\n"
+	       "    -a <start-time> Show jobs starting on or after start-time\n"
+	       "    -b <start-time> Show jobs starting before start-time\n"
+	       "    -u <user-id>    Show only jobs for this user-id\n"
+	       "    -c              Order results by component\n"
+	       "    -t <bin-width>  Order results by time; bin-width specifies the\n"
+	       "                    width of the time window to use for grouping.\n"
+	       "                    The default is 1 second.\n"
+	       "    -d              Treat the data as a cumulative value, process\n"
+	       "                    differences\n"
+	       "    -v              Dump all sample data for the Job\n"
+	       "    -V              Add this metric to the set of processed data\n",
+	       argv[0]);
 	exit(1);
+}
+
+void print_by_component(sos_t sos,
+			sos_schema_t job_schema, sos_schema_t comp_schema, sos_schema_t sample_schema,
+		   sos_obj_t job_obj,
+		  sos_attr_t comp_head_attr, sos_attr_t sample_head_attr,
+		  sos_attr_t next_comp_attr, sos_attr_t next_sample_attr)
+{
+	char str[80];
+
+	printf("%-12s ", sos_obj_attr_by_name_to_str(job_obj, "JobId", str, sizeof(str)));
+	printf("%22s ", sos_obj_attr_by_name_to_str(job_obj, "StartTime", str, sizeof(str)));
+	printf("%22s ", sos_obj_attr_by_name_to_str(job_obj, "EndTime", str, sizeof(str)));
+	printf("%7s ", sos_obj_attr_by_name_to_str(job_obj, "UID", str, sizeof(str)));
+	printf("%s\n", sos_obj_attr_by_name_to_str(job_obj, "Name", str, sizeof(str)));
+
+	sos_value_t comp_head = sos_value(job_obj, comp_head_attr);
+	sos_obj_t comp_obj = sos_obj_from_value(sos, comp_head);
+	while (comp_obj) {
+		sos_value_t sample_head = sos_value(comp_obj, sample_head_attr);
+		sos_obj_t sample_obj = sos_obj_from_value(sos, sample_head);
+		printf("    %-12s\n", sos_obj_attr_by_name_to_str(comp_obj, "CompId",
+								  str, sizeof(str)));
+		while (sample_obj) {
+			sos_value_t next = sos_value(sample_obj, next_sample_attr);
+			printf("             %22s ",
+			       sos_obj_attr_by_name_to_str(sample_obj,
+							   "Time",
+							   str,
+							   sizeof(str)));
+			printf("%12s ",
+			       sos_obj_attr_by_name_to_str(sample_obj,
+							   "CompId",
+							   str,
+							   sizeof(str)));
+			printf("\n");
+			sample_obj = sos_obj_from_value(sos, next);
+			sos_value_put(next);
+		}
+		sos_value_t next_comp = sos_value(comp_obj, next_comp_attr);
+		sos_obj_put(comp_obj);
+		comp_obj = sos_obj_from_value(sos, next_comp);
+		sos_value_put(next_comp);
+	}
+	sos_value_put(comp_head);
+	sos_obj_put(job_obj);
+}
+
+struct component {
+	uint64_t comp_id;
+	sos_obj_t comp_obj;
+	sos_obj_t sample_obj;
+	sos_value_t sample_head;
+};
+
+struct metric {
+	sos_attr_t attr;
+	double i;
+	double comp_i;
+	double time_i;
+	double max_xi;
+	double min_xi;
+	double comp_mean_xi;
+	double time_mean_xi;
+	double sum_xi;
+	double sum_xi_sq;
+};
+
+void print_job(sos_obj_t job_obj, FILE *outp, job_metric_vector_t mvec)
+{
+	char str[256];
+	printf("%8s ", sos_obj_attr_by_name_to_str(job_obj, "JobId", str, sizeof(str)));
+	printf("%8s ", sos_obj_attr_by_name_to_str(job_obj, "JobSize", str, sizeof(str)));
+	printf("%8s ", sos_obj_attr_by_name_to_str(job_obj, "UserName", str, sizeof(str)));
+	printf("%-18s ", sos_obj_attr_by_name_to_str(job_obj, "StartTime", str, sizeof(str)));
+	printf("%s ", sos_obj_attr_by_name_to_str(job_obj, "JobName", str, sizeof(str)));
+	printf("\n");
+	if (mvec) {
+		int i;
+		for (i = 0; i < mvec->count; i++) {
+			printf("%-12s ", sos_attr_name(mvec->vec[i].attr));
+			printf("%-12s ", "Min");
+			printf("%-12s ", "Max");
+			printf("%-12s ", "STD");
+		}
+		printf("\n");
+		for (i = 0; i < mvec->count; i++)
+			printf("------------ ------------ ------------ ------------ ");
+		printf("\n");
+	}
+}
+
+
+double xi_val(job_metric_t m, int diff)
+{
+	if (!diff)
+		return m->comp_mean_xi;
+	return m->diff_xi;
+}
+
+void print_mvec(job_metric_vector_t v, job_metric_flags_t flags, FILE *outp)
+{
+	job_metric_t m;
+	char str[80];
+	int i;
+
+	for (i = 0; i < v->count; i++) {
+		job_metric_t m = &v->vec[i];
+		double xi = xi_val(m, flags);
+		if (i == 0) {
+			double jitter =  xi - floor(xi);
+			time_t t = (time_t)floor(xi);
+			struct tm *tm = localtime(&t);
+			strftime(str, sizeof(str), "%H:%M:%S", tm);
+			printf("%8s.%03d ", str, (int)(jitter * 1.0e3));
+			printf("%12.6G ", m->min_xi - floor(m->min_xi));
+			printf("%12.6G ", m->max_xi - floor(m->max_xi));
+		} else {
+			printf("%12.4G ", xi);
+			printf("%12.4G ", m->min_xi);
+			printf("%12.4G ", m->max_xi);
+		}
+		double std = m->comp_sum_xi / (m->comp_i - 1.0);
+		std = sqrt(std);
+		printf("%12.4G ", std);
+	}
+	printf("\n");
+}
+
+void print_stats(job_metric_vector_t m, FILE *outp)
+{
+	char str[80];
+	int i;
+
+	for (i = 0; i < m->count; i++)
+		printf("------------ ------------ ------------ ------------ ");
+	printf("\n");
+	for (i = 0; i < m->count; i++) {
+		double std;
+		double xi = m->vec[i].time_mean_xi;
+		printf("%12.4G ", m->vec[i].time_mean_xi);
+		printf("%12.4G ", m->vec[i].min_xi);
+		printf("%12.4G ", m->vec[i].max_xi);
+		if (i == 0) xi = xi - floor(xi);
+		std = m->vec[i].time_sum_xi_sq
+			- (m->vec[i].time_sum_xi * m->vec[i].time_sum_xi) / (m->vec[i].time_i);
+		std /= m->vec[i].time_i - 1.0;
+		printf("%12.4G ", sqrt(std));
+	}
+	printf("\n");
 }
 
 int main(int argc, char *argv[])
 {
+	int verbose = 0;
 	sos_t sos;
-	char *schema_name = "Sample";
-	char *index_name = "JobId";
-	sos_schema_t sample_schema;
-	sos_schema_t comp_schema;
-	sos_attr_t comp_attr;
-	sos_iter_t time_iter;
-	sos_attr_t time_attr;
-	sos_filter_t time_filt;
-	sos_value_t start_value;
-	sos_value_t end_value;
-	sos_value_t job_value;
-	sos_value_t comp_value;
-	sos_obj_t job_obj, sample_obj, comp_obj;
+	job_metric_vector_t mvec = NULL;
+	job_metric_flags_t flags = JOB_METRIC_VAL;
 	char *start_str = NULL;
 	char *end_str = NULL;
 	char *job_str = NULL;
 	char *path = NULL;
-	char *name_str = NULL;
 	char *uid_str = NULL;
-	FILE *comp_file = stdin;
 	int rc, o;
-	uint64_t comp_id;
+	int by_time = 1;
+	const char **attrs = NULL;
+	size_t buf_count = 0;
+	size_t attr_count = 0;
+	double bin_width;
 	SOS_KEY(job_key);
 
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (o) {
+		case 't':
+			by_time = 1;
+			verbose = 1;
+			bin_width = strtod(optarg, NULL);
+			break;
+		case 'c':
+			by_time = 0;
+			verbose = 1;
+			break;
 		case 'j':
 			job_str = strdup(optarg);
 			break;
-		case 's':
+		case 'a':
 			start_str = strdup(optarg);
 			break;
-		case 'e':
+		case 'b':
 			end_str = strdup(optarg);
 			break;
 		case 'C':
@@ -126,15 +300,19 @@ int main(int argc, char *argv[])
 		case 'u':
 			uid_str = strdup(optarg);
 			break;
-		case 'n':
-			name_str = strdup(optarg);
+		case 'd':
+			flags = JOB_METRIC_CUM;
 			break;
-		case 'c':
-			comp_file = fopen(optarg, "r");
-			if (!comp_file) {
-				printf("Could not open the specified component file.\n");
-				usage(argc, argv);
+		case 'v':
+			verbose = 1;
+			break;
+		case 'V':
+			if (attr_count + 1 > buf_count) {
+				buf_count += 10;
+				attrs = realloc(attrs, buf_count * sizeof(char *));
 			}
+			attrs[attr_count] = strdup(optarg);
+			attr_count += 1;
 			break;
 		default:
 			usage(argc, argv);
@@ -143,135 +321,49 @@ int main(int argc, char *argv[])
 	if (!path)
 		usage(argc, argv);
 
-	rc = sos_container_open(path, SOS_PERM_RW, &sos);
-	if (rc) {
+	sos = sos_container_open(path, SOS_PERM_RW);
+	if (!sos) {
 		perror("could not open container:");
-		return rc;
+		return errno;
 	}
-	comp_schema = sos_schema_by_name(sos, "CompRef");
-	if (!comp_schema) {
-		printf("The 'CompRef' schema was not found.\n");
-		return ENOENT;
+	job_iter_t job_iter = job_iter_new(sos, JOB_ORDER_BY_TIME);
+	if (!job_iter) {
+		printf("Could not create the Job iterator.\n");
+		exit(1);
 	}
-	sample_schema = sos_schema_by_name(sos, "Sample");
-	if (!sample_schema) {
-		printf("The 'Sample' schema was not found.\n");
-		return ENOENT;
-	}
-	sos_schema_t job_schema = sos_schema_by_name(sos, "Job");
-	if (!job_schema) {
-		printf("Could not find the Job schema in the container.\n");
-		return ENOENT;
-	}
-	sos_attr_t job_id_attr = sos_schema_attr_by_name(job_schema, "JobId");
-	if (!job_id_attr) {
-		printf("Could not find the JobId attribute in the schema.\n");
-		return EINVAL;
-	}
-	sos_attr_t job_name_attr = sos_schema_attr_by_name(job_schema, "Name");
-	if (!job_name_attr) {
-		printf("Could not find the Name attribute in the schema.\n");
-		return EINVAL;
-	}
-	sos_attr_t job_start_attr = sos_schema_attr_by_name(job_schema, "StartTime");
-	if (!job_start_attr) {
-		printf("Could not find the StartTime attribute in the schema.\n");
-		return EINVAL;
-	}
-	sos_attr_t job_end_attr = sos_schema_attr_by_name(job_schema, "JobId");
-	if (!job_end_attr) {
-		printf("Could not find the EndTime attribute in the schema.\n");
-		return EINVAL;
-	}
-
-	/* Start Time */
-	time_iter = sos_iter_new(job_start_attr);
-	if (!time_iter) {
-		printf("Could not create the Time iterator.\n");
-		return ENOMEM;
-	}
-	time_filt = sos_filter_new(time_iter);
-	if (!time_filt) {
-		printf("Could not create the Time filter.\n");
-		return ENOMEM;
-	}
-	/* Start Time Condition */
-	if (start_str) {
-		start_value = sos_value_new(); assert(start_value);
-		sos_value_init(start_value, NULL, time_attr);
-		rc = sos_value_from_str(start_value, start_str, NULL);
-		if (rc) {
-			printf("Unable to set the start time from the string '%s'.\n",
-			       start_str);
+	if (verbose) {
+		job_iter_set_bin_width(job_iter, bin_width);
+		if (0 == attr_count) {
+			printf("At least one metric name must be "
+			       "specified in verbose mode.\n");
 			usage(argc, argv);
 		}
-		rc = sos_filter_cond_add(time_filt, time_attr, SOS_COND_GE, start_value);
-		if (rc) {
-			printf("The start time specified, '%s', is invalid.\n", start_str);
+		mvec = job_iter_mvec_new(job_iter, attr_count, attrs);
+		if (!mvec) {
+			printf("Invalid attribute name specified.\n");
 			usage(argc, argv);
 		}
 	}
-	/* End Time Condition */
-	if (end_str) {
-		end_value = sos_value_new(); assert(end_value);
-		sos_value_init(end_value, NULL, time_attr);
-		rc = sos_value_from_str(end_value, end_str, NULL);
-		if (rc) {
-			printf("Unable to set the  value from the string '%s'.\n", end_str);
-			usage(argc, argv);
-		}
-		rc = sos_filter_cond_add(time_filt, time_attr, SOS_COND_LE, end_value);
-		if (rc) {
-			printf("The start time specified, '%s', is invalid.\n", end_str);
-			usage(argc, argv);
-		}
-	}
+	sos_obj_t job_obj;
+	if (job_str) {
+		long job_id = strtol(job_str, NULL, 0);
+		job_obj = job_iter_find_job_by_id(job_iter, job_id);
+	} else
+		job_obj = job_iter_begin_job(job_iter);
 
-	sos_attr_t comp_head_attr = sos_schema_attr_by_name(job_schema, "CompHead");
-	sos_attr_t sample_head_attr = sos_schema_attr_by_name(comp_schema, "SampleHead");
-	sos_attr_t next_comp_attr = sos_schema_attr_by_name(comp_schema, "NextComp");
-	sos_attr_t next_sample_attr = sos_schema_attr_by_name(sample_schema, "NextSample");
-
-	printf("%12s %22s %22s %7s %s\n", "JobId", "Start Time", "End Time", "User Id", "Name");
-	printf("------------ ---------------------- ---------------------- ------- ---------\n");
-	for (job_obj = sos_filter_begin(time_filt); job_obj;
-	     job_obj = sos_filter_next(time_filt)) {
-		char str[80];
-
-		printf("%-12s ", sos_obj_attr_by_name_to_str(job_obj, "JobId", str, sizeof(str)));
-		printf("%22s ", sos_obj_attr_by_name_to_str(job_obj, "StartTime", str, sizeof(str)));
-		printf("%22s ", sos_obj_attr_by_name_to_str(job_obj, "EndTime", str, sizeof(str)));
-		printf("%7s ", sos_obj_attr_by_name_to_str(job_obj, "UID", str, sizeof(str)));
-		printf("%s\n", sos_obj_attr_by_name_to_str(job_obj, "Name", str, sizeof(str)));
-
-		sos_value_t comp_head = sos_value(job_obj, comp_head_attr);
-		sos_obj_t comp_obj = sos_obj_from_value(sos, comp_head);
-		while (comp_obj) {
-			sos_value_t sample_head = sos_value(comp_obj, sample_head_attr);
-			sos_obj_t sample_obj = sos_obj_from_value(sos, sample_head);
-			printf("    %-12s\n", sos_obj_attr_by_name_to_str(comp_obj, "CompId",
-									 str, sizeof(str)));
-			while (sample_obj) {
-				sos_value_t next = sos_value(sample_obj, next_sample_attr);
-				printf("             %22s ",
-				       sos_obj_attr_by_name_to_str(sample_obj,
-								   "Time",
-								   str,
-								   sizeof(str)));
-				printf("%12s ",
-				       sos_obj_attr_by_name_to_str(sample_obj,
-								   "CompId",
-								   str,
-								   sizeof(str)));
-				printf("\n");
-				sample_obj = sos_obj_from_value(sos, next);
-				sos_value_put(next);
+	for (; job_obj; job_obj = job_iter_next_job(job_iter)) {
+		print_job(job_obj, stdout, mvec);
+		if (verbose) {
+			for (rc = job_iter_begin_sample(job_iter, flags, mvec);
+			     !rc; rc = job_iter_next_sample(job_iter)) {
+				print_mvec(mvec, flags, stdout);
 			}
-			sos_value_t next_comp = sos_value(comp_obj, next_comp_attr);
-			comp_obj = sos_obj_from_value(sos, next_comp);
-			sos_value_put(next_comp);
+			print_stats(mvec, stdout);
 		}
 		sos_obj_put(job_obj);
+		if (job_str)
+			break;
 	}
+	job_iter_free(job_iter);
 	return 0;
 }
