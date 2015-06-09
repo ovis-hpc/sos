@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2014 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2012-2014 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2012-2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2012-2015 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
  * Export of this program may require a license from the United States
@@ -142,8 +142,8 @@ struct sos_attr_s {
 
 	sos_schema_t schema;
 	ods_idx_t index;
-	const char *idx_type;
-	const char *key_type;
+	char *idx_type;
+	char *key_type;
 	sos_value_size_fn_t size_fn;
 	sos_value_from_str_fn_t from_str_fn;
 	sos_value_to_str_fn_t to_str_fn;

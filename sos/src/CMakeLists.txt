@@ -32,7 +32,9 @@ target_link_libraries(job_add sos)
 add_executable(job_query job_query.c)
 target_link_libraries(job_query job sos m)
 
-INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/sos_cmd DESTINATION bin)
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/sos_cmd
+  DESTINATION bin
+  PERMISSIONS OWNER_EXECUTE OWNER_READ OWNER_WRITE GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/libsos.so DESTINATION lib)
 
 

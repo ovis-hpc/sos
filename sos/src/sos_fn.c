@@ -284,6 +284,24 @@ static char *int32_array_to_str_fn(sos_value_t v, char *str, size_t len)
 	return str;
 }
 
+static char *uint32_array_to_str_fn(sos_value_t v, char *str, size_t len)
+{
+	char *p = str;
+	size_t count;
+	int i;
+	if (!v)
+		return "";
+	for (i = 0; i < v->data->array.count; i++) {
+		if (i) {
+			count = snprintf(p, len, ",");
+			p++; len--;
+		}
+		count = snprintf(p, len, "%X", v->data->array.data.int32_[i]);
+		p += count; len -= count;
+	}
+	return str;
+}
+
 static char *int64_array_to_str_fn(sos_value_t v, char *str, size_t len)
 {
 	char *p = str;
@@ -296,6 +314,23 @@ static char *int64_array_to_str_fn(sos_value_t v, char *str, size_t len)
 			p++; len--;
 		}
 		count = snprintf(p, len, "%"PRId64"", v->data->array.data.int64_[i]);
+		p += count; len -= count;
+	}
+	return str;
+}
+
+static char *uint64_array_to_str_fn(sos_value_t v, char *str, size_t len)
+{
+	char *p = str;
+	size_t count;
+	int i;
+
+	for (i = 0; i < v->data->array.count; i++) {
+		if (i) {
+			count = snprintf(p, len, ",");
+			p++; len--;
+		}
+		count = snprintf(p, len, "%"PRIu64"", v->data->array.data.int64_[i]);
 		p += count; len -= count;
 	}
 	return str;
@@ -329,9 +364,9 @@ sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type)
 	case SOS_TYPE_INT64:
 		return int64_to_str_fn;
 	case SOS_TYPE_UINT32:
-		return int32_to_str_fn;
+		return uint32_to_str_fn;
 	case SOS_TYPE_UINT64:
-		return int64_to_str_fn;
+		return uint64_to_str_fn;
 	case SOS_TYPE_FLOAT:
 		return float_to_str_fn;
 	case SOS_TYPE_DOUBLE:
@@ -349,9 +384,9 @@ sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type)
 	case SOS_TYPE_INT64_ARRAY:
 		return int64_array_to_str_fn;
 	case SOS_TYPE_UINT32_ARRAY:
-		return int32_array_to_str_fn;
+		return uint32_array_to_str_fn;
 	case SOS_TYPE_UINT64_ARRAY:
-		return int64_array_to_str_fn;
+		return uint64_array_to_str_fn;
 	case SOS_TYPE_FLOAT_ARRAY:
 		return float_array_to_str_fn;
 	case SOS_TYPE_DOUBLE_ARRAY:

@@ -364,16 +364,16 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type);
 int sos_schema_index_add(sos_schema_t schema, const char *name);
 
 /**
- * \brief Configure the index for an attribute
+ * \brief Modify the index for an attribute
  *
- * By default an attribute index is a BXTREE. A BXTREE is a modified
- * form of a B+Tree that efficiently handles duplicate keys. There
- * are, however, other index types as well as user-defined
- * indices. The type of index is specified as a string that identifies
- * a shared library that implements the necessary index strategy
- * routines, e.g. insert, delete, etc...
+ * By default an attribute index is a modified form of a B+Tree that
+ * efficiently handles duplicate keys. There are, however, other index
+ * types as well as user-defined indices. The type of index is
+ * specified as a string that identifies a shared library that
+ * implements the necessary index strategy routines, e.g. insert,
+ * delete, etc...
  *
- * For keys, the default key type is associated with the attribute
+ * For keys, the default key type is associated with the attribute's
  * data type, however, it is possible to implement user-defined
  * key types. These are useful for indexing complex data types that
  * are not understood as primitive types; for example a set of fields
@@ -391,8 +391,8 @@ int sos_schema_index_add(sos_schema_t schema, const char *name);
  * \retval ENOENT	The specified attribute does not exist.
  * \retval EINVAL	One or more parameters was invalid.
  */
-int sos_schema_index_cfg(sos_schema_t schema, const char *name,
-			 const char *idx_type, const char *key_type, ...);
+int sos_schema_index_modify(sos_schema_t schema, const char *name,
+			    const char *idx_type, const char *key_type, ...);
 
 /**
  * \brief Find an attribute by name
@@ -902,6 +902,19 @@ int sos_value_cmp(sos_value_t a, sos_value_t b);
 size_t sos_value_size(sos_value_t value);
 
 /**
+ * \brief Set an object value from a buffer
+ *
+ * Set the value from an untyped void buffer. If the buflen is too
+ * large to fit, only sos_value_size() bytes will be written.
+ *
+ * \param value  The value handle
+ * \param buf    The buffer containing the data
+ * \param buflen The number of bytes to write from the buffer
+ * \retval The number of bytes written
+ */
+size_t sos_value_memset(sos_value_t value, void *buf, size_t buflen);
+
+/**
  * \brief Format an object attribute as a string
  *
  * \param obj The object handle
@@ -1325,10 +1338,10 @@ int sos_iter_end(sos_iter_t i);
 sos_key_t sos_iter_key(sos_iter_t iter);
 
 /**
- * \brief Return the object reference of the current iterator position
+ * \brief Return the object at the current iterator position
  *
  * \param iter	The iterator handle
- * \return ods_ref_t at the current position
+ * \return ods_obj_t at the current position
  */
 sos_obj_t sos_iter_obj(sos_iter_t iter);
 

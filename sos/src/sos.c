@@ -271,14 +271,14 @@ const char *key_types[] = {
 	[SOS_TYPE_TIMESTAMP] = "UINT64",
 	[SOS_TYPE_OBJ] = NULL,
 	[SOS_TYPE_BYTE_ARRAY] = "STRING",
- 	[SOS_TYPE_INT32_ARRAY] = NULL,
-	[SOS_TYPE_INT64_ARRAY] = NULL,
-	[SOS_TYPE_UINT32_ARRAY] = NULL,
-	[SOS_TYPE_UINT64_ARRAY] = NULL,
-	[SOS_TYPE_FLOAT_ARRAY] = NULL,
-	[SOS_TYPE_DOUBLE_ARRAY] = NULL,
-	[SOS_TYPE_LONG_DOUBLE_ARRAY] = NULL,
-	[SOS_TYPE_OBJ_ARRAY] = NULL,
+ 	[SOS_TYPE_INT32_ARRAY] = "NONE",
+	[SOS_TYPE_INT64_ARRAY] = "NONE",
+	[SOS_TYPE_UINT32_ARRAY] = "NONE",
+	[SOS_TYPE_UINT64_ARRAY] = "NONE",
+	[SOS_TYPE_FLOAT_ARRAY] = "NONE",
+	[SOS_TYPE_DOUBLE_ARRAY] = "NONE",
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = "NONE",
+	[SOS_TYPE_OBJ_ARRAY] = "NONE",
 };
 
 static sos_attr_t attr_new(sos_schema_t schema, sos_type_t type)
@@ -292,8 +292,8 @@ static sos_attr_t attr_new(sos_schema_t schema, sos_type_t type)
 	attr->to_str_fn = __sos_attr_to_str_fn_for_type(type);
 	attr->from_str_fn = __sos_attr_from_str_fn_for_type(type);
 	attr->key_value_fn = __sos_attr_key_value_fn_for_type(type);
-	attr->idx_type = "BXTREE";
-	attr->key_type = key_types[type];
+	attr->idx_type = strdup("BXTREE");
+	attr->key_type = strdup(key_types[type]);
  out:
 	return attr;
 }
@@ -354,10 +354,22 @@ int sos_schema_index_add(sos_schema_t schema, const char *name)
 	return 0;
 }
 
-int sos_schema_index_cfg(sos_schema_t schema, const char *name,
-			 const char *idx_type, const char *key_type, ...)
+int sos_schema_index_modify(sos_schema_t schema, const char *name,
+			    const char *idx_type, const char *key_type, ...)
 {
-	return ENOSYS;
+	sos_attr_t attr;
+
+	if (schema->schema_obj)
+		return EBUSY;
+
+	/* Find the attribute */
+	attr = _attr_by_name(schema, name);
+	if (!attr)
+		return ENOENT;
+
+	attr->idx_type = strdup(idx_type);
+	attr->key_type = strdup(key_type);
+	return 0;
 }
 
 sos_attr_t sos_schema_attr_by_name(sos_schema_t schema, const char *name)
@@ -684,6 +696,19 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 	return NULL;
 }
 
+size_t sos_value_memset(sos_value_t val, void *buf, size_t buflen)
+{
+	void *dst;
+	if (buflen > sos_value_size(val))
+		buflen = sos_value_size(val);
+	if (!sos_attr_is_array(val->attr))
+		dst = val->data;
+	else
+		dst = &val->data->array.data.byte_[0];
+	memcpy(dst, buf, buflen);
+	return buflen;
+}
+
 void sos_value_put(sos_value_t value)
 {
 	if (!value)
@@ -789,7 +814,6 @@ int sos_value_from_str(sos_value_t v, const char *str, char **endptr)
 	return v->attr->from_str_fn(v, str, endptr);
 }
 
-
 sos_schema_t sos_schema_dup(sos_schema_t schema)
 {
 	sos_schema_t dup;
@@ -825,6 +849,8 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 	while (!TAILQ_EMPTY(&dup->attr_list)) {
 		attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&dup->attr_list, attr, entry);
+		free(attr->key_type);
+		free(attr->idx_type);
 		free(attr);
 	}
  err_0:
@@ -878,6 +904,8 @@ static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
+		free(attr->key_type);
+		free(attr->idx_type);
 		free(attr);
 	}
 	ods_obj_put(schema_obj);
@@ -1338,6 +1366,8 @@ void free_schema(sos_schema_t schema)
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
 		if (attr->index)
 			ods_idx_close(attr->index, ODS_COMMIT_ASYNC);
+		free(attr->key_type);
+		free(attr->idx_type);
 		free(attr);
 	}
 	free(schema);
