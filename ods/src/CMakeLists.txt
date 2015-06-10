@@ -31,6 +31,7 @@ INSTALL(TARGETS ods
 		key_BLKMAP
 		key_SHA256
 		key_STRING
+		key_UINT96
 		key_UINT64
 		key_UINT32
 		key_DOUBLE
