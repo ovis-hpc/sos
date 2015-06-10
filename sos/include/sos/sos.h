@@ -881,6 +881,13 @@ sos_value_t sos_value_init(sos_value_t value, sos_obj_t obj, sos_attr_t attr);
 sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr);
 
 /**
+ * \brief Drop a reference on a value
+ *
+ * \param value The value handle.
+ */
+void sos_value_put(sos_value_t value);
+
+/**
  * \brief Compare two value
  *
  * Compares <tt>a</tt> and <tt>b</tt> and returns <0 if a < b, 0 if

@@ -25,7 +25,14 @@ target_link_libraries(idx_test ods)
 add_executable(rand_test rand_test.c)
 target_link_libraries(rand_test ods)
 
-FILE(GLOB files "${CMAKE_CURRENT_BINARY_DIR}/*.so")
-INSTALL(FILES ${files} DESTINATION lib)
-
-
+INSTALL(TARGETS ods
+		idx_BPTREE
+		idx_BXTREE
+		key_BLKMAP
+		key_SHA256
+		key_STRING
+		key_UINT96
+		key_UINT64
+		key_UINT32
+		key_DOUBLE
+	LIBRARY DESTINATION lib)
