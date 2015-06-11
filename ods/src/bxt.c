@@ -1652,6 +1652,10 @@ static int bxt_iter_find(ods_iter_t oi, ods_key_t key)
 	int found;
 	int i;
 
+	if (iter->rec) {
+		ods_obj_put(iter->rec);
+		iter->rec = NULL;
+	}
 	if (!leaf)
 		return ENOENT;
 
@@ -1675,6 +1679,10 @@ static int bxt_iter_find(ods_iter_t oi, ods_key_t key)
 static int bxt_iter_find_lub(ods_iter_t oi, ods_key_t key)
 {
 	bxt_iter_t iter = (bxt_iter_t)oi;
+	if (iter->rec) {
+		ods_obj_put(iter->rec);
+		iter->rec = NULL;
+	}
 	iter->rec = __find_lub(iter->iter.idx, key, iter->iter.flags);
 	return iter->rec ? 0 : ENOENT;
 }
@@ -1682,6 +1690,10 @@ static int bxt_iter_find_lub(ods_iter_t oi, ods_key_t key)
 static int bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
 {
 	bxt_iter_t iter = (bxt_iter_t)oi;
+	if (iter->rec) {
+		ods_obj_put(iter->rec);
+		iter->rec = NULL;
+	}
 	iter->rec = __find_glb(iter->iter.idx, key, iter->iter.flags);
 	return iter->rec ? 0 : ENOENT;
 }
