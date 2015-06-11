@@ -17,9 +17,6 @@
 #include <ods/ods.h>
 #include "bxt.h"
 
-/*
- * TODO:
- */
 pthread_mutex_t client_list_lock;
 LIST_HEAD(active_clients, bxt_s) client_list;
 
@@ -40,7 +37,7 @@ void dump_node(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *f
 		ods_key_t key = ods_ref_as_obj(t->ods, N_ENT(n,i).key_ref);
 		fprintf(fp, "%s:%p, ",
 			(key ? ods_key_to_str(idx, key, keystr) : "-"),
-			(void *)(unsigned long)N_ENT(n, i).node_ref);
+		       (void *)(unsigned long)N_ENT(n, i).node_ref);
 		free(keystr);
 		ods_obj_put(key);
 	}
@@ -312,9 +309,10 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 		ods_obj_put(entry_key);
 		if (rc <= 0)
 			goto found;
-		if (i < NODE(leaf)->count - 1)
-			ods_obj_put(rec);
+		ods_obj_put(rec);
 	}
+	ods_obj_put(leaf);
+	return NULL;
  found:
 	if (flags & ODS_ITER_F_UNIQUE) {
 		ods_obj_put(rec);
@@ -346,7 +344,7 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
 	if (!leaf)
 		goto out;
 
-	for (i = NODE(leaf)->count - 1; i > 0; i--) {
+	for (i = NODE(leaf)->count - 1; i >= 0; i--) {
 		rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).tail_ref);
 		ods_key_t entry_key =
 			ods_ref_as_obj(t->ods, REC(rec)->key_ref);
@@ -358,7 +356,8 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
 		}
 		goto out;
 	}
-	rec = ods_ref_as_obj(t->ods, L_ENT(leaf,0).tail_ref);
+	ods_obj_put(leaf);
+	return NULL;
  out:
 	if (flags & ODS_ITER_F_UNIQUE) {
 		ods_obj_put(rec);
