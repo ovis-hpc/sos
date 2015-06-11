@@ -627,6 +627,7 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 		return val;
 	/* Follow the reference to the object */
 	ref_obj = ods_ref_as_obj(obj->sos->obj_ods, val->data->prim.ref_);
+	sos_obj_put(val->obj);
 	if (!ref_obj)
 		return NULL;
 	val->obj = __sos_init_obj(obj->sos, get_ischema(attr->data->type), ref_obj);
