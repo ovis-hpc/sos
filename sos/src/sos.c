@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-14 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2012-14 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2012-2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2012-2015 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
  * Export of this program may require a license from the United States
@@ -604,6 +604,12 @@ void sos_value_free(sos_value_t v)
 	free(v);
 }
 
+void *sos_obj_ptr(sos_obj_t obj)
+{
+	sos_obj_data_t data = obj->obj->as.ptr;
+	return data->data;
+}
+
 sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr)
 {
 	sos_value_t value = sos_value_new();
@@ -873,7 +879,7 @@ static sos_schema_t init_schema(sos_t sos, ods_obj_t schema_obj)
 	schema->ref_count = 1;
 	TAILQ_INIT(&schema->attr_list);
 	schema->schema_obj = schema_obj;
-	schema->sos = sos_container_get(sos);
+	schema->sos = sos;
 	schema->data = schema_obj->as.ptr;
 	schema->dict = calloc(schema->data->attr_cnt, sizeof(sos_attr_t));
 	if (!schema->dict)
@@ -1070,12 +1076,18 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 
 sos_schema_t sos_schema_first(sos_t sos)
 {
-	return LIST_FIRST(&sos->schema_list);
+	sos_schema_t first = LIST_FIRST(&sos->schema_list);
+	if (first)
+		return sos_schema_get(first);
+	return NULL;
 }
 
 sos_schema_t sos_schema_next(sos_schema_t schema)
 {
-	return LIST_NEXT(schema, entry);
+	sos_schema_t next = LIST_NEXT(schema, entry);
+	if (next)
+		return sos_schema_get(next);
+	return NULL;
 }
 
 int sos_schema_delete(sos_t sos, const char *name)
@@ -1353,10 +1365,6 @@ void sos_container_info(sos_t sos, FILE *fp)
 
 void free_schema(sos_schema_t schema)
 {
-	/* Drop our reference on the container */
-	if (schema->sos)
-		sos_container_put(schema->sos);
-
 	/* Drop our reference on the schema object */
 	if (schema->schema_obj)
 		ods_obj_put(schema->schema_obj);
@@ -1394,7 +1402,7 @@ void free_sos(sos_t sos, sos_commit_t flags)
 	/* Iterate through all the schema and free each one */
 	while (NULL != (rbn = rbt_min(&sos->schema_name_rbt))) {
 		rbt_del(&sos->schema_name_rbt, rbn);
-		sos_schema_put(container_of(rbn, struct sos_schema_s, name_rbn));
+		free_schema(container_of(rbn, struct sos_schema_s, name_rbn));
 	}
 	if (sos->path)
 		free(sos->path);
@@ -1511,7 +1519,7 @@ sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj)
 	if (!sos_obj)
 		return NULL;
 	SOS_OBJ(ods_obj)->schema = schema->data->id;
-	sos_obj->sos = sos_container_get(sos);
+	sos_obj->sos = sos;
 	sos_obj->obj = ods_obj;
 	ods_atomic_inc(&schema->data->ref_count);
 	sos_obj->schema = sos_schema_get(schema);
@@ -1650,7 +1658,6 @@ void sos_obj_put(sos_obj_t obj)
 		pthread_mutex_lock(&sos->lock);
 		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
 		pthread_mutex_unlock(&sos->lock);
-		sos_container_put(sos);
 		sos_schema_put(schema);
 	}
 }

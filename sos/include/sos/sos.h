@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2013 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2013 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2013-2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2013-2015 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
  * Export of this program may require a license from the United States
@@ -116,10 +116,10 @@ union sos_array_element_u {
 	long double long_double_[0];
 };
 
-struct sos_array_s {
+typedef struct sos_array_s {
 	uint32_t count;
 	union sos_array_element_u data;
-};
+} *sos_array_t;
 
 union sos_timestamp_u {
 	uint64_t time;
@@ -667,6 +667,7 @@ void sos_container_put(sos_t sos);
  * - sos_obj_put()	 Drop a reference on an object
  * - sos_obj_index()	 Add an object to it's indices
  * - sos_obj_remove()	 Remove an object from it's indices
+ * - sos_obj_ptr()       Returns a pointer to the object's data
  * - sos_value()	 Return a value given object and attribute handles.
  * - sos_value_by_name() Get the value handle by name
  * - sos_value_by_id()   Get the value handle by id
@@ -854,6 +855,23 @@ size_t sos_array_count(sos_value_t val);
 sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count);
 sos_value_t sos_value_new();
 void sos_value_free(sos_value_t v);
+
+/**
+ * \brief Return a pointer to the object's data
+ *
+ * This function returns a pointer to the object's internal data. The
+ * application is responsible for understanding the internal
+ * format. The application must call sos_obj_put() when finished with
+ * the object to avoid a memory leak.
+ *
+ * This function is intended to be used when the schema of the object
+ * is well known by the application. If the application is generic for
+ * all objects, see the sos_value() functions.
+ *
+ * \param obj
+ * \retval void * pointer to the objects's data
+ */
+void *sos_obj_ptr(sos_obj_t obj);
 
 /**
  * \brief Initialize a value with an object's attribute data
