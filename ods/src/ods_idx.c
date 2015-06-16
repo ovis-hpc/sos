@@ -461,8 +461,20 @@ void ods_idx_info(ods_idx_t idx, FILE *fp)
 	idx->idx_class->prv->print_info(idx, fp);
 }
 
-static void __attribute__ ((constructor)) bxt_lib_init(void)
+static void __attribute__ ((constructor)) ods_idx_init(void)
 {
 	pthread_spin_init(&ods_idx_lock, 1);
+}
+
+static void __attribute__ ((destructor)) ods_idx_term(void)
+{
+	struct rbn *rbn;
+	while (rbn = rbt_min(&dylib_tree)) {
+		struct ods_idx_class *class =
+			container_of(rbn, struct ods_idx_class, rb_node);
+		rbt_del(&dylib_tree, rbn);
+		free(rbn->key);
+		free(class);
+	}
 }
 

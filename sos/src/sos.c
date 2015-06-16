@@ -1484,6 +1484,7 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 		sos->schema_count++;
 		LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
 	}
+	ods_iter_delete(iter);
 	return sos;
  err:
 	sos_container_put(sos);
