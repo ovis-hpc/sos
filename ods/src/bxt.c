@@ -47,6 +47,7 @@ void dump_node(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *f
 void dump_leaf(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *fp)
 {
 	int i;
+	char *keystr = malloc(ods_idx_key_str_size(idx));
 	fprintf(fp, "%p - %*s%s[%d] | %p :\n", (void *)(unsigned long)NODE(n)->parent,
 	       indent-2, "", "LEAF", ent, n->as.ptr);
 	for (i = 0; i < NODE(n)->count; i++) {
@@ -59,11 +60,12 @@ void dump_leaf(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *f
 			(void *)(unsigned long)tail);
 		do {
 			rec = ods_ref_as_obj(t->ods, head);
+			key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 			fprintf(fp,
-				"%*srec_ref %p key_ref %p obj_ref %p\n",
+				"%*srec_ref %p key %s obj_ref %p\n",
 				indent+16, "",
 				(void *)(unsigned long)head,
-				(void *)(unsigned long)REC(rec)->key_ref,
+				ods_key_to_str(idx, key, keystr),
 				(void *)(unsigned long)REC(rec)->obj_ref);
 			if (head == tail)
 				break;
@@ -72,6 +74,7 @@ void dump_leaf(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *f
 		} while (head);
 		ods_obj_put(rec);
 	}
+	free(keystr);
 	fprintf(fp, "\n");
 }
 
@@ -296,23 +299,28 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 			    ods_iter_flags_t flags)
 {
 	int i;
+	ods_ref_t tail_ref;
 	bxt_t t = idx->priv;
 	ods_obj_t leaf = leaf_find(t, key);
 	ods_obj_t rec = NULL;
 	if (!leaf)
 		return 0;
 	for (i = 0; i < NODE(leaf)->count; i++) {
-		rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
+		tail_ref = L_ENT(leaf,i).tail_ref;
+		if (rec)
+			ods_obj_put(rec);
+		rec = ods_ref_as_obj(t->ods, tail_ref);
 		ods_key_t entry_key =
 			ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 		int rc = t->comparator(key, entry_key);
 		ods_obj_put(entry_key);
 		if (rc <= 0)
 			goto found;
-		ods_obj_put(rec);
 	}
+	/* Our LUB is the first record in the right sibling */
 	ods_obj_put(leaf);
-	return NULL;
+	rec = ods_ref_as_obj(t->ods, REC(rec)->next_ref);
+	return rec;
  found:
 	if (flags & ODS_ITER_F_UNIQUE) {
 		ods_obj_put(rec);
@@ -558,11 +566,15 @@ int leaf_insert(bxt_t t, ods_obj_t leaf, ods_obj_t new_rec, int ent, int dup)
 		REC(new_rec)->prev_ref = ods_obj_ref(entry);
 		REC(entry)->next_ref = ods_obj_ref(new_rec);
 		L_ENT(leaf,ent).tail_ref = ods_obj_ref(new_rec);
-		ods_obj_put(entry);
 		ods_obj_put(next_rec);
-		return ent;
+		goto out;
 	}
-	entry = ods_ref_as_obj(t->ods, L_ENT(leaf,ent).head_ref);
+	if (ent < NODE(leaf)->count) {
+		entry = ods_ref_as_obj(t->ods, L_ENT(leaf,ent).head_ref);
+		assert(entry);
+	} else {
+		entry = NULL;
+	}
 	if (!entry && ent) {
 		/*
 		 * This record is being added to the end of the leaf
@@ -599,6 +611,24 @@ int leaf_insert(bxt_t t, ods_obj_t leaf, ods_obj_t new_rec, int ent, int dup)
 	NODE(leaf)->count++;
 	L_ENT(leaf,ent).head_ref = ods_obj_ref(new_rec);
 	L_ENT(leaf,ent).tail_ref = ods_obj_ref(new_rec);
+ out:
+#ifdef BXT_DEBUG
+	{
+		ods_key_t next = ods_ref_as_obj(t->ods, REC(new_rec)->next_ref);
+		ods_obj_t prev = ods_ref_as_obj(t->ods, REC(new_rec)->prev_ref);
+		ods_key_t rec_key = ods_ref_as_obj(t->ods, REC(new_rec)->key_ref);
+		ods_key_t prev_key = NULL;
+		ods_key_t next_key = NULL;
+		if (prev)
+			prev_key = ods_ref_as_obj(t->ods, REC(prev)->key_ref);
+		if (next)
+			next_key = ods_ref_as_obj(t->ods, REC(next)->key_ref);
+		if (prev_key)
+			assert(t->comparator(prev_key, rec_key) <= 0);
+		if (next_key)
+			assert(t->comparator(next_key, rec_key) >= 0);
+	}
+#endif
 	ods_obj_put(entry);
 	return ent;
 }

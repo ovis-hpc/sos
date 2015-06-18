@@ -22,7 +22,7 @@
  *
  * Describes a key and the object to which it refers. The key is an
  * obj_ref_t which refers to an arbitrarily sized ODS object that
- * contains an opaque key. The key comparitor is used to compare two
+ * contains an opaque key. The key comparator is used to compare two
  * keys.
  */
 typedef struct bxn_entry {
