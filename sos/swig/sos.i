@@ -238,7 +238,7 @@ const char *sos_schema_name(sos_schema_t schema);
 int sos_schema_attr_count(sos_schema_t schema);
 int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type);
 int sos_schema_index_add(sos_schema_t schema, const char *name);
-int sos_schema_index_cfg(sos_schema_t schema, const char *name,
+int sos_schema_index_modify(sos_schema_t schema, const char *name,
 			 const char *idx_type, const char *key_type, ...);
 sos_attr_t sos_schema_attr_by_name(sos_schema_t schema, const char *name);
 sos_attr_t sos_schema_attr_by_id(sos_schema_t schema, int attr_id);
