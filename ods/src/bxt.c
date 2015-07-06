@@ -62,11 +62,13 @@ void dump_leaf(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *f
 			rec = ods_ref_as_obj(t->ods, head);
 			key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 			fprintf(fp,
-				"%*srec_ref %p key %s obj_ref %p\n",
+				"%*srec_ref %p key %s obj_ref %p prev_ref %p next_ref %p\n",
 				indent+16, "",
 				(void *)(unsigned long)head,
 				ods_key_to_str(idx, key, keystr),
-				(void *)(unsigned long)REC(rec)->obj_ref);
+				(void *)(unsigned long)REC(rec)->obj_ref,
+				(void *)(unsigned long)REC(rec)->prev_ref,
+				(void *)(unsigned long)REC(rec)->next_ref);
 			if (head == tail)
 				break;
 			head = REC(rec)->next_ref;
@@ -1360,6 +1362,16 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 	int count;
 
 	assert(NODE(node)->is_leaf);
+	/* Fix up next and prev pointers in record list */
+	ods_obj_t next_rec = ods_ref_as_obj(t->ods, REC(rec)->next_ref);
+	ods_obj_t prev_rec = ods_ref_as_obj(t->ods, REC(rec)->prev_ref);
+	if (prev_rec)
+		REC(prev_rec)->next_ref = REC(rec)->next_ref;
+	if (next_rec)
+		REC(next_rec)->prev_ref = REC(rec)->prev_ref;
+	ods_obj_put(next_rec);
+	ods_obj_put(prev_rec);
+
  next_level:
 	parent = ods_ref_as_obj(t->ods, NODE(node)->parent);
 	/* Remove the record and object from the node */
