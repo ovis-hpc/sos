@@ -191,6 +191,7 @@ int ods_idx_create(const char *path, int mode,
 	errno = idx_class->prv->init(ods, argp);
 	ods_obj_put(obj);
 	ods_close(ods, ODS_COMMIT_ASYNC);
+	errno = 0;
  out:
 	return errno;
 }
