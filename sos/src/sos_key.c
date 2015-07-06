@@ -74,16 +74,49 @@
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
+/** \addtogroup keys
+ * @{
+ */
+
+/**
+ * \brief Set the value of a key
+ *
+ * Sets the value of the key to 'value'. The \c value parameter is of
+ * type void* to make it convenient to use values of arbitrary
+ * types. The minimum of 'sz' and the maximum key length is
+ * copied. The number of bytes copied into the key is returned.
+ *
+ * \param key	The key
+ * \param value	The value to set the key to
+ * \param sz	The size of value in bytes
+ * \returns The number of bytes copied
+ */
 size_t sos_key_set(sos_key_t key, void *value, size_t sz)
 {
 	return ods_key_set(key, value, sz);
 }
 
+/**
+ * \brief Set the value of a key from a string
+ *
+ * \param attr	The attribute handle
+ * \param key	The key
+ * \param str	Pointer to a string
+ * \retval 0	if successful
+ * \retval -1	if there was an error converting the string to a value
+ */
 int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
 {
 	return ods_key_from_str(attr->index, key, str);
 }
 
+/**
+ * \brief Return a string representation of the key value
+ *
+ * \param attr	The attribute handle
+ * \param key	The key
+ * \return A const char * representation of the key value.
+ */
 const char *sos_key_to_str(sos_attr_t attr, sos_key_t key)
 {
 #if 0
@@ -98,29 +131,69 @@ const char *sos_key_to_str(sos_attr_t attr, sos_key_t key)
 	return ods_key_to_str(attr->index, key, keystr);
 }
 
+/**
+ * \brief Compare two keys using the attribute index's compare function
+ *
+ * \param attr	The attribute handle
+ * \param a	The first key
+ * \param b	The second key
+ * \return <0	a < b
+ * \return 0	a == b
+ * \return >0	a > b
+ */
 int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
 {
 	return ods_key_cmp(attr->index, a, b);
 }
 
+/**
+ * \brief Return the size of the attribute index's key
+ *
+ * Returns the native size of the attribute index's key values. If the
+ * key value is variable size, this function returns -1. See the sos_key_len()
+ * and sos_key_size() functions for the current size of the key's
+ * value and the size of the key's buffer respectively.
+ *
+ * \return The native size of the attribute index's keys in bytes
+ */
 size_t sos_attr_key_size(sos_attr_t attr)
 {
 	return ods_idx_key_size(attr->index);
 }
 
+/**
+ * \brief Return the maximum size of this key's value
+ *
+ * \returns The size in bytes of this key's value buffer.
+ */
 size_t sos_key_size(sos_key_t key)
 {
 	return ods_key_size(key);
 }
 
+/**
+ * \brief Return the length of the key's value
+ *
+ * Returns the current size of the key's value.
+ *
+ * \param key	The key
+ * \returns The size of the key in bytes
+ */
 size_t sos_key_len(sos_key_t key)
 {
 	ods_key_value_t kv = ods_key_value(key);
 	return kv->len;
 }
 
+/**
+ * \brief Return the value of a key
+ *
+ * \param key	The key
+ * \returns Pointer to the value of the key
+ */
 unsigned char* sos_key_value(sos_key_t key)
 {
 	ods_key_value_t kv = ods_key_value(key);
 	return kv->value;
 }
+/** @} */

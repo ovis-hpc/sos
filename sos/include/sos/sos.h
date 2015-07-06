@@ -74,6 +74,7 @@ typedef struct sos_schema_s *sos_schema_t;
 typedef struct sos_obj_s *sos_obj_t;
 
 #define SOS_CONTAINER_NAME_LEN  64
+#define SOS_CONFIG_NAME_LEN  64
 #define SOS_SCHEMA_NAME_LEN	64
 #define SOS_ATTR_NAME_LEN	64
 
@@ -171,254 +172,40 @@ enum sos_cond_e {
 /** \defgroup schema_funcs Schema Functions
  * @{
  */
-/**
- * \brief Create a schema
- *
- * A schema defines a SOS object. Every object in a SOS database is
- * associated with a schema via an internal schema_id.
- *
- * After a schema is created it must be associated with one or more
- * containers. See the sos_schema_add() function to add a schema to a
- * container so that objects of that type can subsequently be created
- * in the container. Once a schema has been added, it can be looked up
- * with the sos_schema_by_name() and sos_schema_by_id() functions.
- *
- * Objects are created with the sos_obj_new() function. This function
- * takes a schema-handle as it's argument. The schema-id is saved
- * internally with the object data. An object is therefore
- * self-describing.
- *
- * \param name	The name of the schema. This name must be unique
- * within the container.
- * \returns	A pointer to the new schema or a NULL pointer if there
- * is an error. The errno variable is set to provide detail on the error.
- */
 sos_schema_t sos_schema_new(const char *name);
-
-/**
- * \brief Create a copy of a schema
- *
- * Create a replica of a schema that is not associated with a
- * container. This function is useful for adding a schema from one
- * container to another container.
- *
- * \param schema
- * \retval A pointer to the new schema
- * \retval NULL Insufficient resources
- */
 sos_schema_t sos_schema_dup(sos_schema_t schema);
-
-/**
- * \brief Return number of schema in container
- *
- * \param sos The container handle
- * \retval The number of schema in the container
- */
 size_t sos_schema_count(sos_t sos);
-
-/**
- * \brief Add a schema to a container
- *
- * A a new schema to the container. A schema with the same name must
- * not already exist in the container.
- *
- * \param sos	The container handle
- * \param schema Pointer to the new schema
- * \retval 0	The schema was successfully added
- * \retval EEXIST A schema with the same name already exists in the
- * container.
- * \retval ENOMEM Insufficient resources
- * \retval EINVAL An invalid parameter was specified.
- */
 int sos_schema_add(sos_t sos, sos_schema_t schema);
 
-/**
- * \brief Find a schema in a container.
- *
- * Find the schema with the specified name. The schema returned may be
- * used to create objects of this type in the container.
- *
- * \param sos	The container handle
- * \param name	The name of the schema
- * \returns A pointer to the schema or a NULL pointer if a schema with
- * that name does not exist in the container.
- */
+typedef struct sos_schema_template_attr {
+	const char *name;
+	sos_type_t type;
+	int indexed;
+} *sos_schema_template_attr_t;
+
+typedef struct sos_schema_template {
+	const char *name;
+	struct sos_schema_template_attr attrs[];
+} *sos_schema_template_t;
+
+sos_schema_t sos_schema_from_template(sos_schema_template_t pt);
 sos_schema_t sos_schema_by_name(sos_t sos, const char *name);
 sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id);
-
-/**
- * \brief Print the schema to a File pointer
- *
- * This convenience function formats the schema definition in YAML an
- * writes it to the specified FILE pointer. For example:
- *
- *     sos_schema_t schema = sos_container_find(sos, "Sample");
- *     sos_schema_print(schema, stdout);
- *
- * \param schema The schema handle
- * \param fp A FILE pointer
- */
 void sos_schema_print(sos_schema_t schema, FILE *fp);
-
-/**
- * \brief Remove a schema from a container
- *
- * Remove the schema with the specified name from the container. If
- * there are any objects in the container that use the specified
- * schema, the schema cannot be deleted.
- *
- * \param sos	The container handle
- * \param name	The name of the container
- * \retval 0	The schema was successfully deleted
- * \retval EINUSE An objects exists in the container that uses the
- * specified schema
- * \retval ENOENT No schema was found with the specified name
- */
 int sos_schema_delete(sos_t sos, const char *name);
-
 sos_schema_t sos_schema_first(sos_t sos);
 sos_schema_t sos_schema_next(sos_schema_t schema);
-
-/**
- * \brief Take a reference on a schema
- *
- * SOS schema are reference counted. This function takes a reference
- * on a SOS schema and returns a pointer to the same. The typical
- * calling sequence is:
- *
- *     sos_schema_t my_schema_ptr = sos_schema_get(schema);
- *
- *
- * This allows for the schema to be safely pointed to from multiple
- * places. The sos_schema_put() function is used to drop a reference on
- * the schema. For example:
- *
- *     sos_schema_put(my_schema_ptr);
- *     my_schema_ptr = NULL;
- *
- * \param schema	The SOS schema handle
- * \returns The schema handle
- */
 sos_schema_t sos_schema_get(sos_schema_t schema);
-
-/**
- * \brief Drop a reference on a schema
- *
- * The memory consumed by a schema is not released until all
- * references have been dropped.
- *
- * \param schema	The schema handle
- */
 void sos_schema_put(sos_schema_t schema);
-
-/**
- * \brief Returns the schema's name
- * \param schema The schema handle.
- * \returns The schema's name.
- */
 const char *sos_schema_name(sos_schema_t schema);
 int sos_schema_id(sos_schema_t schema);
-
-/**
- * \brief Return the number of attributes in the schema.
- *
- * This function returns the number of attributes in the schema. See
- * the sos_schema_attr_by_id() function for an example that iterates
- * through all attributes defined in the schema.
- *
- * \param schema The schema handle.
- * \retval The number of attributes in the schema.
- */
 int sos_schema_attr_count(sos_schema_t schema);
-
-/**
- * \brief Add an attribute to a schema
- *
- * Add an attribute to a schema. The schema can only be modified if it
- * is not already a member of the container.
- *
- * \param schema	The schema
- * \param name		The attribute name
- * \param type		The attribute type
- * \retval 0		Success
- * \retval ENOMEM	Insufficient resources
- * \retval EEXIST	An attribute with that name already exists
- * \retval EINUSE	The schema is already a member of a container
- * \retval EINVAL	A parameter was invalid
- */
 int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type);
-
-/**
- * \brief Add an index to an attribute
- *
- * Marks an attribute as having a key-value index. The index is not
- * actually created until the schema containing the attribute is added
- * to the container.
- *
- * \param schema	The schema handle
- * \param name		The attribute name
- * \retval 0		The index was succesfully added.
- * \retval ENOENT	The specified attribute does not exist.
- * \retval EINVAL	One or more parameters was invalid.
- */
 int sos_schema_index_add(sos_schema_t schema, const char *name);
-
-/**
- * \brief Modify the index for an attribute
- *
- * By default an attribute index is a modified form of a B+Tree that
- * efficiently handles duplicate keys. There are, however, other index
- * types as well as user-defined indices. The type of index is
- * specified as a string that identifies a shared library that
- * implements the necessary index strategy routines, e.g. insert,
- * delete, etc...
- *
- * For keys, the default key type is associated with the attribute's
- * data type, however, it is possible to implement user-defined
- * key types. These are useful for indexing complex data types that
- * are not understood as primitive types; for example a set of fields
- * that are represented as a UINT64.
-
- * \param schema	The schema handle.
- * \param name		The attribute name.
- * \param idx_type	The index type name. This parameter cannot be null.
- * \param key_type	The key type name. It may be null, in which
- *			case, the default key type for the attribute will be used.
- * \param ...		Some index types have additional parameters,
- *			for example, the BXTREE has an order parameter
- *			that specifies the number of entries in each BXTREE node.
- * \retval 0		The index was succesfully added.
- * \retval ENOENT	The specified attribute does not exist.
- * \retval EINVAL	One or more parameters was invalid.
- */
 int sos_schema_index_modify(sos_schema_t schema, const char *name,
 			    const char *idx_type, const char *key_type, ...);
-
-/**
- * \brief Find an attribute by name
- * \param schema	The schema handle
- * \param name		The attribute's name
- * \returns The attribute handle or NULL if the attribute was not found.
- */
 sos_attr_t sos_schema_attr_by_name(sos_schema_t schema, const char *name);
-
-/**
- * \brief Find an attribute by id
- *
- * This function is useful for iterating through all attributes in the
- * schema as shown in the following code fragment:
- *
- *     for (i = 0; i < sos_schema_attr_count(schema); i++) {
- *        sos_attr_t attr = sos_schema_attr_by_id(i);
- *        ... code to manipulate attribute ...
- *     }
- *
- * \param schema	The schema handle
- * \param attr_id	The attribute's ordinal id
- * \returns The attribute handle or NULL if the attribute was not found.
- */
 sos_attr_t sos_schema_attr_by_id(sos_schema_t schema, int attr_id);
-
 sos_attr_t sos_schema_attr_first(sos_schema_t schema);
 sos_attr_t sos_schema_attr_last(sos_schema_t schema);
 sos_attr_t sos_schema_attr_next(sos_attr_t attr);
@@ -494,64 +281,15 @@ int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 /** @} */
 /** @} */
 
-/** \defgroup container SOS Storage Containers
- * @{
- */
-
-/**
- * \brief Create a Container
- *
- * Creates a SOS container. The o_flags and o_mode parameters accept
- * the same values and have the same meaning as the corresponding
- * parameters to the open() system call.
- *
- * Containers are logically maintained in a Unix filesystem
- * namespace. The specified path must be unique for the Container and
- * all sub-directories in the path up to, but not including the
- * basename() must exist.
- *
- * \param path		Pathname for the Container.
- * \param o_mode	The file mode for the Container.
- * \retval 0		The container was successfully created.
- * \retval EINVAL	A parameter was invalid
- * \retval EPERM	The user has insufficient permission
- * \retval EEXIST	A container already exists at the specified path
- */
 int sos_container_new(const char *path, int o_mode);
 
 typedef enum sos_perm_e {
 	SOS_PERM_RO = 0,
 	SOS_PERM_RW,
 } sos_perm_t;
-/**
- * \brief Open a Container
- *
- * Open a SOS container. If successfull, the <tt>c</tt> parameter will
- * contain a valid sos_t handle on exit.
- *
- * \param path		Pathname for the Container. See sos_container_new()
- * \param o_perm	The requested read/write permissions
- * \retval !NULL	The sos_t handle for the container.
- * \retval NULL		An error occured, consult errno for the reason.
- * \retval EPERM	The user has insufficient privilege to open the container.
- * \retval ENOENT	The container does not exist
- */
+
 sos_t sos_container_open(const char *path, sos_perm_t o_perm);
 
-/**
- * \brief Delete storage associated with a Container
- *
- * Removes all resources associated with the Container. The sos_t
- * handle must be provided (requiring an open) because it is necessary
- * to know the associated indexes in order to be able to know the
- * names of the associated files. sos_destroy will also close \c sos, as the
- * files should be closed before removed.
- *
- * \param c	The container handle
- * \retval 0	The container was deleted
- * \retval EPERM The user has insufficient privilege
- * \retval EINUSE The container is in-use by other clients
- */
 int sos_container_delete(sos_t c);
 
 typedef enum sos_commit_e {
@@ -562,93 +300,27 @@ typedef enum sos_commit_e {
 	SOS_COMMIT_SYNC
 } sos_commit_t;
 
-/**
- * \brief Extend the size of a Container
- *
- * Expand the size of  Container's object store. This function cannot
- * be used to make the container smaller. See the
- * sos_container_truncate() function.
- *
- * \param sos	The container handle
- * \param new_size The desired size of the container
- * \retval 0 The container was successfully extended.
- * \retval ENOSPC There is insufficient storage to extend the container
- * \retval EINVAL The container is currently larger than the requested size
- */
 int sos_container_extend(sos_t sos, size_t new_size);
 int sos_container_stat(sos_t sos, struct stat *sb);
-
-/**
- * \brief Close a Container
- *
- * This function commits the index changes to stable storage and
- * releases all in-memory resources associated with the container.
- *
- * If SOS_COMMIT_SYNC is specified in the flags parameter, the function
- * will wait until the changes are commited to stable stroage before
- * returning.
- *
- * \param c	The container handle
- * \param flags	The commit flags
- */
 void sos_container_close(sos_t c, sos_commit_t flags);
-
-/**
- * \brief Flush outstanding changes to persistent storage
- *
- * This function commits the index changes to stable storage. If
- * SOS_COMMIT_SYNC is specified in the flags parameter, the function
- * will wait until the changes are commited to stable stroage before
- * returning.
- *
- * \param c	Handle for the container
- * \param flags	The commit flags
- */
 int sos_container_commit(sos_t c, sos_commit_t flags);
-
-/**
- * \brief Print container information
- *
- * Prints information about the container to the specified FILE pointer.
- *
- * \param sos	The container handle
- * \param fp	The FILE pointer
- */
 void sos_container_info(sos_t sos, FILE* fp);
 
-/**
- * \brief Take a reference on a container
- *
- * SOS container are reference counted. This function takes a reference
- * on a SOS container and returns a pointer to the same. The typical
- * calling sequence is:
- *
- *     sos_t my_sos_ptr = sos_container_get(sos);
- *
- * This allows for the container to be safely pointed to from multiple
- * places. The sos_container_put() function is used to drop a reference on
- * the container. For example:
- *
- *     sos_container_put(my_sos_ptr);
- *     my_sos_ptr = NULL;
- *
- * \param sos	The SOS container handle
- * \retval The container handle
- */
-sos_t sos_container_get(sos_t sos);
-
-/**
- * \brief Drop a reference on a container
- *
- * The memory consumed by the container is not released until all
- * references have been dropped. This refers only to references in
- * main memory.
- *
- * \param sos	The container handle
- */
-void sos_container_put(sos_t sos);
-
-/** @} */
+#define SOS_CONTAINER_PARTITION_ENABLE		"PARTITION_ENABLE"
+#define SOS_CONTAINER_PARTITION_SIZE		"PARTITION_SIZE"
+#define SOS_CONTAINER_PARTITION_PERIOD		"PARTITION_PERIOD"
+#define SOS_CONTAINER_PARTITION_EXTEND		"PARTITION_EXTEND"
+int sos_container_config(const char *path, const char *option, const char *value);
+typedef struct sos_config_iter_s *sos_config_iter_t;
+sos_config_iter_t sos_config_iter_new(const char *path);
+void sos_config_iter_free(sos_config_iter_t iter);
+typedef struct sos_config_data_s {
+	char name[SOS_CONFIG_NAME_LEN];
+	char value[0];
+} *sos_config_t;
+sos_config_t sos_config_first(sos_config_iter_t iter);
+sos_config_t sos_config_next(sos_config_iter_t iter);
+void sos_config_print(const char *path, FILE *fp);
 
 /** \defgroup objects SOS Objects
  * @{
@@ -853,6 +525,9 @@ int sos_attr_is_ref(sos_attr_t attr);
 int sos_attr_is_array(sos_attr_t attr);
 size_t sos_array_count(sos_value_t val);
 sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count);
+static inline void *sos_array_ptr(sos_value_t val) {
+	return val->data->array.data.byte_;
+}
 sos_value_t sos_value_new();
 void sos_value_free(sos_value_t v);
 
@@ -1049,97 +724,20 @@ typedef struct ods_obj_s *sos_key_t;
 })
 
 #define sos_key_put(key) ods_obj_put(key)
-
-/**
- * \brief Set the value of a key
- *
- * Sets the value of the key to 'value'. The \c value parameter is of
- * type void* to make it convenient to use values of arbitrary
- * types. The minimum of 'sz' and the maximum key length is
- * copied. The number of bytes copied into the key is returned.
- *
- * \param key	The key
- * \param value	The value to set the key to
- * \param sz	The size of value in bytes
- * \returns The number of bytes copied
- */
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
-
-/**
- * \brief Set the value of a key from a string
- *
- * \param attr	The attribute handle
- * \param key	The key
- * \param str	Pointer to a string
- * \retval 0	if successful
- * \retval -1	if there was an error converting the string to a value
- */
 int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
-
-/**
- * \brief Return a string representation of the key value
- *
- * \param attr	The attribute handle
- * \param key	The key
- * \return A const char * representation of the key value.
- */
 const char *sos_key_to_str(sos_attr_t attr, sos_key_t key);
-
-/**
- * \brief Compare two keys using the attribute index's compare function
- *
- * \param attr	The attribute handle
- * \param a	The first key
- * \param b	The second key
- * \return <0	a < b
- * \return 0	a == b
- * \return >0	a > b
- */
 int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b);
 
-/**
- * \brief Return the size of the attribute index's key
- *
- * Returns the native size of the attribute index's key values. If the
- * key value is variable size, this function returns -1. See the sos_key_len()
- * and sos_key_size() functions for the current size of the key's
- * value and the size of the key's buffer respectively.
- *
- * \return The native size of the attribute index's keys in bytes
- */
 size_t sos_attr_key_size(sos_attr_t attr);
-
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
 				  char **endptr);
 char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj, const char *attr_name,
 				  char *str, size_t len);
-
-/**
- * \brief Return the maximum size of this key's value
- *
- * \returns The size in bytes of this key's value buffer.
- */
 size_t sos_key_size(sos_key_t key);
-
-/**
- * \brief Return the length of the key's value
- *
- * Returns the current size of the key's value.
- *
- * \param key	The key
- * \returns The size of the key in bytes
- */
 size_t sos_key_len(sos_key_t key);
-
-/**
- * \brief Return the value of a key
- *
- * \param key	The key
- * \returns Pointer to the value of the key
- */
 unsigned char *sos_key_value(sos_key_t key);
-
 void *sos_value_as_key(sos_value_t value);
 
 /** @} */

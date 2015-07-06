@@ -54,7 +54,7 @@
 #include <ods/ods_atomic.h>
 #include "sos_yaml.h"
 
-const char *short_options = "f:I:M:C:O:y:S:X:V:F:T:s:o:icql";
+const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:s:o:icql";
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
@@ -73,6 +73,7 @@ struct option long_options[] = {
 	{"map",         required_argument,  0,  'M'},
 	{"filter",	required_argument,  0,  'F'},
 	{"threads",	required_argument,  0,  'T'},
+	{"option",      optional_argument,  0,  'K'},
 	{0,             0,                  0,  0}
 };
 
@@ -81,6 +82,7 @@ void usage(int argc, char *argv[])
 	printf("sos { -l | -i | -c | -s | -q } -C <container> "
 	       "[-o <mode_mask>] [-Y <yaml-file>]\n");
 	printf("    -C <path>      The path to the container. Required for all options.\n");
+	printf("    -K <key>=<value> Set a container configuration option.\n");
 	printf("\n");
 	printf("    -l             Print a directory of the schemas.\n");
 	printf("\n");
@@ -176,6 +178,7 @@ int dir(sos_t sos)
 	     schema = sos_schema_next(schema))
 		sos_schema_print(schema, stdout);
 	printf("\n");
+	return 0;
 }
 
 struct col_s {
@@ -211,6 +214,29 @@ int add_column(const char *str)
 	return 0;
  err:
 	printf("Could not allocate memory for the column.\n");
+	return ENOMEM;
+}
+
+struct cfg_s {
+	char *kv;
+	TAILQ_ENTRY(cfg_s) entry;
+};
+TAILQ_HEAD(cfg_list_s, cfg_s) cfg_list = TAILQ_HEAD_INITIALIZER(cfg_list);
+
+/*
+ * Add a configuration option. The format is:
+ * <key>=<value>
+ */
+int add_config(const char *str)
+{
+	struct cfg_s *cfg = calloc(1, sizeof *cfg);
+	if (!cfg)
+		goto err;
+	cfg->kv = strdup(str);
+	TAILQ_INSERT_TAIL(&cfg_list, cfg, entry);
+	return 0;
+ err:
+	printf("Could not allocate memory for the configuration option.\n");
 	return ENOMEM;
 }
 
@@ -1100,6 +1126,7 @@ int add_object(sos_t sos, FILE* fp)
 #define QUERY	0x10
 #define DIR	0x20
 #define CSV	0x40
+#define CONFIG  0x80
 
 struct cond_key_s {
 	char *name;
@@ -1249,6 +1276,11 @@ int main(int argc, char **argv)
 		case 'C':
 			path = optarg;
 			break;
+		case 'K':
+			action |= CONFIG;
+			if (optarg && add_config(optarg))
+				exit(11);
+			break;
 		case 'O':
 			o_mode = strtol(optarg, NULL, 0);
 			break;
@@ -1300,6 +1332,23 @@ int main(int argc, char **argv)
 	if (!action)
 		return 0;
 
+	if (action & CONFIG) {
+		struct cfg_s *cfg;
+		TAILQ_FOREACH(cfg, &cfg_list, entry) {
+			char *option, *value;
+			option = strtok(cfg->kv, "=");
+			value = strtok(NULL, "=");
+			rc = sos_container_config(path, option, value);
+			if (rc)
+				printf("Warning: The '%s' option was ignored.\n",
+				       cfg->kv);
+		}
+		sos_config_print(path, stdout);
+		action &= ~CONFIG;
+	}
+	if (!action)
+		return 0;
+
 	int mode;
 	if (!(action & (CSV | OBJECT | SCHEMA)))
 		mode = O_RDONLY;
@@ -1311,7 +1360,6 @@ int main(int argc, char **argv)
 		       errno, path);
 		exit(1);
 	}
-
 	if (action & OBJECT) {
 		rc = add_object(sos, obj_file);
 		if (rc) {

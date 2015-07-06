@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2012-2015 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2012-2015 Sandia Corporation. All rights reserved.
+ *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
  * Export of this program may require a license from the United States
@@ -136,12 +137,21 @@ typedef char *(*sos_value_to_str_fn_t)(sos_value_t, char *, size_t);
 typedef int (*sos_value_from_str_fn_t)(sos_value_t, const char *, char **);
 typedef void *(*sos_value_key_value_fn_t)(sos_value_t);
 
+typedef struct sos_idx_part_s {
+	ods_idx_t index;
+	LIST_ENTRY(sos_idx_part_s) entry;
+} *sos_idx_part_t;
+
 struct sos_attr_s {
 	sos_attr_data_t data;
 	struct sos_attr_data_s data_;
 
 	sos_schema_t schema;
+#ifdef notyet
+	LIST_HEAD(sos_idx_part_list, sos_idx_part_s) ods_idx_list;
+#else
 	ods_idx_t index;
+#endif
 	char *idx_type;
 	char *key_type;
 	sos_value_size_fn_t size_fn;
@@ -179,6 +189,21 @@ struct sos_schema_s {
 	TAILQ_HEAD(sos_attr_list, sos_attr_s) attr_list;
 };
 #define SOS_SCHEMA(_o_) ODS_PTR(sos_schema_data_t, _o_)
+#define SOS_CONFIG(_o_) ODS_PTR(sos_config_t, _o_)
+
+#define SOS_OPTIONS_PARTITION_ENABLE	1
+struct sos_container_config {
+	unsigned int options;;
+	uint64_t partition_extend;
+	uint64_t max_partition_size;
+	uint32_t partition_period; /* Number of seconds in partition */
+	time_t partition_timestamp;
+};
+
+typedef struct sos_obj_part_s {
+	ods_t obj_ods;
+	LIST_ENTRY(sos_part_s) entry;
+} *sos_obj_part_t;
 
 /*
  * The container
@@ -187,10 +212,13 @@ struct sos_container_s {
 	pthread_mutex_t lock;
 	ods_atomic_t ref_count;
 
-	/* "Path" to the file. This is used as a prefix for all the
-	 *  real file paths */
+	/*
+	 * "Path" to the file. This is used as a prefix for all the
+	 *  real file paths.
+	 */
 	char *path;
 	ods_perm_t o_perm;
+	int o_mode;
 
 	/*
 	 * The schema dictionary and index
@@ -202,10 +230,19 @@ struct sos_container_s {
 	size_t schema_count;
 
 	/*
-	 * The object repository
+	 * Storage management configuration
 	 */
-	ods_t obj_ods;
+	time_t container_time;	/* Current container timestamp */
+	struct sos_container_config config;
 
+	/*
+	 * The object partitions
+	 */
+#ifdef notyet
+	LIST_HEAD(sos_obj_part_list, sos_obj_part_s) obj_ods_list;
+#else
+	ods_t obj_ods;
+#endif
 	LIST_HEAD(obj_list_head, sos_obj_s) obj_list;
 	LIST_HEAD(obj_free_list_head, sos_obj_s) obj_free_list;
 	LIST_HEAD(schema_list, sos_schema_s) schema_list;
@@ -242,6 +279,14 @@ struct sos_filter_s {
  */
 #define SOS_INITIAL_SIZE (1024*1024)
 
+struct sos_config_iter_s {
+	ods_t config_ods;
+	ods_idx_t config_idx;
+	sos_config_t config;
+	ods_iter_t iter;
+	ods_obj_t obj;
+};
+
 struct sos_iter_s {
 	sos_attr_t attr;
 	ods_iter_t iter;
@@ -255,5 +300,9 @@ sos_value_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type);
 sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type);
 sos_value_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type);
 sos_value_key_value_fn_t __sos_attr_key_value_fn_for_type(sos_type_t type);
+int __sos_config_init(sos_t sos);
+sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj);
+ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock);
+void __sos_schema_free(sos_schema_t schema);
 
 #endif
