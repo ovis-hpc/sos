@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2015 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -238,8 +238,8 @@ const char *sos_schema_name(sos_schema_t schema);
 int sos_schema_attr_count(sos_schema_t schema);
 int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type);
 int sos_schema_index_add(sos_schema_t schema, const char *name);
-int sos_schema_index_cfg(sos_schema_t schema, const char *name,
-			 const char *idx_type, const char *key_type, ...);
+int sos_schema_index_modify(sos_schema_t schema, const char *name,
+			    const char *idx_type, const char *key_type, ...);
 sos_attr_t sos_schema_attr_by_name(sos_schema_t schema, const char *name);
 sos_attr_t sos_schema_attr_by_id(sos_schema_t schema, int attr_id);
 sos_schema_t sos_schema_first(sos_t sos);
@@ -262,13 +262,12 @@ int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 int sos_container_new(const char *path, int o_mode);
 sos_t sos_container_open(const char *path, sos_perm_t o_perm);
 int sos_container_delete(sos_t c);
+int sos_container_config(const char *, const char *opt_name, const char *opt_value);
 
 
 void sos_container_close(sos_t c, sos_commit_t flags);
 int sos_container_commit(sos_t c, sos_commit_t flags);
 void sos_container_info(sos_t sos, FILE* fp);
-sos_t sos_container_get(sos_t sos);
-void sos_container_put(sos_t sos);
 
 #define SOS_OBJ_BE	1
 #define SOS_OBJ_LE	2
