@@ -312,7 +312,7 @@ ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz);
  * \param sz	The size of value in bytes
  * \returns The number of bytes copied
  */
-size_t ods_key_set(ods_key_t key, void *value, size_t sz);
+size_t ods_key_set(ods_key_t key, const void *value, size_t sz);
 
 /**
  * \brief Return the value of a key

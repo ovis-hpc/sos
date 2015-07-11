@@ -403,7 +403,7 @@ void ods_key_copy(ods_key_t dst, ods_key_t src)
 	memcpy(dst->as.ptr, value, value->len + sizeof(*value));
 }
 
-size_t ods_key_set(ods_key_t key, void *value, size_t sz)
+size_t ods_key_set(ods_key_t key, const void *value, size_t sz)
 {
 	ods_key_value_t v = key->as.ptr;
 	size_t count = (sz < ods_key_size(key) ? sz : ods_key_size(key));
