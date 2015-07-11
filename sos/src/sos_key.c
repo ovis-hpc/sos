@@ -107,7 +107,8 @@ size_t sos_key_set(sos_key_t key, void *value, size_t sz)
  */
 int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
 {
-	return ods_key_from_str(attr->index, key, str);
+	sos_idx_part_t part = __sos_active_idx_part(attr);
+	return ods_key_from_str(part->index, key, str);
 }
 
 /**
@@ -119,16 +120,9 @@ int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
  */
 const char *sos_key_to_str(sos_attr_t attr, sos_key_t key)
 {
-#if 0
-	char *str = malloc(80);
-	struct sos_value_s val_;
-	struct ods_key_value_s *kv = key->as.ptr;
-	val_.attr = attr;
-	val_.data = (sos_attr_data_t)&kv->value[0];
-	return sos_value_to_str(&val_, str, 80);
-#endif
-	char *keystr = malloc(ods_idx_key_str_size(attr->index));
-	return ods_key_to_str(attr->index, key, keystr);
+	sos_idx_part_t part = __sos_active_idx_part(attr);
+	char *keystr = malloc(ods_idx_key_str_size(part->index));
+	return ods_key_to_str(part->index, key, keystr);
 }
 
 /**
@@ -143,7 +137,8 @@ const char *sos_key_to_str(sos_attr_t attr, sos_key_t key)
  */
 int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
 {
-	return ods_key_cmp(attr->index, a, b);
+	sos_idx_part_t part = __sos_active_idx_part(attr);
+	return ods_key_cmp(part->index, a, b);
 }
 
 /**
@@ -158,7 +153,8 @@ int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
  */
 size_t sos_attr_key_size(sos_attr_t attr)
 {
-	return ods_idx_key_size(attr->index);
+	sos_idx_part_t part = __sos_active_idx_part(attr);
+	return ods_idx_key_size(part->index);
 }
 
 /**

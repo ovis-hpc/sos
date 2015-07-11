@@ -310,6 +310,7 @@ void sos_container_info(sos_t sos, FILE* fp);
 #define SOS_CONTAINER_PARTITION_SIZE		"PARTITION_SIZE"
 #define SOS_CONTAINER_PARTITION_PERIOD		"PARTITION_PERIOD"
 #define SOS_CONTAINER_PARTITION_EXTEND		"PARTITION_EXTEND"
+
 int sos_container_config(const char *path, const char *option, const char *value);
 typedef struct sos_config_iter_s *sos_config_iter_t;
 sos_config_iter_t sos_config_iter_new(const char *path);
@@ -321,6 +322,26 @@ typedef struct sos_config_data_s {
 sos_config_t sos_config_first(sos_config_iter_t iter);
 sos_config_t sos_config_next(sos_config_iter_t iter);
 void sos_config_print(const char *path, FILE *fp);
+
+#define SOS_PART_NAME_DEFAULT			"00000000"
+#define SOS_PART_NAME_LEN			64
+/** Partition is being moved up or otherwise not used */
+#define SOS_PART_STATE_OFFLINE			0
+/** Consulted for queries/iteration */
+#define SOS_PART_STATE_ACTIVE			1
+/** New objects stored here */
+#define SOS_PART_STATE_PRIMARY			2
+
+typedef struct sos_part_data_s {
+	char name[SOS_PART_NAME_LEN];
+	uint32_t state;
+} *sos_part_t;
+typedef struct sos_part_iter_s *sos_part_iter_t;
+int sos_part_new(const char *path, const char *name, int state_flags);
+sos_part_iter_t sos_part_iter_new(const char *path);
+sos_part_t sos_part_first(sos_part_iter_t iter);
+sos_part_t sos_part_next(sos_part_iter_t iter);
+void sos_part_print(sos_t sos, FILE *fp);
 
 /** \defgroup objects SOS Objects
  * @{
@@ -378,8 +399,12 @@ sos_obj_t sos_obj_new(sos_schema_t schema);
  */
 sos_schema_t sos_obj_schema(sos_obj_t obj);
 
-typedef ods_ref_t sos_ref_t;
+typedef struct sos_ref_s {
+	void *part;
+	ods_ref_t ref;
+} sos_ref_t;
 sos_ref_t sos_obj_ref(sos_obj_t obj);
+#define SOS_NULL_REF(_ref_)  ((_ref_).ref == 0)
 
 /**
  * \brief  Return the object associated with the value

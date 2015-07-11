@@ -191,8 +191,9 @@ void __sos_schema_free(sos_schema_t schema)
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		sos_attr_t attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
-		if (attr->index)
-			ods_idx_close(attr->index, ODS_COMMIT_ASYNC);
+		sos_idx_part_t part;
+		TAILQ_FOREACH(part, &attr->idx_list, entry)
+			ods_idx_close(part->index, ODS_COMMIT_ASYNC);
 		free(attr->key_type);
 		free(attr->idx_type);
 		free(attr);
@@ -330,17 +331,6 @@ void sos_schema_put(sos_schema_t schema)
 		__sos_schema_free(schema);
 }
 
-static char * make_index_path(char *container_path,
-			      char *schema_name,
-			      char *attr_name,
-			      time_t timestamp)
-{
-	static char tmp_path[PATH_MAX];
-	sprintf(tmp_path, "%s/%08jX/%s_%s_idx",
-		container_path, timestamp, schema_name, attr_name);
-	return tmp_path;
-}
-
 const char *key_types[] = {
 	[SOS_TYPE_INT32] = "INT32",
 	[SOS_TYPE_INT64] = "INT64",
@@ -369,6 +359,7 @@ static sos_attr_t attr_new(sos_schema_t schema, sos_type_t type)
 		goto out;
 	attr->data = &attr->data_;
 	attr->schema = schema;
+	TAILQ_INIT(&attr->idx_list);
 	attr->size_fn = __sos_attr_size_fn_for_type(type);
 	attr->to_str_fn = __sos_attr_to_str_fn_for_type(type);
 	attr->from_str_fn = __sos_attr_from_str_fn_for_type(type);
@@ -814,11 +805,11 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 	if (!sos_attr_is_array(attr))
 		return val;
 	/* Follow the reference to the object */
-	ref_obj = ods_ref_as_obj(obj->sos->obj_ods, val->data->prim.ref_);
+	ref_obj = ods_ref_as_obj(obj->part->obj_ods, val->data->prim.ref_);
 	sos_obj_put(val->obj);
 	if (!ref_obj)
 		return NULL;
-	val->obj = __sos_init_obj(obj->sos, get_ischema(attr->data->type), ref_obj);
+	val->obj = __sos_init_obj(obj->sos, get_ischema(attr->data->type), ref_obj, obj->part);
 	val->data = (sos_value_data_t)&SOS_OBJ(ref_obj)->data[0];
 	return val;
 }
@@ -865,7 +856,7 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 		+ sizeof(uint32_t) /* element count */
 		+ (count * schema->data->obj_sz); /* array elements */
 
-	array_obj = __sos_obj_new(obj->sos->obj_ods, size, &obj->sos->lock);
+	array_obj = __sos_obj_new(obj->part->obj_ods, size, &obj->sos->lock);
 	if (!array_obj)
 		goto err;
 
@@ -875,7 +866,7 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 	struct sos_array_s *array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
 	array->count = count;
 	val->data->prim.ref_ = ods_obj_ref(array_obj);
-	val->obj = __sos_init_obj(obj->sos, schema, array_obj);
+	val->obj = __sos_init_obj(obj->sos, schema, array_obj, obj->part);
 	if (!val->obj)
 		goto err;
 	val->data = (sos_value_data_t)&SOS_OBJ(array_obj)->data[0];
@@ -1107,30 +1098,34 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	return NULL;
 }
 
-int __sos_schema_open(sos_t sos, sos_schema_t schema)
+int __sos_schema_open(sos_t sos, sos_schema_t schema, ods_obj_t part_obj)
 {
 	int rc;
 	sos_attr_t attr;
+	char tmp_path[PATH_MAX];
 
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
 		if (!attr->data->indexed)
 			continue;
-		const char *path =
-			make_index_path(sos->path, schema->data->name,
-					attr->data->name, sos->container_time);
-		if (attr->index) {
-			ods_idx_close(attr->index, ODS_COMMIT_ASYNC);
-			attr->index = NULL;
+		sprintf(tmp_path, "%s/%s/%s_%s_idx",
+			sos->path, SOS_PART(part_obj)->name,
+			schema->data->name, attr->data->name);
+		sos_idx_part_t part = calloc(1, sizeof *part);
+		if (!part) {
+			rc = ENOMEM;
+			goto err;
 		}
+		part->part_obj = ods_obj_get(part_obj);
 	retry:
-		attr->index = ods_idx_open(path, sos->o_perm);
-		if (!attr->index) {
-			rc = ods_idx_create(path, sos->o_mode,
+		part->index = ods_idx_open(tmp_path, sos->o_perm);
+		if (!part->index) {
+			rc = ods_idx_create(tmp_path, sos->o_mode,
 					    attr->idx_type, attr->key_type, 5);
 			if (rc)
 				goto err;
 			goto retry;
 		}
+		TAILQ_INSERT_TAIL(&attr->idx_list, part, entry);
 	}
 	return 0;
  err:
@@ -1267,21 +1262,6 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 		schema->dict[idx++] = attr;
 		if (!attr->data->indexed)
 			continue;
-		/*
-		rc = ods_idx_create(make_index_path(sos->path,
-						    schema->data->name,
-						    attr->data->name),
-				    o_mode,
-				    attr->idx_type,
-				    attr->key_type,
-				    5);
-		if (rc)
-			goto err_3;
-		attr->index = ods_idx_open(make_index_path(sos->path,
-							   schema->data->name,
-							   attr->data->name),
-					   sos->o_perm);
-		*/
 	}
 	schema->data = schema_obj->as.ptr;
 	rc = ods_idx_insert(sos->schema_idx, schema_key,
@@ -1302,7 +1282,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	ods_obj_put(sos_obj_ref);
 	ods_obj_put(schema_key);
 	ods_obj_put(udata);
-	return 0;
+	return __sos_schema_open(sos, schema, __sos_primary_obj_part(sos)->part_obj);
  err_3:
 	ods_obj_delete(schema_key);
 	ods_obj_put(schema_key);

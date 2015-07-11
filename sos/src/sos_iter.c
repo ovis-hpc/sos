@@ -81,13 +81,23 @@ sos_iter_t sos_iter_new(sos_attr_t attr)
 	if (!sos_attr_index(attr))
 		return NULL;
 
+	/* Find first active object partition and matching index */
+	sos_idx_part_t idx_part = NULL;
+	sos_obj_part_t obj_part = __sos_active_obj_part(attr->schema->sos);
+	if (obj_part)
+		idx_part = __sos_matching_idx_part(attr, obj_part);
+	if (!idx_part)
+		return NULL;
+
 	i = calloc(1, sizeof *i);
 	if (!i)
 		goto err;
 
 	sos_schema_get(attr->schema);
 	i->attr = attr;
-	i->iter = ods_iter_new(attr->index);
+	i->obj_part = obj_part;
+	i->idx_part = idx_part;
+	i->iter = ods_iter_new(idx_part->index);
 	if (!i->iter)
 		goto err;
 	ods_iter_begin(i->iter);
@@ -150,7 +160,8 @@ sos_obj_t sos_iter_obj(sos_iter_t i)
 		return NULL;
 	return __sos_init_obj(i->attr->schema->sos,
 			      i->attr->schema,
-			      ods_ref_as_obj(i->attr->schema->sos->obj_ods, ods_ref));
+			      ods_ref_as_obj(i->obj_part->obj_ods, ods_ref),
+			      i->obj_part);
 }
 
 int sos_iter_obj_remove(sos_iter_t iter)
@@ -202,7 +213,7 @@ int sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
 {
 	int rc;
 	ods_key_t iter_key = ods_iter_key(iter->iter);
-	rc = ods_key_cmp(iter->attr->index, iter_key, key);
+	rc = ods_key_cmp(iter->idx_part->index, iter_key, key);
 	ods_obj_put(iter_key);
 	return rc;
 }

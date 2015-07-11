@@ -148,8 +148,8 @@ int add_component(struct rbn *rbn, void *varg, int level)
 		arg->prev_comp = comp_obj;
 		sos_value_t comp_head = sos_value(arg->job_obj, arg->comp_head_attr);
 		sos_value_t comp_tail = sos_value(arg->job_obj, arg->comp_tail_attr);
-		comp_head->data->prim.ref_ = sos_obj_ref(comp_obj);
-		comp_tail->data->prim.ref_ = sos_obj_ref(comp_obj);
+		comp_head->data->prim.ref_ = sos_obj_ref(comp_obj).ref;
+		comp_tail->data->prim.ref_ = sos_obj_ref(comp_obj).ref;
 		sos_value_put(comp_head);
 		sos_value_put(comp_tail);
 		goto out;
@@ -157,9 +157,9 @@ int add_component(struct rbn *rbn, void *varg, int level)
 	sos_value_t next_comp = sos_value(arg->prev_comp, arg->next_comp_attr);
 	sos_value_t prev_comp = sos_value(comp_obj, arg->prev_comp_attr);
 	sos_value_t comp_tail = sos_value(arg->job_obj, arg->comp_tail_attr);
-	next_comp->data->prim.ref_ = sos_obj_ref(comp_obj);
-	prev_comp->data->prim.ref_ = sos_obj_ref(arg->prev_comp);
-	comp_tail->data->prim.ref_ = sos_obj_ref(comp_obj);
+	next_comp->data->prim.ref_ = sos_obj_ref(comp_obj).ref;
+	prev_comp->data->prim.ref_ = sos_obj_ref(arg->prev_comp).ref;
+	comp_tail->data->prim.ref_ = sos_obj_ref(comp_obj).ref;
 	arg->prev_comp = comp_obj;
  out:
 	return 0;
@@ -462,18 +462,18 @@ int main(int argc, char *argv[])
 		sos_value_t sample_tail = sos_value(comp->comp_obj, sample_tail_attr);
 		sos_value_t job_id_val = sos_value(sample_obj, job_id_attr);
 		job_id_val->data->prim.uint64_ = job_id;
-		sample_tail->data->prim.ref_ = sos_obj_ref(sample_obj);
+		sample_tail->data->prim.ref_ = sos_obj_ref(sample_obj).ref;
 
 		if (!comp->prev_sample) {
-			sample_head->data->prim.ref_ = sos_obj_ref(sample_obj);
+			sample_head->data->prim.ref_ = sos_obj_ref(sample_obj).ref;
 			sos_value_t prev = sos_value(sample_obj, prev_sample_attr);
 			prev->data->prim.ref_ = 0; /* Start the list */
 			sos_value_put(prev);
 		} else {
 			sos_value_t next = sos_value(comp->prev_sample, next_sample_attr);
 			sos_value_t prev = sos_value(sample_obj, prev_sample_attr);
-			next->data->prim.ref_ = sos_obj_ref(sample_obj);
-			prev->data->prim.ref_ = sos_obj_ref(comp->prev_sample);
+			next->data->prim.ref_ = sos_obj_ref(sample_obj).ref;
+			prev->data->prim.ref_ = sos_obj_ref(comp->prev_sample).ref;
 			next = sos_value(sample_obj, next_sample_attr);
 			next->data->prim.ref_ = 0; /* Terminate the list */
 			sos_obj_put(comp->prev_sample);

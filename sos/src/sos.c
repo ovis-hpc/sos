@@ -303,6 +303,25 @@ int sos_container_new(const char *path, int o_mode)
 	if (rc)
 		goto err_2;
 
+	/* Create the ODS to contain partition objects */
+	sprintf(tmp_path, "%s/part", path);
+	rc = ods_create(tmp_path, o_mode);
+	if (rc)
+		goto err_1;
+
+	/* Create the partition object index */
+	sprintf(tmp_path, "%s/part_idx", path);
+	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "STRING", 5);
+	if (rc)
+		goto err_2;
+
+	/* Default configuration is to disable partition rotation */
+	rc = sos_container_config(path, "PARTITION_ENABLE", "false");
+	if (rc)
+		goto err_2;
+	rc = sos_part_new(path, SOS_PART_NAME_DEFAULT,
+			  SOS_PART_STATE_ACTIVE | SOS_PART_STATE_PRIMARY);
+
  	/* Create the ODS to contain the schema objects */
 	sprintf(tmp_path, "%s/schemas", path);
  	rc = ods_create(tmp_path, o_mode);
@@ -354,54 +373,81 @@ static int __sos_partition_open(sos_t sos)
 	char tmp_path[PATH_MAX];
 	int rc;
 	int o_mode;
-	ods_obj_t udata;
-	time_t container_time;
 	struct stat sb;
-	time_t timestamp = partition_timestamp(sos);
+	time_t timestamp;
+	ods_obj_t part_obj;
+	sos_part_t part;
+	ods_t ods;
+	sos_part_iter_t iter;
 
-	/* Stat the container path to get the file mode bits */
-	rc = stat(sos->path, &sb);
-	if (rc)
-		return rc;
-	sprintf(tmp_path, "%s/%08jX", sos->path, timestamp);
-	rc = make_all_dir(tmp_path, sb.st_mode);
-	if (rc) {
-		rc = errno;
+	/* Open the partition ODS */
+	sprintf(tmp_path, "%s/part", sos->path);
+	sos->part_ods = ods_open(tmp_path, ODS_PERM_RW);
+	if (!sos->part_ods)
 		goto err_0;
-	}
-	o_mode = sb.st_mode;
-	o_mode &= ~S_IXGRP;
-	o_mode &= ~S_IXUSR;
-	o_mode &= ~S_IXOTH;
-	sos->o_mode = o_mode;
 
-	sprintf(tmp_path, "%s/%08jX/objects", sos->path, timestamp);
- retry:
-	sos->obj_ods = ods_open(tmp_path, sos->o_perm);
-	if (!sos->obj_ods) {
-		/* Create the ODS to contain the objects */
-		rc = ods_create(tmp_path, o_mode);
-		if (rc)
-			goto err_1;
-		goto retry;
-	}
-	sos->container_time = timestamp;
+	/* Open the partition object index */
+	sprintf(tmp_path, "%s/part_idx", sos->path);
+	sos->part_idx = ods_idx_open(tmp_path, ODS_PERM_RW);
+	if (!sos->part_idx)
+		goto err_1;
 
-	/*
-	 * Iterate through all the schemas and open/create the indices.
-	 */
-	sos_schema_t schema;
-	LIST_FOREACH(schema, &sos->schema_list, entry) {
-		rc = __sos_schema_open(sos, schema);
+	iter = __sos_part_iter_new(sos);
+	if (!iter)
+		goto err_2;
+
+	for (part_obj = __sos_part_first(iter); part_obj;
+	     part_obj = __sos_part_next(iter)) {
+		part = SOS_PART(part_obj);
+		if (0 == (part->state & SOS_PART_STATE_ACTIVE))
+			continue;
+		/* Stat the container path to get the file mode bits */
+		rc = stat(sos->path, &sb);
 		if (rc)
-			goto err_1;
+			return rc;
+		sprintf(tmp_path, "%s/%s", sos->path, part->name);
+		rc = make_all_dir(tmp_path, sb.st_mode);
+		if (rc) {
+			rc = errno;
+			goto err_0;
+		}
+		o_mode = sb.st_mode;
+		o_mode &= ~S_IXGRP;
+		o_mode &= ~S_IXUSR;
+		o_mode &= ~S_IXOTH;
+		sos->o_mode = o_mode;
+
+		sprintf(tmp_path, "%s/%s/objects", sos->path, part->name);
+	retry:
+		ods = ods_open(tmp_path, sos->o_perm);
+		if (!ods) {
+			/* Create the ODS to contain the objects */
+			rc = ods_create(tmp_path, o_mode);
+			if (rc)
+				goto err_2;
+			goto retry;
+		}
+		sos_obj_part_t obj_part = calloc(1, sizeof *obj_part);
+		obj_part->part_obj = ods_obj_get(part_obj);
+		obj_part->obj_ods = ods;
+		TAILQ_INSERT_TAIL(&sos->ods_list, obj_part, entry);
+		/*
+		 * Iterate through all the schemas and open/create the indices.
+		 */
+		sos_schema_t schema;
+		LIST_FOREACH(schema, &sos->schema_list, entry) {
+			rc = __sos_schema_open(sos, schema, part_obj);
+			if (rc)
+				goto err_2;
+		}
+		return 0;
 	}
-	return 0;
+ err_2:
+	ods_idx_close(sos->part_idx, ODS_COMMIT_ASYNC);
  err_1:
-	sprintf(tmp_path, "%s/%08jX", sos->path, timestamp);
-	rmdir(tmp_path);
+	ods_close(sos->part_ods, ODS_COMMIT_ASYNC);
  err_0:
-	return rc;
+	return errno;
 }
 
 /**
@@ -450,15 +496,21 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 	ods_idx_commit(sos->schema_idx, commit);
 
 	/* Commit the object ods */
-	ods_commit(sos->obj_ods, commit);
+	sos_obj_part_t part;
+	TAILQ_FOREACH(part, &sos->ods_list, entry)
+		if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_ACTIVE)
+			ods_commit(part->obj_ods, commit);
 
 	/* Commit all the attribute indices */
 	LIST_FOREACH(schema, &sos->schema_list, entry) {
 		TAILQ_FOREACH(attr, &schema->attr_list, entry) {
-			if (attr->index)
-				ods_idx_commit(attr->index, commit);
+			sos_idx_part_t part;
+			TAILQ_FOREACH(part, &attr->idx_list, entry)
+				if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_ACTIVE)
+					ods_idx_commit(part->index, commit);
 		}
 	}
+	return 0;
 }
 
 int print_schema(struct rbn *n, void *fp_, int level)
@@ -470,9 +522,13 @@ int print_schema(struct rbn *n, void *fp_, int level)
 	sos_schema_print(schema, fp);
 
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
-		if (attr->index) {
-			ods_idx_info(attr->index, fp);
-			ods_info(ods_idx_ods(attr->index), fp);
+		sos_idx_part_t part;
+		TAILQ_FOREACH(part, &attr->idx_list, entry) {
+			if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_PRIMARY) {
+				ods_idx_info(part->index, fp);
+				ods_info(ods_idx_ods(part->index), fp);
+				break;
+			}
 		}
 	}
 	return 0;
@@ -491,8 +547,10 @@ void sos_container_info(sos_t sos, FILE *fp)
 	rbt_traverse(&sos->schema_name_rbt, print_schema, fp);
 	ods_idx_info(sos->schema_idx, fp);
 	ods_info(ods_idx_ods(sos->schema_idx), fp);
-	ods_info(sos->obj_ods, fp);
 	ods_info(sos->schema_ods, fp);
+	sos_obj_part_t part;
+	TAILQ_FOREACH(part, &sos->ods_list, entry)
+		ods_info(part->obj_ods, fp);
 }
 
 static void free_sos(sos_t sos, sos_commit_t flags)
@@ -523,8 +581,9 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		ods_idx_close(sos->schema_idx, flags);
 	if (sos->schema_ods)
 		ods_close(sos->schema_ods, flags);
-	if (sos->obj_ods)
-		ods_close(sos->obj_ods, flags);
+	sos_obj_part_t part;
+	TAILQ_FOREACH(part, &sos->ods_list, entry)
+		ods_close(part->obj_ods, flags);
 	free(sos);
 }
 
@@ -607,6 +666,7 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 	sos->ref_count = 1;
 	LIST_INIT(&sos->obj_list);
 	LIST_INIT(&sos->obj_free_list);
+	TAILQ_INIT(&sos->ods_list);
 
 	sos->path = strdup(path);
 	sos->o_perm = (ods_perm_t)o_perm;
@@ -649,7 +709,7 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 	ods_iter_delete(iter);
 
 	/*
-	 * Open the partition
+	 * Open the partitions
 	 */
 	rc = __sos_partition_open(sos);
 	if (rc)
@@ -663,7 +723,8 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 
 int sos_container_stat(sos_t sos, struct stat *sb)
 {
-	return ods_stat(sos->obj_ods, sb);
+	sos_obj_part_t part = TAILQ_FIRST(&sos->ods_list);
+	return ods_stat(part->obj_ods, sb);
 }
 
 /**
@@ -681,7 +742,11 @@ int sos_container_stat(sos_t sos, struct stat *sb)
  */
 int sos_container_extend(sos_t sos, size_t new_size)
 {
-	return ods_extend(sos->obj_ods, new_size);
+	sos_obj_part_t part;
+	TAILQ_FOREACH(part, &sos->ods_list, entry) {
+		if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_PRIMARY)
+			return ods_extend(part->obj_ods, new_size);
+	}
 }
 
 /**
@@ -702,7 +767,7 @@ void sos_container_close(sos_t sos, sos_commit_t flags)
 	sos_container_put(sos);
 }
 
-sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj)
+sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj, sos_obj_part_t part)
 {
 	sos_obj_t sos_obj;
 	pthread_mutex_lock(&sos->lock);
@@ -717,6 +782,7 @@ sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj)
 	SOS_OBJ(ods_obj)->schema = schema->data->id;
 	sos_obj->sos = sos;
 	sos_obj->obj = ods_obj;
+	sos_obj->part = part;
 	ods_atomic_inc(&schema->data->ref_count);
 	sos_obj->schema = sos_schema_get(schema);
 	sos_obj->ref_count = 1;
@@ -724,25 +790,245 @@ sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj)
 	return sos_obj;
 }
 
+sos_obj_part_t __sos_active_obj_part(sos_t sos)
+{
+	sos_obj_part_t part;
+
+	TAILQ_FOREACH(part, &sos->ods_list, entry) {
+		if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_ACTIVE)
+			return part;
+	}
+	return NULL;
+}
+
+sos_obj_part_t __sos_primary_obj_part(sos_t sos)
+{
+	sos_obj_part_t part;
+
+	if ((NULL != sos->primary_part) &&
+	    (SOS_PART(sos->primary_part->part_obj)->state & SOS_PART_STATE_PRIMARY))
+		return sos->primary_part;
+
+	TAILQ_FOREACH(part, &sos->ods_list, entry) {
+		if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_PRIMARY) {
+			sos->primary_part = part;
+			return part;
+		}
+	}
+	return NULL;
+}
+
+sos_idx_part_t __sos_active_idx_part(sos_attr_t attr)
+{
+	sos_idx_part_t part;
+
+	if ((NULL != attr->last_part) &&
+	    (SOS_PART(attr->last_part->part_obj)->state & SOS_PART_STATE_ACTIVE))
+		return attr->last_part;
+
+	TAILQ_FOREACH(part, &attr->idx_list, entry) {
+		if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_ACTIVE) {
+			attr->last_part = part;
+			return part;
+		}
+	}
+	return NULL;
+}
+
+sos_idx_part_t __sos_matching_idx_part(sos_attr_t attr, sos_obj_part_t obj_part)
+{
+	sos_idx_part_t part;
+
+	if ((NULL != attr->last_part) &&
+	    (SOS_PART(attr->last_part->part_obj) == SOS_PART(obj_part->part_obj)))
+		return attr->last_part;
+
+	TAILQ_FOREACH(part, &attr->idx_list, entry) {
+		if (SOS_PART(part->part_obj) == SOS_PART(obj_part->part_obj)) {
+			attr->last_part = part;
+			return attr->last_part;
+		}
+	}
+	return NULL;
+}
+
+int sos_part_new(const char *path, const char *part_name, int state_flags)
+{
+	int rc;
+	char tmp_path[PATH_MAX];
+	ods_idx_t idx;
+	ods_t ods;
+	ods_ref_t ref;
+	ods_obj_t obj;
+	sos_part_t part;
+	ods_key_t part_key;
+	size_t key_sz;
+	SOS_KEY(key);
+
+	/* Open the partition ODS */
+	sprintf(tmp_path, "%s/part", path);
+	ods = ods_open(tmp_path, ODS_PERM_RW);
+	if (!ods)
+		goto err_0;
+
+	/* Open the partition object index */
+	sprintf(tmp_path, "%s/part_idx", path);
+	idx = ods_idx_open(tmp_path, ODS_PERM_RW);
+	if (!idx)
+		goto err_1;
+	key_sz = strlen(part_name)+1;
+	ods_key_set(key, part_name, key_sz);
+	rc = ods_idx_find(idx, key, &ref);
+	if (rc) {
+		/* Create the object */
+		obj = ods_obj_alloc(ods, sizeof(*part));
+		if (!obj)
+			goto err_2;
+		part_key = ods_key_alloc(idx, key_sz);
+		if (!part_key)
+			goto err_3;
+		ods_key_set(part_key, part_name, key_sz);
+		rc = ods_idx_insert(idx, part_key, ods_obj_ref(obj));
+		if (rc)
+			goto err_4;
+	}
+	part = SOS_PART(obj);
+	strcpy(part->name, part_name);
+	part->state = state_flags;
+	ods_obj_put(obj);
+	ods_obj_put(part_key);
+	ods_close(ods, ODS_COMMIT_SYNC);
+	ods_idx_close(idx, ODS_COMMIT_SYNC);
+	return 0;
+ err_4:
+	ods_obj_delete(part_key);
+	ods_obj_put(part_key);
+ err_3:
+	ods_obj_delete(obj);
+	ods_obj_put(obj);
+ err_2:
+	ods_idx_close(idx, ODS_COMMIT_ASYNC);
+ err_1:
+	ods_close(ods, ODS_COMMIT_ASYNC);
+ err_0:
+	return errno;
+}
+
+sos_part_iter_t __sos_part_iter_new(sos_t sos)
+{
+	int rc;
+	char tmp_path[PATH_MAX];
+	sos_part_iter_t iter = calloc(1, sizeof *iter);
+	if (!iter)
+		return NULL;
+
+	/* Open the partition ODS */
+	sprintf(tmp_path, "%s/part", sos->path);
+	iter->part_ods = ods_open(tmp_path, ODS_PERM_RW);
+	if (!iter->part_ods)
+		goto err_0;
+
+	/* Open the partition object index */
+	sprintf(tmp_path, "%s/part_idx", sos->path);
+	iter->part_idx = ods_idx_open(tmp_path, ODS_PERM_RW);
+	if (!iter->part_idx)
+		goto err_1;
+
+	iter->iter = ods_iter_new(iter->part_idx);
+	if (!iter->iter)
+		goto err_2;
+	return iter;
+ err_2:
+	ods_idx_close(iter->part_idx, ODS_COMMIT_ASYNC);
+ err_1:
+	ods_close(iter->part_ods, ODS_COMMIT_ASYNC);
+ err_0:
+	return NULL;
+}
+
+void __sos_part_iter_free(sos_part_iter_t iter)
+{
+	if (iter->obj)
+		ods_obj_put(iter->obj);
+	ods_iter_delete(iter->iter);
+	ods_idx_close(iter->part_idx, ODS_COMMIT_ASYNC);
+	ods_close(iter->part_ods, ODS_COMMIT_ASYNC);
+	free(iter);
+}
+
+ods_obj_t __sos_part_first(sos_part_iter_t iter)
+{
+	int rc;
+	if (iter->obj) {
+		ods_obj_put(iter->obj);
+		iter->obj = NULL;
+	}
+	rc = ods_iter_begin(iter->iter);
+	if (rc)
+		return NULL;
+	ods_ref_t obj_ref = ods_iter_ref(iter->iter);
+	if (!obj_ref)
+		return NULL;
+	iter->obj = ods_ref_as_obj(iter->part_ods, obj_ref);
+	return iter->obj;
+}
+
+ods_obj_t __sos_part_next(sos_part_iter_t iter)
+{
+	int rc;
+	if (iter->obj) {
+		ods_obj_put(iter->obj);
+		iter->obj = NULL;
+	}
+	rc = ods_iter_next(iter->iter);
+	if (rc)
+		return NULL;
+	ods_ref_t obj_ref = ods_iter_ref(iter->iter);
+	if (!obj_ref)
+		return NULL;
+	iter->obj = ods_ref_as_obj(iter->part_ods, obj_ref);
+	return iter->obj;
+}
+
+void sos_part_print(sos_t sos, FILE *fp)
+{
+	ods_obj_t part_obj;
+	sos_part_t part;
+	sos_part_iter_t iter = __sos_part_iter_new(sos);
+	if (!iter)
+		return;
+	printf("%-32s %s\n", "Partition Name", "Status");
+	printf("-------------------------------- --------------------------------\n");
+	for (part_obj = __sos_part_first(iter); part_obj; part_obj = __sos_part_next(iter)) {
+		fprintf(fp, "%-32s ", SOS_PART(part_obj)->name);
+		if (!SOS_PART(part_obj)->state) {
+			printf("OFFLINE\n");
+			continue;
+		}
+		if (SOS_PART(part_obj)->state & SOS_PART_STATE_ACTIVE)
+			printf("ACTIVE ");
+		if (SOS_PART(part_obj)->state & SOS_PART_STATE_PRIMARY)
+			printf("PRIMARY ");
+		printf("\n");
+	}
+	__sos_part_iter_free(iter);
+}
+
 sos_obj_t sos_obj_new(sos_schema_t schema)
 {
 	ods_obj_t ods_obj;
 	sos_obj_t sos_obj;
-
+	sos_obj_part_t part;
 	if (!schema->sos)
 		return NULL;
-	assert(schema->sos->obj_ods);
-	/* TODO - Rotate if necessary
-	if (!schema->sos->obj_ods) {
-		int rc = __sos_partition_open(schema->sos);
-		if (rc)
-			goto err_0;
-	}
-	*/
-	ods_obj = __sos_obj_new(schema->sos->obj_ods, schema->data->obj_sz, &schema->sos->lock);
+	part = __sos_primary_obj_part(schema->sos);
+	if (!part)
+		return NULL;
+	ods_obj = __sos_obj_new(part->obj_ods, schema->data->obj_sz,
+				&schema->sos->lock);
 	if (!ods_obj)
 		goto err_0;
-	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj);
+	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj, part);
 	if (!sos_obj)
 		goto err_1;
 	return sos_obj;
@@ -755,18 +1041,21 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 
 sos_ref_t sos_obj_ref(sos_obj_t obj)
 {
-	if (obj->obj)
-		return ods_obj_ref(obj->obj);
-	return 0;
+	sos_ref_t ref = { NULL, 0 };
+	if (obj->obj) {
+		ref.part = obj->part;
+		ref.ref = ods_obj_ref(obj->obj);
+	}
+	return ref;
 }
 
 sos_obj_t sos_obj_from_ref(sos_t sos, sos_ref_t ref)
 {
 	ods_obj_t ods_obj;
-	if (0 == ref)
+	if (SOS_NULL_REF(ref))
 		return NULL;
 
-	ods_obj = ods_ref_as_obj(sos->obj_ods, ref);
+	ods_obj = ods_ref_as_obj(((sos_obj_part_t)ref.part)->obj_ods, ref.ref);
 	if (!ods_obj)
 		return NULL;
 
@@ -776,19 +1065,20 @@ sos_obj_t sos_obj_from_ref(sos_t sos, sos_ref_t ref)
 	if (!schema)
 		return NULL;
 
-	return __sos_init_obj(sos, schema, ods_obj);
+	return __sos_init_obj(sos, schema, ods_obj, ref.part);
 }
 
 sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val)
 {
-	ods_ref_t ref;
+	sos_ref_t ref;
 	if (sos_attr_type(ref_val->attr) != SOS_TYPE_OBJ)
 		return NULL;
 
 	if (0 == ref_val->data->prim.ref_)
 		return NULL;
-
-	return sos_obj_from_ref(sos, ref_val->data->prim.ref_);
+	ref.part = ref_val->obj->part;
+	ref.ref = ref_val->data->prim.ref_;
+	return sos_obj_from_ref(sos, ref);
 }
 
 sos_schema_t sos_obj_schema(sos_obj_t obj)
@@ -807,7 +1097,7 @@ void sos_obj_delete(sos_obj_t obj)
 		value = sos_value_init(&v_, obj, attr);
 		if (!value)
 			continue;
-		ods_ref_delete(obj->sos->obj_ods, value->data->prim.ref_);
+		ods_ref_delete(obj->obj->ods, value->data->prim.ref_);
 		sos_value_put(value);
 	}
 	ods_obj_delete(obj->obj);
@@ -852,7 +1142,6 @@ int sos_obj_remove(sos_obj_t obj)
 		sos_value_t value;
 		if (!attr->data->indexed)
 			continue;
-		assert(attr->index);
 		value = sos_value_init(&v_, obj, attr);
 		key_sz = sos_value_size(value);
 		key = sos_key_new(key_sz);
@@ -861,7 +1150,9 @@ int sos_obj_remove(sos_obj_t obj)
 			return ENOMEM;
 		}
 		ods_key_set(key, sos_value_as_key(value), key_sz);
-		rc = ods_idx_delete(attr->index, key, &ref);
+		sos_idx_part_t part = __sos_matching_idx_part(attr, obj->part);
+		assert(part);
+		rc = ods_idx_delete(part->index, key, &ref);
 		sos_key_put(key);
 		sos_value_put(value);
 		if (rc)
@@ -883,11 +1174,12 @@ int sos_obj_index(sos_obj_t obj)
 	TAILQ_FOREACH(attr, &obj->schema->attr_list, entry) {
 		if (!attr->data->indexed)
 			continue;
-		assert(attr->index);
+		sos_idx_part_t part = __sos_matching_idx_part(attr, obj->part);
+		assert(part);
 		value = sos_value_init(&v_, obj, attr);
 		key_sz = sos_value_size(value);
 		ods_key_set(key, sos_value_as_key(value), key_sz);
-		rc = ods_idx_insert(attr->index, key, ods_obj_ref(obj->obj));
+		rc = ods_idx_insert(part->index, key, ods_obj_ref(obj->obj));
 		sos_value_put(value);
 		if (rc)
 			goto err;

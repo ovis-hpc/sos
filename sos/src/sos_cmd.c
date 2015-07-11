@@ -54,7 +54,7 @@
 #include <ods/ods_atomic.h>
 #include "sos_yaml.h"
 
-const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:s:o:icql";
+const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:s:o:icqlp";
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
@@ -63,6 +63,7 @@ struct option long_options[] = {
 	{"query",	no_argument,        0,  'q'},
 	{"schema",      required_argument,  0,  's'},
 	{"dir",         no_argument,        0,  'l'},
+	{"ls",          no_argument,        0,  'p'},
 	{"object",	required_argument,  0,  'o'},
 	{"help",        no_argument,        0,  '?'},
 	{"container",   required_argument,  0,  'C'},
@@ -171,13 +172,19 @@ int col_widths[] = {
 	[SOS_TYPE_OBJ_ARRAY] = 8,
 };
 
-int dir(sos_t sos)
+int schema_dir(sos_t sos)
 {
 	sos_schema_t schema;
 	for (schema = sos_schema_first(sos); schema;
 	     schema = sos_schema_next(schema))
 		sos_schema_print(schema, stdout);
 	printf("\n");
+	return 0;
+}
+
+int part_dir(sos_t sos)
+{
+	sos_part_print(sos, stdout);
 	return 0;
 }
 
@@ -1119,14 +1126,15 @@ int add_object(sos_t sos, FILE* fp)
 	return 0;
 }
 
-#define INFO	0x01
-#define CREATE	0x02
-#define SCHEMA  0x04
-#define OBJECT	0x08
-#define QUERY	0x10
-#define DIR	0x20
-#define CSV	0x40
-#define CONFIG  0x80
+#define INFO		0x001
+#define CREATE		0x002
+#define SCHEMA  	0x004
+#define OBJECT		0x008
+#define QUERY		0x010
+#define SCHEMA_DIR	0x020
+#define PART_DIR	0x040
+#define CSV		0x080
+#define CONFIG  	0x100
 
 struct cond_key_s {
 	char *name;
@@ -1255,7 +1263,10 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 'l':
-			action |= DIR;
+			action |= SCHEMA_DIR;
+			break;
+		case 'p':
+			action |= PART_DIR;
 			break;
 		case 'q':
 			action |= QUERY;
@@ -1360,6 +1371,8 @@ int main(int argc, char **argv)
 		       errno, path);
 		exit(1);
 	}
+	if (action & PART_DIR)
+		rc = part_dir(sos);
 	if (action & OBJECT) {
 		rc = add_object(sos, obj_file);
 		if (rc) {
@@ -1388,8 +1401,8 @@ int main(int argc, char **argv)
 		rc = query(sos, schema_name, index_name);
 	}
 
-	if (action & DIR)
-		rc = dir(sos);
+	if (action & SCHEMA_DIR)
+		rc = schema_dir(sos);
 
 	if (action & CSV) {
 		if (!schema_name || !csv_file || !col_map)
