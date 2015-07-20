@@ -264,7 +264,7 @@ static ods_obj_t rec_find(bxt_t t, ods_key_t key)
 		if (!rc)
 			goto found;
 		ods_obj_put(rec);
-		if (rc > 0)
+		if (rc < 0)
 			break;
 	}
 	rec = NULL;
