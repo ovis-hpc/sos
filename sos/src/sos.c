@@ -339,8 +339,7 @@ int sos_container_new(const char *path, int o_mode)
 	}
 	SOS_UDATA(udata)->signature = SOS_SCHEMA_SIGNATURE;
 	SOS_UDATA(udata)->version = SOS_LATEST_VERSION;
-	SOS_UDATA(udata)->dict[0] = 0xffffffff; /* invalid reference */
-	SOS_UDATA(udata)->dict_len = 1;
+	SOS_UDATA(udata)->last_schema_id = SOS_SCHEMA_FIRST_USER;
 	ods_obj_put(udata);
 
 	/* Create the index to look up the schema names */
@@ -375,10 +374,15 @@ static int __sos_partition_open(sos_t sos)
 	int o_mode;
 	struct stat sb;
 	time_t timestamp;
-	ods_obj_t part_obj;
+	ods_obj_t part_obj = NULL;
 	sos_part_t part;
 	ods_t ods;
-	sos_part_iter_t iter;
+	ods_iter_t part_iter;
+
+	/* Stat the container path to get the file mode bits */
+	rc = stat(sos->path, &sb);
+	if (rc)
+		goto err_0;
 
 	/* Open the partition ODS */
 	sprintf(tmp_path, "%s/part", sos->path);
@@ -392,24 +396,22 @@ static int __sos_partition_open(sos_t sos)
 	if (!sos->part_idx)
 		goto err_1;
 
-	iter = __sos_part_iter_new(sos);
-	if (!iter)
+	part_iter = ods_iter_new(sos->part_idx);
+	if (!part_iter)
 		goto err_2;
 
-	for (part_obj = __sos_part_first(iter); part_obj;
-	     part_obj = __sos_part_next(iter)) {
+	for (rc = ods_iter_begin(part_iter); !rc; rc = ods_iter_next(part_iter)) {
+		ods_ref_t obj_ref = ods_iter_ref(part_iter);
+		part_obj = ods_ref_as_obj(sos->part_ods, obj_ref);
 		part = SOS_PART(part_obj);
 		if (0 == (part->state & SOS_PART_STATE_ACTIVE))
-			continue;
-		/* Stat the container path to get the file mode bits */
-		rc = stat(sos->path, &sb);
-		if (rc)
-			return rc;
+			goto skip;
+
 		sprintf(tmp_path, "%s/%s", sos->path, part->name);
 		rc = make_all_dir(tmp_path, sb.st_mode);
 		if (rc) {
 			rc = errno;
-			goto err_0;
+			goto err_3;
 		}
 		o_mode = sb.st_mode;
 		o_mode &= ~S_IXGRP;
@@ -424,7 +426,7 @@ static int __sos_partition_open(sos_t sos)
 			/* Create the ODS to contain the objects */
 			rc = ods_create(tmp_path, o_mode);
 			if (rc)
-				goto err_2;
+				goto err_3;
 			goto retry;
 		}
 		sos_obj_part_t obj_part = calloc(1, sizeof *obj_part);
@@ -438,10 +440,14 @@ static int __sos_partition_open(sos_t sos)
 		LIST_FOREACH(schema, &sos->schema_list, entry) {
 			rc = __sos_schema_open(sos, schema, part_obj);
 			if (rc)
-				goto err_2;
+				goto err_3;
 		}
-		return 0;
+	skip:
+		ods_obj_put(part_obj);
 	}
+	return 0;
+ err_3:
+	ods_obj_put(part_obj);
  err_2:
 	ods_idx_close(sos->part_idx, ODS_COMMIT_ASYNC);
  err_1:
@@ -467,6 +473,15 @@ static int __sos_partition_open(sos_t sos)
 int sos_container_delete(sos_t c)
 {
 	return ENOSYS;
+}
+
+int sos_index_commit(sos_index_t index, sos_commit_t flags)
+{
+	sos_idx_part_t part;
+	TAILQ_FOREACH(part, &index->idx_list, entry)
+		if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_ACTIVE)
+			ods_idx_commit(part->index, flags);
+	return 0;
 }
 
 /**
@@ -505,12 +520,23 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 	LIST_FOREACH(schema, &sos->schema_list, entry) {
 		TAILQ_FOREACH(attr, &schema->attr_list, entry) {
 			sos_idx_part_t part;
-			TAILQ_FOREACH(part, &attr->idx_list, entry)
-				if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_ACTIVE)
-					ods_idx_commit(part->index, commit);
+			if (attr->index)
+				sos_index_commit(attr->index, commit);
 		}
 	}
 	return 0;
+}
+
+void sos_index_info(sos_index_t index, FILE *fp)
+{
+	sos_idx_part_t part;
+	TAILQ_FOREACH(part, &index->idx_list, entry) {
+		if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_PRIMARY) {
+			ods_idx_info(part->index, fp);
+			ods_info(ods_idx_ods(part->index), fp);
+			break;
+		}
+	}
 }
 
 int print_schema(struct rbn *n, void *fp_, int level)
@@ -522,14 +548,8 @@ int print_schema(struct rbn *n, void *fp_, int level)
 	sos_schema_print(schema, fp);
 
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
-		sos_idx_part_t part;
-		TAILQ_FOREACH(part, &attr->idx_list, entry) {
-			if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_PRIMARY) {
-				ods_idx_info(part->index, fp);
-				ods_info(ods_idx_ods(part->index), fp);
-				break;
-			}
-		}
+		if (attr->index)
+			sos_index_info(attr->index, fp);
 	}
 	return 0;
 }
@@ -587,7 +607,7 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 	free(sos);
 }
 
-static int schema_name_cmp(void *a, void *b)
+int __sos_schema_name_cmp(void *a, void *b)
 {
 	return strcmp((char *)a, (char *)b);
 }
@@ -670,7 +690,7 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 
 	sos->path = strdup(path);
 	sos->o_perm = (ods_perm_t)o_perm;
-	rbt_init(&sos->schema_name_rbt, schema_name_cmp);
+	rbt_init(&sos->schema_name_rbt, __sos_schema_name_cmp);
 	rbt_init(&sos->schema_id_rbt, schema_id_cmp);
 	sos->schema_count = 0;
 
@@ -683,6 +703,14 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 	sos->schema_ods = ods_open(tmp_path, sos->o_perm);
 	if (!sos->schema_ods)
 		goto err;
+	ods_obj_t udata = ods_get_user_data(sos->schema_ods);
+	if ((SOS_UDATA(udata)->signature != SOS_SCHEMA_SIGNATURE)
+	    || (SOS_UDATA(udata)->version != SOS_LATEST_VERSION)) {
+		errno = EINVAL;
+		ods_obj_put(udata);
+		goto err;
+	}
+	ods_obj_put(udata);
 
 	/* Open the index on the schema objects */
 	sprintf(tmp_path, "%s/schema_idx", path);
@@ -717,7 +745,6 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 	return sos;
  err:
 	sos_container_put(sos);
-	errno = ENOENT;
 	return NULL;
 }
 
@@ -818,35 +845,35 @@ sos_obj_part_t __sos_primary_obj_part(sos_t sos)
 	return NULL;
 }
 
-sos_idx_part_t __sos_active_idx_part(sos_attr_t attr)
+sos_idx_part_t __sos_active_idx_part(sos_index_t index)
 {
 	sos_idx_part_t part;
 
-	if ((NULL != attr->last_part) &&
-	    (SOS_PART(attr->last_part->part_obj)->state & SOS_PART_STATE_ACTIVE))
-		return attr->last_part;
+	if ((NULL != index->last_part) &&
+	    (SOS_PART(index->last_part->part_obj)->state & SOS_PART_STATE_ACTIVE))
+		return index->last_part;
 
-	TAILQ_FOREACH(part, &attr->idx_list, entry) {
+	TAILQ_FOREACH(part, &index->idx_list, entry) {
 		if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_ACTIVE) {
-			attr->last_part = part;
+			index->last_part = part;
 			return part;
 		}
 	}
 	return NULL;
 }
 
-sos_idx_part_t __sos_matching_idx_part(sos_attr_t attr, sos_obj_part_t obj_part)
+sos_idx_part_t __sos_matching_idx_part(sos_index_t index, sos_obj_part_t obj_part)
 {
 	sos_idx_part_t part;
 
-	if ((NULL != attr->last_part) &&
-	    (SOS_PART(attr->last_part->part_obj) == SOS_PART(obj_part->part_obj)))
-		return attr->last_part;
+	if ((NULL != index->last_part) &&
+	    (SOS_PART(index->last_part->part_obj) == SOS_PART(obj_part->part_obj)))
+		return index->last_part;
 
-	TAILQ_FOREACH(part, &attr->idx_list, entry) {
+	TAILQ_FOREACH(part, &index->idx_list, entry) {
 		if (SOS_PART(part->part_obj) == SOS_PART(obj_part->part_obj)) {
-			attr->last_part = part;
-			return attr->last_part;
+			index->last_part = part;
+			return index->last_part;
 		}
 	}
 	return NULL;
@@ -1150,7 +1177,7 @@ int sos_obj_remove(sos_obj_t obj)
 			return ENOMEM;
 		}
 		ods_key_set(key, sos_value_as_key(value), key_sz);
-		sos_idx_part_t part = __sos_matching_idx_part(attr, obj->part);
+		sos_idx_part_t part = __sos_matching_idx_part(attr->index, obj->part);
 		assert(part);
 		rc = ods_idx_delete(part->index, key, &ref);
 		sos_key_put(key);
@@ -1174,7 +1201,7 @@ int sos_obj_index(sos_obj_t obj)
 	TAILQ_FOREACH(attr, &obj->schema->attr_list, entry) {
 		if (!attr->data->indexed)
 			continue;
-		sos_idx_part_t part = __sos_matching_idx_part(attr, obj->part);
+		sos_idx_part_t part = __sos_matching_idx_part(attr->index, obj->part);
 		assert(part);
 		value = sos_value_init(&v_, obj, attr);
 		key_sz = sos_value_size(value);
@@ -1190,6 +1217,30 @@ int sos_obj_index(sos_obj_t obj)
 	return rc;
 }
 
+/**
+ * \brief Set an object attribute's value from a string
+ *
+ * This convenience function set's an object's attribute value specified as a
+ * string. The attribute to set is specified by name.
+ *
+ * For example:
+ *
+ *     int rc = sos_obj_attr_by_name_from_str(an_obj, "my_int_attr", "1234");
+ *     if (!rc)
+ *        printf("Success!!\n");
+ *
+ * See the sos_obj_attr_from_str() function to set the value with a string if
+ * the attribute handle is known.
+ *
+ * \param sos_obj	The object handle
+ * \param attr_name	The attribute name
+ * \param attr_value	The attribute value as a string
+ * \param endptr Receives the point in the str argumeent where parsing stopped.
+ *               This parameter may be NULL.
+ * \retval 0 Success
+ * \retval EINVAL The string format was invalid for the attribute type
+ * \retval ENOSYS There is no string formatter for this attribute type
+ */
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
 				  char **endptr)

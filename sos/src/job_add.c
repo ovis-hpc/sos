@@ -212,7 +212,7 @@ sos_obj_t job_new(sos_t sos, char *id, char *start, char *end, char *uid, char *
 		printf("Could not create the Job iterator. The schema may be invalid\n");
 		goto err;
 	}
-	rc = sos_key_from_str(attr, job_key, id);
+	rc = sos_attr_key_from_str(attr, job_key, id);
 	if (rc) {
 		printf("Error %d setting job key from %s. A JobId is an integer\n", rc, id);
 		goto err;

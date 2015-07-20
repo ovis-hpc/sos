@@ -250,15 +250,15 @@ ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 static ods_obj_t rec_find(bxt_t t, ods_key_t key)
 {
 	int i;
+	int rc;
 	ods_obj_t rec;
+	ods_key_t entry_key;
 	ods_obj_t leaf = leaf_find(t, key);
 	if (!leaf)
 		return NULL;
 	for (i = 0; i < NODE(leaf)->count; i++) {
-		int rc;
-		ods_obj_t rec =
-			ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
-		ods_key_t entry_key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
+		rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
+		entry_key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 		rc = t->comparator(key, entry_key);
 		ods_obj_put(entry_key);
 		if (!rc)

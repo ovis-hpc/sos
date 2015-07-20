@@ -105,9 +105,9 @@ size_t sos_key_set(sos_key_t key, void *value, size_t sz)
  * \retval 0	if successful
  * \retval -1	if there was an error converting the string to a value
  */
-int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
+int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
 {
-	sos_idx_part_t part = __sos_active_idx_part(attr);
+	sos_idx_part_t part = __sos_active_idx_part(attr->index);
 	return ods_key_from_str(part->index, key, str);
 }
 
@@ -118,9 +118,9 @@ int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
  * \param key	The key
  * \return A const char * representation of the key value.
  */
-const char *sos_key_to_str(sos_attr_t attr, sos_key_t key)
+const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key)
 {
-	sos_idx_part_t part = __sos_active_idx_part(attr);
+	sos_idx_part_t part = __sos_active_idx_part(attr->index);
 	char *keystr = malloc(ods_idx_key_str_size(part->index));
 	return ods_key_to_str(part->index, key, keystr);
 }
@@ -135,9 +135,9 @@ const char *sos_key_to_str(sos_attr_t attr, sos_key_t key)
  * \return 0	a == b
  * \return >0	a > b
  */
-int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
+int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
 {
-	sos_idx_part_t part = __sos_active_idx_part(attr);
+	sos_idx_part_t part = __sos_active_idx_part(attr->index);
 	return ods_key_cmp(part->index, a, b);
 }
 
@@ -153,7 +153,7 @@ int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
  */
 size_t sos_attr_key_size(sos_attr_t attr)
 {
-	sos_idx_part_t part = __sos_active_idx_part(attr);
+	sos_idx_part_t part = __sos_active_idx_part(attr->index);
 	return ods_idx_key_size(part->index);
 }
 

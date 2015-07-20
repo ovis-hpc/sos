@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright (c) 2013-2015 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2013-2015 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
@@ -70,6 +70,7 @@
  */
 typedef struct sos_container_s *sos_t;
 typedef struct sos_attr_s *sos_attr_t;
+typedef struct sos_index_s *sos_index_t;
 typedef struct sos_schema_s *sos_schema_t;
 typedef struct sos_obj_s *sos_obj_t;
 
@@ -211,69 +212,13 @@ sos_attr_t sos_schema_attr_last(sos_schema_t schema);
 sos_attr_t sos_schema_attr_next(sos_attr_t attr);
 sos_attr_t sos_schema_attr_prev(sos_attr_t attr);
 
-/**
- * \brief Return the attribute's ordinal ID.
- *
- * \param attr	The attribute handle.
- * \returns The attribute id.
- */
 int sos_attr_id(sos_attr_t attr);
-
-/**
- * \brief Return the attribute's name
- * \returns The attribute name
- */
 const char *sos_attr_name(sos_attr_t attr);
-
-/**
- * \brief Return the attribute's type
- * \returns The attribute type
- */
 sos_type_t sos_attr_type(sos_attr_t attr);
-
-/**
- * \brief Test if an attribute has an index.
- *
- * \param attr	The sos_attr_t handle
-
- * \returns !0 if the attribute has an index
- */
 int sos_attr_index(sos_attr_t attr);
-
 size_t sos_attr_size(sos_attr_t attr);
-
-/**
- * \brief Return the schema of an attribute
- *
- * \param attr The attribute handle
- * \returns The schema handle
- */
 sos_schema_t sos_attr_schema(sos_attr_t attr);
 
-/**
- * \brief Set an object attribute's value from a string
- *
- * This convenience function set's an object's attribute value specified as a
- * string. The attribute to set is specified by name.
- *
- * For example:
- *
- *     int rc = sos_obj_attr_by_name_from_str(an_obj, "my_int_attr", "1234");
- *     if (!rc)
- *        printf("Success!!\n");
- *
- * See the sos_obj_attr_from_str() function to set the value with a string if
- * the attribute handle is known.
- *
- * \param sos_obj	The object handle
- * \param attr_name	The attribute name
- * \param attr_value	The attribute value as a string
- * \param endptr Receives the point in the str argumeent where parsing stopped.
- *               This parameter may be NULL.
- * \retval 0 Success
- * \retval EINVAL The string format was invalid for the attribute type
- * \retval ENOSYS There is no string formatter for this attribute type
- */
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
 				  char **endptr);
@@ -546,6 +491,7 @@ sos_value_t sos_value_by_name(sos_value_t value, sos_schema_t schema, sos_obj_t 
  */
 sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id);
 
+sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count);
 int sos_attr_is_ref(sos_attr_t attr);
 int sos_attr_is_array(sos_attr_t attr);
 size_t sos_array_count(sos_value_t val);
@@ -691,10 +637,21 @@ int sos_value_from_str(sos_value_t value, const char *str, char **endptr);
 
 /** @} */
 
-/** \defgroup keys SOS Keys
+/** \defgroup indices SOS Indices
  * @{
  */
 typedef struct ods_obj_s *sos_key_t;
+
+int sos_index_new(sos_t sos, const char *name,
+		  const char *idx_type, const char *key_type, ...);
+sos_index_t sos_index_open(sos_t sos, const char *name);
+int sos_index_modify(sos_t sos, const char *name,
+		     const char *idx_type, const char *key_type, ...);
+int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
+int sos_index_remove(sos_index_t index, sos_key_t key);
+sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
+int sos_index_commit(sos_index_t index, sos_commit_t flags);
+int sos_index_close(sos_index_t index, sos_commit_t flags);
 
 /**
  * \brief Define a SOS stack key
@@ -750,9 +707,10 @@ typedef struct ods_obj_s *sos_key_t;
 
 #define sos_key_put(key) ods_obj_put(key)
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
-int sos_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
-const char *sos_key_to_str(sos_attr_t attr, sos_key_t key);
-int sos_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b);
+int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
+const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key);
+int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
+int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b);
 
 size_t sos_attr_key_size(sos_attr_t attr);
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
@@ -776,6 +734,8 @@ struct sos_pos {
 };
 typedef struct sos_pos *sos_pos_t;
 
+sos_iter_t sos_index_iter_new(sos_index_t index);
+
 /**
  * \brief Create a new SOS iterator
  *
@@ -794,25 +754,6 @@ sos_iter_t sos_iter_new(sos_attr_t attr);
  * \param iter	The iterator returned by \c sos_new_iter
  */
 void sos_iter_free(sos_iter_t iter);
-
-/**
- * \brief Return the iterator name.
- *
- * An iterator inherits it's name from the associated attribute
- *
- * \param iter  Handle for the iterator.
- *
- * \returns Pointer to the attribute name for the iterator.
- */
-const char *sos_iter_name(sos_iter_t iter);
-
-/**
- * \brief Return the attribute handle used to create the iterator
- *
- * \param iter The iterator handle
- * \returns The attribute handle
- */
-sos_attr_t sos_iter_attr(sos_iter_t iter);
 
 /**
  * \brief Compare iterator object's key with other key.

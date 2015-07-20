@@ -11,7 +11,7 @@ link_directories(
   "${ZAP_PATH}/lib"
 )
 
-add_library(sos sos_fn.c sos.c sos_schema.c sos_config.c sos_key.c sos_iter.c sos_value.c)
+add_library(sos sos_fn.c sos.c sos_schema.c sos_config.c sos_index.c sos_key.c sos_iter.c sos_value.c)
 target_link_libraries(sos ods dl pthread)
 
 add_library(job job.c)

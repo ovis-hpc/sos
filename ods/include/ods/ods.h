@@ -336,7 +336,7 @@ ods_obj_t ods_obj_get(ods_obj_t obj);
  * Put a reference on an object
  */
 void _ods_obj_put(ods_obj_t obj);
-#define ods_obj_put(o) \
+#define ods_obj_put(o)				\
 	_ods_obj_put(o);			\
 	if (ods_debug && o) {			\
 		o->thread = pthread_self();	\

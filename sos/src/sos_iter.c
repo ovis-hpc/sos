@@ -74,6 +74,36 @@
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
+sos_iter_t sos_index_iter_new(sos_index_t index)
+{
+	sos_iter_t i;
+
+	/* Find first active object partition and matching index */
+	sos_idx_part_t idx_part = NULL;
+	sos_obj_part_t obj_part = __sos_active_obj_part(index->sos);
+	if (obj_part)
+		idx_part = __sos_matching_idx_part(index, obj_part);
+	if (!idx_part)
+		return NULL;
+
+	i = calloc(1, sizeof *i);
+	if (!i)
+		goto err;
+
+	i->index = index;
+	i->obj_part = obj_part;
+	i->idx_part = idx_part;
+	i->iter = ods_iter_new(idx_part->index);
+	if (!i->iter)
+		goto err;
+	ods_iter_begin(i->iter);
+	return i;
+ err:
+	if (i)
+		free(i);
+	return NULL;
+}
+
 sos_iter_t sos_iter_new(sos_attr_t attr)
 {
 	sos_iter_t i;
@@ -85,7 +115,7 @@ sos_iter_t sos_iter_new(sos_attr_t attr)
 	sos_idx_part_t idx_part = NULL;
 	sos_obj_part_t obj_part = __sos_active_obj_part(attr->schema->sos);
 	if (obj_part)
-		idx_part = __sos_matching_idx_part(attr, obj_part);
+		idx_part = __sos_matching_idx_part(attr->index, obj_part);
 	if (!idx_part)
 		return NULL;
 
@@ -94,7 +124,7 @@ sos_iter_t sos_iter_new(sos_attr_t attr)
 		goto err;
 
 	sos_schema_get(attr->schema);
-	i->attr = attr;
+	i->index = attr->index;
 	i->obj_part = obj_part;
 	i->idx_part = idx_part;
 	i->iter = ods_iter_new(idx_part->index);
@@ -148,7 +178,6 @@ int sos_iter_set(sos_iter_t iter, const sos_pos_t pos)
 
 void sos_iter_free(sos_iter_t iter)
 {
-	sos_schema_put(iter->attr->schema);
 	ods_iter_delete(iter->iter);
 	free(iter);
 }
@@ -158,25 +187,19 @@ sos_obj_t sos_iter_obj(sos_iter_t i)
 	ods_ref_t ods_ref = ods_iter_ref(i->iter);
 	if (!ods_ref)
 		return NULL;
-	return __sos_init_obj(i->attr->schema->sos,
-			      i->attr->schema,
-			      ods_ref_as_obj(i->obj_part->obj_ods, ods_ref),
+	ods_obj_t obj = ods_ref_as_obj(i->obj_part->obj_ods, ods_ref);
+	if (!obj)
+		return NULL;
+	sos_schema_t schema = sos_schema_by_id(i->index->sos, SOS_OBJ(obj)->schema);
+	return __sos_init_obj(i->index->sos,
+			      schema,
+			      obj,
 			      i->obj_part);
 }
 
 int sos_iter_obj_remove(sos_iter_t iter)
 {
 	return ENOSYS;
-}
-
-const char *sos_iter_name(sos_iter_t i)
-{
-	return sos_attr_name(i->attr);
-}
-
-sos_attr_t sos_iter_attr(sos_iter_t i)
-{
-	return i->attr;
 }
 
 int sos_iter_next(sos_iter_t i)
@@ -333,7 +356,7 @@ static sos_obj_t next_match(sos_filter_t filt)
 		sos_filter_cond_t cond = sos_filter_eval(obj, filt);
 		if (cond) {
 			sos_obj_put(obj);
-			if (cond->attr == filt->iter->attr
+			if (cond->attr->index == filt->iter->index
 			    && cond->cond <= SOS_COND_EQ)
 				/* On ordered index and the condition
 				 * requires a value <= */
@@ -353,7 +376,7 @@ static sos_obj_t prev_match(sos_filter_t filt)
 		sos_filter_cond_t cond = sos_filter_eval(obj, filt);
 		if (cond) {
 			sos_obj_put(obj);
-			if (cond->attr == filt->iter->attr
+			if (cond->attr->index == filt->iter->index
 			    && cond->cond >= SOS_COND_EQ)
 				/* On ordered index and the condition
 				 * requires a value >= */
@@ -375,7 +398,7 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 	/* Find the filter attribute condition with the smallest cardinality */
 	rc = sos_iter_begin(filt->iter);
 	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
-		if (cond->attr != filt->iter->attr)
+		if (cond->attr->index != filt->iter->index)
 			continue;
 		/* NB: this check presumes the index is in
 		 * increasing order. For all the built-in
@@ -429,7 +452,7 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 	rc = sos_iter_end(filt->iter);
 	SOS_KEY(key);
 	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
-		if (cond->attr != filt->iter->attr)
+		if (cond->attr->index != filt->iter->index)
 			continue;
 
 		/* NB: this check presumes the index is in

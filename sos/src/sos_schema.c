@@ -63,6 +63,9 @@
 #include <sos/sos.h>
 #include "sos_priv.h"
 
+static struct sos_schema_s *ischema_dir[SOS_TYPE_LAST+1];
+static struct rbt ischema_rbt;
+
 static uint32_t type_sizes[] = {
 	[SOS_TYPE_INT32] = 4,
 	[SOS_TYPE_INT64] = 8,
@@ -191,11 +194,7 @@ void __sos_schema_free(sos_schema_t schema)
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		sos_attr_t attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
-		sos_idx_part_t part;
-		TAILQ_FOREACH(part, &attr->idx_list, entry)
-			ods_idx_close(part->index, ODS_COMMIT_ASYNC);
-		free(attr->key_type);
-		free(attr->idx_type);
+		sos_index_close(attr->index, ODS_COMMIT_ASYNC);
 		free(attr);
 	}
 	free(schema);
@@ -359,7 +358,6 @@ static sos_attr_t attr_new(sos_schema_t schema, sos_type_t type)
 		goto out;
 	attr->data = &attr->data_;
 	attr->schema = schema;
-	TAILQ_INIT(&attr->idx_list);
 	attr->size_fn = __sos_attr_size_fn_for_type(type);
 	attr->to_str_fn = __sos_attr_to_str_fn_for_type(type);
 	attr->from_str_fn = __sos_attr_from_str_fn_for_type(type);
@@ -575,172 +573,50 @@ sos_attr_t sos_schema_attr_prev(sos_attr_t attr)
 	return TAILQ_PREV(attr, sos_attr_list, entry);
 }
 
+/**
+ * \brief Return the attribute's type
+ * \returns The attribute type
+ */
 sos_type_t sos_attr_type(sos_attr_t attr)
 {
 	return attr->data->type;
 }
 
+/**
+ * \brief Return the attribute's ordinal ID.
+ *
+ * \param attr	The attribute handle.
+ * \returns The attribute id.
+ */
 int sos_attr_id(sos_attr_t attr)
 {
 	return attr->data->id;
 }
 
+/**
+ * \brief Return the attribute's name
+ * \returns The attribute name
+ */
 const char *sos_attr_name(sos_attr_t attr)
 {
 	return attr->data->name;
 }
 
+/**
+ * \brief Return the schema of an attribute
+ *
+ * \param attr The attribute handle
+ * \returns The schema handle
+ */
 sos_schema_t sos_attr_schema(sos_attr_t attr)
 {
 	return attr->schema;
 }
 
-struct sos_schema_s sos_obj_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_obj_ischema.data_,
-	.data_ = {
-		.name = "ISCHEMA_OBJ",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_OBJ,
-		.obj_sz = sizeof(ods_ref_t),
-	},
-};
-struct sos_schema_s sos_byte_array_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_byte_array_ischema.data_,
-	.data_ = {
-		.name = "BYTE_ARRAY",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_BYTE_ARRAY,
-		.obj_sz = sizeof(char),
-	},
-};
-struct sos_schema_s sos_int32_array_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_int32_array_ischema.data_,
-	.data_ = {
-		.name = "INT32_ARRAY",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_INT32_ARRAY,
-		.obj_sz = sizeof(int32_t),
-	},
-};
-struct sos_schema_s sos_int64_array_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_int64_array_ischema.data_,
-	.data_ = {
-		.name = "INT64_ARRAY",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_INT64_ARRAY,
-		.obj_sz = sizeof(int64_t),
-	},
-};
-struct sos_schema_s sos_uint32_array_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_uint32_array_ischema.data_,
-	.data_ = {
-		.name = "UINT32_ARRAY",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_BYTE_ARRAY,
-		.obj_sz = sizeof(uint32_t),
-	},
-};
-struct sos_schema_s sos_uint64_array_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_uint64_array_ischema.data_,
-	.data_ = {
-		.name = "UINT64_ARRAY",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_UINT64_ARRAY,
-		.obj_sz = sizeof(uint64_t),
-	},
-};
-struct sos_schema_s sos_float_array_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_float_array_ischema.data_,
-	.data_ = {
-		.name = "ISCHEMA_FLOAT_ARRAY",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_FLOAT_ARRAY,
-		.obj_sz = sizeof(float),
-	},
-};
-struct sos_schema_s sos_double_array_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_double_array_ischema.data_,
-	.data_ = {
-		.name = "DOUBLE_ARRAY",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_DOUBLE_ARRAY,
-		.obj_sz = sizeof(double),
-	},
-};
-struct sos_schema_s sos_long_double_array_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_long_double_array_ischema.data_,
-	.data_ = {
-		.name = "LONG_DOUBLE_ARRAY",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_LONG_DOUBLE_ARRAY,
-		.obj_sz = sizeof(long double),
-	},
-};
-struct sos_schema_s sos_obj_array_ischema = {
-	.sos = NULL,
-	.flags = SOS_SCHEMA_F_INTERNAL,
-	.ref_count = 1,
-	.data = &sos_obj_array_ischema.data_,
-	.data_ = {
-		.name = "OBJ_ARRAY",
-		.ref_count = 1,
-		.id = SOS_ISCHEMA_OBJ_ARRAY,
-		.obj_sz = sizeof(struct sos_obj_ref_s),
-	},
-};
-
 sos_schema_t get_ischema(sos_type_t type)
 {
-	assert(type >= SOS_TYPE_OBJ);
-	switch (type) {
-	case SOS_TYPE_OBJ:
-		return &sos_obj_ischema;
-	case SOS_TYPE_BYTE_ARRAY:
-		return &sos_byte_array_ischema;
-	case SOS_TYPE_INT32_ARRAY:
-		return &sos_int32_array_ischema;
-	case SOS_TYPE_INT64_ARRAY:
-		return &sos_int64_array_ischema;
-	case SOS_TYPE_UINT32_ARRAY:
-		return &sos_uint32_array_ischema;
-	case SOS_TYPE_UINT64_ARRAY:
-		return &sos_uint64_array_ischema;
-	case SOS_TYPE_FLOAT_ARRAY:
-		return &sos_float_array_ischema;
-	case SOS_TYPE_DOUBLE_ARRAY:
-		return &sos_double_array_ischema;
-	case SOS_TYPE_LONG_DOUBLE_ARRAY:
-		return &sos_long_double_array_ischema;
-	case SOS_TYPE_OBJ_ARRAY:
-		return &sos_obj_array_ischema;
-	}
+	assert(type >= SOS_TYPE_OBJ && type <= SOS_TYPE_LAST);
+	return ischema_dir[type];
 }
 
 int sos_attr_is_ref(sos_attr_t attr)
@@ -876,6 +752,30 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 	return NULL;
 }
 
+sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
+{
+	ods_obj_t array_obj;
+	sos_schema_t schema;
+	sos_obj_part_t part;
+	size_t size;
+
+	schema = get_ischema(type);
+	if (!schema)
+		return NULL;
+	size = sizeof(struct sos_obj_data_s)
+		+ sizeof(uint32_t) /* element count */
+		+ (count * schema->data->obj_sz); /* array elements */
+
+	part = __sos_primary_obj_part(sos);
+	array_obj = __sos_obj_new(part->obj_ods, size, &sos->lock);
+	if (!array_obj)
+		return NULL;
+
+	struct sos_array_s *array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
+	array->count = count;
+	return __sos_init_obj(sos, schema, array_obj, part);
+}
+
 size_t sos_value_memset(sos_value_t val, void *buf, size_t buflen)
 {
 	void *dst;
@@ -919,11 +819,24 @@ sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id)
 	return sos_value_init(value, obj, attr);
 }
 
+/**
+ * \brief Test if an attribute has an index.
+ *
+ * \param attr	The sos_attr_t handle
+
+ * \returns !0 if the attribute has an index
+ */
 int sos_attr_index(sos_attr_t attr)
 {
 	return attr->data->indexed;
 }
 
+/**
+ * \brief Return the size of an attribute's data
+ *
+ * \param attr The sos_attr_t handle
+ * \returns The size of the attribute's data
+ */
 size_t sos_attr_size(sos_attr_t attr)
 {
 	return type_sizes[attr->data->type];
@@ -1102,30 +1015,21 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema, ods_obj_t part_obj)
 {
 	int rc;
 	sos_attr_t attr;
-	char tmp_path[PATH_MAX];
+	char idx_name[SOS_SCHEMA_NAME_LEN + SOS_ATTR_NAME_LEN + 2];
 
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
 		if (!attr->data->indexed)
 			continue;
-		sprintf(tmp_path, "%s/%s/%s_%s_idx",
-			sos->path, SOS_PART(part_obj)->name,
-			schema->data->name, attr->data->name);
-		sos_idx_part_t part = calloc(1, sizeof *part);
-		if (!part) {
-			rc = ENOMEM;
-			goto err;
-		}
-		part->part_obj = ods_obj_get(part_obj);
 	retry:
-		part->index = ods_idx_open(tmp_path, sos->o_perm);
-		if (!part->index) {
-			rc = ods_idx_create(tmp_path, sos->o_mode,
-					    attr->idx_type, attr->key_type, 5);
+		sprintf(idx_name, "%s_%s", schema->data->name, attr->data->name);
+		attr->index = sos_index_open(sos, idx_name);
+		if (!attr->index) {
+			rc = sos_index_new(sos, idx_name,
+					   attr->idx_type, attr->key_type, 5);
 			if (rc)
 				goto err;
 			goto retry;
 		}
-		TAILQ_INSERT_TAIL(&attr->idx_list, part, entry);
 	}
 	return 0;
  err:
@@ -1146,7 +1050,13 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema, ods_obj_t part_obj)
 sos_schema_t sos_schema_by_name(sos_t sos, const char *name)
 {
 	sos_schema_t schema;
-	struct rbn *rbn = rbt_find(&sos->schema_name_rbt, (void *)name);
+	struct rbt *tree;
+	struct rbn *rbn;
+	if (name[0] == '_' && name[1] == '_')
+		tree = &ischema_rbt;
+	else
+		tree = &sos->schema_name_rbt;
+	rbn = rbt_find(tree, (void *)name);
 	if (!rbn)
 		return NULL;
 	schema = container_of(rbn, struct sos_schema_s, name_rbn);
@@ -1156,6 +1066,8 @@ sos_schema_t sos_schema_by_name(sos_t sos, const char *name)
 sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id)
 {
 	sos_schema_t schema;
+	if (id < SOS_SCHEMA_FIRST_USER)
+		return ischema_dir[id];
 	struct rbn *rbn = rbt_find(&sos->schema_id_rbt, (void *)&id);
 	if (!rbn)
 		return NULL;
@@ -1218,7 +1130,8 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 		rc = ENOMEM;
 		goto err_0;
 	}
-	sos_obj_ref = __sos_obj_new(ods_idx_ods(sos->schema_idx), sizeof *sos_obj_ref, &sos->lock);
+	sos_obj_ref = __sos_obj_new(ods_idx_ods(sos->schema_idx),
+				    sizeof *sos_obj_ref, &sos->lock);
 	if (!sos_obj_ref)
 		goto err_1;
 	SOS_OBJ_REF(sos_obj_ref)->ods_ref = 0;
@@ -1240,7 +1153,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	SOS_SCHEMA(schema_obj)->schema_sz = size;
 	SOS_SCHEMA(schema_obj)->obj_sz = schema->data->obj_sz;
 	SOS_SCHEMA(schema_obj)->attr_cnt = schema->data->attr_cnt;
-	SOS_SCHEMA(schema_obj)->id = SOS_UDATA(udata)->dict_len;
+	SOS_SCHEMA(schema_obj)->id = ods_atomic_inc(&SOS_UDATA(udata)->last_schema_id);
 
 	idx = 0;
 	offset = 0;
@@ -1268,8 +1181,6 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 			    ods_obj_ref(sos_obj_ref));
 	if (rc)
 		goto err_3;
-	SOS_UDATA(udata)->dict[SOS_UDATA(udata)->dict_len] = ods_obj_ref(schema_obj);
-	SOS_UDATA(udata)->dict_len += 1;
 
 	rbn_init(&schema->name_rbn, schema->data->name);
 	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
@@ -1391,3 +1302,67 @@ void sos_schema_print(sos_schema_t schema, FILE *fp)
 }
 
 /** @} */
+
+sos_schema_t __sos_internal_schema_new(const char *name, uint32_t id,
+				       sos_type_t el_type, size_t el_size)
+{
+	struct sos_schema_s *schema;
+	schema = sos_schema_new(name);
+	assert(schema);
+	schema->flags = SOS_SCHEMA_F_INTERNAL;
+	schema->ref_count = 1;
+	schema->data->id = id;
+	schema->data->obj_sz = el_size;
+	sos_schema_attr_add(schema, "count", SOS_TYPE_UINT32);
+	sos_schema_attr_add(schema, "data", el_type);
+	rbn_init(&schema->name_rbn, schema->data->name);
+	rbt_ins(&ischema_rbt, &schema->name_rbn);
+	rbn_init(&schema->id_rbn, &schema->data->id);
+	ischema_dir[schema->data->id] = schema;
+	return schema;
+}
+
+struct ischema_data {
+	const char *name;
+	int id;
+	sos_type_t el_type;
+	size_t el_size;
+} ischema_data_[] = {
+	{ "__BYTE_ARRAY_OBJ", SOS_ISCHEMA_BYTE_ARRAY,
+	  SOS_TYPE_BYTE_ARRAY, sizeof(char) },
+
+	{ "__INT32_ARRAY_OBJ", SOS_ISCHEMA_INT32_ARRAY,
+	  SOS_TYPE_INT32_ARRAY, sizeof(int32_t) },
+	{ "__UINT32_ARRAY_OBJ", SOS_ISCHEMA_UINT32_ARRAY,
+	  SOS_TYPE_UINT32_ARRAY, sizeof(uint32_t) },
+
+	{ "__INT64_ARRAY_OBJ", SOS_ISCHEMA_INT64_ARRAY,
+	  SOS_TYPE_INT64_ARRAY, sizeof(int64_t) },
+	{ "__UINT64_ARRAY_OBJ", SOS_ISCHEMA_UINT64_ARRAY,
+	  SOS_TYPE_UINT64_ARRAY, sizeof(uint64_t) },
+
+	{ "__FLOAT_ARRAY_OBJ", SOS_ISCHEMA_FLOAT_ARRAY,
+	  SOS_TYPE_FLOAT_ARRAY, sizeof(float) },
+
+	{ "__DOUBLE_ARRAY_OBJ", SOS_ISCHEMA_DOUBLE_ARRAY,
+	  SOS_TYPE_DOUBLE_ARRAY, sizeof(double) },
+	{ "__LONG_DOUBLE_ARRAY_OBJ", SOS_ISCHEMA_LONG_DOUBLE_ARRAY,
+	  SOS_TYPE_LONG_DOUBLE_ARRAY, sizeof(long double) },
+
+	{ "__OBJ_ARRAY_OBJ", SOS_ISCHEMA_OBJ_ARRAY,
+	  SOS_TYPE_OBJ_ARRAY, sizeof(sos_obj_ref_t) },
+
+	{ NULL, },
+};
+
+static void __attribute__ ((constructor)) sos_lib_init(void)
+{
+	struct ischema_data *id;
+	rbt_init(&ischema_rbt, __sos_schema_name_cmp);
+	for (id = &ischema_data_[0]; id->name; id++) {
+		sos_schema_t schema =
+			__sos_internal_schema_new(id->name, id->id,
+						  id->el_type, id->el_size);
+		assert(schema);
+	}
+}

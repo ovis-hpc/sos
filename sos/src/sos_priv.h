@@ -67,27 +67,24 @@
 #include <ods/rbt.h>
 
 typedef enum sos_internal_schema_e {
-	SOS_ISCHEMA_OBJ = 0x80,
-	SOS_ISCHEMA_BYTE_ARRAY,
-	SOS_ISCHEMA_INT32_ARRAY,
-	SOS_ISCHEMA_INT64_ARRAY,
-	SOS_ISCHEMA_UINT32_ARRAY,
-	SOS_ISCHEMA_UINT64_ARRAY,
-	SOS_ISCHEMA_FLOAT_ARRAY,
-	SOS_ISCHEMA_DOUBLE_ARRAY,
-	SOS_ISCHEMA_LONG_DOUBLE_ARRAY,
-	SOS_ISCHEMA_OBJ_ARRAY,
-	SOS_SCHEMA_FIRST_USER,
+	SOS_ISCHEMA_BYTE_ARRAY = SOS_TYPE_BYTE_ARRAY,
+	SOS_ISCHEMA_INT32_ARRAY = SOS_TYPE_INT32_ARRAY,
+	SOS_ISCHEMA_INT64_ARRAY = SOS_TYPE_INT64_ARRAY,
+	SOS_ISCHEMA_UINT32_ARRAY = SOS_TYPE_UINT32_ARRAY,
+	SOS_ISCHEMA_UINT64_ARRAY = SOS_TYPE_UINT64_ARRAY,
+	SOS_ISCHEMA_FLOAT_ARRAY = SOS_TYPE_FLOAT_ARRAY,
+	SOS_ISCHEMA_DOUBLE_ARRAY = SOS_TYPE_DOUBLE_ARRAY,
+	SOS_ISCHEMA_LONG_DOUBLE_ARRAY = SOS_TYPE_LONG_DOUBLE_ARRAY,
+	SOS_ISCHEMA_OBJ_ARRAY = SOS_TYPE_OBJ_ARRAY,
+	SOS_SCHEMA_FIRST_USER = 128,
 } sos_ischema_t;
 
-#define SOS_LATEST_VERSION 0x02000000
+#define SOS_LATEST_VERSION 0x03010000
 #define SOS_SCHEMA_SIGNATURE 0x534f535348434D41 // 'SOSSCHMA'
 typedef struct sos_udata_s {
 	uint64_t signature;
 	uint32_t version;
-	uint32_t dict_len;
-	uint32_t first_schema;
-	ods_ref_t dict[0];
+	ods_atomic_t last_schema_id;
 } *sos_udata_t;
 #define SOS_UDATA(_o_) ODS_PTR(sos_udata_t, _o_)
 
@@ -106,12 +103,12 @@ typedef struct sos_idx_part_s {
 /*
  * An object is counted array of bytes. Everything in the ODS store is an object.
  *
- * +----------+----------+--~~~~~---+
- * | class_id | size     | data...  |
- * +----------+----------+--~~~~~---+
+ * +-----------+--~~~~~---+
+ * | schema id | data...  |
+ * +-----------+--~~~~~---+
  */
 typedef struct sos_obj_data_s {
-	uint64_t schema;	/* An index into the container's schema dictionary */
+	uint64_t schema;	/* The unique schema identifier */
 	uint8_t data[0];
 } *sos_obj_data_t;
 
@@ -150,13 +147,24 @@ typedef char *(*sos_value_to_str_fn_t)(sos_value_t, char *, size_t);
 typedef int (*sos_value_from_str_fn_t)(sos_value_t, const char *, char **);
 typedef void *(*sos_value_key_value_fn_t)(sos_value_t);
 
+struct sos_index_s {
+	sos_t sos;
+	sos_idx_part_t last_part;
+	TAILQ_HEAD(sos_idx_part_list, sos_idx_part_s) idx_list;
+	char *idx_type;
+	char *key_type;
+};
+
 struct sos_attr_s {
 	sos_attr_data_t data;
 	struct sos_attr_data_s data_;
 
 	sos_schema_t schema;
+	sos_index_t index;
+#if 0
 	sos_idx_part_t last_part;
 	TAILQ_HEAD(sos_idx_part_list, sos_idx_part_s) idx_list;
+#endif
 	char *idx_type;
 	char *key_type;
 	sos_value_size_fn_t size_fn;
@@ -175,7 +183,6 @@ typedef struct sos_schema_data_s {
 	uint32_t key_sz;	/* Size of largest indexed attribute */
 	uint64_t obj_sz;	/* Size of object */
 	uint64_t schema_sz;	/* Size of schema */
-	ods_ref_t ods_path;	/* Path to the ODS containing objects of this type */
 	struct sos_attr_data_s attr_dict[0];
 } *sos_schema_data_t;
 
@@ -196,6 +203,7 @@ struct sos_schema_s {
 #define SOS_SCHEMA(_o_) ODS_PTR(sos_schema_data_t, _o_)
 #define SOS_CONFIG(_o_) ODS_PTR(sos_config_t, _o_)
 #define SOS_PART(_o_) ODS_PTR(sos_part_t, _o_)
+#define SOS_ARRAY(_o_) ODS_PTR(sos_array_t, _o_)
 
 #define SOS_OPTIONS_PARTITION_ENABLE	1
 struct sos_container_config {
@@ -297,7 +305,7 @@ struct sos_part_iter_s {
 };
 
 struct sos_iter_s {
-	sos_attr_t attr;
+	sos_index_t index;
 	ods_iter_t iter;
 	sos_obj_part_t obj_part;
 	sos_idx_part_t idx_part;
@@ -315,14 +323,15 @@ int __sos_config_init(sos_t sos);
 sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj);
 ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock);
 void __sos_schema_free(sos_schema_t schema);
-sos_idx_part_t __sos_active_idx_part(sos_attr_t attr);
+sos_idx_part_t __sos_active_idx_part(sos_index_t index);
 sos_obj_part_t __sos_active_obj_part(sos_t sos);
 sos_obj_part_t __sos_primary_obj_part(sos_t sos);
-sos_idx_part_t __sos_matching_idx_part(sos_attr_t attr, sos_obj_part_t obj_part);
+sos_idx_part_t __sos_matching_idx_part(sos_index_t attr, sos_obj_part_t obj_part);
 sos_part_iter_t __sos_part_iter_new(sos_t sos);
 ods_obj_t __sos_part_first(sos_part_iter_t iter);
 ods_obj_t __sos_part_next(sos_part_iter_t iter);
 void __sos_part_iter_free(sos_part_iter_t iter);
 int __sos_schema_open(sos_t sos, sos_schema_t schema, ods_obj_t part_obj);
+int __sos_schema_name_cmp(void *a, void *b);
 
 #endif
