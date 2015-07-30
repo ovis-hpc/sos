@@ -55,7 +55,7 @@ typedef struct bxt_node {
 typedef struct bxt_udata {
 	struct ods_idx_meta_data idx_udata;
 	uint32_t order;		/* The order or each internal node */
-	ods_ref_t root;		/* The root of the tree */
+	ods_ref_t root_ref;	/* The root of the tree */
 	ods_atomic_t client_count;	/* Active clients */
 	ods_atomic_t lock;	/* Cross-memory spin lock */
 	ods_atomic_t depth;	/* The current tree depth */
@@ -74,9 +74,9 @@ struct bxt_obj_el {
  * In memory object that refers to a B+ Tree
  */
 typedef struct bxt_s {
-	size_t order;		/* order of the tree */
 	ods_t ods;		/* The ods that contains the tree */
-	ods_ref_t root_ref;	/* The root of the tree */
+	ods_obj_t udata_obj;
+	bxt_udata_t udata;
 	ods_idx_compare_fn_t comparator;
 	/*
 	 * The node_q keeps a Q of nodes for allocation.

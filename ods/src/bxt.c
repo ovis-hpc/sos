@@ -112,7 +112,7 @@ static void print_node(ods_idx_t idx, int ent, ods_obj_t n, int indent, FILE *fp
 static void print_idx(ods_idx_t idx, FILE *fp)
 {
 	bxt_t t = idx->priv;
-	ods_obj_t node = ods_ref_as_obj(t->ods, t->root_ref);
+	ods_obj_t node = ods_ref_as_obj(t->ods, t->udata->root_ref);
 	print_node(idx, 0, node, 0, fp);
 	ods_obj_put(node);
 }
@@ -120,15 +120,13 @@ static void print_idx(ods_idx_t idx, FILE *fp)
 static void print_info(ods_idx_t idx, FILE *fp)
 {
 	bxt_t t = idx->priv;
-	ods_obj_t udata = ods_get_user_data(idx->ods);
-	fprintf(fp, "%*s : %d\n", 12, "Order", UDATA(udata)->order);
-	fprintf(fp, "%*s : %lx\n", 12, "Root Ref", UDATA(udata)->root);
-	fprintf(fp, "%*s : %d\n", 12, "Client Count", UDATA(udata)->client_count);
-	fprintf(fp, "%*s : %d\n", 12, "Lock", UDATA(udata)->lock);
-	fprintf(fp, "%*s : %d\n", 12, "Depth", UDATA(udata)->depth);
-	fprintf(fp, "%*s : %d\n", 12, "Cardinality", UDATA(udata)->card);
-	fprintf(fp, "%*s : %d\n", 12, "Duplicates", UDATA(udata)->dups);
-	ods_obj_put(udata);
+	fprintf(fp, "%*s : %d\n", 12, "Order", t->udata->order);
+	fprintf(fp, "%*s : %lx\n", 12, "Root Ref", t->udata->root_ref);
+	fprintf(fp, "%*s : %d\n", 12, "Client Count", t->udata->client_count);
+	fprintf(fp, "%*s : %d\n", 12, "Lock", t->udata->lock);
+	fprintf(fp, "%*s : %d\n", 12, "Depth", t->udata->depth);
+	fprintf(fp, "%*s : %d\n", 12, "Cardinality", t->udata->card);
+	fprintf(fp, "%*s : %d\n", 12, "Duplicates", t->udata->dups);
 	fflush(fp);
 }
 
@@ -141,8 +139,8 @@ static int bxt_open(ods_idx_t idx)
 		ods_obj_put(udata);
 		return ENOMEM;
 	}
-	t->order = UDATA(udata)->order;
-	t->root_ref = UDATA(udata)->root;
+	t->udata_obj = udata;
+	t->udata = UDATA(udata);
 	t->ods = idx->ods;
 	t->comparator = idx->idx_class->cmp->compare_fn;
 	idx->priv = t;
@@ -164,7 +162,7 @@ static int bxt_init(ods_t ods, va_list argp)
 		order = 251;
 	}
 	UDATA(udata)->order = order;
-	UDATA(udata)->root = 0;
+	UDATA(udata)->root_ref = 0;
 	UDATA(udata)->client_count = 0;
 	UDATA(udata)->lock = 0;
 	UDATA(udata)->depth = 0;
@@ -177,10 +175,9 @@ static void bxt_close_(bxt_t t)
 {
 	struct bxt_obj_el *el;
 	ods_obj_t node;
-	ods_obj_t udata = ods_get_user_data(t->ods);
 
-	ods_atomic_dec(&UDATA(udata)->client_count);
-	ods_obj_put(udata);
+	ods_atomic_dec(&t->udata->client_count);
+	ods_obj_put(t->udata_obj);
 
 	/* Clean up any cached node allocations */
 	while (!LIST_EMPTY(&t->node_q)) {
@@ -220,14 +217,14 @@ static void bxt_close(ods_idx_t idx)
 
 ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 {
-	ods_ref_t ref = t->root_ref;
+	ods_ref_t ref = t->udata->root_ref;
 	ods_obj_t n;
 	int i;
 
-	if (!t->root_ref)
+	if (!t->udata->root_ref)
 		return 0;
 
-	n = ods_ref_as_obj(t->ods, t->root_ref);
+	n = ods_ref_as_obj(t->ods, t->udata->root_ref);
 	while (!NODE(n)->is_leaf) {
 		int rc;
 		for (i = 1; i < NODE(n)->count; i++) {
@@ -429,7 +426,7 @@ static struct bxt_obj_el *node_alloc(bxt_t t)
 {
 	struct bxt_obj_el *el = alloc_el(t);
 	size_t sz = sizeof(struct bxt_node) +
-		(t->order * sizeof(struct bxn_entry));
+		(t->udata->order * sizeof(struct bxn_entry));
 	el->obj = ods_obj_alloc(t->ods, sz);
 	if (!el->obj) {
 		ods_extend(t->ods, ods_size(t->ods) * 2);
@@ -648,7 +645,7 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 {
 	int i, j;
 	int ins_left_n_right;
-	int midpoint = split_midpoint(t->order);
+	int midpoint = split_midpoint(t->udata->order);
 
 	assert(NODE(left)->is_leaf);
 	NODE(right)->is_leaf = 1;
@@ -682,7 +679,7 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 	ins_left_n_right = ins_idx < midpoint;
 	if (ins_left_n_right) {
 		/* Move entries to the right node to make room for the new record */
-		for (i = midpoint - 1, j = 0; i < t->order; i++, j++) {
+		for (i = midpoint - 1, j = 0; i < t->udata->order; i++, j++) {
 			NODE(right)->entries[j] = NODE(left)->entries[i];
 			NODE(left)->count--;
 			NODE(right)->count++;
@@ -707,7 +704,7 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 		 * to leave space for the item that will be added.
 		 */
 		ins_idx = ins_idx - midpoint;
-		for (i = midpoint, j = 0; i < t->order; i++, j++) {
+		for (i = midpoint, j = 0; i < t->udata->order; i++, j++) {
 			/*
 			 * If this is where the new entry will
 			 * go, skip a slot
@@ -756,14 +753,13 @@ static void node_insert(bxt_t t, ods_obj_t node, ods_obj_t left,
 static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 				   ods_obj_t left_node,
 				   ods_ref_t right_key_ref,
-				   ods_obj_t right_node,
-				   bxt_udata_t udata)
+				   ods_obj_t right_node)
 {
 	ods_obj_t left_parent, right_parent;
 	int i, j;
 	int ins_idx, ins_left_n_right;
 	int count;
-	int midpoint = split_midpoint(t->order);
+	int midpoint = split_midpoint(t->udata->order);
 
 	/* Take our own reference on these parameters */
 	left_node = ods_obj_get(left_node);
@@ -875,12 +871,12 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 		N_ENT(next_parent,1).key_ref = N_ENT(right_parent,0).key_ref;
 		NODE(left_parent)->parent = ods_obj_ref(next_parent);
 		NODE(right_parent)->parent = ods_obj_ref(next_parent);
-		t->root_ref = ods_obj_ref(next_parent);
-		ods_atomic_inc(&udata->depth);
+		t->udata->root_ref = ods_obj_ref(next_parent);
+		ods_atomic_inc(&t->udata->depth);
 		goto out;
 	}
 	/* If there is room, insert into the parent */
-	if (NODE(next_parent)->count < t->order) {
+	if (NODE(next_parent)->count < t->udata->order) {
 		node_insert(t, next_parent, left_parent,
 			    N_ENT(right_parent,0).key_ref, right_parent);
 		goto out;
@@ -908,20 +904,18 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 	bxt_t t = idx->priv;
 	ods_obj_t parent;
 	ods_obj_t leaf;
-	ods_obj_t udata = ods_get_user_data(idx->ods);
 	ods_obj_t new_rec;
 	int is_dup, ent;
-	ods_spin_init(lock, &UDATA(udata)->lock);
+	ODS_SPIN_DECL(lock, &t->udata->lock);
 	if (ods_spin_lock(lock, -1))
 		return EBUSY;
 
-	if (!t->root_ref) {
+	if (!t->udata->root_ref) {
 		leaf = node_new(idx, t, NULL, 0);
 		if (!leaf)
 			goto err_1;
-		t->root_ref = ods_obj_ref(leaf);
-		UDATA(udata)->root = t->root_ref;
 		NODE(leaf)->is_leaf = 1;
+		t->udata->root_ref = ods_obj_ref(leaf);
 		ent = 0;
 		is_dup = 0;
 	} else {
@@ -938,9 +932,9 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 	 * If this is a dup or the new record will fit in the leaf,
 	 * then this is a simple insert with no new nodes required.
 	 */
-	if ((NODE(leaf)->count < t->order) || is_dup) {
+	if ((NODE(leaf)->count < t->udata->order) || is_dup) {
 		if (is_dup)
-			ods_atomic_inc(&UDATA(udata)->dups);
+			ods_atomic_inc(&t->udata->dups);
 		if (!leaf_insert(t, leaf, new_rec, ent, is_dup)
 		    && NODE(leaf)->parent) {
 			ods_obj_t parent =
@@ -950,11 +944,10 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 				N_ENT(parent,0).key_ref = N_ENT(leaf,0).key_ref;
 			ods_obj_put(parent);
 		}
-		ods_atomic_inc(&UDATA(udata)->card);
+		ods_atomic_inc(&t->udata->card);
 		ods_obj_put(leaf);
 		ods_obj_put(new_rec);
 		ods_spin_unlock(lock);
-		ods_obj_put(udata);
 		return 0;
 	}
 
@@ -962,7 +955,7 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 	 * The new record overflows the leaf. The leaf will need to be split
 	 * and the new leaf inserted into the tree.
 	 */
-	ods_obj_t new_leaf = node_new(idx, t, UDATA(udata), 1);
+	ods_obj_t new_leaf = node_new(idx, t, t->udata, 1);
 	if (!new_leaf)
 		goto err_1;
 	leaf_split_insert(idx, t, leaf, new_key, new_rec, ent, new_leaf);
@@ -988,31 +981,27 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 
 		NODE(leaf)->parent = ods_obj_ref(parent);
 		NODE(new_leaf)->parent = ods_obj_ref(parent);
-		t->root_ref = ods_obj_ref(parent);
-		ods_atomic_inc(&UDATA(udata)->depth);
+		ods_atomic_inc(&t->udata->depth);
+		t->udata->root_ref = ods_obj_ref(parent);
 		goto out;
 	}
-	if (NODE(parent)->count < t->order) {
+	if (NODE(parent)->count < t->udata->order) {
 		node_insert(t, parent, leaf, new_leaf_key_ref, new_leaf);
 		goto out;
 	}
 	ods_obj_put(parent);
-	parent = node_split_insert(idx, t, leaf,
-				   new_leaf_key_ref, new_leaf, UDATA(udata));
+	parent = node_split_insert(idx, t, leaf, new_leaf_key_ref, new_leaf);
  out:
-	ods_atomic_inc(&UDATA(udata)->card);
-	UDATA(udata)->root = t->root_ref;
+	ods_atomic_inc(&t->udata->card);
 	ods_obj_put(leaf);
 	ods_obj_put(new_leaf);
 	ods_obj_put(parent);
 	ods_obj_put(new_rec);
 	ods_spin_unlock(lock);
-	ods_obj_put(udata);
 	return 0;
 
  err_1:
 	ods_spin_unlock(lock);
-	ods_obj_put(udata);
 	return ENOMEM;
 }
 
@@ -1036,10 +1025,10 @@ static ods_obj_t bxt_min_node(bxt_t t)
 	ods_obj_t n;
 	ods_obj_t rec;
 
-	if (!t->root_ref)
+	if (!t->udata->root_ref)
 		return 0;
 
-	return min_in_subtree(t, t->root_ref);
+	return min_in_subtree(t, t->udata->root_ref);
 }
 
 static ods_obj_t max_in_subtree(bxt_t t, ods_ref_t root)
@@ -1062,11 +1051,11 @@ static ods_obj_t bxt_max_node(bxt_t t)
 	ods_obj_t n;
 	ods_obj_t rec;
 
-	if (!t->root_ref)
+	if (!t->udata->root_ref)
 		return 0;
 
 	/* Walk to the left most leaf and return the 0-th entry  */
-	n = ods_ref_as_obj(t->ods, t->root_ref);
+	n = ods_ref_as_obj(t->ods, t->udata->root_ref);
 	while (!NODE(n)->is_leaf) {
 		ods_ref_t ref = N_ENT(n,NODE(n)->count-1).node_ref;
 		ods_obj_put(n);
@@ -1108,7 +1097,7 @@ static ods_obj_t left_sibling(bxt_t t, ods_obj_t node)
 	 * Root has no left sibling
 	 */
 	node_ref = ods_obj_ref(node);
-	if (t->root_ref == node_ref)
+	if (t->udata->root_ref == node_ref)
 		return NULL;
 
 	/*
@@ -1121,7 +1110,7 @@ static ods_obj_t left_sibling(bxt_t t, ods_obj_t node)
 		assert(idx < NODE(parent)->count);
 		if (idx > 0)
 			break;
-		else if (t->root_ref == ods_obj_ref(parent))
+		else if (t->udata->root_ref == ods_obj_ref(parent))
 			goto not_found;
 		pparent = ods_ref_as_obj(t->ods, NODE(parent)->parent);
 		node_ref = ods_obj_ref(parent);
@@ -1146,7 +1135,7 @@ static ods_obj_t right_sibling(bxt_t t, ods_obj_t node)
 	 * Root has no right sibling
 	 */
 	node_ref = ods_obj_ref(node);
-	if (t->root_ref == node_ref)
+	if (t->udata->root_ref == node_ref)
 		return NULL;
 
 	/*
@@ -1159,7 +1148,7 @@ static ods_obj_t right_sibling(bxt_t t, ods_obj_t node)
 		assert(idx < NODE(parent)->count);
 		if (idx < NODE(parent)->count - 1)
 			break;
-		else if (t->root_ref == ods_obj_ref(parent))
+		else if (t->udata->root_ref == ods_obj_ref(parent))
 			goto not_found;
 		pparent = ods_ref_as_obj(t->ods, NODE(parent)->parent);
 		node_ref = ods_obj_ref(parent);
@@ -1182,7 +1171,7 @@ static int node_neigh(bxt_t t, ods_obj_t node, ods_obj_t *left, ods_obj_t *right
 
 	*left = *right = NULL;
 	node_ref = ods_obj_ref(node);
-	if (t->root_ref == node_ref)
+	if (t->udata->root_ref == node_ref)
 		return 0;
 
 	assert(NODE(node)->parent);
@@ -1205,7 +1194,7 @@ static int space(bxt_t t, ods_obj_t n)
 	if (!n)
 		return 0;
 
-	return t->order - NODE(n)->count;
+	return t->udata->order - NODE(n)->count;
 }
 
 static int combine_right(bxt_t t, ods_obj_t right, int idx, ods_obj_t node)
@@ -1290,7 +1279,7 @@ static ods_ref_t fixup_parents(bxt_t t, ods_obj_t parent, ods_obj_t node)
 		parent_ref = NODE(parent)->parent;
 	}
 	ods_obj_put(node);
-	return t->root_ref;
+	return t->udata->root_ref;
 }
 
 static void merge_from_left(bxt_t t, ods_obj_t left, ods_obj_t node, int midpoint)
@@ -1380,12 +1369,12 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 	NODE(node)->entries[NODE(node)->count-1] = ENTRY_INITIALIZER;
 	NODE(node)->count--;
 
-	if (ods_obj_ref(node) == t->root_ref) {
+	if (ods_obj_ref(node) == t->udata->root_ref) {
 		/* This is the root of the tree. */
 		switch (NODE(node)->count) {
 		case 0:
 			/* The root is now empty */
-			t->root_ref = 0;
+			t->udata->root_ref = 0;
 			ods_obj_delete(node);
 			ods_obj_put(node);
 			return 0;
@@ -1408,18 +1397,18 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 			}
 		default:
 			ods_obj_put(node);
-			return t->root_ref;
+			return t->udata->root_ref;
 		}
 	}
 
-	midpoint = split_midpoint(t->order);
+	midpoint = split_midpoint(t->udata->order);
 	if (NODE(node)->count >= midpoint) {
 		/* Unless the 0-the element is modified, no fixup is required. */
 		if (ent == 0)
 			return fixup_parents(t, parent, node);
 		ods_obj_put(parent);
 		ods_obj_put(node);
-		return t->root_ref;
+		return t->udata->root_ref;
 	}
 	node_idx = node_neigh(t, node, &left, &right);
 	count = space(t, left) + space(t, right);
@@ -1504,11 +1493,10 @@ static void delete_head(bxt_t t, ods_obj_t leaf, ods_obj_t rec, int ent)
 static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 {
 	bxt_t t = idx->priv;
-	ods_obj_t udata = ods_get_user_data(idx->ods);
 	int ent;
 	ods_obj_t leaf, rec;
 	int found;
-	ods_spin_init(lock, &UDATA(udata)->lock);
+	ODS_SPIN_DECL(lock, &t->udata->lock);
 
 	if (ods_spin_lock(lock, -1))
 		return EBUSY;
@@ -1523,8 +1511,8 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	assert(rec);
 	*ref = REC(rec)->obj_ref;
 	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref)
-		ods_atomic_dec(&UDATA(udata)->dups);
-	ods_atomic_dec(&UDATA(udata)->card);
+		ods_atomic_dec(&t->udata->dups);
+	ods_atomic_dec(&t->udata->card);
 	/*
 	 * Trivial case is that this is a dup key. In this case,
 	 * delete the first entry on the list and return
@@ -1532,20 +1520,16 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref) {
 		delete_head(t, leaf, rec, ent);
 		ods_obj_put(leaf);
-		ods_obj_put(udata);
 		return 0;
 	}
-	t->root_ref = entry_delete(t, leaf, rec, ent);
+	t->udata->root_ref = entry_delete(t, leaf, rec, ent);
 	ods_obj_delete(key);
-	UDATA(udata)->root = t->root_ref;
 	ods_obj_put(rec);
 	ods_spin_unlock(lock);
-	ods_obj_put(udata);
 	return 0;
  noent:
 	ods_obj_put(leaf);
 	ods_spin_unlock(lock);
-	ods_obj_put(udata);
 	return ENOENT;
 }
 
@@ -1879,10 +1863,8 @@ static void bxt_commit(ods_idx_t idx)
 int bxt_stat(ods_idx_t idx, ods_idx_stat_t sb)
 {
 	bxt_t t = idx->priv;
-	ods_obj_t udata = ods_get_user_data(idx->ods);
-	sb->cardinality = UDATA(udata)->card;
-	sb->duplicates = UDATA(udata)->dups;
-	ods_obj_put(udata);
+	sb->cardinality = t->udata->card;
+	sb->duplicates = t->udata->dups;
 	return 0;
 }
 
