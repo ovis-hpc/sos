@@ -586,6 +586,29 @@ static void update_dirty(ods_t ods, ods_ref_t ref, size_t size)
 /*
  * Create a memory object from a persistent reference
  */
+ods_obj_t _ods_ref_as_obj_with_lock(ods_t ods, ods_ref_t ref, ods_map_t map)
+{
+	ods_obj_t obj;
+	if (!ref)
+		return NULL;
+
+	obj = obj_new(ods);
+	if (!obj)
+		goto err_0;
+	obj->ods = ods;
+	if (obj_init(obj, map, ref))
+		goto err_1;
+
+	update_dirty(ods, obj->ref, ods_obj_size(obj));
+	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
+	return obj;
+ err_1:
+	assert(0);
+	LIST_INSERT_HEAD(&obj->ods->obj_free_list, obj, entry);
+ err_0:
+	return NULL;
+}
+
 ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref)
 {
 	ods_obj_t obj;
@@ -706,7 +729,7 @@ int ods_create(const char *path, int o_mode)
 	sprintf(tmp_path, "%s%s", path, ODS_OBJ_SUFFIX);
 	rc = stat(tmp_path, &sb);
 	if ((rc < 0 && errno != ENOENT) || (!rc))
-		return errno;
+		return (rc ? errno : EEXIST);
 
 	/* Check if the page file already exists */
 	sprintf(tmp_path, "%s%s", path, ODS_PGTBL_SUFFIX);
@@ -1003,15 +1026,13 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
 		ref = ods_ptr_to_ref(map, alloc_blk(map, sz));
 	else
 		ref = ods_ptr_to_ref(map, alloc_pages(map, sz, -1));
-	if (!ref)
-		goto out;
- out:
-	pthread_spin_unlock(&ods->lock);
 	if (ref) {
-		obj = ods_ref_as_obj(ods, ref);
+		obj = _ods_ref_as_obj_with_lock(ods, ref, map);
 		if (!obj)
 			free_ref(ods, ref);
 	}
+ out:
+	pthread_spin_unlock(&ods->lock);
 	return obj;
 }
 

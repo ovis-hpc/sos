@@ -433,9 +433,11 @@ typedef struct ods_spin_s {
 		pthread_t thread;
 	} owner;
 } *ods_spin_t;
-#define ods_spin_init(_name_, _lock_p_)					\
-	struct ods_spin_s ods_spin_s ## _name_ = { .lock_p = _lock_p_ };	\
+#define ODS_SPIN_DECL(_name_, _lock_p_)					\
+	struct ods_spin_s ods_spin_s ## _name_ = { .lock_p = _lock_p_ }; \
 	ods_spin_t _name_ = &ods_spin_s ## _name_;
+
+#define ods_spin_init_(_name_, _lock_p_)	(_name_).lock_p = _lock_p
 
 int _ods_spin_lock(ods_spin_t s, int timeout);
 #define ods_spin_lock(_s_, _t_) ({			\
