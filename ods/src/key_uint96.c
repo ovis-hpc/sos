@@ -66,13 +66,7 @@ static int uint96_comparator(ods_key_t a, ods_key_t b)
 {
 	ods_key_value_t av = ods_key_value(a);
 	ods_key_value_t bv = ods_key_value(b);
-	int i;
-	for (i = 0; i < av->len; i++) {
-		if (av->value[i] == bv->value[i])
-			continue;
-		return (int)(av->value[i] - bv->value[i]);
-	}
-	return 0;
+	return memcmp(av->value, bv->value, av->len);
 }
 
 static const char *to_str(ods_key_t key, char *buf)
