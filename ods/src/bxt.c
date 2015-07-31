@@ -141,11 +141,11 @@ static int bxt_open(ods_idx_t idx)
 	}
 	t->udata_obj = udata;
 	t->udata = UDATA(udata);
+	ods_spin_init(&t->lock, t->udata->lock);
 	t->ods = idx->ods;
 	t->comparator = idx->idx_class->cmp->compare_fn;
 	idx->priv = t;
-	ods_atomic_inc(&UDATA(udata)->client_count);
-	ods_obj_put(udata);
+	ods_atomic_inc(&t->udata->client_count);
 	LIST_INSERT_HEAD(&client_list, t, entry);
 	return 0;
 }
@@ -906,8 +906,7 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 	ods_obj_t leaf;
 	ods_obj_t new_rec;
 	int is_dup, ent;
-	ODS_SPIN_DECL(lock, &t->udata->lock);
-	if (ods_spin_lock(lock, -1))
+	if (ods_spin_lock(&t->lock, -1))
 		return EBUSY;
 
 	if (!t->udata->root_ref) {
@@ -947,7 +946,7 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 		ods_atomic_inc(&t->udata->card);
 		ods_obj_put(leaf);
 		ods_obj_put(new_rec);
-		ods_spin_unlock(lock);
+		ods_spin_unlock(&t->lock);
 		return 0;
 	}
 
@@ -997,11 +996,11 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_ref_t obj_ref)
 	ods_obj_put(new_leaf);
 	ods_obj_put(parent);
 	ods_obj_put(new_rec);
-	ods_spin_unlock(lock);
+	ods_spin_unlock(&t->lock);
 	return 0;
 
  err_1:
-	ods_spin_unlock(lock);
+	ods_spin_unlock(&t->lock);
 	return ENOMEM;
 }
 
@@ -1496,9 +1495,8 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	int ent;
 	ods_obj_t leaf, rec;
 	int found;
-	ODS_SPIN_DECL(lock, &t->udata->lock);
 
-	if (ods_spin_lock(lock, -1))
+	if (ods_spin_lock(&t->lock, -1))
 		return EBUSY;
 
 	leaf = leaf_find(t, key);
@@ -1520,16 +1518,17 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref) {
 		delete_head(t, leaf, rec, ent);
 		ods_obj_put(leaf);
+		ods_spin_unlock(&t->lock);
 		return 0;
 	}
 	t->udata->root_ref = entry_delete(t, leaf, rec, ent);
 	ods_obj_delete(key);
 	ods_obj_put(rec);
-	ods_spin_unlock(lock);
+	ods_spin_unlock(&t->lock);
 	return 0;
  noent:
 	ods_obj_put(leaf);
-	ods_spin_unlock(lock);
+	ods_spin_unlock(&t->lock);
 	return ENOENT;
 }
 
