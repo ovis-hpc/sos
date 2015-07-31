@@ -416,13 +416,13 @@ skip_heading:
 
 	cond = TAILQ_FIRST(&cond_head);
 	if (cond) {
-		iter = sos_iter_new(sos, cond->attr->id);
+		iter = sos_attr_iter_new(sos, cond->attr->id);
 	} else {
 		for (col = 0; col < col_count; col++) {
 			attr = sos_obj_attr_by_id(sos, col);
 			if (!attr->has_idx)
 				continue;
-			iter = sos_iter_new(sos, col);
+			iter = sos_attr_iter_new(sos, col);
 			break;
 		}
 	}

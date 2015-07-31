@@ -53,7 +53,11 @@ int compare_keywords(const void *a, const void *b)
 {
 	struct keyword *kw_a = (struct keyword *)a;
 	struct keyword *kw_b = (struct keyword *)b;
-	return strcasecmp(kw_a->str, kw_b->str);
+	char *str = strdup(kw_a->str);
+	str = strtok(str, ",");
+	int rc = strcasecmp(str, kw_b->str);
+	free(str);
+	return rc;
 }
 
 #endif

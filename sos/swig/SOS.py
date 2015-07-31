@@ -51,7 +51,7 @@ class Key:
         return rc != 0
 
     def __str__(self):
-        s = sos.sos_key_to_str(self.attr.attr, self.key)
+        s = sos.sos_attr_key_to_str(self.attr.attr, self.key)
         return s
 
     def __del__(self):
@@ -298,7 +298,7 @@ class Iterator:
         if rc:
             return ""
         key = sos.sos_iter_key(self.iter_)
-        rv = sos.sos_key_to_str(self.attr.attr, key)
+        rv = sos.sos_attr_key_to_str(self.attr.attr, key)
         sos.sos_key_put(key)
         return rv;
 
@@ -307,7 +307,7 @@ class Iterator:
         if rc:
             return ""
         key = sos.sos_iter_key(self.iter_)
-        rv = sos.sos_key_to_str(self.attr.attr, key)
+        rv = sos.sos_attr_key_to_str(self.attr.attr, key)
         sos.sos_key_put(key)
         return rv;
 
@@ -443,7 +443,7 @@ class Attr:
         self.schema = schema
         self.has_index = sos.sos_attr_index(self.attr)
         if self.has_index:
-            self.iter_ = Iterator(sos.sos_iter_new(self.attr), self)
+            self.iter_ = Iterator(sos.sos_attr_iter_new(self.attr), self)
         else:
             self.iter_ = None
         self.col_width = col_widths[self.sos_type]
@@ -496,6 +496,13 @@ class Schema:
 
     def __del__(self):
         sos.sos_schema_put(self.schema)
+
+class Partition:
+    def __init__(self, container, name, flags):
+        self.container = container
+        self.name = name
+        self.flags = flags
+        sos.partition = sos.sos_part_new(container.name(), name, flags)
 
 class Container:
     RW = sos.SOS_PERM_RW

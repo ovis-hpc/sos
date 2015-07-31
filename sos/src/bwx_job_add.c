@@ -93,103 +93,19 @@ void usage(int argc, char *argv[])
 	exit(1);
 }
 
-struct rbt comp_tree;
-char fbuf[80];
-struct component {
-	uint64_t id;
-	sos_obj_t comp_obj;
-	sos_obj_t prev_sample;
-	struct rbn rbn;
+struct Job {
+	uint32_t id;
+	struct sos_timestamp_s start_ts;
+	struct sos_timestamp_s end_ts;
+	uint64_t job_name_ref;
+	uint64_t user_name_ref;
 };
 
-int comp_cmp(void *a, void *b)
-{
-	uint64_t _a = *(uint64_t *)a;
-	uint64_t _b = *(uint64_t *)b;
-	if (_a < _b)
-		return -1;
-	if (_a > _b)
-		return 1;
-	return 0;
-}
-
-struct add_arg {
-	/* Objects */
-	sos_obj_t job_obj;
-	sos_obj_t prev_comp;
-
-	/* Schemas */
-	sos_schema_t comp_schema;
-
-	/* Job attributes */
-	sos_attr_t comp_head_attr;
-	sos_attr_t comp_tail_attr;
-
-	/* CompRef attributes */
-	sos_attr_t comp_id_attr;
-	sos_attr_t next_comp_attr;
-	sos_attr_t prev_comp_attr;
+struct JobComp {
+	uint64_t key;		/* CompId:StartTime */
+	struct sos_timestamp_s end_time;
+	uint32_t job_id;
 };
-
-int add_component(struct rbn *rbn, void *varg, int level)
-{
-	struct add_arg *arg = varg;
-	struct component *comp = container_of(rbn, struct component, rbn);
-	sos_obj_t comp_obj = sos_obj_new(arg->comp_schema);
-	if (!comp_obj)
-		return 1;
-	sos_value_t id = sos_value(comp_obj, arg->comp_id_attr);
-	id->data->prim.uint64_ = comp->id;
-	comp->comp_obj = comp_obj;
-	sos_value_put(id);
-
-	if (!arg->prev_comp) {
-		/* Initialize the component list for the job */
-		arg->prev_comp = comp_obj;
-		sos_value_t comp_head = sos_value(arg->job_obj, arg->comp_head_attr);
-		sos_value_t comp_tail = sos_value(arg->job_obj, arg->comp_tail_attr);
-		comp_head->data->prim.ref_ = sos_obj_ref(comp_obj).ref;
-		comp_tail->data->prim.ref_ = sos_obj_ref(comp_obj).ref;
-		sos_value_put(comp_head);
-		sos_value_put(comp_tail);
-		goto out;
-	}
-	sos_value_t next_comp = sos_value(arg->prev_comp, arg->next_comp_attr);
-	sos_value_t prev_comp = sos_value(comp_obj, arg->prev_comp_attr);
-	sos_value_t comp_tail = sos_value(arg->job_obj, arg->comp_tail_attr);
-	next_comp->data->prim.ref_ = sos_obj_ref(comp_obj).ref;
-	prev_comp->data->prim.ref_ = sos_obj_ref(arg->prev_comp).ref;
-	comp_tail->data->prim.ref_ = sos_obj_ref(comp_obj).ref;
-	arg->prev_comp = comp_obj;
- out:
-	return 0;
-}
-uint64_t job_size = 0;
-int build_comp_tree(FILE* comp_file, struct rbt* tree, struct add_arg *arg)
-{
-	char *s;
-	while (s = fgets(fbuf, sizeof(fbuf), comp_file)) {
-		struct component *comp;
-
-		comp = calloc(1, sizeof *comp);
-		if (!comp)
-			return ENOMEM;
-		job_size++;
-		uint64_t id = strtoul(s, NULL, 0);
-		comp->id = id;
-		rbn_init(&comp->rbn, &comp->id);
-		rbt_ins(&comp_tree, &comp->rbn);
-	}
-	return rbt_traverse(&comp_tree, add_component, arg);
-}
-
-struct component *job_component(uint64_t comp_id)
-{
-	struct rbn *rbn = rbt_find(&comp_tree, &comp_id);
-	if (rbn)
-		return container_of(rbn, struct component, rbn);
-	return NULL;
-}
 
 sos_obj_t job_new(sos_t sos, char *id, char *start, char *end, char *uid, char *name)
 {
@@ -219,6 +135,8 @@ sos_obj_t job_new(sos_t sos, char *id, char *start, char *end, char *uid, char *
 	}
 	rc = sos_iter_find(job_id_iter, job_key);
 	if (!rc) {
+		job_obj = sos_iter_obj(job_id_iter);
+		return job_obj;
 		printf("The specified job (%s) already exists. "
 		       "Please use a different Job Id.\n", id);
 		goto err;
@@ -340,16 +258,7 @@ int main(int argc, char *argv[])
 		perror("could not open container:");
 		return errno;
 	}
-	comp_schema = sos_schema_by_name(sos, "CompRef");
-	if (!comp_schema) {
-		printf("The 'CompRef' schema was not found.\n");
-		return ENOENT;
-	}
-	sample_schema = sos_schema_by_name(sos, "Sample");
-	if (!sample_schema) {
-		printf("The 'Sample' schema was not found.\n");
-		return ENOENT;
-	}
+
 	char *s;
 	char buf[128];
 	s = fgets(buf, sizeof(buf), comp_file);
@@ -368,123 +277,46 @@ int main(int argc, char *argv[])
 	s = strchr(name_str, '\n');
 	if (s)
 		*s = '\0';
+
 	job_obj = job_new(sos, job_str, start_str, end_str, uid_str, name_str);
 	if (!job_obj)
 		usage(argc, argv);
-	uint64_t job_id = strtoul(job_str, NULL, 0);
+	uint32_t job_id = strtoul(job_str, NULL, 0);
 
-	/* Start Time */
-	sos_attr_t ts_attr = sos_schema_attr_by_name(sample_schema, "Time");
-	if (!ts_attr) {
-		printf("The 'Time' attribute does not exist in the Sample schema.\n");
-		usage(argc, argv);
+	rc = sos_index_new(sos, "CompTime", "BXTREE", "UINT64", 5);
+	sos_index_t comptime_idx = sos_index_open(sos, "CompTime");
+	if (!comptime_idx) {
+		perror("sos_index_open: ");
+		exit(3);
 	}
-	start_value = sos_value_new(); assert(start_value);
-	sos_value_init(start_value, NULL, ts_attr);
-	rc = sos_value_from_str(start_value, start_str, NULL);
-	if (rc) {
-		printf("Unable to set the start time from the string '%s'.\n", start_str);
-		usage(argc, argv);
+	rc = sos_index_new(sos, "JobComp", "BXTREE", "UINT64", 5);
+	sos_index_t jobcomp_idx = sos_index_open(sos, "JobComp");
+	if (!jobcomp_idx) {
+		perror("sos_index_open: ");
+		exit(3);
 	}
-	/* End Time */
-	end_value = sos_value_new(); assert(end_value);
-	sos_value_init(end_value, NULL, ts_attr);
-	rc = sos_value_from_str(end_value, end_str, NULL);
-	if (rc) {
-		printf("Unable to set the  value from the string '%s'.\n", end_str);
-		usage(argc, argv);
-	}
-	comp_attr = sos_schema_attr_by_name(sample_schema, "CompId");
-	if (!comp_attr) {
-		printf("The 'JobId' attribute does not exist in the Sample schema.\n");
-		usage(argc, argv);
-	}
-	time_iter = sos_attr_iter_new(ts_attr);
-	if (!time_iter) {
-		printf("Could not create the Time iterator.\n");
-		usage(argc, argv);
-	}
-	time_filt = sos_filter_new(time_iter);
-	if (!time_filt) {
-		printf("Could not create the Time filter.\n");
-		usage(argc, argv);
-	}
-	rc = sos_filter_cond_add(time_filt, ts_attr, SOS_COND_GE, start_value);
-	if (rc) {
-		printf("The start time specified, '%s', is invalid.\n", start_str);
-		usage(argc, argv);
-	}
-	rc = sos_filter_cond_add(time_filt, ts_attr, SOS_COND_LE, end_value);
-	if (rc) {
-		printf("The start time specified, '%s', is invalid.\n", end_str);
-		usage(argc, argv);
-	}
-	rbt_init(&comp_tree, comp_cmp);
-	struct add_arg arg;
-	arg.job_obj = job_obj;
-	arg.prev_comp = NULL;
-	arg.comp_schema = comp_schema;
-	arg.comp_head_attr = sos_schema_attr_by_name(sos_obj_schema(job_obj), "CompHead");
-	arg.comp_tail_attr = sos_schema_attr_by_name(sos_obj_schema(job_obj), "CompTail");
-	arg.comp_id_attr = sos_schema_attr_by_name(comp_schema, "CompId");
-	arg.next_comp_attr = sos_schema_attr_by_name(comp_schema, "NextComp");
-	arg.prev_comp_attr = sos_schema_attr_by_name(comp_schema, "PrevComp");
-	rc = build_comp_tree(comp_file, &comp_tree, &arg);
-	if (rc) {
-		printf("Error %d building the component list.\n", rc);
-		return rc;
-	}
-	sos_schema_t job_schema = sos_schema_by_name(sos, "Job");
-	sos_attr_t job_size_attr = sos_schema_attr_by_name(job_schema, "JobSize");
-	sos_value_t job_size_val = sos_value(job_obj, job_size_attr);
-	job_size_val->data->prim.uint64_ = job_size;
-	sos_value_put(job_size_val);
-	sos_schema_put(job_schema);
+	struct Job *job = sos_obj_ptr(job_obj);
+	while (NULL != (s = fgets(buf, sizeof(buf), comp_file))) {
+		struct kvs {
+			uint32_t secondary;
+			uint32_t primary;
+		} kv;
+		uint32_t comp_id = strtoul(s, NULL, 0);
+		SOS_KEY(comp_key);
 
-	sos_attr_t sample_head_attr = sos_schema_attr_by_name(comp_schema, "SampleHead");
-	sos_attr_t sample_tail_attr = sos_schema_attr_by_name(comp_schema, "SampleTail");
-	sos_attr_t next_sample_attr = sos_schema_attr_by_name(sample_schema, "NextSample");
-	sos_attr_t prev_sample_attr = sos_schema_attr_by_name(sample_schema, "PrevSample");
-	sos_attr_t job_id_attr = sos_schema_attr_by_name(sample_schema, "JobId");
-	for (sample_obj = sos_filter_begin(time_filt); sample_obj;
-	     sample_obj = sos_filter_next(time_filt)) {
-		struct component *comp;
+		/* Add the Component:Time key */
+		kv.primary = comp_id;
+		kv.secondary = job->start_ts.secs;
+		sos_key_set(comp_key, &kv, sizeof(kv));
+		sos_index_insert(comptime_idx, comp_key, job_obj);
 
-		/* Check if the component for this sample is part of this job. */
-		comp_value = sos_value(sample_obj, comp_attr);
-		comp = job_component(comp_value->data->prim.uint64_);
-		if (!comp) {
-			sos_value_put(comp_value);
-			sos_obj_put(sample_obj);
-			continue;
-		}
-		sos_value_t sample_head = sos_value(comp->comp_obj, sample_head_attr);
-		sos_value_t sample_tail = sos_value(comp->comp_obj, sample_tail_attr);
-		sos_value_t job_id_val = sos_value(sample_obj, job_id_attr);
-		job_id_val->data->prim.uint64_ = job_id;
-		sample_tail->data->prim.ref_ = sos_obj_ref(sample_obj).ref;
-
-		if (!comp->prev_sample) {
-			sample_head->data->prim.ref_ = sos_obj_ref(sample_obj).ref;
-			sos_value_t prev = sos_value(sample_obj, prev_sample_attr);
-			prev->data->prim.ref_ = 0; /* Start the list */
-			sos_value_put(prev);
-		} else {
-			sos_value_t next = sos_value(comp->prev_sample, next_sample_attr);
-			sos_value_t prev = sos_value(sample_obj, prev_sample_attr);
-			next->data->prim.ref_ = sos_obj_ref(sample_obj).ref;
-			prev->data->prim.ref_ = sos_obj_ref(comp->prev_sample).ref;
-			next = sos_value(sample_obj, next_sample_attr);
-			next->data->prim.ref_ = 0; /* Terminate the list */
-			sos_obj_put(comp->prev_sample);
-			sos_value_put(next);
-			sos_value_put(prev);
-		}
-		sos_value_put(sample_head);
-		sos_value_put(sample_tail);
-		sos_value_put(job_id_val);
-		comp->prev_sample = sample_obj;
+		/* Add the Job:Component key */
+		kv.primary = job_id;
+		kv.secondary = comp_id;
+		sos_key_set(comp_key, &kv, sizeof(kv));
+		sos_index_insert(jobcomp_idx, comp_key, job_obj);
 	}
-
+	sos_index_close(jobcomp_idx, SOS_COMMIT_SYNC);
+	sos_index_close(comptime_idx, SOS_COMMIT_SYNC);
 	return 0;
 }

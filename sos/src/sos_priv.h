@@ -80,13 +80,61 @@ typedef enum sos_internal_schema_e {
 } sos_ischema_t;
 
 #define SOS_LATEST_VERSION 0x03010000
-#define SOS_SCHEMA_SIGNATURE 0x534f535348434D41 // 'SOSSCHMA'
+#define SOS_SCHEMA_SIGNATURE 0x534f535348434D41 /* 'SOSSCHMA' */
 typedef struct sos_udata_s {
 	uint64_t signature;
 	uint32_t version;
 	ods_atomic_t last_schema_id;
 } *sos_udata_t;
 #define SOS_UDATA(_o_) ODS_PTR(sos_udata_t, _o_)
+
+/**
+ * Partitions keep object stores and indexes together into a physical
+ * sub-container that can be moved. The purpose of this is to allow
+ * data to be migrated out of storage of one class (fast/expensive) to
+ * another class (slow/cheap) in an organized and safe fashion.
+ *
+ * Paritions can be active (part of queries) action+primary (part of
+ * queries and stores new data), and inactive (not part of queries or
+ * new data storage). In order to be moved, a partition must
+ * be inactive.
+ *
+ * Partitions are reference counted. If a partition is in-use, it will
+ * have a ref_count > 0. A partition can only be deleted if it is
+ * inactive and has a ref_count of 0. The partition iterator is
+ * semi-lockless, i.e. while a partition is in use, it will have a
+ * non-zero ref_count, but the partion list-lock will not be
+ * held. This allows partitions to be removed from the list, even when
+ * in use, however, they will not be moved or destroyed until the
+ * reference count is 0.
+ */
+#define SOS_PART_SIGNATURE 0x534f535041525430 /* 'SOSPART0' */
+typedef struct sos_part_udata_s {
+	uint64_t signature;
+	ods_atomic_t lock;	/* Protects the partition list */
+	ods_ref_t head;		/* Head of the partition list */
+	ods_ref_t tail;		/* Tail of the partition list */
+	ods_ref_t primary;	/* Current primary partition */
+} *sos_part_udata_t;
+#define SOS_PART_UDATA(_o_) ODS_PTR(sos_part_udata_t, _o_)
+
+struct sos_part_s {
+	sos_t sos;
+	ods_obj_t obj;
+};
+
+struct sos_part_iter_s {
+	sos_t sos;
+	struct sos_part_s part;
+};
+
+typedef struct sos_part_data_s {
+	char name[SOS_PART_NAME_LEN];
+	uint32_t state;		/* PRIMARY (2), ACTIVE (1), INACTIVE (0) */
+	ods_atomic_t ref_count;
+	ods_ref_t next;		/* Next partition */
+	ods_ref_t prev;		/* Previous partition */
+} *sos_part_data_t;
 
 typedef struct sos_obj_part_s {
 	ods_obj_t part_obj;
@@ -161,10 +209,6 @@ struct sos_attr_s {
 
 	sos_schema_t schema;
 	sos_index_t index;
-#if 0
-	sos_idx_part_t last_part;
-	TAILQ_HEAD(sos_idx_part_list, sos_idx_part_s) idx_list;
-#endif
 	char *idx_type;
 	char *key_type;
 	sos_value_size_fn_t size_fn;
@@ -202,7 +246,7 @@ struct sos_schema_s {
 };
 #define SOS_SCHEMA(_o_) ODS_PTR(sos_schema_data_t, _o_)
 #define SOS_CONFIG(_o_) ODS_PTR(sos_config_t, _o_)
-#define SOS_PART(_o_) ODS_PTR(sos_part_t, _o_)
+#define SOS_PART(_o_) ODS_PTR(sos_part_data_t, _o_)
 #define SOS_ARRAY(_o_) ODS_PTR(sos_array_t, _o_)
 
 #define SOS_OPTIONS_PARTITION_ENABLE	1
@@ -250,7 +294,6 @@ struct sos_container_s {
 	sos_obj_part_t primary_part;
 	TAILQ_HEAD(sos_obj_part_list, sos_obj_part_s) ods_list;
 	ods_t part_ods;
-	ods_idx_t part_idx;
 
 	LIST_HEAD(obj_list_head, sos_obj_s) obj_list;
 	LIST_HEAD(obj_free_list_head, sos_obj_s) obj_free_list;
@@ -296,15 +339,9 @@ struct sos_config_iter_s {
 	ods_obj_t obj;
 };
 
-struct sos_part_iter_s {
-	ods_t part_ods;
-	ods_idx_t part_idx;
-	sos_part_t part;
-	ods_iter_t iter;
-	ods_obj_t obj;
-};
-
 struct sos_iter_s {
+	sos_part_iter_t part_iter;
+	sos_part_t part;
 	sos_index_t index;
 	ods_iter_t iter;
 	sos_obj_part_t obj_part;
@@ -314,7 +351,9 @@ struct sos_iter_s {
 /**
  * Internal routines
  */
-sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj, sos_obj_part_t part);
+sos_schema_t __sos_get_ischema(sos_type_t type);
+sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema,
+			 ods_obj_t ods_obj, sos_obj_part_t part);
 sos_value_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type);
 sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type);
 sos_value_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type);
@@ -333,5 +372,6 @@ ods_obj_t __sos_part_next(sos_part_iter_t iter);
 void __sos_part_iter_free(sos_part_iter_t iter);
 int __sos_schema_open(sos_t sos, sos_schema_t schema, ods_obj_t part_obj);
 int __sos_schema_name_cmp(void *a, void *b);
+ods_obj_t __sos_part_obj_get(sos_part_t part);
 
 #endif

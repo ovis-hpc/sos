@@ -153,7 +153,7 @@ out_arg_loop:
 		rc = sos_verify_index(sos, attr_id);
 		if (rc)
 			goto corrupted;
-		iter = sos_iter_new(sos, attr_id);
+		iter = sos_attr_iter_new(sos, attr_id);
 		count = 0;
 		sos_iter_begin(iter);
 		while (sos_iter_next(iter) == 0)

@@ -476,6 +476,14 @@ int sos_schema_index_add(sos_schema_t schema, const char *name)
 	return 0;
 }
 
+static void __toupper(char *s)
+{
+	while (s[0]) {
+		*s = toupper(*s);
+		s++;
+	}
+}
+
 /**
  * \brief Modify the index for an attribute
  *
@@ -518,7 +526,9 @@ int sos_schema_index_modify(sos_schema_t schema, const char *name,
 		return ENOENT;
 
 	attr->idx_type = strdup(idx_type);
+	__toupper(attr->idx_type);
 	attr->key_type = strdup(key_type);
+	__toupper(attr->key_type);
 	return 0;
 }
 
@@ -613,7 +623,7 @@ sos_schema_t sos_attr_schema(sos_attr_t attr)
 	return attr->schema;
 }
 
-sos_schema_t get_ischema(sos_type_t type)
+sos_schema_t __sos_get_ischema(sos_type_t type)
 {
 	assert(type >= SOS_TYPE_OBJ && type <= SOS_TYPE_LAST);
 	return ischema_dir[type];
@@ -629,65 +639,25 @@ int sos_attr_is_array(sos_attr_t attr)
 	return attr->data->type >= SOS_TYPE_ARRAY;
 }
 
-static sos_value_t mem_value_init(sos_value_t val, sos_attr_t attr)
-{
-	size_t elem_count;
-	sos_schema_t schema;
-
-	val->attr = attr;
-	if (sos_attr_is_ref(attr)) {
-		errno = EINVAL;
-		return NULL;
-	}
-	val->data = &val->data_;
-	return val;
-}
-
-sos_value_t sos_value_new()
-{
-	return calloc(1, sizeof(struct sos_value_s));
-}
-
-void sos_value_free(sos_value_t v)
-{
-	free(v);
-}
-
+/**
+ * \brief Return a pointer to the object's data
+ *
+ * This function returns a pointer to the object's internal data. The
+ * application is responsible for understanding the internal
+ * format. The application must call sos_obj_put() when finished with
+ * the object to avoid a memory leak.
+ *
+ * This function is intended to be used when the schema of the object
+ * is well known by the application. If the application is generic for
+ * all objects, see the sos_value() functions.
+ *
+ * \param obj
+ * \retval void * pointer to the objects's data
+ */
 void *sos_obj_ptr(sos_obj_t obj)
 {
 	sos_obj_data_t data = obj->obj->as.ptr;
 	return data->data;
-}
-
-sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr)
-{
-	sos_value_t value = sos_value_new();
-	if (value)
-		value = sos_value_init(value, obj, attr);
-	return value;
-}
-
-sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
-{
-	ods_obj_t ref_obj;
-	sos_schema_t schema;
-
-	if (!obj)
-		return mem_value_init(val, attr);
-
-	val->attr = attr;
-	val->obj = sos_obj_get(obj);
-	val->data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
-	if (!sos_attr_is_array(attr))
-		return val;
-	/* Follow the reference to the object */
-	ref_obj = ods_ref_as_obj(obj->part->obj_ods, val->data->prim.ref_);
-	sos_obj_put(val->obj);
-	if (!ref_obj)
-		return NULL;
-	val->obj = __sos_init_obj(obj->sos, get_ischema(attr->data->type), ref_obj, obj->part);
-	val->data = (sos_value_data_t)&SOS_OBJ(ref_obj)->data[0];
-	return val;
 }
 
 size_t sos_array_count(sos_value_t val)
@@ -726,7 +696,7 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 		errno = EINVAL;
 		return NULL;
 	}
-	schema = get_ischema(attr->data->type);
+	schema = __sos_get_ischema(attr->data->type);
 	size_t size =
 		sizeof(struct sos_obj_data_s)
 		+ sizeof(uint32_t) /* element count */
@@ -759,7 +729,7 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
 	sos_obj_part_t part;
 	size_t size;
 
-	schema = get_ischema(type);
+	schema = __sos_get_ischema(type);
 	if (!schema)
 		return NULL;
 	size = sizeof(struct sos_obj_data_s)
@@ -774,49 +744,6 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
 	struct sos_array_s *array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
 	array->count = count;
 	return __sos_init_obj(sos, schema, array_obj, part);
-}
-
-size_t sos_value_memset(sos_value_t val, void *buf, size_t buflen)
-{
-	void *dst;
-	if (buflen > sos_value_size(val))
-		buflen = sos_value_size(val);
-	if (!sos_attr_is_array(val->attr))
-		dst = val->data;
-	else
-		dst = &val->data->array.data.byte_[0];
-	memcpy(dst, buf, buflen);
-	return buflen;
-}
-
-void sos_value_put(sos_value_t value)
-{
-	if (!value)
-		return;
-	if (value->obj) {
-		sos_obj_put(value->obj);
-	} else {
-		if (value->data != &value->data_)
-			free(value->data);
-	}
-}
-
-sos_value_t sos_value_by_name(sos_value_t value, sos_schema_t schema, sos_obj_t obj,
-			      const char *name, int *attr_id)
-{
-	int i;
-	sos_attr_t attr = sos_schema_attr_by_name(schema, name);
-	if (!attr)
-		return NULL;
-	return sos_value_init(value, obj, attr);
-}
-
-sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id)
-{
-	sos_attr_t attr = sos_schema_attr_by_id(obj->schema, attr_id);
-	if (!attr)
-		return NULL;
-	return sos_value_init(value, obj, attr);
 }
 
 /**
@@ -842,6 +769,13 @@ size_t sos_attr_size(sos_attr_t attr)
 	return type_sizes[attr->data->type];
 }
 
+/**
+ * \brief Get the size of an attribute value
+ *
+ * \param value The value handle
+ *
+ * \returns The size of the attribute value
+ */
 size_t sos_value_size(sos_value_t value)
 {
 	return value->attr->size_fn(value);
@@ -852,6 +786,16 @@ void *sos_value_as_key(sos_value_t value)
 	return value->attr->key_value_fn(value);
 }
 
+/**
+ * \brief Format an object attribute as a string
+ *
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \param str Pointer to the string to receive the formatted value
+ * \param len The size of the string in bytes.
+ * \returns A pointer to the str argument or NULL if there was a
+ *          formatting error.
+ */
 char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
 {
 	struct sos_value_s v_;
@@ -863,11 +807,18 @@ char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
 	return s;
 }
 
-const char *sos_value_to_str(sos_value_t v, char *str, size_t len)
-{
-	return v->attr->to_str_fn(v, str, len);
-}
-
+/**
+ * \brief Set the object attribute from a string
+ *
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \param str The input string value to parse
+ * \param endptr Receives the point in the str argumeent where parsing stopped.
+ *               This parameter may be NULL.
+ * \retval 0 The string was successfully parsed and the value set
+ * \retval EINVAL The string was incorrectly formatted for this value
+ *                type.
+ */
 int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char **endptr)
 {
 	int rc;
@@ -901,12 +852,6 @@ int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char 
 		rc = EINVAL;
 	return rc;
 }
-
-int sos_value_from_str(sos_value_t v, const char *str, char **endptr)
-{
-	return v->attr->from_str_fn(v, str, endptr);
-}
-
 
 /**
  * \brief Create a copy of a schema

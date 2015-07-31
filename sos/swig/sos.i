@@ -269,6 +269,24 @@ void sos_container_close(sos_t c, sos_commit_t flags);
 int sos_container_commit(sos_t c, sos_commit_t flags);
 void sos_container_info(sos_t sos, FILE* fp);
 
+#define SOS_PART_NAME_DEFAULT			"00000000"
+#define SOS_PART_NAME_LEN			64
+/** Partition is being moved up or otherwise not used */
+#define SOS_PART_STATE_OFFLINE			0
+/** Consulted for queries/iteration */
+#define SOS_PART_STATE_ACTIVE			1
+/** New objects stored here */
+#define SOS_PART_STATE_PRIMARY			2
+
+typedef struct sos_part_s *sos_part_t;
+
+typedef struct sos_part_iter_s *sos_part_iter_t;
+int sos_part_new(sos_t sos, const char *name);
+sos_part_iter_t sos_part_iter_new(sos_t sos);
+sos_part_t sos_part_first(sos_part_iter_t iter);
+sos_part_t sos_part_next(sos_part_iter_t iter);
+void sos_part_print(sos_t sos, FILE *fp);
+
 #define SOS_OBJ_BE	1
 #define SOS_OBJ_LE	2
 
@@ -319,9 +337,27 @@ struct sos_pos {
 	char data[16];
 };
 typedef struct sos_pos *sos_pos_t;
+
+/*
+ * Indices
+ */
+int sos_index_new(sos_t sos, const char *name,
+		  const char *idx_type, const char *key_type, ...);
+sos_index_t sos_index_open(sos_t sos, const char *name);
+int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
+int sos_index_obj_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
+sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
+sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
+sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
+int sos_index_commit(sos_index_t index, sos_commit_t flags);
+int sos_index_close(sos_index_t index, sos_commit_t flags);
+
+/*
+ * Iterators
+ */
 int sos_iter_pos(sos_iter_t iter, sos_pos_t pos);
 int sos_iter_set(sos_iter_t iter, const sos_pos_t pos);
-sos_iter_t sos_iter_new(sos_attr_t attr);
+sos_iter_t sos_attr_iter_new(sos_attr_t attr);
 int sos_iter_flags_set(sos_iter_t iter, sos_iter_flags_t flags);
 sos_iter_flags_t sos_iter_flags_get(sos_iter_t iter);
 uint64_t sos_iter_card(sos_iter_t iter);

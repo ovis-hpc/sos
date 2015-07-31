@@ -110,6 +110,7 @@ void usage(int argc, char *argv[])
 	printf("                   json   - JSON Objects.\n");
 	printf("       [-F <rule>] Add a filter rule to the index.\n");
 	printf("       [-V <col>]  Add an object attribute (i.e. column) to the output.\n");
+	printf("                   Use '<col>[width]' to specify the desired column width\n");
 	exit(1);
 }
 
@@ -198,7 +199,7 @@ TAILQ_HEAD(col_list_s, col_s) col_list = TAILQ_HEAD_INITIALIZER(col_list);
 
 /*
  * Add a column. The format is:
- * <name>[:col_width]
+ * <name>[col_width]
  */
 int add_column(const char *str)
 {
@@ -208,11 +209,11 @@ int add_column(const char *str)
 	if (!col)
 		goto err;
 	s = strdup(str);
-	width = strchr(s, ':');
+	width = strchr(s, '[');
 	if (width) {
 		*width = '\0';
 		width++;
-		col->width = atoi(width);
+		col->width = strtoul(width, NULL, 0);
 	}
 	col->name = s;
 	if (!col->name)
@@ -404,7 +405,7 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 		       index_name, schema_name);
 		return ENOENT;
 	}
-	iter = sos_iter_new(attr);
+	iter = sos_attr_iter_new(attr);
 	if (!iter)
 		return ENOMEM;
 	filt = sos_filter_new(iter);
@@ -517,6 +518,9 @@ int add_schema(sos_t sos, FILE *fp)
 	sos_schema_t schema = NULL;
 	char *schema_name = NULL;
 	char *attr_name = NULL;
+	char *key_type = NULL;
+	char *index_type = NULL;
+	char *index_str = NULL;
 	int attr_indexed;
 	sos_type_t attr_type;
 	int rc = 0;
@@ -590,6 +594,19 @@ int add_schema(sos_t sos, FILE *fp)
 						       " for attribute '%s'.\n",
 						       rc, attr_name);
 						return rc;
+					}
+					if (key_type && key_type[0] != '\0') {
+						if (!index_type)
+							index_type = "BXTREE";
+						rc = sos_schema_index_modify
+							(
+							 schema, attr_name,
+							 index_type, key_type
+							 );
+						if (rc)
+							printf("Warning: The key '%s' or index type '%s' "
+							       "were not recognizerd.\n", key_type, index_type);
+						free(index_str);
 					}
 				}
 				state = SCHEMA_DEF;
@@ -684,6 +701,15 @@ int add_schema(sos_t sos, FILE *fp)
 					break;
 				}
 				attr_indexed = kw->id;
+				index_str = strdup(event.data.scalar.value);
+				index_str = strtok(index_str, ",");
+				key_type = strtok(NULL, ",");
+				if (key_type) {
+					while (isspace(*key_type)) key_type++;
+					index_type = strtok(NULL, ",");
+					if (index_type)
+						while (isspace(*index_type)) index_type++;
+				}
 				state = ATTR_DEF;
 				break;
 			case ATTR_TYPE_DEF:
@@ -1154,7 +1180,7 @@ int compare_key(const void *a, const void *b)
 {
 	const char *str = a;
 	struct cond_key_s const *cond = b;
-	return strcmp(a, cond->name);
+	return strcmp(str, cond->name);
 }
 
 int add_filter(sos_schema_t schema, sos_filter_t filt, char *str)

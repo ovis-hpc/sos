@@ -29,9 +29,18 @@ target_link_libraries(sos_cmd sos yaml)
 add_executable(job_add job_add.c)
 target_link_libraries(job_add sos)
 
+add_executable(bwx_job_add bwx_job_add.c)
+target_link_libraries(bwx_job_add sos)
+
+add_executable(bwx_import bwx_import.c)
+target_link_libraries(bwx_import sos)
+
 add_executable(job_query job_query.c)
 target_link_libraries(job_query job sos m)
 
-INSTALL(TARGETS sos sos_cmd
+add_executable(bwx_job_ls bwx_job_ls.c)
+target_link_libraries(bwx_job_ls sos m)
+
+INSTALL(TARGETS sos sos_cmd bwx_job_add bwx_job_ls bwx_import
 	RUNTIME DESTINATION bin
 	LIBRARY DESTINATION lib)

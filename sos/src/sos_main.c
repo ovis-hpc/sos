@@ -57,7 +57,7 @@ void dump_metric_store_fwd(struct metric_store_s *m,
 {
 	int rc;
 	sos_obj_t obj;
-	sos_iter_t iter = sos_iter_new(m->sos, attr_id);
+	sos_iter_t iter = sos_attr_iter_new(m->sos, attr_id);
 	print_header(m, sos_iter_name(iter));
 	for (rc = sos_iter_begin(iter); !rc; rc = sos_iter_next(iter)) {
 		obj = sos_iter_obj(iter);
@@ -71,7 +71,7 @@ void dump_metric_store_bkwd(struct metric_store_s *m,
 {
 	int rc;
 	sos_obj_t obj;
-	sos_iter_t iter = sos_iter_new(m->sos, attr_id);
+	sos_iter_t iter = sos_attr_iter_new(m->sos, attr_id);
 	print_header(m, sos_iter_name(iter));
 	for (rc = sos_iter_end(iter); !rc; rc = sos_iter_prev(iter)) {
 		obj = sos_iter_obj(iter);

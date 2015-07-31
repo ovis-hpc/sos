@@ -31,7 +31,7 @@ class SosDir:
         requesting user does not have access rights.
 
         The OVIS store is organized like this:
-        {sos_root}/{container_name}/{timestamped version}
+        {sos_root}/{container_name}
         """
         carray = []
         try:
@@ -41,18 +41,14 @@ class SosDir:
                 try:
                     ovc_path = sos_root + '/' + ovc
                     try:
-                        versions = os.listdir(ovc_path)
-                        for v in versions:
-                            v_path = ovc_path + '/' + v
-                            try:
-                                files = os.listdir(v_path)
-                                if 'schemas.OBJ' in files:
-                                    carray.append([ ovc + '/' + v ])
-                            except Exception as e:
-                                pass
-                    except:
+                        files = os.listdir(ovc_path)
+                        if 'schemas.OBJ' in files:
+                            carray.append([ ovc ])
+                    except Exception as e:
+                        carray.append([ str(e) ])
                         pass
                 except:
+                    carray.append([ str(e) ])
                     pass
             return render.table_json('directory', [ 'name' ], carray, len(carray))
         except Exception as e:
@@ -444,7 +440,7 @@ if __name__ == "__main__":
     app = web.application(urls, globals())
     app.run()
 
-sos_root = '/SOS_ROOT'
+sos_root = '/NVME/0/SOS_ROOT'
 rootdir = os.path.abspath(os.path.dirname(__file__)) + '/../'
 render = web.template.render(rootdir+'templates/')
 app = web.application(urls, globals(), autoreload=False)

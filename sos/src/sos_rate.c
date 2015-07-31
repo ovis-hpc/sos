@@ -150,7 +150,7 @@ int main(int argc, char **argv)
 
 	ovis_record_s *prev_rec = calloc(MAX_COMP, sizeof(ovis_record_s));
 
-	sos_iter_t iter = sos_iter_new(isos, MDS_TV_SEC);
+	sos_iter_t iter = sos_attr_iter_new(isos, MDS_TV_SEC);
 	sos_obj_t obj;
 
 	ovis_record_s rec;

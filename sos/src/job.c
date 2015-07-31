@@ -469,12 +469,12 @@ job_iter_t job_iter_new(sos_t sos, job_iter_order_t order_by)
 		goto err_1;
 
 	/* Create the job iterator */
-	job_iter->id_iter = sos_iter_new(job_iter->job__id_attr);
+	job_iter->id_iter = sos_attr_iter_new(job_iter->job__id_attr);
 	if (!job_iter->id_iter)
 		goto err_1;
 
 	/* Create the time iterator */
-	job_iter->time_iter = sos_iter_new(job_iter->job__time_attr);
+	job_iter->time_iter = sos_attr_iter_new(job_iter->job__time_attr);
 	if (!job_iter->time_iter)
 		goto err_1;
 

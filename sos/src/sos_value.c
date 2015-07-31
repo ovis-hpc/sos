@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2014 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2014-2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2014-2015 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -53,7 +53,9 @@
 /*
  * Author: Tom Tucker tom at ogc dot us
  */
-
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sos/sos.h>
 #include "sos_priv.h"
 
@@ -129,9 +131,210 @@ static cmp_fn_t cmp_fn_table[] = {
 	[SOS_TYPE_TIMESTAMP] = TIMESTAMP_cmp,
 };
 
+/**
+ * \brief Compare two value
+ *
+ * Compares <tt>a</tt> and <tt>b</tt> and returns <0 if a < b, 0 if
+ * a == b, and >0 if a > b
+ *
+ * \param a The lhs
+ * \param b The rhs
+ * \returns The result as described above
+ */
 int sos_value_cmp(sos_value_t a, sos_value_t b)
 {
 	if (a->attr->data->type < sizeof(cmp_fn_table)/sizeof(cmp_fn_table[0]))
 		return cmp_fn_table[a->attr->data->type](a, b);
 	return a == b;
 }
+static sos_value_t mem_value_init(sos_value_t val, sos_attr_t attr)
+{
+	size_t elem_count;
+	sos_schema_t schema;
+
+	val->attr = attr;
+	if (sos_attr_is_ref(attr)) {
+		errno = EINVAL;
+		return NULL;
+	}
+	val->data = &val->data_;
+	return val;
+}
+
+sos_value_t sos_value_new()
+{
+	return calloc(1, sizeof(struct sos_value_s));
+}
+
+void sos_value_free(sos_value_t v)
+{
+	free(v);
+}
+
+/**
+ * \brief Return a value for the specified object's attribute.
+ *
+ * This function returns a sos_value_t for an object's attribute.
+ * The reference on this value should be dropped with sos_value_put()
+ * when the application is finished with the value.
+ *
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \returns The value of the object's attribute.
+ */
+sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr)
+{
+	sos_value_t value = sos_value_new();
+	if (value)
+		value = sos_value_init(value, obj, attr);
+	return value;
+}
+
+/**
+ * \brief Initialize a value with an object's attribute data
+ *
+ * \param value Pointer to the value to be initialized
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \retval The value handle
+ */
+sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
+{
+	ods_obj_t ref_obj;
+	sos_schema_t schema;
+
+	if (!obj)
+		return mem_value_init(val, attr);
+
+	val->attr = attr;
+	val->obj = sos_obj_get(obj);
+	val->data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
+	if (!sos_attr_is_array(attr))
+		return val;
+	/* Follow the reference to the object */
+	ref_obj = ods_ref_as_obj(obj->part->obj_ods, val->data->prim.ref_);
+	sos_obj_put(val->obj);
+	if (!ref_obj)
+		return NULL;
+	val->obj = __sos_init_obj(obj->sos, __sos_get_ischema(attr->data->type), ref_obj, obj->part);
+	val->data = (sos_value_data_t)&SOS_OBJ(ref_obj)->data[0];
+	return val;
+}
+
+/**
+ * \brief Set an object value from a buffer
+ *
+ * Set the value from an untyped void buffer. If the buflen is too
+ * large to fit, only sos_value_size() bytes will be written.
+ *
+ * \param value  The value handle
+ * \param buf    The buffer containing the data
+ * \param buflen The number of bytes to write from the buffer
+ * \retval The number of bytes written
+ */
+size_t sos_value_memset(sos_value_t val, void *buf, size_t buflen)
+{
+	void *dst;
+	if (buflen > sos_value_size(val))
+		buflen = sos_value_size(val);
+	if (!sos_attr_is_array(val->attr))
+		dst = val->data;
+	else
+		dst = &val->data->array.data.byte_[0];
+	memcpy(dst, buf, buflen);
+	return buflen;
+}
+
+/**
+ * \brief Drop a reference on a value
+ *
+ * \param value The value handle.
+ */
+void sos_value_put(sos_value_t value)
+{
+	if (!value)
+		return;
+	if (value->obj) {
+		sos_obj_put(value->obj);
+	} else {
+		if (value->data != &value->data_)
+			free(value->data);
+	}
+}
+
+/**
+ * \brief Initialize a value with an object's attribute data
+ *
+ * Returns an object value handle for the specified attribute
+ * name. If the <tt>attr_id</tt> parameter is non-null, the parameter
+ * is filled in with associated attribute id.
+ *
+ * \param value Pointer to the value to be initialized
+ * \param schema The schema handle
+ * \param obj The object handle
+ * \param name The attribute name
+ * \param attr_id A pointer to the attribute id
+ * \retval Pointer to the sos_value_t handle
+ * \retval NULL if the specified attribute does not exist.
+ */
+sos_value_t sos_value_by_name(sos_value_t value, sos_schema_t schema, sos_obj_t obj,
+			      const char *name, int *attr_id)
+{
+	int i;
+	sos_attr_t attr = sos_schema_attr_by_name(schema, name);
+	if (!attr)
+		return NULL;
+	return sos_value_init(value, obj, attr);
+}
+
+/**
+ * \brief Initialize a value with an object's attribute data
+ *
+ * Returns the sos_value_t for the attribute with the specified
+ * id.
+ *
+ * \param value Pointer to the value to be initialized
+ * \param obj		The SOS object handle
+ * \param attr_id	The Id for the attribute.
+ * \retval Pointer to the sos_value_t handle
+ * \retval NULL if the specified attribute does not exist.
+ */
+sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id)
+{
+	sos_attr_t attr = sos_schema_attr_by_id(obj->schema, attr_id);
+	if (!attr)
+		return NULL;
+	return sos_value_init(value, obj, attr);
+}
+
+/**
+ * \brief Format a value as a string
+ *
+ * \param value The value handle
+ * \param str Pointer to the string to receive the formatted value
+ * \param len The size of the string in bytes.
+ * \returns A pointer to the str argument or NULL if there was a
+ *          formatting error.
+ */
+const char *sos_value_to_str(sos_value_t v, char *str, size_t len)
+{
+	return v->attr->to_str_fn(v, str, len);
+}
+
+/**
+ * \brief Set the value from a string
+ *
+ * \param v The value handle
+ * \param str The input string value to parse
+ * \param endptr Receives the point in the str argumeent where parsing stopped.
+ *               This parameter may be NULL.
+ * \retval 0 The string was successfully parsed and the value set
+ * \retval EINVAL The string was incorrectly formatted for this value
+ *                type.
+ */
+int sos_value_from_str(sos_value_t v, const char *str, char **endptr)
+{
+	return v->attr->from_str_fn(v, str, endptr);
+}
+
+
