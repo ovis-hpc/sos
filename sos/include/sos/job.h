@@ -56,6 +56,7 @@ typedef struct job_attr_vector_s {
 	sos_attr_t attr[0];
 } *job_attr_vector_t;
 
+#pragma pack(4)
 typedef struct job_time_s {
 	uint32_t secs;
 	uint32_t id;
@@ -272,6 +273,7 @@ typedef struct job_sample_s {
 	uint64_t nettopo_mesh_coord_Y;
 	uint64_t nettopo_mesh_coord_X;
 } *job_sample_t;
+#pragma pack()
 
 typedef struct job_metric_s {
 	sos_attr_t attr;

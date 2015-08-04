@@ -314,7 +314,16 @@ job_sample_t job_sample(sos_obj_t obj);
 %extend job_sample_s {
 	inline size_t __len__() { return sizeof(struct job_sample_s) / sizeof(uint64_t); }
 	inline uint64_t __getitem__(size_t i) {
-		return ((uint64_t *)self)[i];
+		switch (i) {
+		case 0:
+			return *(uint64_t *)&self->Time;
+		case 1:
+			return *(uint64_t *)&self->JobTime;
+		case 2:
+			return *(uint64_t *)&self->CompId;
+		default:
+			return ((uint64_t *)&self->Tesla_K20X_gpu_util_rate)[i-3];
+		}
 	}
 	inline int idx(const char *name) {
 		return map(name);
