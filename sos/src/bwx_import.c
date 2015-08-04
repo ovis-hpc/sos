@@ -270,11 +270,7 @@ void *add_proc(void *arg)
 		the_key.secondary = sample->time.secs;
 		sos_key_set(job_key, &the_key, sizeof(the_key));
 		sos_obj_t job_obj = sos_index_find_inf(comptime_idx, job_key);
-		if (!job_obj) {
-			printf("The sample record for component %d "
-			       "could not be associated with a job at time %d.\n",
-			       sample->comp_id, sample->time.secs);
-		} else {
+		if (job_obj) {
 			struct Job *job = sos_obj_ptr(job_obj);
 			sample->key.primary = job->id;
 			sample->key.secondary = sample->time.secs;

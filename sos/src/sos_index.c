@@ -151,7 +151,7 @@ sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key)
 	ods_ref_t ref;
 	sos_obj_part_t obj_part = __sos_primary_obj_part(index->sos);
 	sos_idx_part_t idx_part = __sos_matching_idx_part(index, obj_part);
-	int rc = ods_idx_find_glb(idx_part->index, key, &ref);
+	int rc = ods_idx_find_lub(idx_part->index, key, &ref);
 	if (rc) {
 		errno = ENOENT;
 		return NULL;
@@ -169,7 +169,7 @@ sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key)
 	ods_ref_t ref;
 	sos_obj_part_t obj_part = __sos_primary_obj_part(index->sos);
 	sos_idx_part_t idx_part = __sos_matching_idx_part(index, obj_part);
-	int rc = ods_idx_find_lub(idx_part->index, key, &ref);
+	int rc = ods_idx_find_glb(idx_part->index, key, &ref);
 	if (rc) {
 		errno = ENOENT;
 		return NULL;
