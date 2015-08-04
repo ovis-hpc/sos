@@ -14,6 +14,27 @@ schema:
           type: byte_array
           indexed: true
 schema:
+        - name: Component
+        - attribute: Id
+          type: uint32
+          indexed: true
+        - name: State
+          type: uint32
+        - name: Description
+          type: byte_array
+        - name: CabinetId
+          type: uint32
+        - name: 3d_x
+          type: uint32
+        - name: 3d_y
+          type: uint32
+        - name: 3d_z
+          type: uint32
+        - name: 2d_x
+          type: uint32
+        - name: 2d_y
+          type: uint32
+schema:
         - name: Sample
         - attribute: Time
           type: timestamp
