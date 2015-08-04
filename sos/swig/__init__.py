@@ -1,2 +1,2 @@
 #!/usr/bin/python
-__all__ = ["sos", "SOS"]
+__all__ = ["sos", "SOS", "job"]

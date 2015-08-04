@@ -67,6 +67,8 @@ struct ods_idx_provider {
 	int (*iter_find)(ods_iter_t iter, ods_key_t key);
 	int (*iter_find_lub)(ods_iter_t iter, ods_key_t key);
 	int (*iter_find_glb)(ods_iter_t iter, ods_key_t key);
+	int (*iter_find_first)(ods_iter_t iter, ods_key_t key);
+	int (*iter_find_last)(ods_iter_t iter, ods_key_t key);
 	int (*iter_begin)(ods_iter_t iter);
 	int (*iter_end)(ods_iter_t iter);
 	int (*iter_next)(ods_iter_t iter);

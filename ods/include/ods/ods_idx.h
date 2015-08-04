@@ -485,7 +485,10 @@ int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
  * \brief Find the object associated with the specified key
  *
  * Search the index for the specified key and return the associated
- * ods_ref_t.
+ * ods_ref_t. If there are duplicate objects in the index with the
+ * same key, the first object with the matching key is returned. See
+ * the sos_iter_find_first() and sos_iter_find_last() functions for
+ * information on managing duplicates.
  *
  * \param idx	The index handle
  * \param key	The key
@@ -582,7 +585,10 @@ void ods_iter_delete(ods_iter_t iter);
  * \brief Position an iterator at the specified key.
  *
  * Positions the iterator's cursor to the object with the specified
- * key.
+ * key. If there are duplicates in the index, the cursor will be
+ * positioned at the first object with the specified key. See the
+ * ods_iter_find_last() function for position the iterator at the last
+ * instance of the specified key.
  *
  * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
  * the object reference and associated key.
@@ -593,6 +599,40 @@ void ods_iter_delete(ods_iter_t iter);
  * \returns ENOENT The key was not found
  */
 int ods_iter_find(ods_iter_t iter, ods_key_t key);
+
+/**
+ * \brief Position an iterator at the first instance of the specified key.
+ *
+ * Positions the iterator's cursor at the first object object with the specified
+ * key. If there are duplicate keys, this function ensures that the
+ * cursor is positioned at the first instance.
+ *
+ * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
+ * the object reference and associated key.
+ *
+ * \param iter	The iterator handle
+ * \param key	The key for the search
+ * \returns 0 Success
+ * \returns ENOENT The key was not found
+ */
+int ods_iter_find_first(ods_iter_t iter, ods_key_t key);
+
+/**
+ * \brief Position an iterator at the last instance of the specified key.
+ *
+ * Positions the iterator's cursor at the last object with the specified
+ * key. This function is useful when there are duplicate keys in the
+ * index and the application wishes to iterate backwards.
+ *
+ * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
+ * the object reference and associated key.
+ *
+ * \param iter	The iterator handle
+ * \param key	The key for the search
+ * \returns 0 Success
+ * \returns ENOENT The key was not found
+ */
+int ods_iter_find_last(ods_iter_t iter, ods_key_t key);
 
 /**
  * \brief Set the iterator cursor position

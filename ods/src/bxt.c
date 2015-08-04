@@ -244,7 +244,7 @@ ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 	return n;
 }
 
-static ods_obj_t rec_find(bxt_t t, ods_key_t key)
+static ods_obj_t rec_find(bxt_t t, ods_key_t key, int first)
 {
 	int i;
 	int rc;
@@ -254,7 +254,12 @@ static ods_obj_t rec_find(bxt_t t, ods_key_t key)
 	if (!leaf)
 		return NULL;
 	for (i = 0; i < NODE(leaf)->count; i++) {
-		rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
+		ods_ref_t ref;
+		if (first)
+			ref = L_ENT(leaf,i).head_ref;
+		else
+			ref = L_ENT(leaf,i).tail_ref;
+		rec = ods_ref_as_obj(t->ods, ref);
 		entry_key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 		rc = t->comparator(key, entry_key);
 		ods_obj_put(entry_key);
@@ -274,7 +279,7 @@ static int bxt_find(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
 {
 	int i;
 	bxt_t t = idx->priv;
-	ods_obj_t rec = rec_find(t, key);
+	ods_obj_t rec = rec_find(t, key, 1);
 	if (!rec)
 		return ENOENT;
 	*ref = REC(rec)->obj_ref;
@@ -286,7 +291,7 @@ static int bxt_update(ods_idx_t idx, ods_key_t key, ods_ref_t ref)
 {
 	int i;
 	bxt_t t = idx->priv;
-	ods_obj_t rec = rec_find(t, key);
+	ods_obj_t rec = rec_find(t, key, 1);
 	if (!rec)
 		return ENOENT;
 	REC(rec)->obj_ref = ref;
@@ -299,6 +304,7 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 {
 	int i;
 	ods_ref_t tail_ref;
+	ods_ref_t head_ref;
 	bxt_t t = idx->priv;
 	ods_obj_t leaf = leaf_find(t, key);
 	ods_obj_t rec = NULL;
@@ -306,9 +312,10 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 		return 0;
 	for (i = 0; i < NODE(leaf)->count; i++) {
 		tail_ref = L_ENT(leaf,i).tail_ref;
+		head_ref = L_ENT(leaf,i).head_ref;
 		if (rec)
 			ods_obj_put(rec);
-		rec = ods_ref_as_obj(t->ods, tail_ref);
+		rec = ods_ref_as_obj(t->ods, head_ref);
 		ods_key_t entry_key =
 			ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 		int rc = t->comparator(key, entry_key);
@@ -318,7 +325,14 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 	}
 	/* Our LUB is the first record in the right sibling */
 	ods_obj_put(leaf);
-	rec = ods_ref_as_obj(t->ods, REC(rec)->next_ref);
+	if (tail_ref != head_ref) {
+		ods_obj_put(rec);
+		rec = ods_ref_as_obj(t->ods, tail_ref);
+		assert(rec);
+	}
+	ods_ref_t next_ref = REC(rec)->next_ref;
+	ods_obj_put(rec);
+	rec = ods_ref_as_obj(t->ods, next_ref);
 	return rec;
  found:
 	if (flags & ODS_ITER_F_UNIQUE) {
@@ -352,7 +366,7 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
 		goto out;
 
 	for (i = NODE(leaf)->count - 1; i >= 0; i--) {
-		rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).tail_ref);
+		rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
 		ods_key_t entry_key =
 			ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 		int rc = t->comparator(key, entry_key);
@@ -1541,6 +1555,9 @@ static ods_iter_t bxt_iter_new(ods_idx_t idx)
 
 static void bxt_iter_delete(ods_iter_t i)
 {
+	bxt_iter_t bxi = (bxt_iter_t)i;
+	if (bxi->rec)
+		ods_obj_put(bxi->rec);
 	free(i);
 }
 
@@ -1667,6 +1684,51 @@ static ods_ref_t bxt_iter_ref(ods_iter_t oi)
 	if (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))
 		return _iter_ref(i);
 	return _iter_ref_unique(i);
+}
+
+static int _iter_find_dup(ods_iter_t oi, ods_key_t key, int first)
+{
+	bxt_iter_t iter = (bxt_iter_t)oi;
+	bxt_t t = iter->iter.idx->priv;
+	ods_obj_t leaf = leaf_find(t, key);
+	ods_ref_t ref;
+	int found;
+	int i;
+
+	if (iter->rec) {
+		ods_obj_put(iter->rec);
+		iter->rec = NULL;
+	}
+	if (!leaf)
+		return ENOENT;
+
+	if (oi->flags & ODS_ITER_F_UNIQUE)
+		return EINVAL;
+
+	assert(NODE(leaf)->is_leaf);
+	i = find_key_idx(t, leaf, key, &found);
+	if (!found) {
+		ods_obj_put(leaf);
+		return ENOENT;
+	}
+	if (first)
+		ref = L_ENT(leaf,i).head_ref;
+	else
+		ref = L_ENT(leaf,i).tail_ref;
+	iter->rec = ods_ref_as_obj(t->ods, ref);
+	ods_obj_put(leaf);
+	iter->ent = i;
+	return 0;
+}
+
+static int bxt_iter_find_first(ods_iter_t oi, ods_key_t key)
+{
+	return _iter_find_dup(oi, key, 1);
+}
+
+static int bxt_iter_find_last(ods_iter_t oi, ods_key_t key)
+{
+	return _iter_find_dup(oi, key, 0);
 }
 
 static int bxt_iter_find(ods_iter_t oi, ods_key_t key)
@@ -1885,6 +1947,8 @@ static struct ods_idx_provider bxt_provider = {
 	.iter_find = bxt_iter_find,
 	.iter_find_lub = bxt_iter_find_lub,
 	.iter_find_glb = bxt_iter_find_glb,
+	.iter_find_first = bxt_iter_find_first,
+	.iter_find_last = bxt_iter_find_last,
 	.iter_begin = bxt_iter_begin,
 	.iter_end = bxt_iter_end,
 	.iter_next = bxt_iter_next,

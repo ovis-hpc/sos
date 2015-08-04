@@ -380,7 +380,7 @@ int sos_index_new(sos_t sos, const char *name,
 		  const char *idx_type, const char *key_type, ...);
 sos_index_t sos_index_open(sos_t sos, const char *name);
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
-sos_obj_t sos_index_obj_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
+int sos_index_obj_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
 sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
@@ -443,6 +443,7 @@ int sos_index_close(sos_index_t index, sos_commit_t flags);
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
 int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
 const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key);
+sos_key_t sos_attr_key_new(sos_attr_t attr, size_t len);
 int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
 int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b);
 

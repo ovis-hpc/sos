@@ -328,6 +328,16 @@ int ods_iter_find(ods_iter_t iter, ods_key_t key)
 	return iter->idx->idx_class->prv->iter_find(iter, key);
 }
 
+int ods_iter_find_first(ods_iter_t iter, ods_key_t key)
+{
+	return iter->idx->idx_class->prv->iter_find_first(iter, key);
+}
+
+int ods_iter_find_last(ods_iter_t iter, ods_key_t key)
+{
+	return iter->idx->idx_class->prv->iter_find_last(iter, key);
+}
+
 int ods_iter_find_lub(ods_iter_t iter, ods_key_t key)
 {
 	return iter->idx->idx_class->prv->iter_find_lub(iter, key);

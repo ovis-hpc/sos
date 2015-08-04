@@ -193,7 +193,7 @@ sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr)
 /**
  * \brief Initialize a value with an object's attribute data
  *
- * \param value Pointer to the value to be initialized
+ * \param val Pointer to the value to be initialized
  * \param obj The object handle
  * \param attr The attribute handle
  * \retval The value handle
@@ -227,7 +227,7 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
  * Set the value from an untyped void buffer. If the buflen is too
  * large to fit, only sos_value_size() bytes will be written.
  *
- * \param value  The value handle
+ * \param val    The value handle
  * \param buf    The buffer containing the data
  * \param buflen The number of bytes to write from the buffer
  * \retval The number of bytes written
@@ -310,7 +310,7 @@ sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id)
 /**
  * \brief Format a value as a string
  *
- * \param value The value handle
+ * \param v   The value handle
  * \param str Pointer to the string to receive the formatted value
  * \param len The size of the string in bytes.
  * \returns A pointer to the str argument or NULL if there was a

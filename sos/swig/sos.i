@@ -175,7 +175,7 @@ union sos_array_element_u {
 union sos_timestamp_u {
 	uint64_t time;
 	struct sos_timestamp_s {
-		uint32_t nsecs;	/* NB: presumes LE byte order for comparison order */
+		uint32_t usecs;	/* NB: presumes LE byte order for comparison order */
 		uint32_t secs;
 	} fine;
 };
@@ -315,6 +315,7 @@ const char *sos_value_to_str(sos_value_t value, char *str, size_t len);
 int sos_value_from_str(sos_value_t value, const char* str, char **endptr);
 
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
+sos_key_t sos_attr_key_new(sos_attr_t attr, size_t size);
 int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
 %newobject sos_attr_key_to_str;
 const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key);
@@ -365,6 +366,8 @@ uint64_t sos_iter_dups(sos_iter_t iter);
 void sos_iter_free(sos_iter_t iter);
 int sos_iter_key_cmp(sos_iter_t iter, sos_key_t other);
 int sos_iter_find(sos_iter_t iter, sos_key_t key);
+int sos_iter_find_first(sos_iter_t iter, sos_key_t key);
+int sos_iter_find_last(sos_iter_t iter, sos_key_t key);
 int sos_iter_inf(sos_iter_t i, sos_key_t key);
 int sos_iter_sup(sos_iter_t i, sos_key_t key);
 int sos_iter_next(sos_iter_t iter);

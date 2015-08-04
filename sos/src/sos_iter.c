@@ -144,7 +144,7 @@ int sos_iter_flags_set(sos_iter_t iter, sos_iter_flags_t flags)
 /**
  * \brief Get the iterator behavior flags
  *
- * \param i The iterator
+ * \param iter The iterator
  * \retval The sos_iter_flags_t for the iterator
  */
 sos_iter_flags_t sos_iter_flags_get(sos_iter_t iter)
@@ -154,6 +154,7 @@ sos_iter_flags_t sos_iter_flags_get(sos_iter_t iter)
 
 /**
  * \brief Return the number of positions in the iterator
+ * \param iter The iterator handle
  * \returns The cardinality of the iterator
  */
 uint64_t sos_iter_card(sos_iter_t iter)
@@ -314,6 +315,9 @@ int sos_iter_end(sos_iter_t i)
  * Position the iterator at the object whose key is the least
  * upper bound of the specified key.
  *
+ * If the supremum is a duplicate key, the cursor is positioned at
+ * the first instance of the key.
+ *
  * \param i Pointer to the iterator
  * \param key The key.
  *
@@ -330,6 +334,9 @@ int sos_iter_sup(sos_iter_t i, sos_key_t key)
  *
  * Position the iterator at the object whose key is the greatest
  * lower bound of the specified key.
+ *
+ * If the infininum is a duplicate key, the cursor is positioned at
+ * the first instance of the key.
  *
  * \param i Pointer to the iterator
  * \param key The key.
@@ -371,6 +378,9 @@ int sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
 /**
  * \brief Position the iterator at the specified key
  *
+ * If the index contains duplicate keys, the iterator will be
+ * positioned at the first instance of the specified key.
+ *
  * \param iter  Handle for the iterator.
  * \param key   The key for the iterator. The appropriate index will
  *		be searched to find the object that matches the key.
@@ -378,9 +388,39 @@ int sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
  * \retval 0 Iterator is positioned at matching object.
  * \retval ENOENT No matching object was found.
  */
-int sos_iter_find(sos_iter_t i, sos_key_t key)
+int sos_iter_find(sos_iter_t iter, sos_key_t key)
 {
-	return ods_iter_find(i->iter, key);
+	return ods_iter_find(iter->iter, key);
+}
+
+/**
+ * \brief Position the iterator at the first instance of the specified key
+ *
+ * \param iter  Handle for the iterator.
+ * \param key   The key for the iterator. The appropriate index will
+ *		be searched to find the object that matches the key.
+ *
+ * \retval 0 Iterator is positioned at matching object.
+ * \retval ENOENT No matching object was found.
+ */
+int sos_iter_find_first(sos_iter_t iter, sos_key_t key)
+{
+	return ods_iter_find_first(iter->iter, key);
+}
+
+/**
+ * \brief Position the iterator at the last instance of the specified key
+ *
+ * \param iter  Handle for the iterator.
+ * \param key   The key for the iterator. The appropriate index will
+ *		be searched to find the object that matches the key.
+ *
+ * \retval 0 Iterator is positioned at matching object.
+ * \retval ENOENT No matching object was found.
+ */
+int sos_iter_find_last(sos_iter_t iter, sos_key_t key)
+{
+	return ods_iter_find_last(iter->iter, key);
 }
 
 /**
@@ -394,9 +434,9 @@ int sos_iter_find(sos_iter_t i, sos_key_t key)
  * \param iter	The iterator handle
  * \return sos_key_t at the current position
  */
-sos_key_t sos_iter_key(sos_iter_t i)
+sos_key_t sos_iter_key(sos_iter_t iter)
 {
-	return ods_iter_key(i->iter);
+	return ods_iter_key(iter->iter);
 }
 static int lt_fn(sos_value_t obj_value, sos_value_t cond_value)
 {

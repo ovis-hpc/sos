@@ -97,6 +97,25 @@ size_t sos_key_set(sos_key_t key, void *value, size_t sz)
 }
 
 /**
+ * \brief Create a key based on the specified attribute or size
+ *
+ * Create a new SOS key based on the specified attribute. If the size
+ * is specified, the attribute parameter is ignored and the key is
+ * based on the specified size.
+ *
+ * \param attr The attribute handle
+ * \param size The desired key size
+ * \retval A pointer to the new key or NULL if there is an error
+ */
+sos_key_t sos_attr_key_new(sos_attr_t attr, size_t size)
+{
+	if (!size)
+		return sos_key_new(sos_attr_key_size(attr));
+	return sos_key_new(size);
+}
+
+
+/**
  * \brief Set the value of a key from a string
  *
  * \param attr	The attribute handle

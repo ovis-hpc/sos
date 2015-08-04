@@ -123,9 +123,9 @@ int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 	return ods_idx_insert(part->index, key, ods_obj_ref(obj->obj));
 }
 
-sos_obj_t sos_index_obj_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
+int sos_index_obj_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
-	return NULL;
+	return ENOENT;
 }
 
 sos_obj_t sos_index_find(sos_index_t index, sos_key_t key)
