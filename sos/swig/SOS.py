@@ -10,13 +10,13 @@ class Error(Exception):
     def __str__(self):
         return repr(self.value)
 
-class Key:
+class Key(object):
     def __init__(self, attr, size=0):
         self.attr = attr
-        self.key = sos.attr_key_get(attr.attr, size)
+        self.key = sos.sos_attr_key_new(attr.attr, size)
 
     def set(self, key_str):
-        sos.attr_key_set(self.attr.attr, self.key, str(key_str))
+        sos.sos_attr_key_from_str(self.attr.attr, self.key, str(key_str))
 
     def __lt__(self, other):
         rc = sos.sos_key_cmp(self.attr.attr, self.key, other.key)
@@ -58,22 +58,22 @@ class Key:
         sos.sos_key_put(self.key)
 
 class Timestamp:
-    def __init__(self, secs, nsecs):
+    def __init__(self, secs, usecs):
         self.secs = secs
-        self.nsecs = nsecs
+        self.usecs = usecs
     def seconds(self):
         return self.secs
     def nanoseconds(self):
-        return self.nsecs
+        return self.usecs
     def __str__(self):
         t = time.localtime(self.secs)
         return time.strftime('%Y/%m/%d %H:%M:%S', t)
     def __float__(self):
-        return float(self.secs) + float(self.nsecs) / 1.0e9
+        return float(self.secs) + float(self.usecs) / 1.0e9
     def __int__(self):
         return float(self.secs)
 
-class Object:
+class Object(object):
 
     json_fmt = 1
     csv_fmt = 2
@@ -117,7 +117,7 @@ class Object:
                 self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
             elif t == sos.SOS_TYPE_TIMESTAMP:
                 self.__dict__[an_] = Timestamp(v.data.prim.timestamp_.fine.secs,
-                                               v.data.prim.timestamp_.fine.nsecs)
+                                               v.data.prim.timestamp_.fine.usecs)
                 self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
             elif t == sos.SOS_TYPE_BYTE_ARRAY:
                 self.__dict__[an_] = sos.value_as_str(v)
@@ -130,6 +130,9 @@ class Object:
                 self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
             self.values[attr_name] = self.__dict__[an_]
             sos.sos_value_put(v)
+
+    def __getitem__(self, key):
+        return self.values[key]
 
     def key(self, attr_name):
         attr = self.schema.attr(attr_name)
@@ -214,11 +217,14 @@ class Condition:
 class Iterator:
     def __init__(self, iter_, attr):
         self.iter_ = iter_
-        self.attr = attr
+        self.attr_ = attr
         self.pos_ = sos.sos_pos()
 
     def __del__(self):
-        pass
+        sos.sos_iter_free(self.iter_)
+
+    def attr(self):
+        return self.attr_
 
     def begin(self):
         rc = sos.sos_iter_begin(self.iter_)
@@ -298,7 +304,7 @@ class Iterator:
         if rc:
             return ""
         key = sos.sos_iter_key(self.iter_)
-        rv = sos.sos_attr_key_to_str(self.attr.attr, key)
+        rv = sos.sos_attr_key_to_str(self.attr_.attr, key)
         sos.sos_key_put(key)
         return rv;
 
@@ -307,7 +313,7 @@ class Iterator:
         if rc:
             return ""
         key = sos.sos_iter_key(self.iter_)
-        rv = sos.sos_attr_key_to_str(self.attr.attr, key)
+        rv = sos.sos_attr_key_to_str(self.attr_.attr, key)
         sos.sos_key_put(key)
         return rv;
 
@@ -442,10 +448,7 @@ class Attr:
         self.sos_type = sos.sos_attr_type(attr)
         self.schema = schema
         self.has_index = sos.sos_attr_index(self.attr)
-        if self.has_index:
-            self.iter_ = Iterator(sos.sos_attr_iter_new(self.attr), self)
-        else:
-            self.iter_ = None
+        self.iter_ = None
         self.col_width = col_widths[self.sos_type]
         if self.col_width < 0:
             self.col_width = sos.sos_attr_size(self.attr)
@@ -457,6 +460,12 @@ class Attr:
         return sos.sos_attr_size(self.attr)
 
     def iterator(self):
+        if self.iter_:
+            return self.iter_
+        if self.has_index:
+            self.iter_ = Iterator(sos.sos_attr_iter_new(self.attr), self)
+        else:
+            self.iter_ = None
         return self.iter_
 
     def indexed(self):
