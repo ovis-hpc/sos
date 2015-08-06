@@ -19,6 +19,7 @@ urls = (
     '/container', 'SosContainer',
     '/schema', 'SosSchema',
     '/graph', 'SosGraph',
+    '/metric_graph', 'SosGraph2',
     '/directory', 'SosDir',
     )
 
@@ -361,6 +362,32 @@ class SosTable(SosQuery):
         web.header('Content-Type', 'application/json')
         return render.table_json(self.schema().name(), tbl_hdr, rows, self.card)
 
+class SosGraph2:
+    def __init__(self):
+        session.indexName = None
+        session.containerName = None
+        session.pos = None
+        session.recordNo = None
+
+    def GET(self):
+        parms = web.input()
+        if 'container' in parms:
+            container = parms.container
+        if 'job_id' in parms:
+            job_id = parms.job_id
+        if 'metric_name' in parms:
+            metric_name = parms.metric_name
+        if 'start' in parms:
+            start = parms.start
+        if 'end' in parms:
+            end = parms.end
+        if 'duration' in parms:
+            duration = parms.duration
+        else:
+            duration = 3600
+        web.header('Content-Type', 'text/html')
+        return render.metric_graph(container, job_id, metric_name, start, end, duration)
+
 class SosGraph(SosQuery):
     def GET(self):
         rc, msg, obj = self.parse_query()
@@ -419,13 +446,6 @@ class SosGraph(SosQuery):
         minutes = mdates.MinuteLocator()
         seconds = mdates.SecondLocator()
         dateFmt = mdates.DateFormatter("%H")
-        # axis.xaxis.set_major_locator(mdates.MinuteLocator())
-        # axis.xaxis.set_major_formatter(mdates.DateFormatter("%M"))
-        # axis.xaxis.set_minor_locator(mdates.SecondLocator())
-        # axis.xaxis.set_minor_formatter(mdates.DateFormatter("%S"))
-
-
-        # axis.format_xdata = mdates.DateFormatter("%H:%M:%S")
         axis.grid(True)
         figure.autofmt_xdate()
 

@@ -88,7 +88,7 @@ struct Sample {
 };
 #pragma pack()
 
-const char *short_options = "C:ja:b:t:u:V:cdv";
+const char *short_options = "C:D:X:ja:b:tu:V:J:cdv";
 
 struct option long_options[] = {
 	{"container",   required_argument,  0,  'C'},
@@ -96,13 +96,18 @@ struct option long_options[] = {
 	{"after",       required_argument,  0,  'a'},
 	{"before",      required_argument,  0,  'b'},
 	{"by_component",no_argument,        0,  'c'},
+	{"component",   required_argument,  0,  'D'},
 	{"by_job",      no_argument,        0,  'j'},
+	{"job",         required_argument,  0,  'J'},
 	{"diff",        no_argument,        0,  'd'},
 	{"verbose",     no_argument,        0,  'v'},
 	{"view",        required_argument,  0,  'V'},
 	{"bin-width",   required_argument,  0,  'w'},
 	{0,             0,                  0,    0}
 };
+static int verbose = 0;
+static char *job_str = NULL;
+static char *comp_str = NULL;
 
 struct col_s {
 	const char *name;
@@ -265,7 +270,19 @@ void show_by_time(sos_t sos)
 	sos_obj_t job_obj;
 	char str[80];
 	int rc;
-	for (rc = sos_iter_begin(job_iter); !rc; rc = sos_iter_next(job_iter)) {
+	if (comp_str) {
+		SOS_KEY(comp_key);
+		uint64_t comp_id = strtoul(comp_str, NULL, 0);
+		struct Kvs kv = {
+			.primary = comp_id & 0xffffffff,
+			.secondary = comp_id >> 32
+		};
+		sos_key_set(comp_key, &kv, sizeof(kv));
+		rc = sos_iter_inf(job_iter, comp_key);
+	} else {
+		rc = sos_iter_begin(job_iter);
+	}
+	for (; !rc; rc = sos_iter_next(job_iter)) {
 		job_obj = sos_iter_obj(job_iter);
 		sos_key_t key = sos_iter_key(job_iter);
 		struct Kvs *kv = (struct Kvs *)sos_key_value(key);
@@ -302,11 +319,30 @@ void show_by_comp(sos_t sos)
 	printf("%-12s %-12s %-22s %-22s %-12s %-s\n",
 	       "Comp Id", "Job Id", "Start Time", "End Time", "Username", "Job Name");
 	printf("------------ ------------ ---------------------- ---------------------- ------------ --------\n");
-	for (rc = sos_iter_begin(job_iter); !rc; rc = sos_iter_next(job_iter)) {
+	if (comp_str) {
+		SOS_KEY(comp_key);
+		comp_id = strtoul(comp_str, NULL, 0);
+		struct Kvs kv = {
+			.primary = comp_id,
+			.secondary = 0
+		};
+		sos_key_set(comp_key, &kv, sizeof(kv));
+		rc = sos_iter_sup(job_iter, comp_key);
+	} else {
+		rc = sos_iter_begin(job_iter);
+	}
+	for (; !rc; rc = sos_iter_next(job_iter)) {
 		job_obj = sos_iter_obj(job_iter);
 		sos_key_t key = sos_iter_key(job_iter);
 		struct Kvs *kv = (struct Kvs *)sos_key_value(key);
-		comp_id = kv->primary;
+		if (comp_str) {
+			if (comp_id != kv->primary) {
+				sos_obj_put(job_obj);
+				sos_key_put(key);
+				break;
+			}
+		} else
+			comp_id = kv->primary;
 		if (comp_id != last_comp_id) {
 			printf("%12d ", comp_id);
 			last_comp_id = comp_id;
@@ -416,6 +452,7 @@ void show_sample_by_job(sos_t sos)
 	sos_iter_t job_iter;
 	sos_obj_t job_obj;
 	struct Job *job;
+	uint32_t job_id = 0;
 	char str[80];
 	int rc;
 
@@ -439,15 +476,29 @@ void show_sample_by_job(sos_t sos)
 	       "Job Id", "Start Time", "End Time", "Username", "Job Name");
 	printf("------------ ---------------------- "
 	       "---------------------- ------------ --------\n");
-	for (rc = sos_iter_begin(job_iter); !rc; rc = sos_iter_next(job_iter)) {
+	if (!job_str)
+		rc = sos_iter_begin(job_iter);
+	else {
+		job_id = strtoul(job_str, NULL, 0);
+		SOS_KEY(job_key);
+		struct Kvs kvs = { 0, job_id };
+		sos_key_set(job_key, &job_id, sizeof(job_id));
+		rc = sos_iter_sup(job_iter, job_key);
+	}
+	for (; !rc; rc = sos_iter_next(job_iter)) {
 		job_obj = sos_iter_obj(job_iter);
 		job = sos_obj_ptr(job_obj);
+		if (job_id && job_id != job->id) {
+			sos_obj_put(job_obj);
+			break;
+		}
 		printf("%12d ", job->id);
 		printf("%22s ", attr_as_str(job_obj, "StartTime"));
 		printf("%22s ", attr_as_str(job_obj, "EndTime"));
 		printf("%-12s ", attr_as_str(job_obj, "UserName"));
 		printf("%s\n", attr_as_str(job_obj, "JobName"));
-		show_samples(sos, job->id);
+		if (verbose)
+			show_samples(sos, job->id);
 		sos_obj_put(job_obj);
 	}
 	sos_iter_free(job_iter);
@@ -518,18 +569,17 @@ void usage(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-	int verbose = 0;
 	sos_t sos;
 	job_metric_vector_t mvec = NULL;
 	job_metric_flags_t flags = JOB_METRIC_VAL;
 	char *start_str = NULL;
 	char *end_str = NULL;
-	char *job_str = NULL;
 	char *path = NULL;
 	char *uid_str = NULL;
 	int rc, o;
 	int by_time = 0;
 	int by_job = 0;
+	int comp_by_job = 0;
 	int by_comp = 0;
 	size_t buf_count = 0;
 	size_t attr_count = 0;
@@ -541,15 +591,22 @@ int main(int argc, char *argv[])
 		case 't':
 			by_time = 1;
 			verbose = 1;
-			bin_width = strtod(optarg, NULL);
 			break;
 		case 'c':
 			by_comp = 1;
 			verbose = 1;
 			break;
+		case 'D':
+			comp_str = strdup(optarg);
+			break;
+		case 'X':
+			comp_by_job = 1;
+			break;
 		case 'j':
 			by_job = 1;
-			// job_str = strdup(optarg);
+			break;
+		case 'J':
+			job_str = strdup(optarg);
 			break;
 		case 'a':
 			start_str = strdup(optarg);
@@ -585,6 +642,10 @@ int main(int argc, char *argv[])
 		perror("could not open container:");
 		return errno;
 	}
+	if (by_job)
+		show_sample_by_job(sos);
+	if (comp_by_job)
+		show_comp_by_job(sos);
 	if (by_job)
 		show_sample_by_job(sos);
 	if (by_time)
