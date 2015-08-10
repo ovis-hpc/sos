@@ -18,21 +18,21 @@ schema:
         - attribute: Id
           type: uint32
           indexed: true
-        - name: State
+        - attribute: State
           type: uint32
-        - name: Description
+        - attribute: Description
           type: byte_array
-        - name: CabinetId
+        - attribute: CabinetId
           type: uint32
-        - name: 3d_x
+        - attribute: 3d_x
           type: uint32
-        - name: 3d_y
+        - attribute: 3d_y
           type: uint32
-        - name: 3d_z
+        - attribute: 3d_z
           type: uint32
-        - name: 2d_x
+        - attribute: 2d_x
           type: uint32
-        - name: 2d_y
+        - attribute: 2d_y
           type: uint32
 schema:
         - name: Sample
