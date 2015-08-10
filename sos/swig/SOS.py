@@ -214,7 +214,7 @@ class Condition:
     def __str__(self):
         return "{0} {1} {2}".format(self.attr.name(), self.comparator, self.value)
 
-class Iterator:
+class AttrIterator:
     def __init__(self, iter_, attr):
         self.iter_ = iter_
         self.attr_ = attr
@@ -442,6 +442,58 @@ sos_type_name = {
     sos.SOS_TYPE_OBJ_ARRAY : "OBJ_ARRAY",
 }
 
+class Iterator(object):
+    def __init__(self, container, schemaName, attrName, order=None):
+        self.container_ = container.container
+        self.schema_ = sos.sos_schema_by_name(self.container_, schemaName)
+        self.attr_ = sos.sos_schema_attr_by_name(self.schema_, attrName)
+        self.iter_ = sos.sos_attr_iter_new(self.attr_)
+
+    def key_set(self, key, val):
+        sos.sos_attr_key_from_str(self.attr_, key, val)
+
+    def key(self, size=0):
+        return sos.sos_attr_key_new(self.attr_, 0)
+
+    def put(self, obj):
+        sos.sos_obj_put(obj)
+
+    def begin(self):
+        rc = sos.sos_iter_begin(self.iter_)
+        if rc:
+            return None
+        return sos.sos_iter_obj(self.iter_)
+
+    def next(self):
+        rc = sos.sos_iter_next(self.iter_)
+        if rc:
+            return None
+        return sos.sos_iter_obj(self.iter_)
+
+    def prev(self):
+        rc = sos.sos_iter_prev(self.iter_)
+        if rc:
+            return None
+        return sos.sos_iter_obj(self.iter_)
+
+    def end(self):
+        rc = sos.sos_iter_end(self.iter_)
+        if rc:
+            return None
+        return sos.sos_iter_obj(self.iter_)
+
+    def inf(self, key):
+        rc = sos.sos_iter_inf(self.iter_, key)
+        if rc:
+            return None
+        return sos.sos_iter_obj(self.iter_)
+
+    def sup(self, key):
+        rc = sos.sos_iter_sup(self.iter_, key)
+        if rc:
+            return None
+        return sos.sos_iter_obj(self.iter_)
+
 class Attr:
     def __init__(self, attr, schema):
         self.attr = attr
@@ -463,7 +515,7 @@ class Attr:
         if self.iter_:
             return self.iter_
         if self.has_index:
-            self.iter_ = Iterator(sos.sos_attr_iter_new(self.attr), self)
+            self.iter_ = AttrIterator(sos.sos_attr_iter_new(self.attr), self)
         else:
             self.iter_ = None
         return self.iter_
