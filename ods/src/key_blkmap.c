@@ -105,13 +105,6 @@ static const char *to_str(ods_key_t key, char *sbuf)
 	return sbuf;
 }
 
-static uint8_t char_to_num(const char c)
-{
-	if (isdigit(c))
-		return (c - '0');
-	return (toupper(c) - 'A') + 10;
-}
-
 static int from_str(ods_key_t key, const char *str)
 {
 	ods_key_value_t kv = ods_key_value(key);

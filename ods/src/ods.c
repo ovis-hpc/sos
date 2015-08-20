@@ -212,12 +212,15 @@ static int init_obj(int obj_fd)
 	return 0;
 }
 
-int _ods_spin_lock(ods_spin_t spin, int timeout)
+int ods_spin_lock(ods_spin_t spin, int timeout)
 {
 	time_t start = time(NULL);
 	time_t now = time(NULL);
 	while (timeout < 0 || ((now - start) < timeout)) {
-		int rc = ods_atomic_inc(spin->lock_p);
+		int rc;
+		assert(*spin->lock_p >= 0);
+		assert(*spin->lock_p < 100);
+		rc = ods_atomic_inc(spin->lock_p);
 		if (rc == 1)
 			return 0;
 		ods_atomic_dec(spin->lock_p);
@@ -307,6 +310,8 @@ static inline ods_map_t map_get(ods_map_t map)
 
 void show_stackframe()
 {
+	extern size_t backtrace(void *buf, size_t buf_size);
+	extern char **backtrace_symbols(void *buf, size_t buf_size);
 	void *trace[16];
 	char **messages = (char **)NULL;
 	int i, trace_size = 0;
@@ -527,13 +532,14 @@ static ods_obj_t obj_new(ods_t ods)
 
 static void update_dirty(ods_t ods, ods_ref_t ref, size_t size)
 {
+#ifndef __notyet__
+	return;
+#else /* This actually slowed things down */
 	ods_ref_t start;
 	ods_ref_t end;
 	struct rbn *n;
 	ods_dirty_t dirty;
-#if 1
-	return;
-#else
+
 	start = ref & ODS_PAGE_MASK;
 	end = (ref + size + ODS_PAGE_SIZE - 1) & ODS_PAGE_MASK;
 
@@ -643,6 +649,11 @@ ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref)
 ods_ref_t ods_obj_ref(ods_obj_t obj)
 {
 	return (obj ? obj->ref : 0);
+}
+
+ods_t ods_obj_ods(ods_obj_t obj)
+{
+	return (obj ? obj->ods : NULL);
 }
 
 int ods_extend(ods_t ods, size_t sz)
@@ -794,7 +805,6 @@ static int dirty_cmp(void *akey, void *bkey)
 ods_t ods_open(const char *path, ods_perm_t o_perm)
 {
 	char tmp_path[PATH_MAX];
-	va_list argp;
 	struct stat sb;
 	ods_t ods;
 	int obj_fd = -1;
@@ -1151,7 +1161,6 @@ void ods_commit(ods_t ods, int flags)
 {
 	int mflag = (flags ? MS_SYNC : MS_ASYNC);
 	ods_map_t map = NULL;
-	struct rbn *rbn;
 
 	pthread_spin_lock(&ods->lock);
 	if (ods->map)
@@ -1161,7 +1170,8 @@ void ods_commit(ods_t ods, int flags)
 	if (!map)
 		return;
 
-#if 0
+#ifndef __notyet__
+	struct rbn *rbn;
 	while (NULL != (rbn = rbt_min(&ods->dirty_tree))) {
 		ods_dirty_t dirt = container_of(rbn, struct ods_dirty_s, rbn);
 		size_t size = dirt->end - dirt->start;
@@ -1253,7 +1263,6 @@ void ods_ref_delete(ods_t ods, ods_ref_t ref)
  */
 void ods_obj_delete(ods_obj_t obj)
 {
-	uint64_t page;
 	ods_ref_t ref;
 	if (!obj->ods->o_perm) {
 		errno = EPERM;

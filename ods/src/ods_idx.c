@@ -153,16 +153,13 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 
 int ods_idx_create(const char *path, int mode,
 		   const char *type, const char *key,
-		   ...)
+		   const char *args)
 {
-	va_list argp;
 	ods_obj_t obj;
 	struct ods_idx_class *idx_class;
 	struct ods_idx_meta_data *udata;
 	size_t udata_sz;
 	ods_t ods;
-
-	va_start(argp, key);
 
 	/* Get the class that handles this index type/key combination */
 	idx_class = get_idx_class(type, key);
@@ -188,7 +185,7 @@ int ods_idx_create(const char *path, int mode,
 	strcpy(udata->signature, ODS_IDX_SIGNATURE);
 	strcpy(udata->type_name, type);
 	strcpy(udata->key_name, key);
-	errno = idx_class->prv->init(ods, argp);
+	errno = idx_class->prv->init(ods, args);
 	ods_obj_put(obj);
 	ods_close(ods, ODS_COMMIT_ASYNC);
 	errno = 0;
@@ -201,7 +198,6 @@ ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm)
 	ods_idx_t idx;
 	struct ods_idx_class *idx_class;
 	struct ods_idx_meta_data *udata;
-	size_t udata_sz;
 	ods_obj_t obj;
 	idx = calloc(1, sizeof *idx);
 	if (!idx)
@@ -259,40 +255,40 @@ void ods_idx_commit(ods_idx_t idx, int flags)
 	ods_commit(idx->ods, flags);
 }
 
-int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_ref_t obj)
+int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 {
 	if (!idx->o_perm)
 		return EPERM;
-	return idx->idx_class->prv->insert(idx, key, obj);
+	return idx->idx_class->prv->insert(idx, key, data);
 }
 
-int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_ref_t obj)
+int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 {
 	if (!idx->o_perm)
 		return EPERM;
-	return idx->idx_class->prv->update(idx, key, obj);
+	return idx->idx_class->prv->update(idx, key, data);
 }
 
-int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
+int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	if (!idx->o_perm)
 		return EPERM;
-	return idx->idx_class->prv->delete(idx, key, ref);
+	return idx->idx_class->prv->delete(idx, key, data);
 }
 
-int ods_idx_find(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
+int ods_idx_find(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
-	return idx->idx_class->prv->find(idx, key, ref);
+	return idx->idx_class->prv->find(idx, key, data);
 }
 
-int ods_idx_find_lub(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
+int ods_idx_find_lub(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
-	return idx->idx_class->prv->find_lub(idx, key, ref);
+	return idx->idx_class->prv->find_lub(idx, key, data);
 }
 
-int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_ref_t *ref)
+int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
-	return idx->idx_class->prv->find_glb(idx, key, ref);
+	return idx->idx_class->prv->find_glb(idx, key, data);
 }
 
 ods_iter_t ods_iter_new(ods_idx_t idx)
@@ -383,6 +379,12 @@ ods_key_t ods_iter_key(ods_iter_t iter)
 	return iter->idx->idx_class->prv->iter_key(iter);
 }
 
+ods_idx_data_t ods_iter_data(ods_iter_t iter)
+{
+	return iter->idx->idx_class->prv->iter_data(iter);
+}
+
+#if 0
 ods_ref_t ods_iter_ref(ods_iter_t iter)
 {
 	return iter->idx->idx_class->prv->iter_ref(iter);
@@ -393,6 +395,7 @@ ods_obj_t ods_iter_obj(ods_iter_t iter)
 	ods_ref_t ref = iter->idx->idx_class->prv->iter_ref(iter);
 	return ods_ref_as_obj(iter->idx->ods, ref);
 }
+#endif
 
 ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz)
 {
@@ -480,7 +483,7 @@ static void __attribute__ ((constructor)) ods_idx_init(void)
 static void __attribute__ ((destructor)) ods_idx_term(void)
 {
 	struct rbn *rbn;
-	while (rbn = rbt_min(&dylib_tree)) {
+	while ((rbn = rbt_min(&dylib_tree))) {
 		struct ods_idx_class *class =
 			container_of(rbn, struct ods_idx_class, rb_node);
 		rbt_del(&dylib_tree, rbn);

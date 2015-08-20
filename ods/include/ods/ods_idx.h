@@ -63,19 +63,33 @@ typedef struct ods_pos_s {
 extern int ods_debug;
 
 #define ODS_IDX_SIGNATURE	"ODSIDX00"
+#define ODS_IDX_BXTREE		"BXTREE"
 #define ODS_IDX_BPTREE		"BPTREE"
 #define ODS_IDX_RADIXTREE	"RADIXTREE"
 #define ODS_IDX_RBTREE		"RBTREE"
+
+#define ODS_IDX_DATA_LEN 16
+typedef struct ods_idx_data_s {
+	unsigned char bytes[ODS_IDX_DATA_LEN];
+} ods_idx_data_t;
 
 /**
  * \brief Create an object index
  *
  * An index implements a persistent key/value store in an ODS data
- * store. The key is a generic ods_key_t and the value is an
- * ods_ref_t in the associated ODS object store. An ODS ods_ref_t can
- * be transformed back and forth between references and memory
- * pointers using the ods_ods_ref_to_ptr() and ods_obj_ptr_to_ref()
- * functions respectively.
+ * store. The key is a generic ods_key_t and the value is 16B of
+ * arbitrary data represented by the ods_idx_data_t type. In order to
+ * support a common usage model in which the value data is used to
+ * refer to an ODS object in an ODS Object STore, the union includes
+ * an ods_idx_ref_s structure that contains <tt>user_data</tt> and
+ * an <tt>obj_ref</tt> fields. The <tt>obj_ref</tt> field is an
+ * ods_ref_t which can be transformed back and forth between
+ * references and memory pointers  using the ods_ods_ref_to_ptr() and
+ * ods_obj_ptr_to_ref() functions. The <tt>user_data</tt> field can be
+ * used for whatever purpose the application chooses. It should be
+ * noted that the value field has no functional implication in the
+ * index itself, it can be used in whatever way the application sees
+ * fit.
  *
  * The 'type' parameter is the name of the type of index,
  * e.g. "BPTREE" or "RADIXTREE". This parameter identifies the
@@ -105,25 +119,22 @@ extern int ods_debug;
  * \param mode	The file mode permission flags
  * \param type	The type of the index
  * \param key	The type of the key
- * \param ... Optional index type specific parameters
- *
+ * \param args  Optional(can be NULL) comma separated attr=value
+ *              arguments to index provider
  * \return 0	The index was successfully create. Use ods_idx_open()
  *		to access the index.
  * \return !0	An errno indicating the reason for failure.
  */
+#define ODS_IDX_ARGS_LEN 256
 int ods_idx_create(const char *path, int mode,
 		   const char *type, const char *key,
-		   ...);
+		   const char *args);
 
 /**
  * \brief Open an object index
  *
  * An index implements a persistent key/value store in an ODS data
- * store. The key is a generic ods_key_t and the value is an
- * ods_ref_t in the associated ODS object store. An ODS ods_ref_t can
- * be transformed back and forth between references and memory
- * pointers using the ods_ods_ref_to_ptr() and ods_obj_ptr_to_ref()
- * functions respectively.
+ * store.
  *
  * \param path	The path to the ODS store
  * \param o_perm The requested read/write permissions
@@ -225,7 +236,7 @@ typedef ods_obj_t ods_key_t;
 /**
  * \brief Create an key in the ODS store
  *
- * A key is just a an object with a set of convenience routines to
+ * A key is a counted byte array with a set of convenience routines to
  * help with getting and setting it's value based on the key type used
  * on an index.
  *
@@ -246,6 +257,14 @@ ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz);
 	}					\
 	k;					\
 })
+
+/**
+ * \brief Copy the contents of one key to another
+ *
+ * \param dst The destination key
+ * \param src The source key
+ */
+void ods_key_copy(ods_key_t dst, ods_key_t src);
 
 /**
  * \brief Define an ODS stack key
@@ -441,7 +460,7 @@ typedef int (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
  * \retval EINVAL	The idx specified is invalid or the obj
  *			specified is 0
  */
-int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_ref_t obj);
+int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data);
 
 /**
  * \brief Update the object associated with a key in the index
@@ -463,7 +482,7 @@ int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_ref_t obj);
  * \retval EINVAL	The idx specified is invalid or the obj
  *			specified is 0
  */
-int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_ref_t obj);
+int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t obj);
 
 /**
  * \brief Delete an object and associated key from the index
@@ -474,29 +493,29 @@ int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_ref_t obj);
  *
  * \param idx	The index handle
  * \param key	The key
- * \param ref	Pointer to the reference
+ * \param data	Pointer to the data
  *
  * \retval 0	The key was found and removed
  * \retval ENOENT	The key was not found
  */
-int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
+int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 
 /**
  * \brief Find the object associated with the specified key
  *
  * Search the index for the specified key and return the associated
- * ods_ref_t. If there are duplicate objects in the index with the
+ * ods_idx_data_t. If there are duplicate objects in the index with the
  * same key, the first object with the matching key is returned. See
- * the sos_iter_find_first() and sos_iter_find_last() functions for
+ * the ods_iter_find_first() and ods_iter_find_last() functions for
  * information on managing duplicates.
  *
  * \param idx	The index handle
  * \param key	The key
- * \param ref	Pointer to the reference
+ * \param data	Pointer to the data
  * \retval 0	The key was found
  * \retval ENOENT	The key was not found
  */
-int ods_idx_find(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
+int ods_idx_find(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 
 /**
  * \brief Find the least upper bound of the specified key
@@ -505,12 +524,12 @@ int ods_idx_find(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
  *
  * \param idx	The index handle
  * \param key	The key
- * \param ref	Pointer to the reference
+ * \param data	Pointer to the data
  *
  * \retval 0	The LUB was found and placed in ref
  * \retval ENOENT	There is no least-upper-bound
  */
-int ods_idx_find_lub(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
+int ods_idx_find_lub(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 
 /**
  * \brief Find the greatest lower bound of the specified key
@@ -519,12 +538,12 @@ int ods_idx_find_lub(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
  *
  * \param idx	The index handle
  * \param key	The key
- * \param ref	Pointer to the reference
+ * \param data	Pointer to the data
  *
  * \retval 0	The GLB was placed in \c ref
  * \retval ENOENT	There is no least-upper-bound
  */
-int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_ref_t *ref);
+int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 
 
 typedef struct ods_idx_stat_s {
@@ -765,22 +784,13 @@ int ods_iter_prev(ods_iter_t iter);
 ods_key_t ods_iter_key(ods_iter_t iter);
 
 /**
- * \brief Returns the object reference associated with current cursor position
+ * \brief Returns the data associated with current cursor position
  *
  * \param iter	The iterator handle
  * \return !0	The object reference
  * \return 0	The cursor is not positioned at an object
  */
-ods_ref_t ods_iter_ref(ods_iter_t iter);
-
-/**
- * \brief Returns the object associated with current cursor position
- *
- * \param iter	The iterator handle
- * \return !0	The object pointer
- * \return 0	The cursor is not positioned at an object
- */
-ods_obj_t ods_iter_obj(ods_iter_t iter);
+ods_idx_data_t ods_iter_data(ods_iter_t iter);
 
 /**
  * \brief Print a textual representation of the index

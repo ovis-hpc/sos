@@ -270,6 +270,14 @@ extern void ods_ref_delete(ods_t ods, ods_ref_t ref);
 extern void ods_obj_put(ods_obj_t obj);
 
 /**
+ * \brief Return the ODS in which an object resides
+ *
+ * \param obj The object handle
+ * \retval The ODS handle
+ */
+extern ods_t ods_obj_ods(ods_obj_t obj);
+
+/**
  * \brief Extend the object store by the specified amount
  *
  * This function increases the size of the object store by the
@@ -426,30 +434,16 @@ int ods_obj_valid(ods_t ods, ods_obj_t obj);
 
 typedef struct ods_spin_s {
 	ods_atomic_t *lock_p;
-	struct spin_owner {
-		time_t time;
-		int line_no;
-		const char *func;
-		pthread_t thread;
-	} owner;
 } *ods_spin_t;
+#if 0
 #define ODS_SPIN_DECL(_name_, _lock_p_)					\
 	struct ods_spin_s ods_spin_s ## _name_ = { .lock_p = _lock_p_ }; \
 	ods_spin_t _name_ = &ods_spin_s ## _name_;
+#endif
+#define ods_spin_init(_name_, _lock_p_)	(_name_)->lock_p = (_lock_p_)
 
-#define ods_spin_init(_name_, _lock_p_)	(_name_)->lock_p = &(_lock_p_)
+int ods_spin_lock(ods_spin_t spin, int timeout);
 
-int _ods_spin_lock(ods_spin_t s, int timeout);
-#define ods_spin_lock(_s_, _t_) ({			\
-	int rc = _ods_spin_lock(_s_, _t_);		\
-	if (!rc) {					\
-		(_s_)->owner.time = time(NULL);		\
-		(_s_)->owner.line_no = __LINE__;	\
-		(_s_)->owner.func = __func__;		\
-		(_s_)->owner.thread = pthread_self();	\
-	}						\
-	(rc);						\
-})
 void ods_spin_unlock(ods_spin_t s);
 void ods_spin_put(ods_spin_t spin);
 void ods_info(ods_t ods, FILE *fp);

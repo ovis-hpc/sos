@@ -55,6 +55,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <sos/sos.h>
 #include "sos_priv.h"
 
@@ -95,7 +96,6 @@ void option_handler(sos_t sos, sos_config_t config)
 
 int __sos_config_init(sos_t sos)
 {
-	int rc;
 	sos_config_iter_t iter = sos_config_iter_new(sos->path);
 	if (!iter)
 		return ENOMEM;
@@ -142,11 +142,12 @@ static void normalize_option_name(char *name)
  *     When a partition must grow to accomodate new objects, this
  *     value specifies how much space to add.
  */
-int sos_container_config(const char *path, const char *opt_name, const char *opt_value)
+int sos_container_config_set(const char *path, const char *opt_name, const char *opt_value)
 {
 	char tmp_path[PATH_MAX];
 	int rc;
 	ODS_KEY(key);
+	sos_obj_ref_t obj_ref;
 	char *option_name;
 	ods_key_t config_key;
 	size_t key_len;
@@ -166,13 +167,13 @@ int sos_container_config(const char *path, const char *opt_name, const char *opt
 	normalize_option_name(option_name);
 
 	/* Open the configuration ODS */
-	sprintf(tmp_path, "%s/config", path);
+	sprintf(tmp_path, "%s/.__config", path);
 	ods_t config_ods = ods_open(tmp_path, ODS_PERM_RW);
 	if (!config_ods)
 		goto err_0;
 
 	/* Open the configuration object index */
-	sprintf(tmp_path, "%s/config_idx", path);
+	sprintf(tmp_path, "%s/.__config_idx", path);
 	ods_idx_t config_idx = ods_idx_open(tmp_path, ODS_PERM_RW);
 	if (!config_idx)
 		goto err_1;
@@ -195,14 +196,15 @@ int sos_container_config(const char *path, const char *opt_name, const char *opt
 	if (!rc) {
 		/* Delete the previous object */
 		ods_key_t k = ods_iter_key(iter);
-		ods_ref_t ref;
-		ods_idx_delete(config_idx, k, &ref);
-		ods_ref_delete(config_ods, ref);
+		ods_idx_delete(config_idx, k, &obj_ref.idx_data);
+		ods_ref_delete(config_ods, obj_ref.ref.obj);
 	}
 	config = SOS_CONFIG(obj);
 	strcpy(config->name, option_name);
 	strcpy(config->value, opt_value);
-	rc = ods_idx_insert(config_idx, config_key, ods_obj_ref(obj));
+	obj_ref.ref.ods = 0;
+	obj_ref.ref.obj = ods_obj_ref(obj);
+	rc = ods_idx_insert(config_idx, config_key, obj_ref.idx_data);
 	if (rc)
 		goto err_5;
 	ods_iter_delete(iter);
@@ -225,7 +227,74 @@ int sos_container_config(const char *path, const char *opt_name, const char *opt
  err_1:
 	ods_close(config_ods, ODS_COMMIT_SYNC);
  err_0:
+	free(option_name);
 	return errno;
+}
+
+char *sos_container_config_get(const char *path, const char *opt_name)
+{
+	char tmp_path[PATH_MAX];
+	int rc;
+	char *option_name;
+	char *option_value;
+	size_t key_len;
+	sos_config_t config;
+	ods_obj_t obj;
+	SOS_KEY(config_key);
+	sos_obj_ref_t config_ref;
+
+	if (!opt_name)
+		return NULL;
+	option_name = strdup(opt_name);
+	if (!option_name)
+		return NULL;
+
+	key_len = strlen(option_name) + 1;
+	if (key_len > SOS_CONFIG_NAME_LEN)
+		goto err_0;
+	normalize_option_name(option_name);
+
+	/* Open the configuration ODS */
+	sprintf(tmp_path, "%s/.__config", path);
+	ods_t config_ods = ods_open(tmp_path, ODS_PERM_RW);
+	if (!config_ods)
+		goto err_0;
+
+	/* Open the configuration object index */
+	sprintf(tmp_path, "%s/.__config_idx", path);
+	ods_idx_t config_idx = ods_idx_open(tmp_path, ODS_PERM_RW);
+	if (!config_idx)
+		goto err_1;
+
+	ods_key_set(config_key, option_name, key_len);
+	rc = ods_idx_find(config_idx, config_key, &config_ref.idx_data);
+	if (rc)
+		goto err_2;
+
+	obj = ods_ref_as_obj(config_ods, config_ref.ref.obj);
+	if (!obj)
+		goto err_2;
+
+	config = SOS_CONFIG(obj);
+	option_value = strdup(config->value);
+	if (!option_value)
+		goto err_3;
+
+	ods_obj_put(obj);
+	ods_close(config_ods, ODS_COMMIT_ASYNC);
+	ods_idx_close(config_idx, ODS_COMMIT_ASYNC);
+	free(option_name);
+	return option_value;
+
+ err_3:
+	ods_obj_put(obj);
+ err_2:
+	ods_idx_close(config_idx, ODS_COMMIT_SYNC);
+ err_1:
+	ods_close(config_ods, ODS_COMMIT_SYNC);
+ err_0:
+	free(option_name);
+	return NULL;
 }
 
 int handle_partition_enable(sos_t sos, sos_config_t config)
@@ -304,20 +373,19 @@ int handle_partition_extend(sos_t sos, sos_config_t config)
 
 sos_config_iter_t sos_config_iter_new(const char *path)
 {
-	int rc;
 	char tmp_path[PATH_MAX];
 	sos_config_iter_t iter = calloc(1, sizeof *iter);
 	if (!iter)
 		return NULL;
 
 	/* Open the configuration ODS */
-	sprintf(tmp_path, "%s/config", path);
+	sprintf(tmp_path, "%s/.__config", path);
 	iter->config_ods = ods_open(tmp_path, ODS_PERM_RW);
 	if (!iter->config_ods)
 		goto err_0;
 
 	/* Open the configuration object index */
-	sprintf(tmp_path, "%s/config_idx", path);
+	sprintf(tmp_path, "%s/.__config_idx", path);
 	iter->config_idx = ods_idx_open(tmp_path, ODS_PERM_RW);
 	if (!iter->config_idx)
 		goto err_1;
@@ -344,10 +412,11 @@ sos_config_t sos_config_first(sos_config_iter_t iter)
 	rc = ods_iter_begin(iter->iter);
 	if (rc)
 		return NULL;
-	ods_ref_t obj_ref = ods_iter_ref(iter->iter);
-	if (!obj_ref)
+	sos_obj_ref_t obj_ref;
+	obj_ref.idx_data = ods_iter_data(iter->iter);
+	if (!obj_ref.ref.obj)
 		return NULL;
-	iter->obj = ods_ref_as_obj(iter->config_ods, obj_ref);
+	iter->obj = ods_ref_as_obj(iter->config_ods, obj_ref.ref.obj);
 	return SOS_CONFIG(iter->obj);
 }
 
@@ -361,10 +430,11 @@ sos_config_t sos_config_next(sos_config_iter_t iter)
 	rc = ods_iter_next(iter->iter);
 	if (rc)
 		return NULL;
-	ods_ref_t obj_ref = ods_iter_ref(iter->iter);
-	if (!obj_ref)
+	sos_obj_ref_t obj_ref;
+	obj_ref.idx_data = ods_iter_data(iter->iter);
+	if (!obj_ref.ref.obj)
 		return NULL;
-	iter->obj = ods_ref_as_obj(iter->config_ods, obj_ref);
+	iter->obj = ods_ref_as_obj(iter->config_ods, obj_ref.ref.obj);
 	return SOS_CONFIG(iter->obj);
 }
 

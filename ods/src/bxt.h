@@ -40,7 +40,7 @@ typedef struct bxn_entry {
 
 typedef struct bxn_record {
 	ods_ref_t key_ref;	/* The key */
-	ods_ref_t obj_ref;	/* The object */
+	ods_idx_data_t value;	/* The value */
 	ods_ref_t next_ref;	/* The next record */
 	ods_ref_t prev_ref;	/* The previous record */
 } *bxn_record_t;

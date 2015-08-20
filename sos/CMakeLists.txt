@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 2.6)
 project(sos)
 
 #cmake .. -DCMAKE_BUILD_TYPE=DEBUG
-SET(CMAKE_CXX_FLAGS_DEBUG "-pg -ggdb -Wall -Werror -std=c++0x")
+SET(CMAKE_C_FLAGS_DEBUG "-g -Wall -Werror")
+SET(CMAKE_CXX_FLAGS_DEBUG "-g -Wall -Werror -std=c++0x")
 #cmake .. -DCMAKE_BUILD_TYPE=RELEASE
 SET(CMAKE_CXX_FLAGS_RELEASE "-g -Wall -Werror -std=c++0x -O3 -fpic -mssse3 -mfpmath=sse -march=core2")
 

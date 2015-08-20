@@ -55,6 +55,7 @@
  */
 
 #include <sys/types.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <errno.h>
@@ -76,35 +77,15 @@ static uint32_t type_sizes[] = {
 	[SOS_TYPE_LONG_DOUBLE] = 16,
 	[SOS_TYPE_TIMESTAMP] = 8,
 	[SOS_TYPE_OBJ] = 16,
-	[SOS_TYPE_BYTE_ARRAY] = 8,
-	[SOS_TYPE_INT32_ARRAY] = 8,
-	[SOS_TYPE_INT64_ARRAY] = 8,
-	[SOS_TYPE_UINT32_ARRAY] = 8,
-	[SOS_TYPE_UINT64_ARRAY] = 8,
-	[SOS_TYPE_FLOAT_ARRAY] = 8,
-	[SOS_TYPE_DOUBLE_ARRAY] = 8,
-	[SOS_TYPE_LONG_DOUBLE_ARRAY] = 8,
-	[SOS_TYPE_OBJ_ARRAY] = 8,
-};
-
-static uint32_t element_sizes[] = {
-	[SOS_TYPE_INT32] = 4,
-	[SOS_TYPE_INT64] = 8,
-	[SOS_TYPE_UINT32] = 4,
-	[SOS_TYPE_UINT64] = 8,
-	[SOS_TYPE_FLOAT] = 4,
-	[SOS_TYPE_DOUBLE] = 8,
-	[SOS_TYPE_LONG_DOUBLE] = 16,
-	[SOS_TYPE_OBJ] = 16,
-	[SOS_TYPE_BYTE_ARRAY] = 1,
-	[SOS_TYPE_INT32_ARRAY] = 4,
-	[SOS_TYPE_INT64_ARRAY] = 8,
-	[SOS_TYPE_UINT32_ARRAY] = 4,
-	[SOS_TYPE_UINT64_ARRAY] = 8,
-	[SOS_TYPE_FLOAT_ARRAY] = 4,
-	[SOS_TYPE_DOUBLE_ARRAY] = 8,
+	[SOS_TYPE_BYTE_ARRAY] = 16,
+	[SOS_TYPE_INT32_ARRAY] = 16,
+	[SOS_TYPE_INT64_ARRAY] = 16,
+	[SOS_TYPE_UINT32_ARRAY] = 16,
+	[SOS_TYPE_UINT64_ARRAY] = 16,
+	[SOS_TYPE_FLOAT_ARRAY] = 16,
+	[SOS_TYPE_DOUBLE_ARRAY] = 16,
 	[SOS_TYPE_LONG_DOUBLE_ARRAY] = 16,
-	[SOS_TYPE_OBJ_ARRAY] = 8,
+	[SOS_TYPE_OBJ_ARRAY] = 16,
 };
 
 /**
@@ -672,7 +653,6 @@ size_t sos_array_count(sos_value_t val)
  */
 ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock)
 {
-	int rc;
 	ods_obj_t ods_obj;
 	size_t extend_size = (size < SOS_ODS_EXTEND_SZ ? SOS_ODS_EXTEND_SZ : size << 4);
 	pthread_mutex_lock(lock);
@@ -700,9 +680,9 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 	size_t size =
 		sizeof(struct sos_obj_data_s)
 		+ sizeof(uint32_t) /* element count */
-		+ (count * schema->data->obj_sz); /* array elements */
+		+ (count * schema->data->el_sz); /* array elements */
 
-	array_obj = __sos_obj_new(obj->part->obj_ods, size, &obj->sos->lock);
+	array_obj = __sos_obj_new(ods_obj_ods(obj->obj), size, &obj->sos->lock);
 	if (!array_obj)
 		goto err;
 
@@ -711,8 +691,13 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 
 	struct sos_array_s *array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
 	array->count = count;
-	val->data->prim.ref_ = ods_obj_ref(array_obj);
-	val->obj = __sos_init_obj(obj->sos, schema, array_obj, obj->part);
+
+	/* Update the array reference in the containing object */
+	val->data->prim.ref_.ref.ods = obj->obj_ref.ref.ods;
+	val->data->prim.ref_.ref.obj = ods_obj_ref(array_obj);
+
+	/* Point the value at the new array */
+	val->obj = __sos_init_obj(obj->sos, schema, array_obj, val->data->prim.ref_);
 	if (!val->obj)
 		goto err;
 	val->data = (sos_value_data_t)&SOS_OBJ(array_obj)->data[0];
@@ -726,7 +711,7 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
 {
 	ods_obj_t array_obj;
 	sos_schema_t schema;
-	sos_obj_part_t part;
+	sos_part_t part;
 	size_t size;
 
 	schema = __sos_get_ischema(type);
@@ -734,7 +719,7 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
 		return NULL;
 	size = sizeof(struct sos_obj_data_s)
 		+ sizeof(uint32_t) /* element count */
-		+ (count * schema->data->obj_sz); /* array elements */
+		+ (count * schema->data->el_sz); /* array elements */
 
 	part = __sos_primary_obj_part(sos);
 	array_obj = __sos_obj_new(part->obj_ods, size, &sos->lock);
@@ -743,7 +728,13 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
 
 	struct sos_array_s *array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
 	array->count = count;
-	return __sos_init_obj(sos, schema, array_obj, part);
+	union sos_obj_ref_s obj_ref = {
+		.ref = {
+			SOS_PART(part->part_obj)->part_id,
+			ods_obj_ref(array_obj)
+		}
+	};
+	return __sos_init_obj(sos, schema, array_obj, obj_ref);
 }
 
 /**
@@ -956,7 +947,7 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	return NULL;
 }
 
-int __sos_schema_open(sos_t sos, sos_schema_t schema, ods_obj_t part_obj)
+int __sos_schema_open(sos_t sos, sos_schema_t schema)
 {
 	int rc;
 	sos_attr_t attr;
@@ -970,7 +961,7 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema, ods_obj_t part_obj)
 		attr->index = sos_index_open(sos, idx_name);
 		if (!attr->index) {
 			rc = sos_index_new(sos, idx_name,
-					   attr->idx_type, attr->key_type, 5);
+					   attr->idx_type, attr->key_type, NULL);
 			if (rc)
 				goto err;
 			goto retry;
@@ -1036,16 +1027,12 @@ sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id)
  */
 int sos_schema_add(sos_t sos, sos_schema_t schema)
 {
-	char tmp_path[PATH_MAX];
 	size_t size, key_len;
-	ods_obj_t sos_obj_ref;
 	ods_obj_t schema_obj;
 	ods_key_t schema_key;
 	sos_attr_t attr;
 	int idx, rc;
-	uint32_t offset;
 	ods_obj_t udata;
-	int o_mode;
 	struct stat sb;
 
 	/* See if this schema is already part of a container */
@@ -1065,7 +1052,6 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 		rc = errno;
 		goto err_0;
 	}
-	o_mode = sb.st_mode;
 
 	/* Compute the size of the schema data */
 	size = sizeof(struct sos_schema_data_s);
@@ -1075,18 +1061,18 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 		rc = ENOMEM;
 		goto err_0;
 	}
-	sos_obj_ref = __sos_obj_new(ods_idx_ods(sos->schema_idx),
-				    sizeof *sos_obj_ref, &sos->lock);
-	if (!sos_obj_ref)
-		goto err_1;
-	SOS_OBJ_REF(sos_obj_ref)->ods_ref = 0;
-	SOS_OBJ_REF(sos_obj_ref)->obj_ref = ods_obj_ref(schema_obj);
+	sos_obj_ref_t sos_obj_ref = {
+		.ref = {
+			0,
+			ods_obj_ref(schema_obj)
+		}
+	};
 
 	key_len = strlen(schema->data->name) + 1;
 	schema_key = ods_key_alloc(sos->schema_idx, key_len);
 	if (!schema_key) {
 		rc = ENOMEM;
-		goto err_2;
+		goto err_1;
 	}
 	ods_key_set(schema_key, schema->data->name, key_len);
 
@@ -1097,14 +1083,15 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	SOS_SCHEMA(schema_obj)->ref_count = 0;
 	SOS_SCHEMA(schema_obj)->schema_sz = size;
 	SOS_SCHEMA(schema_obj)->obj_sz = schema->data->obj_sz;
+	SOS_SCHEMA(schema_obj)->el_sz = schema->data->el_sz;
 	SOS_SCHEMA(schema_obj)->attr_cnt = schema->data->attr_cnt;
-	SOS_SCHEMA(schema_obj)->id = ods_atomic_inc(&SOS_UDATA(udata)->last_schema_id);
+	SOS_SCHEMA(schema_obj)->id =
+		ods_atomic_inc(&SOS_SCHEMA_UDATA(udata)->last_schema_id);
 
 	idx = 0;
-	offset = 0;
 	schema->dict = calloc(schema->data->attr_cnt, sizeof(sos_attr_t));
 	if (!schema->dict)
-		goto err_3;
+		goto err_2;
 	/*
 	 * Iterate through the attribute definitions and add them to
 	 * the schema object
@@ -1115,17 +1102,16 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 		attr->data = attr_data;
 		if (attr->data->indexed && !attr->key_type) {
 			rc = EINVAL;
-			goto err_3;
+			goto err_2;
 		}
 		schema->dict[idx++] = attr;
 		if (!attr->data->indexed)
 			continue;
 	}
 	schema->data = schema_obj->as.ptr;
-	rc = ods_idx_insert(sos->schema_idx, schema_key,
-			    ods_obj_ref(sos_obj_ref));
+	rc = ods_idx_insert(sos->schema_idx, schema_key, sos_obj_ref.idx_data);
 	if (rc)
-		goto err_3;
+		goto err_2;
 
 	rbn_init(&schema->name_rbn, schema->data->name);
 	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
@@ -1135,16 +1121,12 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 
 	sos->schema_count++;
 
-	ods_obj_put(sos_obj_ref);
 	ods_obj_put(schema_key);
 	ods_obj_put(udata);
-	return __sos_schema_open(sos, schema, __sos_primary_obj_part(sos)->part_obj);
- err_3:
+	return __sos_schema_open(sos, schema);
+ err_2:
 	ods_obj_delete(schema_key);
 	ods_obj_put(schema_key);
- err_2:
-	ods_obj_delete(sos_obj_ref);
-	ods_obj_put(sos_obj_ref);
  err_1:
 	ods_obj_delete(schema_obj);
 	ods_obj_put(schema_obj);
@@ -1257,7 +1239,7 @@ sos_schema_t __sos_internal_schema_new(const char *name, uint32_t id,
 	schema->flags = SOS_SCHEMA_F_INTERNAL;
 	schema->ref_count = 1;
 	schema->data->id = id;
-	schema->data->obj_sz = el_size;
+	schema->data->el_sz = el_size;
 	sos_schema_attr_add(schema, "count", SOS_TYPE_UINT32);
 	sos_schema_attr_add(schema, "data", el_type);
 	rbn_init(&schema->name_rbn, schema->data->name);

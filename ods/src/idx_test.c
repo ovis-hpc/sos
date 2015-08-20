@@ -90,7 +90,7 @@ const char *nlstrip(char *s)
 {
 	static char ss[80];
 	strcpy(ss, s);
-	strtok(ss, " \t\n");
+	return strtok(ss, " \t\n");
 }
 
 void rebuild_tree(ods_idx_t idx)
@@ -168,7 +168,9 @@ int main(int argc, char *argv[])
 	if (!create)
 		goto skip_create;
 
-	rc = ods_idx_create(idx_path, 0660, idx_name, key_str, order);
+	char argp[ODS_IDX_ARGS_LEN];
+	sprintf(argp, "ORDER=%d", order);
+	rc = ods_idx_create(idx_path, 0660, idx_name, key_str, argp);
 	if (rc) {
 		printf("The index '%s' of type '%s' could not be created due "
 		       "to error %d.\n",
@@ -192,6 +194,7 @@ int main(int argc, char *argv[])
 	/* Find all matching keys */
 	printf("All matches...\n");
 	iter = ods_iter_new(idx);
+	key = ods_key_malloc(256);
 	ods_key_from_str(idx, key, iter_key);
 	char *keystr = malloc(ods_idx_key_str_size(idx));
 	for (rc = ods_iter_find(iter, key); !rc; rc = ods_iter_next(iter)) {

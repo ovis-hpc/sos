@@ -73,8 +73,111 @@ class Timestamp:
     def __int__(self):
         return float(self.secs)
 
-class Object(object):
+class Index(object):
+    def __init__(self, container, name):
+        self.index = sos.sos_index_open(container, name)
+        if not self.index:
+            raise ValueError("Invalid container or index name")
+        self.iter = sos.sos_index_iter_new(self.index)
+        rc = sos.sos_iter_begin(self.iter)
+        if rc != 0:
+            self.done = True
+        else:
+            self.done = False
 
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.done:
+            return None
+        obj = sos.sos_iter_obj(self.iter)
+        rc = sos.sos_iter_next(self.iter)
+        if rc != 0:
+            self.done = True
+        else:
+            self.done = False
+        return obj
+
+class Value(object):
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return sos.value_as_str(self.value)
+
+    def __int__(self):
+        t = sos.sos_attr_type(self.value.attr)
+        if t == sos.SOS_TYPE_INT32:
+            return self.value.data.prim.int32_
+        elif t == sos.SOS_TYPE_INT64:
+            return self.value.data.prim.int64_
+        elif t == sos.SOS_TYPE_UINT32:
+            return self.value.data.prim.uint32_
+        elif t == sos.SOS_TYPE_UINT64:
+            return self.value.data.prim.uint64_
+        elif t == sos.SOS_TYPE_TIMESTAMP:
+            return self.value.data.prim.timestamp_.fine.secs
+        elif t == sos.SOS_TYPE_FLOAT:
+            return int(self.value.data.prim.float_)
+        elif t == sos.SOS_TYPE_DOUBLE:
+            return int(self.value.data.prim.double_)
+        elif t == sos.SOS_TYPE_LONG_DOUBLE:
+            return int(self.value.data.prim.long_double_)
+        elif t == sos.SOS_TYPE_OBJ:
+            return self.value.data.prim.ref_.obj_ref
+        else:
+            raise ValueError()
+
+    def __float__(self):
+        t = sos.sos_attr_type(self.value.attr)
+        if t == sos.SOS_TYPE_INT32:
+            return float(self.value.data.prim.int32_)
+        elif t == sos.SOS_TYPE_INT64:
+            return float(self.value.data.prim.int64_)
+        elif t == sos.SOS_TYPE_UINT32:
+            return float(self.value.data.prim.uint32_)
+        elif t == sos.SOS_TYPE_UINT64:
+            return float(self.value.data.prim.uint64_)
+        elif t == sos.SOS_TYPE_TIMESTAMP:
+            ts = self.value.data.prim.timestamp_.fine;
+            return float(ts.secs << 32 | ts.usecs)
+        elif t == sos.SOS_TYPE_FLOAT:
+            return self.value.data.prim.float_
+        elif t == sos.SOS_TYPE_DOUBLE:
+            return float(self.value.data.prim.double_)
+        elif t == sos.SOS_TYPE_LONG_DOUBLE:
+            return float(self.value.data.prim.long_double_)
+        else:
+            raise ValueError()
+
+class NewObject(object):
+    json_fmt = 1
+    csv_fmt = 2
+    table_fmt = 3
+    def_fmt = json_fmt
+
+    def __init__(self, obj, str_fmt=None):
+        if not str_fmt:
+            self.str_fmt = self.def_fmt
+        else:
+            self.str_fmt = str_fmt
+        self.obj = obj
+
+    def __getattr__(self, name):
+        try:
+            schema = sos.sos_obj_schema(self.obj)
+            if schema is None:
+                return None
+            attr = sos.sos_schema_attr_by_name(schema, str(name))
+            if attr is None:
+                return None
+            value = sos.sos_value(self.obj, attr)
+            return Value(value)
+        except Exception as e:
+            return None
+
+class Object(object):
     json_fmt = 1
     csv_fmt = 2
     table_fmt = 3
@@ -443,7 +546,7 @@ sos_type_name = {
 }
 
 class Iterator(object):
-    def __init__(self, container, schemaName, attrName, order=None):
+    def __init__(self, container, schemaName, attrName):
         self.container_ = container.container
         self.schema_ = sos.sos_schema_by_name(self.container_, schemaName)
         self.attr_ = sos.sos_schema_attr_by_name(self.schema_, attrName)
@@ -467,7 +570,7 @@ class Iterator(object):
     def next(self):
         rc = sos.sos_iter_next(self.iter_)
         if rc:
-            return None
+            raise StopIteration()
         return sos.sos_iter_obj(self.iter_)
 
     def prev(self):
@@ -594,6 +697,10 @@ class Container:
 
     def info(self):
         sos.container_info(self.container)
+
+    def close(self):
+        if self.container:
+            sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
 
 def dump_schema_objects(schema):
     # Find the first attribute with an index and use it to iterate

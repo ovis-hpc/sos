@@ -45,6 +45,8 @@
 #include <sys/queue.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
+#include <ctype.h>
 #include <getopt.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -52,7 +54,10 @@
 #include <assert.h>
 #include <sos/sos.h>
 #include <ods/ods_atomic.h>
-#include "sos_yaml.h"
+#include <sos/sos_yaml.h>
+
+int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
+char *strcasestr(const char *haystack, const char *needle);
 
 const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:s:o:icqlp";
 
@@ -361,7 +366,7 @@ void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 void table_footer(FILE *outp, int rec_count, int iter_count)
 {
 	struct col_s *col;
-	int i;
+
 	/* Print the footer separators */
 	TAILQ_FOREACH(col, &col_list, entry) {
 		int i;
@@ -620,7 +625,7 @@ int add_schema(sos_t sos, FILE *fp)
 		case YAML_ALIAS_EVENT:
 			break;
 		case YAML_SCALAR_EVENT:
-			kw_.str = event.data.scalar.value;
+			kw_.str = (char *)event.data.scalar.value;
 			kw = bsearch(&kw_, keyword_table,
 				     sizeof(keyword_table)/sizeof(keyword_table[0]),
 				     sizeof(keyword_table[0]),
@@ -680,7 +685,7 @@ int add_schema(sos_t sos, FILE *fp)
 			case SCHEMA_NAME_DEF:
 				if (schema_name)
 					free(schema_name);
-				schema_name = strdup(event.data.scalar.value);
+				schema_name = strdup((char *)event.data.scalar.value);
 				schema = sos_schema_new(schema_name);
 				if (!schema) {
 					printf("The schema '%s' could not be "
@@ -690,7 +695,13 @@ int add_schema(sos_t sos, FILE *fp)
 				}
 				break;
 			case ATTR_NAME_DEF:
-				attr_name = strdup(event.data.scalar.value);
+				if (isdigit(event.data.scalar.value[0])) {
+					printf("The first character of the attribute"
+					       "named '%s' cannot be a number.\n",
+					       event.data.scalar.value);
+					return errno;
+				}
+				attr_name = strdup((char *)event.data.scalar.value);
 				state = ATTR_DEF;
 				break;
 			case ATTR_INDEXED_DEF:
@@ -701,7 +712,7 @@ int add_schema(sos_t sos, FILE *fp)
 					break;
 				}
 				attr_indexed = kw->id;
-				index_str = strdup(event.data.scalar.value);
+				index_str = strdup((char *)event.data.scalar.value);
 				index_str = strtok(index_str, ",");
 				key_type = strtok(NULL, ",");
 				if (key_type) {
@@ -739,13 +750,6 @@ int add_schema(sos_t sos, FILE *fp)
 }
 
 int import_done = 0;
-void *flush_proc(void *arg)
-{
-	sos_t sos = arg;
-	while (!import_done) {
-		sos_container_commit(sos, SOS_COMMIT_SYNC);
-	}
-}
 
 struct obj_entry_s {
 	char buf[3 * 1024];
@@ -822,10 +826,12 @@ void *add_proc(void *arg)
 {
 	struct obj_q_s *queue = arg;
 	struct obj_entry_s *work;
-	char *tok, *next_tok;
+	char *tok;
+#if 0
+	char *next_tok;
+#endif
 	int rc;
 	int cols;
-	int last_secs = 0;
 
 	while (!import_done || !TAILQ_EMPTY(&queue->queue)) {
 		pthread_mutex_lock(&queue->lock);
@@ -844,6 +850,28 @@ void *add_proc(void *arg)
 		if (import_done && !work)
 			break;
 		cols = 0;
+#if 1
+		char *pos;
+		for (tok = strtok_r(work->buf, ",", &pos); tok; tok = strtok_r(NULL, ",", &pos)) {
+			if (cols >= col_count) {
+				printf("Warning: line contains more columns "
+				       "than are in column map.\n\"%s\"",
+				       work->buf);
+				break;
+			}
+			int id = col_map[cols];
+			if (id < 0) {
+				cols++;
+				continue;
+			}
+			rc = sos_obj_attr_from_str(work->obj, attr_map[cols], tok, NULL);
+			if (rc) {
+				printf("Warning: formatting error setting %s = %s.\n",
+				       sos_attr_name(attr_map[cols]), tok);
+			}
+			cols++;
+		}
+#else
 		for (tok = work->buf; *tok != '\0'; tok = next_tok) {
 			if (cols >= col_count) {
 				printf("Warning: line contains more columns "
@@ -872,7 +900,7 @@ void *add_proc(void *arg)
 			next_tok++; /* skip ',' */
 			cols++;
 		}
-
+#endif
 		rc = sos_obj_index(work->obj);
 		sos_obj_put(work->obj);
 		if (rc) {
@@ -887,7 +915,6 @@ void *add_proc(void *arg)
 
 int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 {
-	pthread_t flush_thread;
 	struct timeval t0, t1, tr;
 	int rc, cols;
 	sos_schema_t schema;
@@ -922,7 +949,6 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 		cols++;
 	}
 
-	// rc = pthread_create(&flush_thread, NULL, flush_proc, sos);
 	pthread_t *add_thread = calloc(thread_count, sizeof *add_thread);
 	work_queues = calloc(thread_count, sizeof *work_queues);
 	int i;
@@ -947,8 +973,6 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 	tr = t0;
 	while (1) {
 		char *inp;
-		char *next_tok;
-		sos_obj_t sos_obj;
 		struct obj_entry_s *work;
 
 		pthread_mutex_lock(&drain_lock);
@@ -973,7 +997,7 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 		queue_work(work);
 		items_queued++;
 		if (records && (0 == (records % 10000))) {
-			double rate, ts, tsr;
+			double ts, tsr;
 			gettimeofday(&t1, NULL);
 			ts = (double)(t1.tv_sec - t0.tv_sec);
 			ts += (double)(t1.tv_usec - t0.tv_usec) / 1.0e6;
@@ -991,7 +1015,6 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 	import_done = 1;
 	void *retval;
 	printf("queued %d items...joining.\n", items_queued);
-	pthread_join(flush_thread, &retval);
 	for (i = 0; i < thread_count; i++)
 		pthread_cond_signal(&work_queues[i].wait);
 	for (i = 0; i < thread_count; i++)
@@ -1070,7 +1093,7 @@ int add_object(sos_t sos, FILE* fp)
 			state = START;
 			break;
 		case YAML_SCALAR_EVENT:
-			kw_.str = event.data.scalar.value;
+			kw_.str = (char *)event.data.scalar.value;
 			kw = bsearch(&kw_, keyword_table,
 				     sizeof(keyword_table)/sizeof(keyword_table[0]),
 				     sizeof(keyword_table[0]),
@@ -1183,7 +1206,7 @@ int compare_key(const void *a, const void *b)
 	return strcmp(str, cond->name);
 }
 
-int add_filter(sos_schema_t schema, sos_filter_t filt, char *str)
+int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str)
 {
 	struct cond_key_s *cond_key;
 	sos_attr_t attr;
@@ -1191,11 +1214,10 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, char *str)
 	char attr_name[64];
 	char cond_str[16];
 	char value_str[64];
-	int primary;
 	int rc;
 
 	/*
-	 * See if str the special keyword 'unique'
+	 * See if str contains the special keyword 'unique'
 	 */
 	if (strcasestr(str, "unique")) {
 		rc = sos_filter_flags_set(filt, SOS_ITER_F_UNIQUE);
@@ -1258,7 +1280,6 @@ int main(int argc, char **argv)
 	int o_mode = 0660;
 	int action = 0;
 	sos_t sos;
-	sos_filter_t filt;
 	char *index_name = NULL;
 	char *schema_name = NULL;
 	FILE *schema_file;
@@ -1375,7 +1396,7 @@ int main(int argc, char **argv)
 			char *option, *value;
 			option = strtok(cfg->kv, "=");
 			value = strtok(NULL, "=");
-			rc = sos_container_config(path, option, value);
+			rc = sos_container_config_set(path, option, value);
 			if (rc)
 				printf("Warning: The '%s' option was ignored.\n",
 				       cfg->kv);

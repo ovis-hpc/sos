@@ -131,6 +131,14 @@ union sos_timestamp_u {
 	} fine;
 };
 
+typedef union sos_obj_ref_s {
+	ods_idx_data_t idx_data;
+	struct sos_idx_ref_s {
+		ods_ref_t ods;	/* The reference to the ODS */
+		ods_ref_t obj;	/* The object reference */
+	} ref;
+} sos_obj_ref_t;
+
 union sos_primary_u {
 	unsigned char byte_;
 	uint16_t uint16_;
@@ -143,7 +151,7 @@ union sos_primary_u {
 	double double_;
 	long double long_double_;
 	union sos_timestamp_u timestamp_;
-	ods_ref_t ref_;
+	union sos_obj_ref_s ref_;
 };
 
 typedef union sos_value_data_u {
@@ -237,6 +245,9 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm);
 
 int sos_container_delete(sos_t c);
 
+/**
+ * \brief Specifies whether to commit synchronously or asynchronously
+ */
 typedef enum sos_commit_e {
 	/** Returns immediately, the sync to storage will be completed
 	 *  asynchronously */
@@ -256,7 +267,8 @@ void sos_container_info(sos_t sos, FILE* fp);
 #define SOS_CONTAINER_PARTITION_PERIOD		"PARTITION_PERIOD"
 #define SOS_CONTAINER_PARTITION_EXTEND		"PARTITION_EXTEND"
 
-int sos_container_config(const char *path, const char *option, const char *value);
+int sos_container_config_set(const char *path, const char *option, const char *value);
+char *sos_container_config_get(const char *path, const char *option);
 typedef struct sos_config_iter_s *sos_config_iter_t;
 sos_config_iter_t sos_config_iter_new(const char *path);
 void sos_config_iter_free(sos_config_iter_t iter);
@@ -327,15 +339,11 @@ void sos_part_print(sos_t sos, FILE *fp);
 sos_obj_t sos_obj_new(sos_schema_t schema);
 sos_schema_t sos_obj_schema(sos_obj_t obj);
 
-typedef struct sos_ref_s {
-	void *part;
-	ods_ref_t ref;
-} sos_ref_t;
-sos_ref_t sos_obj_ref(sos_obj_t obj);
+sos_obj_ref_t sos_obj_ref(sos_obj_t obj);
+sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref);
 #define SOS_NULL_REF(_ref_)  ((_ref_).ref == 0)
 
 sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val);
-sos_obj_t sos_obj_from_ref(sos_t sos, sos_ref_t ref);
 void sos_obj_delete(sos_obj_t obj);
 sos_obj_t sos_obj_get(sos_obj_t obj);
 void sos_obj_put(sos_obj_t obj);
@@ -368,6 +376,11 @@ char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
 int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char **endptr);
 const char *sos_value_to_str(sos_value_t value, char *str, size_t len);
 int sos_value_from_str(sos_value_t value, const char *str, char **endptr);
+int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
+				  const char *attr_name, const char *attr_value,
+				  char **endptr);
+char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj, const char *attr_name,
+				  char *str, size_t len);
 
 /** @} */
 
@@ -377,7 +390,8 @@ int sos_value_from_str(sos_value_t value, const char *str, char **endptr);
 typedef struct ods_obj_s *sos_key_t;
 
 int sos_index_new(sos_t sos, const char *name,
-		  const char *idx_type, const char *key_type, ...);
+		  const char *idx_type, const char *key_type,
+		  const char *args);
 sos_index_t sos_index_open(sos_t sos, const char *name);
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_obj_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
@@ -386,6 +400,17 @@ sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
 int sos_index_commit(sos_index_t index, sos_commit_t flags);
 int sos_index_close(sos_index_t index, sos_commit_t flags);
+size_t sos_index_key_size(sos_index_t index);
+sos_key_t sos_index_key_new(sos_index_t index, size_t size);
+int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
+const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
+int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
+
+/** @} */
+
+/** \defgroup keys SOS Keys
+ * @{
+ */
 
 /**
  * \brief Define a SOS stack key
@@ -410,53 +435,24 @@ int sos_index_close(sos_index_t index, sos_commit_t flags);
 	ODS_OBJ(_name_ ## _ ## key_s, &_name_ ## _ ## data, 256);	\
 	sos_key_t _name_ = &_name_ ## _ ## key_s;
 
-/**
- * \brief Create a memory key
- *
- * A key is just a an object with a set of convenience routines to
- * help with getting and setting it's value based on the key type used
- * on an index.
- *
- * A memory key is used to look up objects in the ODS. The storage for
- * these keys comes from memory. See the sos_key_new() function for
- * keys that are stored in the Container.
- *
- * If the size of the key is known to be less than 254 bytes, the
- * SOS_KEY() macro is useful for defining a SOS key that is allocated
- * on the stack and is automatically destroyed when the containing
- * function returns.
- *
- * \param sz	The maximum size in bytes of the key value
- * \retval !0	ods_key_t pointer to the key
- * \retval 0	Insufficient resources
- */
-#define sos_key_new(sz) ({		\
-	ods_key_t k = ods_key_malloc(sz);	\
-	if (k) {				\
-		k->alloc_line = __LINE__;	\
-		k->alloc_func = __func__;	\
-	}					\
-	k;					\
-})
-
-#define sos_key_put(key) ods_obj_put(key)
+sos_key_t sos_key_new(size_t sz);
+void sos_key_put(sos_key_t key);
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
-int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
-const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key);
-sos_key_t sos_attr_key_new(sos_attr_t attr, size_t len);
-int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
-int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b);
-
-size_t sos_attr_key_size(sos_attr_t attr);
-int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
-				  const char *attr_name, const char *attr_value,
-				  char **endptr);
-char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj, const char *attr_name,
-				  char *str, size_t len);
+int sos_key_from_str(sos_key_t key, const char *fmt, const char *str);
+char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_sz);
+int sos_str_to_key(sos_key_t key, const char *fmt, const char *str);
 size_t sos_key_size(sos_key_t key);
 size_t sos_key_len(sos_key_t key);
 unsigned char *sos_key_value(sos_key_t key);
 void *sos_value_as_key(sos_value_t value);
+
+int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
+const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key);
+sos_key_t sos_attr_key_new(sos_attr_t attr, size_t len);
+int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b);
+size_t sos_attr_key_size(sos_attr_t attr);
+
+/** @} */
 
 /** @} */
 
@@ -474,6 +470,8 @@ sos_iter_t sos_attr_iter_new(sos_attr_t attr);
 void sos_iter_free(sos_iter_t iter);
 int sos_iter_key_cmp(sos_iter_t iter, sos_key_t other);
 int sos_iter_find(sos_iter_t iter, sos_key_t key);
+int sos_iter_find_first(sos_iter_t iter, sos_key_t key);
+int sos_iter_find_last(sos_iter_t iter, sos_key_t key);
 int sos_iter_inf(sos_iter_t i, sos_key_t key);
 int sos_iter_sup(sos_iter_t i, sos_key_t key);
 

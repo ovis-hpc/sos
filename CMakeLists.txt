@@ -14,7 +14,7 @@ SET(CSS_BINARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_BUILD_TYPE})
 SET(BUILD_SHARED_LIBS ON)
 
 # Version Number
-set (SOS_VERSION_MAJOR 1)
+set (SOS_VERSION_MAJOR 3)
 set (SOS_VERSION_MINOR 0)
 
 configure_file (
@@ -22,9 +22,8 @@ configure_file (
        "${PROJECT_BINARY_DIR}/sos_config.h"
 )
 
-# add_subdirectory(css)
 add_subdirectory(ods)
 add_subdirectory(sos)
-# add_subdirectory(sosd)
+add_subdirectory(bwx)
 add_subdirectory(doc)
 

@@ -77,7 +77,7 @@ static int string_comparator(ods_key_t a, ods_key_t b)
 static const char *to_str(ods_key_t key, char *ignore)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	return (const char *)strdup(kv->value);
+	return (const char *)strdup((char *)kv->value);
 }
 
 static int from_str(ods_key_t key, const char *str)

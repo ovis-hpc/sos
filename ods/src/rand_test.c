@@ -91,7 +91,7 @@ const char *nlstrip(char *s)
 {
 	static char ss[80];
 	strcpy(ss, s);
-	strtok(ss, " \t\n");
+	return strtok(ss, " \t\n");
 }
 
 static int print_it = 0;
@@ -102,7 +102,7 @@ void print_info(int signal, siginfo_t *info, void *arg)
 
 void setup_signals(void)
 {
-	struct sigaction action, logrotate_act;
+	struct sigaction action;
 	sigset_t sigset;
 	sigemptyset(&sigset);
 	sigaddset(&sigset, SIGINT);
@@ -161,7 +161,9 @@ int main(int argc, char *argv[])
 	if (!create)
 		goto skip_create;
 
-	rc = ods_idx_create(idx_path, 0660, idx_name, key_str, order);
+	char args[ODS_IDX_ARGS_LEN];
+	sprintf(args, "ORDER=%d", order);
+	rc = ods_idx_create(idx_path, 0660, idx_name, key_str, args);
 	if (rc) {
 		printf("The index '%s' of type '%s' could not be created due "
 		       "to error %d.\n",
@@ -190,8 +192,7 @@ int main(int argc, char *argv[])
 	}
 	ods_idx_info(idx, stdout);
 	ods_obj_put(key);
- out:
-	ods_info(ods_idx_ods(idx), stdout);
+ 	ods_info(ods_idx_ods(idx), stdout);
 	ods_idx_close(idx, ODS_COMMIT_SYNC);
 	return 0;
 }

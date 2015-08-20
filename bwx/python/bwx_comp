@@ -1,0 +1,107 @@
+#!/usr/bin/env python
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from matplotlib.collections import PatchCollection
+import argparse
+import sys
+import os
+from datetime import datetime
+from sos import *
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Do stuff with Components.")
+    parser.add_argument("--add", action = "store_true",
+                        help="Add the components contained in the input file")
+    parser.add_argument("--update", action = "store_true",
+                        help="Update the components contained in the input file")
+    parser.add_argument("--container",
+                        help="Specify the SOS container")
+    parser.add_argument("--start-time",
+                        help="Specify the start time, format is YYYY/MM/DD HH:MM:SS")
+    parser.add_argument("--duration",
+                        type=int, default=3600,
+                        help="Specify the duration, format is seconds ")
+    args = parser.parse_args()
+    if not args.container:
+        print("The --container argument is required")
+        sys.exit(1)
+
+    if not args.start_time:
+        print("The --start-time argument is required")
+        sys.exit(1)
+
+    try:
+        container = sos.sos_container_open(args.container, sos.SOS_PERM_RO)
+        comp_schema = sos.sos_schema_by_name(container, "Component")
+        comp_id_attr = sos.sos_schema_attr_by_name(comp_schema, "Id")
+        comp_id_iter = sos.sos_attr_iter_new(comp_id_attr)
+        comptime_idx = sos.sos_index_open(container, "CompTime")
+    except Exception as e:
+        print("Exception {0}".foramt(str(e)))
+        sys.exit(2)
+
+    dt = datetime.strptime(args.start_time, "%Y/%m/%d %H:%M:%S")
+    start_secs = int(dt.strftime("%s"))
+    end_secs = start_secs + args.duration
+    comptime_key = sos.sos_key_new(8)
+    comptime_iter = sos.sos_index_iter_new(comptime_idx)
+    rc = sos.sos_iter_begin(comp_id_iter)
+    if rc:
+        print("Error {0} on the component iterator".format(rc))
+        sys.exit(3)
+    fig, ax = plt.subplots()
+    fig.set_size_inches((12, 10), forward=True)
+    patches = []
+    min_x = 1.0e6
+    max_x = 0
+    min_y = 1.0e6
+    max_y = 0
+    while rc == 0:
+        comp_obj = sos.sos_iter_obj(comp_id_iter)
+        compObj = SOS.NewObject(comp_obj)
+        x = float(compObj.x_2d)
+        if x < min_x:
+            min_x = x
+        if x > max_x:
+            max_x = x
+        y = float(compObj.y_2d)
+        if y < min_y:
+            min_y = x
+        if y > max_y:
+            max_y = y
+
+        # Find the CompTime record that is less than or equal the start
+        comptime = start_secs | (int(compObj.Id) << 32)
+        rc = sos.sos_index_key_from_str(comptime_idx, comptime_key, str(comptime))
+        rc = sos.sos_iter_inf(comptime_iter, comptime_key)
+        r = None
+        if rc == 0:
+            job_obj = sos.sos_iter_obj(comptime_iter)
+            jobObj = SOS.NewObject(job_obj)
+
+            # test if the sample time window overlaps the job
+            job_start = int(jobObj.StartTime)
+            job_end = int(jobObj.EndTime)
+            if (start_secs >= job_start and start_secs <= job_end) \
+               or (end_secs >= job_start and end_secs <= job_end) \
+               or (start_secs <= job_start and end_secs >= job_end):
+                r = Rectangle((x+.05, y+.05), .80, .80,
+                              edgecolor='black', facecolor='green',
+                              linewidth=0.05)
+            else:
+                r = Rectangle((x+.05, y+.05), .80, .80,
+                              edgecolor='black', facecolor='black',
+                              linewidth=0.05)
+        else:
+            r = Rectangle((x+.05, y+.05), .80, .80,
+                          edgecolor='black', facecolor='red',
+                          linewidth=0.05)
+        patches.append(r)
+        rc = sos.sos_iter_next(comp_id_iter)
+    print("x: {0} {1} y: {0} {1}".format(min_x, max_x, min_y, max_y))
+    collection = PatchCollection(patches, match_original=True)
+    ax.set_xlim(left=min_x, right=max_x, auto=True)
+    ax.set_ylim(bottom=max_y, top=min_y, auto=True)
+    ax.add_collection(collection)
+    plt.show()

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2014 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2014-2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2014-2015 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -51,7 +51,7 @@
  */
 
 /*
- * Author: Tom Tucker tom at ogc dot us
+o * Author: Tom Tucker tom at ogc dot us
  */
 
 #include <sys/queue.h>
@@ -96,6 +96,37 @@ size_t sos_key_set(sos_key_t key, void *value, size_t sz)
 	return ods_key_set(key, value, sz);
 }
 
+void sos_key_put(sos_key_t key)
+{
+	ods_obj_put(key);
+}
+
+/**
+ * \brief Create a memory key
+ *
+ * A key is just a an object with a set of convenience routines to
+ * help with getting and setting it's value based on the key type used
+ * on an index.
+ *
+ * A memory key is used to look up objects in the ODS. The storage for
+ * these keys comes from memory. See the sos_key_new() function for
+ * keys that are stored in the Container.
+ *
+ * If the size of the key is known to be less than 254 bytes, the
+ * SOS_KEY() macro is useful for defining a SOS key that is allocated
+ * on the stack and is automatically destroyed when the containing
+ * function returns.
+ *
+ * \param sz	The maximum size in bytes of the key value
+ * \retval !0	ods_key_t pointer to the key
+ * \retval 0	Insufficient resources
+ */
+sos_key_t sos_key_new(size_t sz)
+{
+	ods_key_t k = ods_key_malloc(sz);
+	return k;
+}
+
 /**
  * \brief Create a key based on the specified attribute or size
  *
@@ -109,9 +140,7 @@ size_t sos_key_set(sos_key_t key, void *value, size_t sz)
  */
 sos_key_t sos_attr_key_new(sos_attr_t attr, size_t size)
 {
-	if (!size)
-		return sos_key_new(sos_attr_key_size(attr));
-	return sos_key_new(size);
+	return sos_index_key_new(attr->index, size);
 }
 
 
@@ -126,8 +155,7 @@ sos_key_t sos_attr_key_new(sos_attr_t attr, size_t size)
  */
 int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
 {
-	sos_idx_part_t part = __sos_active_idx_part(attr->index);
-	return ods_key_from_str(part->index, key, str);
+	return sos_index_key_from_str(attr->index, key, str);
 }
 
 /**
@@ -139,9 +167,7 @@ int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
  */
 const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key)
 {
-	sos_idx_part_t part = __sos_active_idx_part(attr->index);
-	char *keystr = malloc(ods_idx_key_str_size(part->index));
-	return ods_key_to_str(part->index, key, keystr);
+	return sos_index_key_to_str(attr->index, key);
 }
 
 /**
@@ -156,8 +182,7 @@ const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key)
  */
 int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
 {
-	sos_idx_part_t part = __sos_active_idx_part(attr->index);
-	return ods_key_cmp(part->index, a, b);
+	return sos_index_key_cmp(attr->index, a, b);
 }
 
 /**
@@ -172,8 +197,7 @@ int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
  */
 size_t sos_attr_key_size(sos_attr_t attr)
 {
-	sos_idx_part_t part = __sos_active_idx_part(attr->index);
-	return ods_idx_key_size(part->index);
+	return sos_index_key_size(attr->index);
 }
 
 /**
@@ -211,4 +235,80 @@ unsigned char* sos_key_value(sos_key_t key)
 	ods_key_value_t kv = ods_key_value(key);
 	return kv->value;
 }
+
+#include <stdarg.h>
+
+/**
+ * \brief Return the value of a key as a character string
+ *
+ * Format a key based on the provided <tt>fmt</tt> string. See the man
+ * page for the printf() function for the format of this string. The
+ * <tt>el_sz</tt> parameter indicates the size of each component of
+ * the key. The <tt>sep</tt> parameter is placed between each
+ * component in the formatted output.
+ *
+ * For example, to format the key as hex bytes:
+ *
+ *     char *hex_str = sos_key_to_str(key, "%02X", ":", 1);
+ *     printf("%s\n", hex_str);
+ *
+ * The returned string should be freed with the free() function when
+ * bo long needed.
+ *
+ * \param key The key handle
+ * \retval The string
+ */
+char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_sz)
+{
+	ods_key_value_t kv = ods_key_value(key);
+	size_t cnt = kv->len / el_sz;
+	size_t res_cnt = 0;
+	char *res_str, *str;
+	size_t alloc_cnt;
+	size_t sep_len = strlen(sep);
+	int i;
+
+	/* Get the size of one element. */
+	res_cnt = snprintf(NULL, 0, fmt, kv->value);
+
+	/*
+	 * NB: this calculation assumes that all elements have the same
+	 * formatted size 8-P
+	 */
+	alloc_cnt = (res_cnt * cnt) + (sep_len * cnt) + 2;
+	res_str = malloc(alloc_cnt);
+	if (!res_str)
+		return NULL;
+
+	unsigned char *p = kv->value;
+	for (str = res_str, i = 0; i < cnt; i++) {
+		if (i) {
+			strcat(str, sep);
+			str += sep_len;
+			alloc_cnt -= sep_len;
+		}
+		switch (el_sz) {
+		case 2:
+			res_cnt = snprintf(str, alloc_cnt, fmt, *(short *)p);
+			break;
+		case 4:
+			res_cnt = snprintf(str, alloc_cnt, fmt, *(uint32_t *)p);
+			break;
+		case 8:
+			res_cnt = snprintf(str, alloc_cnt, fmt, *(uint64_t *)p);
+			break;
+		case 1:
+		default:
+			res_cnt = snprintf(str, alloc_cnt, fmt, *p);
+		}
+		if (res_cnt > alloc_cnt)
+			/*  Ran out of memory. Return our best effort */
+			break;
+		str += res_cnt;
+		alloc_cnt -= res_cnt;
+		p += el_sz;
+	}
+	return res_str;
+}
+
 /** @} */

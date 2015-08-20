@@ -1,6 +1,5 @@
 import os
 import web
-import SOS
 import os
 import datetime
 import tempfile
@@ -12,6 +11,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.cbook as cbook
 import StringIO, Image
+from sos import *
 
 urls = (
     '/table', 'SosTable',
@@ -24,6 +24,14 @@ urls = (
     )
 
 class SosDir:
+    def open_test(self, path):
+        try:
+            c = SOS.Container(str(path))
+            c.close()
+            return True
+        except:
+            return False
+
     def GET(self):
         """
         Given the sos_root, search the directory structure to find all
@@ -43,8 +51,9 @@ class SosDir:
                     ovc_path = sos_root + '/' + ovc
                     try:
                         files = os.listdir(ovc_path)
-                        if 'schemas.OBJ' in files:
-                            carray.append([ ovc ])
+                        if '.__schemas.OBJ' in files:
+                            if self.open_test(ovc_path):
+                                carray.append([ ovc ])
                     except Exception as e:
                         carray.append([ str(e) ])
                         pass

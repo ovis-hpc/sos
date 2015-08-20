@@ -78,22 +78,11 @@ sos_iter_t sos_index_iter_new(sos_index_t index)
 {
 	sos_iter_t i;
 
-	/* Find first active object partition and matching index */
-	sos_idx_part_t idx_part = NULL;
-	sos_obj_part_t obj_part = __sos_active_obj_part(index->sos);
-	if (obj_part)
-		idx_part = __sos_matching_idx_part(index, obj_part);
-	if (!idx_part)
-		return NULL;
-
-	i = calloc(1, sizeof *i);
+	i = malloc(sizeof *i);
 	if (!i)
-		goto err;
-
+		return NULL;
 	i->index = index;
-	i->obj_part = obj_part;
-	i->idx_part = idx_part;
-	i->iter = ods_iter_new(idx_part->index);
+	i->iter = ods_iter_new(index->idx);
 	if (!i->iter)
 		goto err;
 	ods_iter_begin(i->iter);
@@ -119,8 +108,6 @@ sos_iter_t sos_index_iter_new(sos_index_t index)
  */
 sos_iter_t sos_attr_iter_new(sos_attr_t attr)
 {
-	sos_iter_t i;
-
 	if (!sos_attr_index(attr))
 		return NULL;
 
@@ -223,17 +210,15 @@ void sos_iter_free(sos_iter_t iter)
  */
 sos_obj_t sos_iter_obj(sos_iter_t i)
 {
-	ods_ref_t ods_ref = ods_iter_ref(i->iter);
-	if (!ods_ref)
+	sos_obj_ref_t idx_ref;
+	sos_obj_t obj;
+	idx_ref.idx_data = ods_iter_data(i->iter);
+	if (!idx_ref.ref.obj)
 		return NULL;
-	ods_obj_t obj = ods_ref_as_obj(i->obj_part->obj_ods, ods_ref);
+	obj = sos_ref_as_obj(i->index->sos, idx_ref);
 	if (!obj)
-		return NULL;
-	sos_schema_t schema = sos_schema_by_id(i->index->sos, SOS_OBJ(obj)->schema);
-	return __sos_init_obj(i->index->sos,
-			      schema,
-			      obj,
-			      i->obj_part);
+		errno = EINVAL;
+	return obj;
 }
 
 /**
@@ -370,7 +355,7 @@ int sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
 {
 	int rc;
 	ods_key_t iter_key = ods_iter_key(iter->iter);
-	rc = ods_key_cmp(iter->idx_part->index, iter_key, key);
+	rc = ods_key_cmp(iter->index->idx, iter_key, key);
 	ods_obj_put(iter_key);
 	return rc;
 }
@@ -579,7 +564,6 @@ static sos_obj_t prev_match(sos_filter_t filt)
 sos_obj_t sos_filter_begin(sos_filter_t filt)
 {
 	sos_filter_cond_t cond;
-	sos_obj_t obj;
 	int rc;
 	SOS_KEY(key);
 
@@ -634,7 +618,6 @@ sos_obj_t sos_filter_prev(sos_filter_t filt)
 sos_obj_t sos_filter_end(sos_filter_t filt)
 {
 	sos_filter_cond_t cond;
-	sos_obj_t obj;
 	int rc;
 
 	rc = sos_iter_end(filt->iter);

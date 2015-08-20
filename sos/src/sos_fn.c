@@ -250,9 +250,9 @@ static char *obj_to_str_fn(sos_value_t v, char *str, size_t len)
 	sos_t sos = (v->obj ? v->obj->sos : NULL);
 	sos_obj_t obj = (sos ? sos_obj_from_value(sos, v) : NULL);
 	str[0] = '\0';
-	snprintf(str, len, "%s@%lx",
+	snprintf(str, len, "%s@%lu.%lx",
 		 (obj ? sos_schema_name(obj->schema) : "???"),
-		 v->data->prim.ref_);
+		 v->data->prim.ref_.ref.ods, v->data->prim.ref_.ref.obj);
 	if (obj)
 		sos_obj_put(obj);
 	return str;
@@ -443,9 +443,8 @@ int long_double_from_str_fn(sos_value_t v, const char *value, char **endptr)
 
 int timestamp_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	uint32_t secs, usecs;
+	uint32_t usecs;
 	char *s;
-	int rc;
 	struct tm tm;
 	memset(&tm, 0, sizeof(tm));
 	if (!strchr(value, '/')) {
@@ -479,7 +478,7 @@ int obj_from_str_fn(sos_value_t v, const char *value, char **endptr)
 
 int byte_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	strncpy(v->data->array.data.byte_, value, v->data->array.count);
+	strncpy((char *)v->data->array.data.byte_, value, v->data->array.count);
 	if (endptr)
 		*endptr = (char *)(value + v->data->array.count);
 	return 0;
@@ -489,7 +488,6 @@ int int32_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
 	char *saveptr;
 	char *tok;
-	size_t count;
 	int i;
 	char *str = strdup(value);
 	if (!str)
@@ -672,9 +670,9 @@ sos_value_key_value_fn_t __sos_attr_key_value_fn_for_type(sos_type_t type)
 	case SOS_TYPE_INT64:
 		return int64_key_value_fn;
 	case SOS_TYPE_UINT32:
-		return int32_key_value_fn;
+		return uint32_key_value_fn;
 	case SOS_TYPE_UINT64:
-		return int64_key_value_fn;
+		return uint64_key_value_fn;
 	case SOS_TYPE_FLOAT:
 		return float_key_value_fn;
 	case SOS_TYPE_DOUBLE:

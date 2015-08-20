@@ -149,9 +149,6 @@ int sos_value_cmp(sos_value_t a, sos_value_t b)
 }
 static sos_value_t mem_value_init(sos_value_t val, sos_attr_t attr)
 {
-	size_t elem_count;
-	sos_schema_t schema;
-
 	val->attr = attr;
 	if (sos_attr_is_ref(attr)) {
 		errno = EINVAL;
@@ -200,24 +197,26 @@ sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr)
  */
 sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 {
-	ods_obj_t ref_obj;
-	sos_schema_t schema;
-
+	sos_obj_t ref_obj;
+	sos_value_data_t ref_val;
 	if (!obj)
 		return mem_value_init(val, attr);
 
 	val->attr = attr;
-	val->obj = sos_obj_get(obj);
-	val->data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
-	if (!sos_attr_is_array(attr))
-		return val;
-	/* Follow the reference to the object */
-	ref_obj = ods_ref_as_obj(obj->part->obj_ods, val->data->prim.ref_);
-	sos_obj_put(val->obj);
-	if (!ref_obj)
-		return NULL;
-	val->obj = __sos_init_obj(obj->sos, __sos_get_ischema(attr->data->type), ref_obj, obj->part);
-	val->data = (sos_value_data_t)&SOS_OBJ(ref_obj)->data[0];
+	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
+	if (!sos_attr_is_array(attr)) {
+		val->obj = sos_obj_get(obj);
+		val->data = ref_val;
+		goto out;
+	}
+	ref_obj = sos_ref_as_obj(obj->sos, ref_val->prim.ref_);
+	if (ref_obj) {
+		val->obj = sos_obj_get(ref_obj);
+		val->data = (sos_value_data_t)&SOS_OBJ(ref_obj->obj)->data[0];
+	} else {
+		val = NULL;
+	}
+ out:
 	return val;
 }
 
@@ -280,7 +279,6 @@ void sos_value_put(sos_value_t value)
 sos_value_t sos_value_by_name(sos_value_t value, sos_schema_t schema, sos_obj_t obj,
 			      const char *name, int *attr_id)
 {
-	int i;
 	sos_attr_t attr = sos_schema_attr_by_name(schema, name);
 	if (!attr)
 		return NULL;

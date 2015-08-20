@@ -81,12 +81,12 @@ typedef enum sos_internal_schema_e {
 
 #define SOS_LATEST_VERSION 0x03010000
 #define SOS_SCHEMA_SIGNATURE 0x534f535348434D41 /* 'SOSSCHMA' */
-typedef struct sos_udata_s {
+typedef struct sos_schema_udata_s {
 	uint64_t signature;
 	uint32_t version;
 	ods_atomic_t last_schema_id;
-} *sos_udata_t;
-#define SOS_UDATA(_o_) ODS_PTR(sos_udata_t, _o_)
+} *sos_schema_udata_t;
+#define SOS_SCHEMA_UDATA(_o_) ODS_PTR(sos_schema_udata_t, _o_)
 
 /**
  * Partitions keep object stores and indexes together into a physical
@@ -111,6 +111,7 @@ typedef struct sos_udata_s {
 #define SOS_PART_SIGNATURE 0x534f535041525430 /* 'SOSPART0' */
 typedef struct sos_part_udata_s {
 	uint64_t signature;
+	ods_atomic_t next_part_id;
 	ods_atomic_t lock;	/* Protects the partition list */
 	ods_ref_t head;		/* Head of the partition list */
 	ods_ref_t tail;		/* Tail of the partition list */
@@ -118,35 +119,36 @@ typedef struct sos_part_udata_s {
 } *sos_part_udata_t;
 #define SOS_PART_UDATA(_o_) ODS_PTR(sos_part_udata_t, _o_)
 
-struct sos_part_s {
-	sos_t sos;
-	ods_obj_t obj;
-};
-
-struct sos_part_iter_s {
-	sos_t sos;
-	struct sos_part_s part;
-};
-
 typedef struct sos_part_data_s {
 	char name[SOS_PART_NAME_LEN];
+	uint64_t part_id;
 	uint32_t state;		/* PRIMARY (2), ACTIVE (1), INACTIVE (0) */
 	ods_atomic_t ref_count;
 	ods_ref_t next;		/* Next partition */
 	ods_ref_t prev;		/* Previous partition */
 } *sos_part_data_t;
 
-typedef struct sos_obj_part_s {
+/*
+ * This is the in-memory partition structure that is created when the partition is opened.
+ */
+typedef struct sos_part_s {
+	sos_t sos;
 	ods_obj_t part_obj;
 	ods_t obj_ods;
 	TAILQ_ENTRY(sos_part_s) entry;
-} *sos_obj_part_t;
+} *sos_part_t;
 
-typedef struct sos_idx_part_s {
-	ods_obj_t part_obj;
-	ods_idx_t index;
-	TAILQ_ENTRY(sos_idx_part_s) entry;
-} *sos_idx_part_t;
+struct sos_part_iter_s {
+	sos_t sos;
+	sos_part_t part;
+};
+
+#define SOS_IDXDIR_SIGNATURE 0x534f534958444952 /* 'SOSIXDIR' */
+typedef struct sos_idxdir_udata_s {
+	uint64_t signature;
+	ods_atomic_t lock;	/* Lock for adding/removing indices */
+} *sos_idxdir_udata_t;
+#define SOS_IDXDIR_UDATA(_o_) ODS_PTR(sos_idxdir_udata_t, _o_)
 
 /*
  * An object is counted array of bytes. Everything in the ODS store is an object.
@@ -159,23 +161,16 @@ typedef struct sos_obj_data_s {
 	uint64_t schema;	/* The unique schema identifier */
 	uint8_t data[0];
 } *sos_obj_data_t;
-
 struct sos_obj_s {
 	ods_atomic_t ref_count;
 	sos_t sos;
 	sos_schema_t schema;
-	sos_obj_part_t part;
+	sos_obj_ref_t obj_ref;
 	ods_obj_t obj;
 	LIST_ENTRY(sos_obj_s) entry;
 };
-
 #define SOS_OBJ(_o_) ODS_PTR(sos_obj_data_t, _o_)
-
-typedef struct sos_obj_ref_s {
-	ods_ref_t ods_ref;	/* The reference to the ODS */
-	ods_ref_t obj_ref;	/* The object reference */
-} *sos_obj_ref_t;
-#define SOS_OBJ_REF(_o_) ODS_PTR(sos_obj_ref_t, _o_)
+// #define SOS_OBJ_REF(_o_) ODS_PTR(sos_obj_ref_t, _o_)
 
 #define SOS_SIGNATURE "SOS_OBJ_STORE"
 #define SOS_OBJ_BE	1
@@ -197,10 +192,7 @@ typedef void *(*sos_value_key_value_fn_t)(sos_value_t);
 
 struct sos_index_s {
 	sos_t sos;
-	sos_idx_part_t last_part;
-	TAILQ_HEAD(sos_idx_part_list, sos_idx_part_s) idx_list;
-	char *idx_type;
-	char *key_type;
+	ods_idx_t idx;
 };
 
 struct sos_attr_s {
@@ -226,6 +218,7 @@ typedef struct sos_schema_data_s {
 	uint32_t attr_cnt;	/* Count of attributes in object class */
 	uint32_t key_sz;	/* Size of largest indexed attribute */
 	uint64_t obj_sz;	/* Size of object */
+	uint64_t el_sz;		/* Size of each element if this is an array object */
 	uint64_t schema_sz;	/* Size of schema */
 	struct sos_attr_data_s attr_dict[0];
 } *sos_schema_data_t;
@@ -244,10 +237,25 @@ struct sos_schema_s {
 	LIST_ENTRY(sos_schema_s) entry;
 	TAILQ_HEAD(sos_attr_list, sos_attr_s) attr_list;
 };
+
+#define SOS_IDX_NAME_LEN 128
+#define SOS_IDX_KEY_TYPE_LEN 64
+#define SOS_IDX_TYPE_LEN 64
+#define SOS_IDX_ARGS_LEN 256
+typedef struct sos_idx_data_s {
+	ods_atomic_t ref_count;
+	uint32_t mode;
+	char name[SOS_IDX_NAME_LEN];
+	char key_type[SOS_IDX_KEY_TYPE_LEN];
+	char idx_type[SOS_IDX_TYPE_LEN];
+	char args[SOS_IDX_ARGS_LEN];
+} *sos_idx_data_t;
+
 #define SOS_SCHEMA(_o_) ODS_PTR(sos_schema_data_t, _o_)
 #define SOS_CONFIG(_o_) ODS_PTR(sos_config_t, _o_)
 #define SOS_PART(_o_) ODS_PTR(sos_part_data_t, _o_)
 #define SOS_ARRAY(_o_) ODS_PTR(sos_array_t, _o_)
+#define SOS_IDX(_o_) ODS_PTR(sos_idx_data_t, _o_)
 
 #define SOS_OPTIONS_PARTITION_ENABLE	1
 struct sos_container_config {
@@ -274,7 +282,18 @@ struct sos_container_s {
 	int o_mode;
 
 	/*
-	 * The schema dictionary and index
+	 * Index dictionary - Keeps track of all indices defined on
+	 * the Container.
+	 */
+	ods_idx_t idx_idx;
+	ods_t idx_ods;
+	ods_obj_t idx_udata;
+	// sos_idxdir_udata_t idx_dir;
+	struct ods_spin_s idx_lock;
+
+	/*
+	 * The schema dictionary - Keeps track of all Object schema
+	 * defined for the Container.
 	 */
 	ods_idx_t schema_idx;	/* Index schema by name */
 	ods_t schema_ods;	/* Contains the schema definitions */
@@ -283,7 +302,8 @@ struct sos_container_s {
 	size_t schema_count;
 
 	/*
-	 * Storage management configuration
+	 * Config - Keeps a dictionary of user-specified configuration
+	 * for the Container. Similar to getenv().
 	 */
 	time_t container_time;	/* Current container timestamp */
 	struct sos_container_config config;
@@ -291,9 +311,11 @@ struct sos_container_s {
 	/*
 	 * The object partitions
 	 */
-	sos_obj_part_t primary_part;
-	TAILQ_HEAD(sos_obj_part_list, sos_obj_part_s) ods_list;
+	ods_obj_t part_udata;
+	sos_part_t primary_part;
 	ods_t part_ods;
+	struct ods_spin_s part_lock;
+	TAILQ_HEAD(sos_part_list, sos_part_s) part_list;
 
 	LIST_HEAD(obj_list_head, sos_obj_s) obj_list;
 	LIST_HEAD(obj_free_list_head, sos_obj_s) obj_free_list;
@@ -340,12 +362,8 @@ struct sos_config_iter_s {
 };
 
 struct sos_iter_s {
-	sos_part_iter_t part_iter;
-	sos_part_t part;
 	sos_index_t index;
 	ods_iter_t iter;
-	sos_obj_part_t obj_part;
-	sos_idx_part_t idx_part;
 };
 
 /**
@@ -353,25 +371,25 @@ struct sos_iter_s {
  */
 sos_schema_t __sos_get_ischema(sos_type_t type);
 sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema,
-			 ods_obj_t ods_obj, sos_obj_part_t part);
+			 ods_obj_t ods_obj, sos_obj_ref_t obj_ref);
 sos_value_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type);
 sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type);
 sos_value_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type);
 sos_value_key_value_fn_t __sos_attr_key_value_fn_for_type(sos_type_t type);
 int __sos_config_init(sos_t sos);
 sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj);
+ods_t __sos_ods_from_ref(sos_t sos, ods_ref_t ref);
 ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock);
 void __sos_schema_free(sos_schema_t schema);
-sos_idx_part_t __sos_active_idx_part(sos_index_t index);
-sos_obj_part_t __sos_active_obj_part(sos_t sos);
-sos_obj_part_t __sos_primary_obj_part(sos_t sos);
-sos_idx_part_t __sos_matching_idx_part(sos_index_t attr, sos_obj_part_t obj_part);
+void __sos_part_primary_set(sos_t sos, ods_obj_t part_obj);
+sos_part_t __sos_primary_obj_part(sos_t sos);
 sos_part_iter_t __sos_part_iter_new(sos_t sos);
-ods_obj_t __sos_part_first(sos_part_iter_t iter);
-ods_obj_t __sos_part_next(sos_part_iter_t iter);
+ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj);
+void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj);
 void __sos_part_iter_free(sos_part_iter_t iter);
-int __sos_schema_open(sos_t sos, sos_schema_t schema, ods_obj_t part_obj);
+ods_obj_t __sos_part_data_first(sos_t sos);
+ods_obj_t __sos_part_data_next(sos_t sos, ods_obj_t part_obj);
+int __sos_schema_open(sos_t sos, sos_schema_t schema);
 int __sos_schema_name_cmp(void *a, void *b);
-ods_obj_t __sos_part_obj_get(sos_part_t part);
 
 #endif

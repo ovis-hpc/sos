@@ -107,7 +107,6 @@ static void print_idx(ods_idx_t idx, FILE *fp)
 
 static int bpt_open(ods_idx_t idx)
 {
-	size_t udata_sz;
 	ods_obj_t udata = ods_get_user_data(idx->ods);
 	bpt_t t = malloc(sizeof *t);
 	if (!t) {
@@ -123,17 +122,19 @@ static int bpt_open(ods_idx_t idx)
 	return 0;
 }
 
-static int bpt_init(ods_t ods, va_list argp)
+static int bpt_init(ods_t ods, const char *argp)
 {
+	char order_arg[ODS_IDX_ARGS_LEN];
 	ods_obj_t udata = ods_get_user_data(ods);
-	int order = va_arg(argp, int);
-	if (order <= 0) {
-		/*
-		 * Each entry is 16B + 8B for the parent + 8B for the count.
-		 * If each node is a page, 4096 / 16B = 256
-		 */
-		order = 251;
-	}
+	int order = 0;
+	char *name;
+
+	strcpy(order_arg, argp);
+	name = strtok(order_arg, "=");
+	if (strcasecmp(name, "ORDER"))
+		order = strtoul(strtok(NULL, "="), NULL, 0);
+	if (order <= 0)
+		order = 5;
 	UDATA(udata)->order = order;
 	UDATA(udata)->root = 0;
 	ods_obj_put(udata);
@@ -555,7 +556,7 @@ static int verify_node(ods_idx_t idx, ods_obj_t n)
 		ods_obj_put(e1);
 		ods_obj_put(e2);
 	}
-	if (t->root_ref != ODS_PTR_TO_REF(n)) {
+	if (t->root_ref != ods_obj_ref(n)) {
 		if (NODE(n)->is_leaf)
 			midpoint--;
 		/* Make sure it has at least midpoint entries */
@@ -1107,7 +1108,6 @@ static ods_ref_t fixup_parents(bpt_t t, ods_obj_t parent, ods_obj_t node)
 {
 	int i;
 	ods_ref_t parent_ref = ods_obj_ref(parent);
-	ods_ref_t node_ref;
 	ods_obj_put(parent);
 	while (parent_ref) {
 		parent = ods_ref_as_obj(t->ods, parent_ref);
@@ -1360,7 +1360,6 @@ static int bpt_iter_set(ods_iter_t oi, const ods_pos_t pos_)
 {
 	struct bpt_pos_s *pos = (struct bpt_pos_s *)pos_;
 	bpt_iter_t i = (bpt_iter_t)oi;
-	bpt_t t = i->idx->priv;
 
 	if (pos->pad != POS_PAD)
 		return EINVAL;
@@ -1373,7 +1372,6 @@ static int bpt_iter_set(ods_iter_t oi, const ods_pos_t pos_)
 static int bpt_iter_pos(ods_iter_t oi, ods_pos_t pos_)
 {
 	bpt_iter_t i = (bpt_iter_t)oi;
-	bpt_t t = i->idx->priv;
 	struct bpt_pos_s *pos = (struct bpt_pos_s *)pos_;
 
 	if (!i->node_ref)

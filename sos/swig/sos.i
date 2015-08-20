@@ -185,6 +185,18 @@ struct sos_array_s {
 	union sos_array_element_u data;
 };
 
+typedef struct ods_idx_data_s {
+	unsigned char bytes[16];
+} ods_idx_data_t;
+
+typedef union sos_obj_ref_s {
+	ods_idx_data_t idx_data;
+	struct sos_idx_ref_s {
+		ods_ref_t ods;	/* The reference to the ODS */
+		ods_ref_t obj;	/* The object reference */
+	} ref;
+} sos_obj_ref_t;
+
 union sos_primary_u {
 	unsigned char byte_;
 	uint16_t uint16_;
@@ -197,7 +209,7 @@ union sos_primary_u {
 	double double_;
 	long double long_double_;
 	union sos_timestamp_u timestamp_;
-	ods_ref_t ref_;
+	sos_obj_ref_t ref_;
 };
 
 typedef union sos_value_data_u {
@@ -262,8 +274,8 @@ int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 int sos_container_new(const char *path, int o_mode);
 sos_t sos_container_open(const char *path, sos_perm_t o_perm);
 int sos_container_delete(sos_t c);
-int sos_container_config(const char *, const char *opt_name, const char *opt_value);
-
+int sos_container_config_set(const char *, const char *opt_name, const char *opt_value);
+char *sos_container_config_get(const char *, const char *opt_name);
 
 void sos_container_close(sos_t c, sos_commit_t flags);
 int sos_container_commit(sos_t c, sos_commit_t flags);
@@ -293,12 +305,13 @@ void sos_part_print(sos_t sos, FILE *fp);
 sos_schema_t sos_obj_schema(sos_obj_t obj);
 sos_obj_t sos_obj_new(sos_schema_t schema);
 void sos_obj_delete(sos_obj_t obj);
+sos_obj_ref_t sos_obj_ref(sos_obj_t obj);
+sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref);
 sos_obj_t sos_obj_get(sos_obj_t obj);
 void sos_obj_put(sos_obj_t obj);
 int sos_obj_index(sos_obj_t obj);
 int sos_obj_remove(sos_obj_t obj);
 sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val);
-sos_obj_t sos_obj_from_ref(sos_t sos, sos_ref_t ref);
 sos_value_t sos_value_by_name(sos_value_t value, sos_schema_t schema, sos_obj_t obj,
 			      const char *name, int *attr_id);
 sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id);
@@ -314,6 +327,8 @@ void sos_value_put(sos_value_t value);
 const char *sos_value_to_str(sos_value_t value, char *str, size_t len);
 int sos_value_from_str(sos_value_t value, const char* str, char **endptr);
 
+%newobject sos_key_new;
+sos_key_t sos_key_new(size_t sz);
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
 sos_key_t sos_attr_key_new(sos_attr_t attr, size_t size);
 int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str);
@@ -324,6 +339,7 @@ size_t sos_attr_key_size(sos_attr_t attr);
 size_t sos_key_size(sos_key_t key);
 size_t sos_key_len(sos_key_t key);
 unsigned char *sos_key_value(sos_key_t key);
+char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_sz);
 void *sos_value_as_key(sos_value_t value);
 void sos_key_put(sos_key_t key);
 
@@ -344,6 +360,7 @@ typedef struct sos_pos *sos_pos_t;
  */
 int sos_index_new(sos_t sos, const char *name,
 		  const char *idx_type, const char *key_type, ...);
+%newobject sos_index_open;
 sos_index_t sos_index_open(sos_t sos, const char *name);
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_obj_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
@@ -352,12 +369,20 @@ sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
 int sos_index_commit(sos_index_t index, sos_commit_t flags);
 int sos_index_close(sos_index_t index, sos_commit_t flags);
+size_t sos_index_key_size(sos_index_t index);
+%newobject sos_index_key_new;
+sos_key_t sos_index_key_new(sos_index_t index, size_t size);
+int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
+%newobject sos_index_key_to_str;
+const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
+int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
 
 /*
  * Iterators
  */
 int sos_iter_pos(sos_iter_t iter, sos_pos_t pos);
 int sos_iter_set(sos_iter_t iter, const sos_pos_t pos);
+sos_iter_t sos_index_iter_new(sos_index_t idx);
 sos_iter_t sos_attr_iter_new(sos_attr_t attr);
 int sos_iter_flags_set(sos_iter_t iter, sos_iter_flags_t flags);
 sos_iter_flags_t sos_iter_flags_get(sos_iter_t iter);
