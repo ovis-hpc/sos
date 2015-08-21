@@ -599,9 +599,19 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		ods_idx_close(sos->schema_idx, flags);
 	if (sos->schema_ods)
 		ods_close(sos->schema_ods, flags);
+	if (sos->idx_idx)
+		ods_idx_close(sos->idx_idx, flags);
+	if (sos->idx_ods)
+		ods_close(sos->idx_ods, flags);
+
 	sos_part_t part;
-	TAILQ_FOREACH(part, &sos->part_list, entry)
+	TAILQ_FOREACH(part, &sos->part_list, entry) {
 		ods_close(part->obj_ods, flags);
+	}
+
+	if (sos->part_ods)
+		ods_close(sos->part_ods, flags);
+
 	free(sos);
 }
 
@@ -613,31 +623,6 @@ int __sos_schema_name_cmp(void *a, void *b)
 static int schema_id_cmp(void *a, void *b)
 {
 	return *(uint32_t *)a - *(uint32_t *)b;
-}
-
-/**
- * \brief Take a reference on a container
- *
- * SOS container are reference counted. This function takes a reference
- * on a SOS container and returns a pointer to the same. The typical
- * calling sequence is:
- *
- *     sos_t my_sos_ptr = sos_container_get(sos);
- *
- * This allows for the container to be safely pointed to from multiple
- * places. The sos_container_put() function is used to drop a reference on
- * the container. For example:
- *
- *     sos_container_put(my_sos_ptr);
- *     my_sos_ptr = NULL;
- *
- * \param sos	The SOS container handle
- * \retval The container handle
- */
-static sos_t sos_container_get(sos_t sos)
-{
-	ods_atomic_inc(&sos->ref_count);
-	return sos;
 }
 
 /**
@@ -763,7 +748,7 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 	rc = __sos_partition_open(sos);
 	if (rc)
 		goto err;
-	return sos_container_get(sos);
+	return sos;
  err:
 	sos_container_put(sos);
 	return NULL;
