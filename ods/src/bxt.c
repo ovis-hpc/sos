@@ -952,8 +952,11 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 			ods_obj_t parent =
 				ods_ref_as_obj(t->ods, NODE(leaf)->parent);
 			/* Maintain this to simplify other logic */
-			if (N_ENT(parent,0).node_ref == ods_obj_ref(leaf))
-				N_ENT(parent,0).key_ref = N_ENT(leaf,0).key_ref;
+			if (N_ENT(parent,0).node_ref == ods_obj_ref(leaf)) {
+				ods_obj_t rec0 = ods_ref_as_obj(t->ods, L_ENT(leaf,0).head_ref);
+				N_ENT(parent,0).key_ref = REC(rec0)->key_ref;
+				ods_obj_put(rec0);
+			}
 			ods_obj_put(parent);
 		}
 		ods_atomic_inc(&t->udata->card);
@@ -1926,12 +1929,12 @@ static int bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
 	if (!rec)
 		goto norec;
 
-	/* If the rec has a next, move the iterator to it, if not move to the prev */
+	/* If the rec has a prev, move the iterator to it, if not move to the next */
 	/* TODO: unique iterators */
-	if (REC(rec)->next_ref)
-		i->rec = ods_ref_as_obj(t->ods, REC(rec)->next_ref);
-	else
+	if (REC(rec)->prev_ref)
 		i->rec = ods_ref_as_obj(t->ods, REC(rec)->prev_ref);
+	else
+		i->rec = ods_ref_as_obj(t->ods, REC(rec)->next_ref);
 
 	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 	leaf = leaf_find(t, key);

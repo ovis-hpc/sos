@@ -352,19 +352,11 @@ int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b)
 	return ods_key_cmp(index->idx, a, b);
 }
 
-#if 0
-void __walk_idx(sos_index_t idx)
+void sos_index_print(sos_index_t index, FILE *fp)
 {
-	sos_iter_t iter = sos_index_iter_new(idx);
-	sos_obj_ref_t obj_ref;
-	sos_obj_t obj;
-	int rc;
-	for (rc = sos_iter_begin(iter); rc; rc = sos_iter_next(iter)) {
-		obj_ref = sos_iter_ref(iter);
-		printf("%d\n", obj_ref->ref.part_id);
-	}
+	ods_idx_print(index->idx, fp);
 }
-#endif
+
 struct sos_container_index_iter_s {
 	sos_t sos;
 	ods_iter_t iter;

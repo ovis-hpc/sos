@@ -407,6 +407,7 @@ sos_key_t sos_index_key_new(sos_index_t index, size_t size);
 int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
 const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
 int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
+void sos_index_print(sos_index_t index, FILE *fp);
 void sos_container_index_list(sos_t sos, FILE *fp);
 typedef struct sos_container_index_iter_s *sos_container_index_iter_t;
 sos_container_index_iter_t sos_container_index_iter_new(sos_t sos);
