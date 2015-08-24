@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2014-2015 Open Grid Computing, Inc. All rights reserved.
  *
  * Confidential and Proprietary
  */
@@ -1473,6 +1473,32 @@ static void delete_head(bxt_t t, ods_obj_t leaf, ods_obj_t rec, int ent)
 	ods_obj_put(rec);
 }
 
+static void delete_dup_rec(bxt_t t, ods_obj_t leaf, ods_obj_t rec, int ent)
+{
+	ods_ref_t rec_ref = ods_obj_ref(rec);
+	ods_obj_t next_rec = ods_ref_as_obj(t->ods, REC(rec)->next_ref);
+	ods_obj_t prev_rec = ods_ref_as_obj(t->ods, REC(rec)->prev_ref);
+
+	assert(L_ENT(leaf,ent).head_ref != L_ENT(leaf,ent).tail_ref);
+	if (prev_rec)
+		REC(prev_rec)->next_ref = REC(rec)->next_ref;
+	if (next_rec)
+		REC(next_rec)->prev_ref = REC(rec)->prev_ref;
+
+	if (rec_ref == L_ENT(leaf,ent).head_ref) {
+		assert(REC(rec)->next_ref);
+		L_ENT(leaf,ent).head_ref = REC(rec)->next_ref;
+	} else if (rec_ref == L_ENT(leaf,ent).tail_ref) {
+		assert(REC(rec)->prev_ref);
+		L_ENT(leaf,ent).tail_ref = REC(rec)->prev_ref;
+	}
+
+	ods_obj_put(next_rec);
+	ods_obj_put(prev_rec);
+	ods_obj_delete(rec);
+	ods_obj_put(rec);
+}
+
 static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	bxt_t t = idx->priv;
@@ -1883,6 +1909,64 @@ static int bxt_iter_pos(ods_iter_t oi, ods_pos_t pos_)
 	return 0;
 }
 
+static int bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
+{
+	bxt_iter_t i = (bxt_iter_t)oi;
+	struct bxt_pos_s *pos = (struct bxt_pos_s *)pos_;
+	bxt_t t = i->iter.idx->priv;
+	int ent;
+	ods_obj_t leaf, rec;
+	int found;
+	ods_key_t key;
+
+	if (ods_spin_lock(&t->lock, -1))
+		return EBUSY;
+
+	rec = ods_ref_as_obj(t->ods, pos->rec_ref);
+	if (!rec)
+		goto norec;
+
+	/* If the rec has a next, move the iterator to it, if not move to the prev */
+	/* TODO: unique iterators */
+	if (REC(rec)->next_ref)
+		i->rec = ods_ref_as_obj(t->ods, REC(rec)->next_ref);
+	else
+		i->rec = ods_ref_as_obj(t->ods, REC(rec)->prev_ref);
+
+	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
+	leaf = leaf_find(t, key);
+	if (!leaf)
+		goto noent;
+	ent = find_key_idx(t, leaf, key, &found);
+	if (!found)
+		goto noent;
+
+	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref)
+		ods_atomic_dec(&t->udata->dups);
+	ods_atomic_dec(&t->udata->card);
+	/*
+	 * Trivial case is that this is a dup key. In this case,
+	 * delete the first entry on the list and return
+	 */
+	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref) {
+		delete_dup_rec(t, leaf, rec, ent);
+		ods_obj_put(leaf);
+		ods_spin_unlock(&t->lock);
+		return 0;
+	}
+	t->udata->root_ref = entry_delete(t, leaf, rec, ent);
+	ods_obj_delete(key);
+	ods_obj_put(rec);
+	ods_spin_unlock(&t->lock);
+	return 0;
+ noent:
+	ods_obj_put(key);
+ norec:
+	ods_obj_put(leaf);
+	ods_spin_unlock(&t->lock);
+	return ENOENT;
+}
+
 static const char *bxt_get_type(void)
 {
 	return "BXTREE";
@@ -1927,6 +2011,7 @@ static struct ods_idx_provider bxt_provider = {
 	.iter_prev = bxt_iter_prev,
 	.iter_set = bxt_iter_set,
 	.iter_pos = bxt_iter_pos,
+	.iter_pos_delete = bxt_iter_pos_delete,
 	.iter_key = bxt_iter_key,
 	.iter_data = bxt_iter_data,
 	.print_idx = print_idx,

@@ -17,6 +17,9 @@ target_link_libraries(sos ods dl pthread)
 add_executable(sos_cmd sos_cmd.c)
 target_link_libraries(sos_cmd sos yaml)
 
-INSTALL(TARGETS sos sos_cmd
+add_executable(sos_part sos_part.c)
+target_link_libraries(sos_part sos)
+
+INSTALL(TARGETS sos sos_cmd sos_part
 	RUNTIME DESTINATION bin
 	LIBRARY DESTINATION lib)

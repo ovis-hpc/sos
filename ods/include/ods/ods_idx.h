@@ -591,6 +591,16 @@ ods_iter_t ods_iter_new(ods_idx_t idx);
 ods_idx_t ods_iter_idx(ods_iter_t iter);
 
 /**
+ * \brief Remove the index entry at the specified iterator position
+ *
+ * \param iter The iterator handle
+ * \param pos  The iterator position to remove
+ * \retval 0   Success
+ * \retval !0  An error occurred.
+ */
+int ods_iter_pos_remove(ods_iter_t iter, ods_pos_t pos);
+
+/**
  * \brief Destroy an iterator
  *
  * Release the resources associated with the iterator. This function

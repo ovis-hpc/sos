@@ -352,3 +352,95 @@ int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b)
 	return ods_key_cmp(index->idx, a, b);
 }
 
+#if 0
+void __walk_idx(sos_index_t idx)
+{
+	sos_iter_t iter = sos_index_iter_new(idx);
+	sos_obj_ref_t obj_ref;
+	sos_obj_t obj;
+	int rc;
+	for (rc = sos_iter_begin(iter); rc; rc = sos_iter_next(iter)) {
+		obj_ref = sos_iter_ref(iter);
+		printf("%d\n", obj_ref->ref.part_id);
+	}
+}
+#endif
+struct sos_container_index_iter_s {
+	sos_t sos;
+	ods_iter_t iter;
+};
+
+sos_container_index_iter_t sos_container_index_iter_new(sos_t sos)
+{
+	sos_container_index_iter_t iter = calloc(1, sizeof *iter);
+	iter->sos = sos;
+	iter->iter = ods_iter_new(sos->idx_idx);
+	if (!iter->iter) {
+		free(iter);
+		return NULL;
+	}
+	return iter;
+}
+
+void sos_container_index_iter_free(sos_container_index_iter_t iter)
+{
+	if (iter->iter)
+		ods_iter_delete(iter->iter);
+
+	free(iter);
+}
+
+sos_index_t sos_container_index_iter_first(sos_container_index_iter_t iter)
+{
+	sos_obj_ref_t idx_ref;
+	sos_index_t idx;
+	int rc = ods_iter_begin(iter->iter);
+	if (rc)
+		return NULL;
+	idx_ref.idx_data = ods_iter_data(iter->iter);
+	ods_obj_t idx_obj = ods_ref_as_obj(iter->sos->idx_ods, idx_ref.ref.obj);
+	idx = sos_index_open(iter->sos, SOS_IDX(idx_obj)->name);
+	ods_obj_put(idx_obj);
+	return idx;
+}
+
+sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter)
+{
+	sos_obj_ref_t idx_ref;
+	sos_index_t idx;
+	int rc = ods_iter_next(iter->iter);
+	if (rc)
+		return NULL;
+	idx_ref.idx_data = ods_iter_data(iter->iter);
+	ods_obj_t idx_obj = ods_ref_as_obj(iter->sos->idx_ods, idx_ref.ref.obj);
+	idx = sos_index_open(iter->sos, SOS_IDX(idx_obj)->name);
+	ods_obj_put(idx_obj);
+	return idx;
+}
+
+void sos_container_index_list(sos_t sos, FILE *fp)
+{
+	sos_obj_ref_t idx_ref;
+	int rc;
+	ods_iter_t iter = ods_iter_new(sos->idx_idx);
+	if (!fp)
+		fp = stdout;
+	fprintf(fp, "%-20s %-20s %-20s %-20s\n",
+		"Name", "Index Type", "Key Type", "Index Args");
+	fprintf(fp,
+		"-------------------- -------------------- -------------------- "
+		"--------------------\n");
+	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_next(iter)) {
+		idx_ref.idx_data = ods_iter_data(iter);
+		ods_obj_t idx_obj = ods_ref_as_obj(sos->idx_ods, idx_ref.ref.obj);
+		fprintf(fp, "%-20s %-20s %-20s %-20s\n",
+			SOS_IDX(idx_obj)->name,
+			SOS_IDX(idx_obj)->idx_type,
+			SOS_IDX(idx_obj)->key_type,
+			SOS_IDX(idx_obj)->args
+			);
+		ods_obj_put(idx_obj);
+	}
+	ods_iter_delete(iter);
+}
+

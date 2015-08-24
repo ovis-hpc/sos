@@ -293,11 +293,12 @@ void sos_container_info(sos_t sos, FILE* fp);
 typedef struct sos_part_s *sos_part_t;
 
 typedef struct sos_part_iter_s *sos_part_iter_t;
-int sos_part_new(sos_t sos, const char *name);
+int sos_part_create(sos_t sos, const char *name);
 sos_part_iter_t sos_part_iter_new(sos_t sos);
 sos_part_t sos_part_first(sos_part_iter_t iter);
 sos_part_t sos_part_next(sos_part_iter_t iter);
-void sos_part_print(sos_t sos, FILE *fp);
+void sos_part_put(sos_part_t part);
+void sos_container_part_list(sos_t sos, FILE *fp);
 
 #define SOS_OBJ_BE	1
 #define SOS_OBJ_LE	2
@@ -376,6 +377,7 @@ int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
 %newobject sos_index_key_to_str;
 const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
 int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
+void sos_container_index_list(sos_t sos, FILE *fp);
 
 /*
  * Iterators
@@ -401,7 +403,7 @@ int sos_iter_begin(sos_iter_t i);
 int sos_iter_end(sos_iter_t i);
 sos_key_t sos_iter_key(sos_iter_t iter);
 sos_obj_t sos_iter_obj(sos_iter_t iter);
-int sos_iter_obj_remove(sos_iter_t iter);
+int sos_iter_entry_remove(sos_iter_t iter);
 
 %pythoncode %{
 %}

@@ -291,18 +291,20 @@ void sos_config_print(const char *path, FILE *fp);
 
 typedef struct sos_part_iter_s *sos_part_iter_t;
 typedef struct sos_part_s *sos_part_t;
-int sos_part_new(sos_t sos, const char *name);
+int sos_part_create(sos_t sos, const char *name);
+sos_part_t sos_part_find(sos_t sos, const char *name);
 sos_part_iter_t sos_part_iter_new(sos_t sos);
 void sos_part_iter_free(sos_part_iter_t iter);
 sos_part_t sos_part_first(sos_part_iter_t iter);
 sos_part_t sos_part_next(sos_part_iter_t iter);
 const char *sos_part_name_get(sos_part_t part);
+uint32_t sos_part_id_get(sos_part_t part);
 uint32_t sos_part_state_get(sos_part_t part);
 void sos_part_primary_set(sos_part_t part);
 int sos_part_active_set(sos_part_t part, int active);
-int sos_part_remove(sos_part_t part);
+uint32_t sos_part_refcount_get(sos_part_t part);
 void sos_part_put(sos_part_t part);
-void sos_part_print(sos_t sos, FILE *fp);
+void sos_container_part_list(sos_t sos, FILE *fp);
 
 /** \defgroup objects SOS Objects
  * @{
@@ -405,6 +407,12 @@ sos_key_t sos_index_key_new(sos_index_t index, size_t size);
 int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
 const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
 int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
+void sos_container_index_list(sos_t sos, FILE *fp);
+typedef struct sos_container_index_iter_s *sos_container_index_iter_t;
+sos_container_index_iter_t sos_container_index_iter_new(sos_t sos);
+void sos_container_index_iter_free(sos_container_index_iter_t iter);
+sos_index_t sos_container_index_iter_first(sos_container_index_iter_t iter);
+sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter);
 
 /** @} */
 
@@ -494,7 +502,8 @@ int sos_iter_begin(sos_iter_t i);
 int sos_iter_end(sos_iter_t i);
 sos_key_t sos_iter_key(sos_iter_t iter);
 sos_obj_t sos_iter_obj(sos_iter_t iter);
-int sos_iter_obj_remove(sos_iter_t iter);
+sos_obj_ref_t sos_iter_ref(sos_iter_t iter);
+int sos_iter_entry_remove(sos_iter_t iter);
 
 typedef struct sos_filter_cond_s *sos_filter_cond_t;
 typedef struct sos_filter_s *sos_filter_t;

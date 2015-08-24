@@ -2,9 +2,8 @@ import sys
 import os
 import math
 import web
-from sos import *
-from bwx import *
-import datetime
+import argparse
+from datetime import datetime
 import tempfile
 import matplotlib
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -14,8 +13,11 @@ from matplotlib.figure import Figure
 from matplotlib.ticker import Formatter
 import StringIO, Image
 
+from sos import *
+from bwx import *
+
 urls = (
-    '/plot', 'JobPlot'
+    '/plot', 'WwwJobPlot'
     )
 
 class MyXFormatter(Formatter):
@@ -23,7 +25,7 @@ class MyXFormatter(Formatter):
         self.fmt = fmt
 
     def __call__(self, x, pos=0):
-        dt = datetime.datetime.fromtimestamp(x)
+        dt = datetime.fromtimestamp(x)
         # sys.stderr.write('%d %s\n'%(x, dt.strftime(self.fmt)))
         return dt.strftime(self.fmt)
 
@@ -43,11 +45,113 @@ class MyYFormatter(Formatter):
         return self.fmt%(x / 1.0e12, 'T')
 
 class JobPlot(object):
+    def __init__(self, container, job_id, metric, start=0, duration=3600, output='gui'):
+        self.containerName = container
+        self.metricName = metric
+        self.jobId = job_id
+        self.startSecs = start
+        self.duration = duration
+        self.output = output
+
+    def plot(self):
+        print("Generating Job Plot")
+        start_dt = datetime.now()
+        mfc = [ 'b', 'g', 'r', 'c', 'm', 'y', 'k' ]
+        ls = []
+        for c in mfc:
+            ls.append(c + 'o-')
+
+        x_axis = []
+
+        self.container = SOS.Container(self.containerName,
+                                       mode=SOS.Container.RO)
+        self.iter = SOS.Iterator(self.container, "Sample", "JobTime")
+        sample_key = self.iter.key()
+
+        self.iter.key_set(sample_key, str((self.jobId << 32) | self.startSecs))
+        sample_obj = self.iter.sup(sample_key)
+        if not sample_obj:
+            return (1, 'There are no samples for the specified job')
+
+        sample = bwx.job_sample(sample_obj)
+        if self.startSecs == 0:
+            self.startSecs = float(sample.JobTime.secs)
+        series = {}
+        metric_id = sample.idx(self.metricName)
+        x_axis_comp = sample.CompId
+        while sample_obj is not None:
+            sample = bwx.job_sample(sample_obj)
+            if sample.JobTime.id != self.jobId:
+                break
+
+            comp_id = sample.CompId
+            cur_secs = float(sample.JobTime.secs)
+            if cur_secs - self.startSecs > self.duration:
+                break
+
+            if comp_id == x_axis_comp:
+                x_axis.append(cur_secs)
+
+            if comp_id not in series:
+                y_axis = []
+                series[comp_id] = y_axis
+            else:
+                y_axis = series[comp_id]
+
+            y_axis.append(sample[metric_id])
+            sos.sos_obj_put(sample_obj)
+            sample_obj = self.iter.next()
+
+        dur = datetime.now() - start_dt
+        secs0 = dur.seconds + (dur.microseconds / 1.0e6);
+
+        figure = Figure(figsize=(10,2.5),facecolor='w')
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        axis = figure.add_axes([0.1, 0.225, 0.875, 0.65], axisbg='w')
+        x_axis_len = len(x_axis)
+        axis.tick_params(labelsize=10, direction='out')
+        plot_no = 0
+        for comp_id in series:
+            y_axis = series[comp_id]
+            y_axis_len = len(y_axis)
+            axis_len = min(x_axis_len, y_axis_len)
+            plot_no = plot_no + 1
+            if plot_no > len(ls) - 1:
+                plot_no = 0
+            line,  = axis.plot(x_axis[:axis_len], y_axis[:axis_len],
+                               ls[plot_no], markersize=6, markerfacecolor=mfc[plot_no],
+                               linewidth=1)
+        axis.legend(loc='best', fancybox=True, framealpha=0.5)
+        axis.set_title(self.metricName + '[' + str(len(series)) + ']', fontsize=10)
+        axis.set_ylabel('{0} records'.format(len(x_axis)))
+        axis.xaxis.set_major_formatter(MyXFormatter())
+        axis.yaxis.set_major_formatter(MyYFormatter())
+        axis.grid(True)
+        figure.autofmt_xdate()
+        dur = datetime.now() - start_dt
+        secs = dur.seconds + (dur.microseconds / 1.0e6);
+        textstr = 'Render Time: %.2f / %.2f (s)'%(secs0, secs)
+        axis.text(0.050, 1.1, textstr, transform=axis.transAxes,
+                  fontsize=10, verticalalignment='top', bbox=props)
+        if self.output == 'gui':
+            print("Presenting Job Plot")
+            plt.show()
+            return None
+
+        print("Rending Job Plot as PNG image file")
+        canvas = FigureCanvasAgg(figure)
+        imgdata = StringIO.StringIO()
+        canvas.print_png(imgdata, dpi=150)
+        web.header('Content-Type', 'image/png')
+        web.header('Cache-Control', 'no-store, no-cache, must-revalidate');
+        return imgdata.getvalue()
+
+class WwwJobPlot(object):
     def __init__(self):
         self.container = None
 
     def GET(self):
-        start_dt = datetime.datetime.now()
+        start_dt = datetime.now()
         input = web.input()
         container = input.container
         self.container = SOS.Container(str(sos_root + '/' + container),
@@ -114,7 +218,7 @@ class JobPlot(object):
             sos.sos_obj_put(sample_obj)
             sample_obj = self.iter.next()
 
-        dur = datetime.datetime.now() - start_dt
+        dur = datetime.now() - start_dt
         secs0 = dur.seconds + (dur.microseconds / 1.0e6);
 
         figure = Figure(figsize=(10,2.5),facecolor='w')
@@ -140,7 +244,7 @@ class JobPlot(object):
         axis.yaxis.set_major_formatter(MyYFormatter())
         axis.grid(True)
         figure.autofmt_xdate()
-        dur = datetime.datetime.now() - start_dt
+        dur = datetime.now() - start_dt
         secs = dur.seconds + (dur.microseconds / 1.0e6);
         textstr = 'Render Time: %.2f / %.2f (s)'%(secs0, secs)
         axis.text(0.050, 1.1, textstr, transform=axis.transAxes,
@@ -153,6 +257,33 @@ class JobPlot(object):
         return imgdata.getvalue()
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Plot a Job's metric data.")
+    parser.add_argument("--mode", default='web',
+                        help="Specify 'www' for wsgi app, or 'gui' for real-time")
+    parser.add_argument("--container",
+                        help="Specify the container path")
+    parser.add_argument("--job_id", type=int,
+                        help="Specify the Job Id")
+    parser.add_argument("--metric-name", default="current_freemem",
+                        help="Specify the metric name to be plotted")
+    parser.add_argument("--start-time",
+                        help="Specify the start time, format is YYYY/MM/DD HH:MM:SS")
+    parser.add_argument("--duration",
+                        type=int, default=3600,
+                        help="Specify the duration, format is seconds ")
+    args = parser.parse_args()
+
+    if args.mode == 'gui':
+        if args.start_time:
+            dt = datetime.strptime(args.start_time, "%Y/%m/%d %H:%M:%S")
+            start_secs = int(dt.strftime("%s"))
+        else:
+            start_secs = 0
+        jobPlot = JobPlot(args.container, args.job_id, args.metric_name,
+                          start_secs, args.duration, args.mode)
+        jobPlot.plot()
+        sys.exit(0)
+
     app = web.application(urls, globals())
     app.run()
 

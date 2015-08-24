@@ -131,16 +131,16 @@ typedef struct sos_part_data_s {
 /*
  * This is the in-memory partition structure that is created when the partition is opened.
  */
-typedef struct sos_part_s {
+struct sos_part_s {
 	sos_t sos;
 	ods_obj_t part_obj;
 	ods_t obj_ods;
 	TAILQ_ENTRY(sos_part_s) entry;
-} *sos_part_t;
+};
 
 struct sos_part_iter_s {
 	sos_t sos;
-	sos_part_t part;
+	ods_obj_t part_obj;
 };
 
 #define SOS_IDXDIR_SIGNATURE 0x534f534958444952 /* 'SOSIXDIR' */
@@ -271,7 +271,6 @@ struct sos_container_config {
  */
 struct sos_container_s {
 	pthread_mutex_t lock;
-	ods_atomic_t ref_count;
 
 	/*
 	 * "Path" to the file. This is used as a prefix for all the
@@ -320,6 +319,8 @@ struct sos_container_s {
 	LIST_HEAD(obj_list_head, sos_obj_s) obj_list;
 	LIST_HEAD(obj_free_list_head, sos_obj_s) obj_free_list;
 	LIST_HEAD(schema_list, sos_schema_s) schema_list;
+
+	LIST_ENTRY(sos_container_s) entry;
 };
 
 typedef int (*sos_filter_fn_t)(sos_value_t a, sos_value_t b);
@@ -383,12 +384,15 @@ ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock);
 void __sos_schema_free(sos_schema_t schema);
 void __sos_part_primary_set(sos_t sos, ods_obj_t part_obj);
 sos_part_t __sos_primary_obj_part(sos_t sos);
+sos_part_t __sos_part_new(sos_t sos, ods_obj_t part_obj);
 sos_part_iter_t __sos_part_iter_new(sos_t sos);
 ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj);
 void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj);
 void __sos_part_iter_free(sos_part_iter_t iter);
 ods_obj_t __sos_part_data_first(sos_t sos);
 ods_obj_t __sos_part_data_next(sos_t sos, ods_obj_t part_obj);
+void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj);
+ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj);
 int __sos_schema_open(sos_t sos, sos_schema_t schema);
 int __sos_schema_name_cmp(void *a, void *b);
 

@@ -1389,6 +1389,58 @@ void ods_dump(ods_t ods, FILE *fp)
 	ods_map_put(map);
 }
 
+int ods_pack(ods_t ods)
+{
+	int i;
+	ods_pg_t pg;
+	ods_pg_t pg_prev;
+	ods_pg_t pg_cur;
+	size_t obj_sz, pg_sz;
+	int rc;
+	ods_map_t map = ods_map_get(ods);
+	if (!map)
+		return 0;
+	errno = 0;
+	for (i = map->pg_table->count-1; i > -1; i--) {
+		if (map->pg_table->pages[i])
+			break;
+	}
+	i++;
+	if (i < 0 || map->pg_table->count <= i)
+		goto out;
+
+	pg_sz = sizeof(*map->pg_table) + i;
+	pg = ods_ref_to_ptr(map, i);
+	pg_prev = 0;
+	pg_cur = ods_ref_to_ptr(map, map->obj_data->pg_free);
+	while (pg_cur && pg_cur != pg) {
+		pg_prev = pg_cur;
+		pg_cur = ods_ref_to_ptr(map, pg_cur->next);
+	}
+	if (!pg_cur) {
+		errno = ENOENT;
+		goto out;
+	}
+	if (!pg_prev) {
+		map->obj_data->pg_free = pg->next;
+	} else {
+		pg_prev->next = pg->next;
+	}
+	map->pg_table->count = i;
+	ods_commit(ods, ODS_COMMIT_SYNC);
+	/* offset of the trailing page is the new file size */
+	obj_sz = (size_t)ods_ptr_to_ref(map, pg);
+	rc = ftruncate(ods->pg_fd, pg_sz);
+	if (rc)
+		goto out;
+	rc = ftruncate(ods->obj_fd, obj_sz);
+	if (rc)
+		goto out;
+ out:
+	ods_map_put(map);
+	return errno;
+}
+
 /*
  * This function is _not_ thread safe
  */

@@ -384,18 +384,10 @@ ods_idx_data_t ods_iter_data(ods_iter_t iter)
 	return iter->idx->idx_class->prv->iter_data(iter);
 }
 
-#if 0
-ods_ref_t ods_iter_ref(ods_iter_t iter)
+int ods_iter_pos_remove(ods_iter_t iter, ods_pos_t pos)
 {
-	return iter->idx->idx_class->prv->iter_ref(iter);
+	return iter->idx->idx_class->prv->iter_pos_delete(iter, pos);
 }
-
-ods_obj_t ods_iter_obj(ods_iter_t iter)
-{
-	ods_ref_t ref = iter->idx->idx_class->prv->iter_ref(iter);
-	return ods_ref_as_obj(iter->idx->ods, ref);
-}
-#endif
 
 ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz)
 {

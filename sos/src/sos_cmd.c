@@ -190,7 +190,7 @@ int schema_dir(sos_t sos)
 
 int part_dir(sos_t sos)
 {
-	sos_part_print(sos, stdout);
+	sos_container_part_list(sos, stdout);
 	return 0;
 }
 
@@ -1332,7 +1332,7 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 'C':
-			path = optarg;
+			path = strdup(optarg);
 			break;
 		case 'K':
 			action |= CONFIG;
@@ -1363,8 +1363,8 @@ int main(int argc, char **argv)
 			action |= CSV;
 			csv_file = fopen(optarg, "r");
 			if (!csv_file) {
-					perror("Error opening CSV file: ");
-					exit(9);
+				perror("Error opening CSV file: ");
+				exit(9);
 			}
 			break;
 		case 'T':

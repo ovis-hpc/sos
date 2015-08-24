@@ -118,6 +118,19 @@ extern ods_t ods_open(const char *path, ods_perm_t o_perm);
 extern int ods_stat(ods_t ods, struct stat *sb);
 
 /**
+ * \brief Truncate an ODS to it's minimum size
+ *
+ * An ODS has both allocated and unallocated space. This function
+ * releases unallocated storage and reduces the storage size to the
+ * minimum necessary to contain the allocated objects.
+ *
+ * \param ods  The ODS handle
+ * \retval 0   Success
+ * \retval !0  An error occured truncating the storage
+ */
+int ods_pack(ods_t ods);
+
+/**
  * \brief Acquire a pointer to the user-data for the ODS
  *
  * An ODS has storage pre-allocated for the storager of

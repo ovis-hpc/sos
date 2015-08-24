@@ -75,6 +75,7 @@ struct ods_idx_provider {
 	int (*iter_prev)(ods_iter_t iter);
 	int (*iter_set)(ods_iter_t iter, const ods_pos_t pos);
 	int (*iter_pos)(ods_iter_t iter, ods_pos_t pos);
+	int (*iter_pos_delete)(ods_iter_t iter, ods_pos_t pos);
 	ods_key_t (*iter_key)(ods_iter_t iter);
 	ods_idx_data_t (*iter_data)(ods_iter_t iter);
 	void (*print_idx)(ods_idx_t idx, FILE *fp);

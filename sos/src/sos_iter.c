@@ -206,7 +206,7 @@ void sos_iter_free(sos_iter_t iter)
  * \brief Return the object at the current iterator position
  *
  * \param iter	The iterator handle
- * \return ods_obj_t at the current position
+ * \return sos_obj_t at the current position
  */
 sos_obj_t sos_iter_obj(sos_iter_t i)
 {
@@ -222,18 +222,36 @@ sos_obj_t sos_iter_obj(sos_iter_t i)
 }
 
 /**
- * \brief Remove object at the current iterator position
+ * \brief Return the object reference at the current iterator position
  *
- * After removal, the iterator points at the next object if it
- * exists. Otherwise, it points to the previous object.
+ * \param iter	The iterator handle
+ * \return sos_obj_ref_t at the current position
+ */
+sos_obj_ref_t sos_iter_ref(sos_iter_t i)
+{
+	sos_obj_ref_t idx_ref;
+	idx_ref.idx_data = ods_iter_data(i->iter);
+	return idx_ref;
+}
+
+/**
+ * \brief Remove the index entry at the current iterator position
+ *
+ * Removes the index entry at the current cursor position.
+ * After removal, the iterator points at the next entry if it
+ * exists, or empty if the tail was deleted.
  *
  * \param iter The iterator handle
  * \return 0 on success.
  * \return Error code on failure.
  */
-int sos_iter_obj_remove(sos_iter_t iter)
+int sos_iter_entry_remove(sos_iter_t iter)
 {
-	return ENOSYS;
+	struct ods_pos_s pos;
+	int rc = ods_iter_pos(iter->iter, &pos);
+	if (rc)
+		return rc;
+	return ods_iter_pos_remove(iter->iter, &pos);
 }
 
 /**
