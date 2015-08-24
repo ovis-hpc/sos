@@ -1138,7 +1138,7 @@ ods_obj_t __sos_part_data_first(sos_t sos)
 ods_obj_t __sos_part_data_next(sos_t sos, ods_obj_t part_obj)
 {
 	ods_obj_t next_obj;
-	ods_ref_t next_ref = NULL;
+	ods_ref_t next_ref = 0;
 
 	if (!part_obj)
 		return NULL;
