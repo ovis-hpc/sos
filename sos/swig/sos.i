@@ -92,7 +92,10 @@ const char *pos_to_str(sos_pos_t pos);
 int pos_from_str(sos_pos_t pos, const char *str);
 
 /* Filters */
+typedef struct sos_filter_s *sos_filter_t;
+%newobject sos_filter_new;
 sos_filter_t sos_filter_new(sos_iter_t iter);
+%delobject sos_filter_free;
 void sos_filter_free(sos_filter_t f);
 int sos_filter_cond_add(sos_filter_t f,	sos_attr_t attr, enum sos_cond_e cond_e, sos_value_t value);
 sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt);
@@ -290,13 +293,22 @@ void sos_container_info(sos_t sos, FILE* fp);
 /** New objects stored here */
 #define SOS_PART_STATE_PRIMARY			2
 
-typedef struct sos_part_s *sos_part_t;
-
 typedef struct sos_part_iter_s *sos_part_iter_t;
+typedef struct sos_part_s *sos_part_t;
 int sos_part_create(sos_t sos, const char *name);
+sos_part_t sos_part_find(sos_t sos, const char *name);
+%newobject sos_part_iter_new;
 sos_part_iter_t sos_part_iter_new(sos_t sos);
+%delobject sos_part_iter_free;
+void sos_part_iter_free(sos_part_iter_t iter);
 sos_part_t sos_part_first(sos_part_iter_t iter);
 sos_part_t sos_part_next(sos_part_iter_t iter);
+const char *sos_part_name(sos_part_t part);
+uint32_t sos_part_id(sos_part_t part);
+uint32_t sos_part_state(sos_part_t part);
+void sos_part_primary_set(sos_part_t part);
+int sos_part_active_set(sos_part_t part, int active);
+uint32_t sos_part_refcount(sos_part_t part);
 void sos_part_put(sos_part_t part);
 void sos_container_part_list(sos_t sos, FILE *fp);
 
@@ -342,6 +354,7 @@ size_t sos_key_len(sos_key_t key);
 unsigned char *sos_key_value(sos_key_t key);
 char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_sz);
 void *sos_value_as_key(sos_value_t value);
+%delobject sos_key_put;
 void sos_key_put(sos_key_t key);
 
 typedef enum sos_iter_flags_e {

@@ -107,7 +107,7 @@ void modify_part(sos_t sos, const char *name, const char *state)
 		return;
 	}
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
-		if (strcmp(sos_part_name_get(part), name)) {
+		if (strcmp(sos_part_name(part), name)) {
 			sos_part_put(part);
 			continue;
 		}

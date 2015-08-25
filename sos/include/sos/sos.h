@@ -297,12 +297,12 @@ sos_part_iter_t sos_part_iter_new(sos_t sos);
 void sos_part_iter_free(sos_part_iter_t iter);
 sos_part_t sos_part_first(sos_part_iter_t iter);
 sos_part_t sos_part_next(sos_part_iter_t iter);
-const char *sos_part_name_get(sos_part_t part);
-uint32_t sos_part_id_get(sos_part_t part);
-uint32_t sos_part_state_get(sos_part_t part);
+const char *sos_part_name(sos_part_t part);
+uint32_t sos_part_id(sos_part_t part);
+uint32_t sos_part_state(sos_part_t part);
 void sos_part_primary_set(sos_part_t part);
 int sos_part_active_set(sos_part_t part, int active);
-uint32_t sos_part_refcount_get(sos_part_t part);
+uint32_t sos_part_refcount(sos_part_t part);
 void sos_part_put(sos_part_t part);
 void sos_container_part_list(sos_t sos, FILE *fp);
 

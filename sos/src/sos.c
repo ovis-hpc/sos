@@ -408,13 +408,13 @@ static int __sos_open_partition(sos_t sos, sos_part_t part)
 	int rc;
 	ods_t ods;
 
-	sprintf(tmp_path, "%s/%s", sos->path, sos_part_name_get(part));
+	sprintf(tmp_path, "%s/%s", sos->path, sos_part_name(part));
 	rc = make_all_dir(tmp_path, sos->o_mode);
 	if (rc) {
 		rc = errno;
 		goto err_0;
 	}
-	sprintf(tmp_path, "%s/%s/objects", sos->path, sos_part_name_get(part));
+	sprintf(tmp_path, "%s/%s/objects", sos->path, sos_part_name(part));
  retry:
 	ods = ods_open(tmp_path, sos->o_perm);
 	if (!ods) {
@@ -532,7 +532,7 @@ static int __sos_open_partitions(sos_t sos, char *tmp_path)
 	}
 	for (;part; part = sos_part_next(iter)) {
 
-		if (0 == (sos_part_state_get(part) & SOS_PART_STATE_ACTIVE)) {
+		if (0 == (sos_part_state(part) & SOS_PART_STATE_ACTIVE)) {
 			/* Skip offline partitions so that we don't hold a reference on them */
 			sos_part_put(part);
 			continue;
@@ -962,22 +962,22 @@ void sos_part_primary_set(sos_part_t part)
 	part->sos->primary_part = part;
 }
 
-const char *sos_part_name_get(sos_part_t part)
+const char *sos_part_name(sos_part_t part)
 {
 	return SOS_PART(part->part_obj)->name;
 }
 
-uint32_t sos_part_state_get(sos_part_t part)
+uint32_t sos_part_state(sos_part_t part)
 {
 	return SOS_PART(part->part_obj)->state;
 }
 
-uint32_t sos_part_id_get(sos_part_t part)
+uint32_t sos_part_id(sos_part_t part)
 {
 	return SOS_PART(part->part_obj)->part_id;
 }
 
-uint32_t sos_part_refcount_get(sos_part_t part)
+uint32_t sos_part_refcount(sos_part_t part)
 {
 	return SOS_PART(part->part_obj)->ref_count;
 }
@@ -1033,7 +1033,7 @@ sos_part_t sos_part_find(sos_t sos, const char *name)
 		return NULL;
 
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
-		if (0 == strcmp(sos_part_name_get(part), name))
+		if (0 == strcmp(sos_part_name(part), name))
 			goto out;
 		sos_part_put(part);
 	}
@@ -1192,7 +1192,7 @@ int sos_part_active_set(sos_part_t part, int online)
 		SOS_PART(part->part_obj)->state |= SOS_PART_STATE_ACTIVE;
 
 		/* It should not already be in the container */
-		sos_part_t p = __sos_container_part_find(part->sos, sos_part_name_get(part));
+		sos_part_t p = __sos_container_part_find(part->sos, sos_part_name(part));
 		assert(p == NULL);
 
 		/* Open the partition and add it to the container */
@@ -1202,9 +1202,9 @@ int sos_part_active_set(sos_part_t part, int online)
 		TAILQ_INSERT_TAIL(&part->sos->part_list, part, entry);
 	} else {
 		/* TODO: Remove all keys in indexes that refer to objects in this partition */
-		sos_part_t p = __sos_container_part_find(part->sos, sos_part_name_get(part));
+		sos_part_t p = __sos_container_part_find(part->sos, sos_part_name(part));
 		assert(p);
-		uint64_t part_id = sos_part_id_get(p);
+		uint64_t part_id = sos_part_id(p);
 		sos_container_index_iter_t idx_iter =
 			sos_container_index_iter_new(part->sos);
 		sos_index_t idx;
@@ -1272,16 +1272,16 @@ void sos_container_part_list(sos_t sos, FILE *fp)
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
 
 		char *statestr;
-		fprintf(fp, "%-20s %8d ", sos_part_name_get(part), sos_part_refcount_get(part));
-		if (0 == (sos_part_state_get(part) & SOS_PART_STATE_ACTIVE))
+		fprintf(fp, "%-20s %8d ", sos_part_name(part), sos_part_refcount(part));
+		if (0 == (sos_part_state(part) & SOS_PART_STATE_ACTIVE))
 			statestr = "OFFLINE";
-		else if (sos_part_state_get(part) & SOS_PART_STATE_PRIMARY)
+		else if (sos_part_state(part) & SOS_PART_STATE_PRIMARY)
 			statestr = "ONLINE PRIMARY";
 		else
 			statestr = "ONLINE";
 		fprintf(fp, "%-16s ", statestr);
 		pthread_mutex_lock(&sos->lock);
-		sos_part_t p = __sos_container_part_find(sos, sos_part_name_get(part));
+		sos_part_t p = __sos_container_part_find(sos, sos_part_name(part));
 		if (p && p->obj_ods && (0 == ods_stat(p->obj_ods, &sb))) {
 			char datestr[80];
 			struct tm *tm;

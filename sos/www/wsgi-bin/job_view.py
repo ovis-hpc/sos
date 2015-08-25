@@ -182,21 +182,20 @@ class WwwJobPlot(object):
         self.iter = SOS.Iterator(self.container, "Sample", "JobTime")
         sample_key = self.iter.key()
 
-        # sys.stderr.write('start %d\n'%(start_secs))
         self.iter.key_set(sample_key, str((job_id << 32) | start_secs))
         sample_obj = self.iter.sup(sample_key)
         if not sample_obj:
-            return (1, 'The specified job was not found')
+            raise Exception('The specified job {0} was not found at start {1}'.format(job_id, start_secs))
         sample = bwx.job_sample(sample_obj)
         if start_secs == 0:
             start_secs = float(sample.JobTime.secs)
+
         series = {}
-        metric_name = str(input.plot)
+        metric_name = str(input.metric_name)
         metric_id = sample.idx(metric_name)
         x_axis_comp = sample.CompId
         while sample_obj is not None:
             sample = bwx.job_sample(sample_obj)
-            # sys.stderr.write('%d==%d time %d\n'%(sample.JobTime.id, job_id, sample.JobTime.secs))
             if sample.JobTime.id != job_id:
                 break
 
@@ -272,7 +271,6 @@ if __name__ == "__main__":
                         type=int, default=3600,
                         help="Specify the duration, format is seconds ")
     args = parser.parse_args()
-
     if args.mode == 'gui':
         if args.start_time:
             dt = datetime.strptime(args.start_time, "%Y/%m/%d %H:%M:%S")
