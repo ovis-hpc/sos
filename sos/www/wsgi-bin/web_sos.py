@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.cbook as cbook
 import StringIO, Image
+import urllib
 from sos import *
 
 urls = (
@@ -395,7 +396,9 @@ class SosGraph2:
         else:
             duration = 3600
         web.header('Content-Type', 'text/html')
-        return render.metric_graph(container, job_id, metric_name, start, end, duration)
+        return render.metric_graph(container, job_id,
+                                   urllib.quote(metric_name),
+                                   start, end, duration)
 
 class SosGraph(SosQuery):
     def GET(self):
