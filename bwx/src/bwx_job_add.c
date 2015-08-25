@@ -214,30 +214,40 @@ int main(int argc, char *argv[])
 	if (!path)
 		usage(argc, argv);
 
-	sos = sos_container_open(path, SOS_PERM_RW);
-	if (!sos) {
-		perror("sos_container_open: ");
-		return errno;
-	}
-
 	char *s;
 	char buf[128];
 	s = fgets(buf, sizeof(buf), comp_file);
+	if (!s)
+		goto fmt_err;
 	job_str = strdup(s);
 	s = fgets(buf, sizeof(buf), comp_file);
+	if (!s)
+		goto fmt_err;
 	uid_str = strdup(s);
 	s = strchr(uid_str, '\n');
 	if (s)
 		*s = '\0';
 	s = fgets(buf, sizeof(buf), comp_file);
+	if (!s)
+		goto fmt_err;
 	start_str = strdup(s);
 	s = fgets(buf, sizeof(buf), comp_file);
+	if (!s)
+		goto fmt_err;
 	end_str = strdup(s);
 	s = fgets(buf, sizeof(buf), comp_file);
+	if (!s)
+		goto fmt_err;
 	name_str = strdup(s);
 	s = strchr(name_str, '\n');
 	if (s)
 		*s = '\0';
+
+	sos = sos_container_open(path, SOS_PERM_RW);
+	if (!sos) {
+		perror("sos_container_open: ");
+		return errno;
+	}
 
 	job_obj = job_new(sos, job_str, start_str, end_str, uid_str, name_str);
 	if (!job_obj)
@@ -303,4 +313,7 @@ int main(int argc, char *argv[])
 	sos_index_close(jobcomp_idx, SOS_COMMIT_SYNC);
 	sos_index_close(comptime_idx, SOS_COMMIT_SYNC);
 	return 0;
+ fmt_err:
+	printf("The component file has an invalid format\n");
+	return 1;
 }
