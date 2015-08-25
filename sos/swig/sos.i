@@ -377,7 +377,7 @@ int sos_index_new(sos_t sos, const char *name,
 %newobject sos_index_open;
 sos_index_t sos_index_open(sos_t sos, const char *name);
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
-int sos_index_obj_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
+int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
 sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);

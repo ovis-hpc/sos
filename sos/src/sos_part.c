@@ -40,6 +40,123 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/**
+ * \page partitions Partitions
+ * \section partitions Partitions
+ *
+ * In order to faciliate management of the storage consumed by a
+ * Container, a Container is divided up into one or more Partitions. A
+ * Parition contains the objects that are created in the
+ * Container. A Partition is in one of the following states:
+ *
+ * - \b Primary  The Partition is the target of all new
+ *               object allocations and it's contents may
+ *               be referred to by entries in one or more
+ *               Indices.
+ * - \b Active   The contents of the Partition are
+ *               accessible and it's objects may be
+ *               referred to by one or more Indices.
+ * - \b Offline  The contents of the Partition are in the
+ *               process of being migrated to backup or
+ *               secondary storage. The objects that are
+ *               part of the Partition are or have been
+ *               removed from all Indices.
+ *
+ * A Container always has at least one partition called the "Default"
+ * Partition. When a Container is newly created, this Partition is
+ * automatically created as well.
+ *
+ * Typically an administrator will use the <tt>sos_part</tt> command
+ * to manage partitions. This command can be used to create, modify
+ * and delete Partitions. Suppose, for example, the administrator
+ * wishes to keep 5 days worth of live data. One approach is to create
+ * partitions named for the date. This date, formatted as a Timestamp,
+ * might look like the following "2015-03-03", "2015-03-04",
+ * etc... For example, the following command creates a new partition
+ * with the name 2015-03-03:
+ *
+ *       sos_part -C MyContainer -c -n "2015-03-03"
+ *
+ * Then to activate and make the Parition the target of new
+ * allocations, it must be made Primary as follows:
+ *
+ *       sos_part -C MyContainer -m primary -n "2015-03-03"
+ *
+ * Note that these two steps can be combined:
+ *
+ *       sos_part -C MyContainer -c -n "2015-03-03" -m primary
+ *
+ * Creates the Partition and makes it Primary in a single step.
+ *
+ * When a Partition's data is no longer needed, it may be moved to
+ * secondary storage as follows:
+ *
+ *      sos_part -C MyContainer -m offline -n "2015-03-03"
+ *      sos_part -C MyContainer -d -n "2015-03-03"
+ *      mv ${SOS_ROOT}/MyContainer/2015-03-03 /secondary-storage/MyContainer/2015-03-03
+ *
+ * The list of Partitions defined in a Container can be queried as
+ * follows:
+ *
+ *      tom@css:/SOS/import$ sos_part -C /NVME/0/SOS_ROOT/Test
+ *      Partition Name       RefCount Status           Size     Modified         Accessed
+ *      -------------------- -------- ---------------- -------- ---------------- ----------------
+ *      00000000                    3 ONLINE                 1M 2015/08/25 13:49 2015/08/25 13:51
+ *      00000001                    3 ONLINE                 2M 2015/08/25 11:54 2015/08/25 13:51
+ *      00000002                    3 ONLINE                 2M 2015/08/25 11:39 2015/08/25 13:51
+ *      00000003                    3 ONLINE PRIMARY         2M 2015/08/25 11:39 2015/08/25 13:51
+ *
+ *
+ * \section sos_part sos_part Command
+ *
+ * \b NAME
+ *
+ * sos_part - Manage a Container's Partitions
+ *
+ * \b SYNOPSIS
+ *
+ * sos_cmd -C <container> [OPTION]...
+ *
+ * \b DESCRIPTION
+ *
+ * Create, list, modify and destroy a Container's Partitions.
+ *
+ * \b -C=PATH
+ *
+ * Specify the PATH to the Container. This option is required.
+ *
+ * \b -n=NAME
+ *
+ * Specify the name of the Partition. This paramter is required for options c, d, and m.
+ *
+ * \b -c
+ *
+ * Create the partition and set it's initial state to 'offline'.
+ *
+ * \b -q
+ * Query the Container's Partitions and their state. This is the default option.
+ *
+ * \b -d
+ *
+ * Delete the named partition. The partition must be in the \c offline state.
+ *
+ * \b -m=STATE
+ *
+ * Modify the state of a partition. Valid values for the STATE parameter
+ * are: "primary", "active", and "offline".
+ *
+ * If the "primary" STATE is requested, the current primary Partition
+ * is made "active" and the specified partition is made primary.
+ *
+ * If the "active" STATE is requested and the named Partition is
+ * Primary, an error is returned indicating the Partition is busy.
+ *
+ * If the "offline" STATE is requested, and the Partition is Primary,
+ * an error is returned indicating the Partition is busy. Otherwise,
+ * all keys referring to an Object in the named Partition are removed
+ * from all Indices in the Container and the Paritition is moved to
+ * the "offline" state.
+ */
 #include <sys/time.h>
 #include <string.h>
 #include <stdlib.h>

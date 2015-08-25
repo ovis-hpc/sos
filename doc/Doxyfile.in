@@ -554,6 +554,8 @@ WARN_LOGFILE           =
 
 INPUT                  = @PROJECT_SOURCE_DIR@/../sos/include/sos/sos.h \
 		       @PROJECT_SOURCE_DIR@/../sos/src/sos.c \
+		       @PROJECT_SOURCE_DIR@/../sos/src/sos_part.c \
+		       @PROJECT_SOURCE_DIR@/../sos/src/sos_cmd.c \
 		       @PROJECT_SOURCE_DIR@/../sos/src/sos_config.c \
 		       @PROJECT_SOURCE_DIR@/../sos/src/sos_schema.c \
 		       @PROJECT_SOURCE_DIR@/../sos/src/sos_index.c \

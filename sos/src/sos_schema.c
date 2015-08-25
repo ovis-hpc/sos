@@ -89,7 +89,7 @@ static uint32_t type_sizes[] = {
 };
 
 /**
- * \page schema_overview Schema Overview
+ * \page schema_overview Schemas
  *
  * Objects in a SOS container are described by a schema. Every object
  * in a SOS database is associated with a schema. A container may have

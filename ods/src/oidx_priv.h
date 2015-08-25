@@ -77,7 +77,7 @@ typedef struct oidx_udata_s {
  */
 struct oidx_s {
 	size_t layer_sz;	/* The size of each layer in bytes */
-	ods_t ods;		/* The ods that contains this indexes data */
+	ods_t ods;		/* The ods that contains this index's data */
 	size_t udata_sz;
 	oidx_udata_t udata;
 };

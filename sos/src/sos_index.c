@@ -53,6 +53,51 @@
 /*
  * Author: Tom Tucker tom at ogc dot us
  */
+/**
+ * \page indices Indices
+ * \section indices Indices
+ *
+ * An Index keeps a named, ordered collection of Key/Value references to
+ * Objects. The Key is define by the type sos_key_t and the value is
+ * defined by the type sos_obj_ref_t. The Value is a Reference to an
+ * Object.
+ *
+ * Some Indices are associated with an Attribute of a Schema. This is
+ * a convenience since internal to SOS, all of these collections are
+ * implemented as an Index. Whether a Schema attribute has an Index is
+ * specified when the Schema is created.
+ *
+ * Other Indices are created directly with the sos_index_new()
+ * function. These Indices are primarily used when a complex key is
+ * required that is based on the value of more than a single
+ * Attribute. For example, if a use requires an ordering by Job +
+ * Time, a JobTime Index may be created where the key is the
+ * concatenation of the Job Id and the Unix Timestamp.
+ *
+ * The functions for managing Indices include the following:
+ *
+ * - sos_index_new() Create a new index
+ * - sos_index_open() Open an existing index
+ * - sos_index_insert() Insert an Object into an Index
+ * - sos_index_obj_remove() Remove an Object from the index
+sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
+sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
+sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
+int sos_index_commit(sos_index_t index, sos_commit_t flags);
+int sos_index_close(sos_index_t index, sos_commit_t flags);
+size_t sos_index_key_size(sos_index_t index);
+sos_key_t sos_index_key_new(sos_index_t index, size_t size);
+int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
+const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
+int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
+void sos_index_print(sos_index_t index, FILE *fp);
+void sos_container_index_list(sos_t sos, FILE *fp);
+typedef struct sos_container_index_iter_s *sos_container_index_iter_t;
+sos_container_index_iter_t sos_container_index_iter_new(sos_t sos);
+void sos_container_index_iter_free(sos_container_index_iter_t iter);
+sos_index_t sos_container_index_iter_first(sos_container_index_iter_t iter);
+sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter);
+ */
 
 #include <sys/types.h>
 #include <stdlib.h>
@@ -209,7 +254,7 @@ int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 	return ods_idx_insert(index->idx, key, obj->obj_ref.idx_data);
 }
 
-int sos_index_obj_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
+int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
 	sos_obj_ref_t idx_ref;
 	ods_obj_t ref_obj;
@@ -434,5 +479,19 @@ void sos_container_index_list(sos_t sos, FILE *fp)
 		ods_obj_put(idx_obj);
 	}
 	ods_iter_delete(iter);
+}
+
+/**
+ * \brief Commit an Index's data to stable storage
+ *
+ * \param index The Index handle
+ * \param flags The commit flags
+ * \retval 0 Success
+ * \retval !0 A Unix error code
+ */
+int sos_index_commit(sos_index_t index, sos_commit_t flags)
+{
+	ods_idx_commit(index->idx, flags);
+	return 0;
 }
 

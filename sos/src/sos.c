@@ -54,49 +54,64 @@
  * Author: Tom Tucker tom at ogc dot us
  */
 /**
- * \mainpage Scalable Object Store Documentation
- *
- * \section intro Introduction
+ * \mainpage Introduction
  *
  * The Scalable Object Storage (SOS) Service is a high performance
- * storage engine designed to efficiently store structured data to
- * persistent media.
+ * storage engine designed to efficiently store and manage structured
+ * data in persistent media.
  *
- * \subsection coll Collection
+ * \section cont Container
  *
- * A SOS Object Store is called a Collection. A Collection is
- * identified by a name that looks like a POSIX Filesytem path. This
- * allows Collections to be organized into a hierarchical name
- * space. This is a convenience and does not mean that a Container is
- * necessarily stored in a Filesytem.
+ * An instance of a SOS Object Store is called a Container. A
+ * Container is identified by a name that looks like a POSIX Filesytem
+ * path. This allows Containers to be organized into a hierarchical
+ * name space. This is a convenience and does not mean that a
+ * Container is necessarily stored in a Filesytem.
  *
- * \subsection schema Schema
+ * \section partition Partition
  *
- * Inside a Container are Schemas, Objects, and Indices. A Schema
- * defines the format of an Object. There can be any number of Schema
- * in the Container such that a single Container may contain Objects
- * of many different types. The Container has a directory of
- * Schemas. When Objects are created, the Schema handle is specified
- * to inform the object store of the size and format of the object and
- * whether or not one or more of it's attributes has an Index.
+ * In order to facilitate management of the storage consumed by a
+ * Container, a Container is divided up into one or more
+ * Partitions. Paritions contain the objects that are created in the
+ * Container. The purpose of a Partition is to allow subsets of a
+ * Containers objects to be migrated from primary storage to secondary
+ * storage.
  *
- * \subsection object Object
+ * \section schema Schema
  *
- * An Object is an instance of a Schema. An Object is a collection of
- * Attributes. An Attribute has a Name and a Type. There are built-in
- * types for an Attribute and user-defined types. The built in types
- * include the familiar <tt>int</tt>, <tt>long</tt>, <tt>double</tt>
- * types as well as arrays of these types. A special Attribute type is
- * <tt>SOS_TYPE_OBJ</tt>, which is a <tt>Reference</tt> to another Object. This
- * allows complex data structures like linked lists to be implemented
- * in the Container.
+ * Schemas define the format of Objects and are logically an Object's
+ * "type." There can be any number of Schema in the Container such
+ * that a single Container may contain Objects of many different
+ * types. The Container has a directory of Schemas. When Objects are
+ * created, the Schema handle is specified to inform the object store
+ * of the size and format of the object and whether or not one or more
+ * of it's attributes has an Index.
  *
- * The user-defined types are Objects. An Object's type is essentially
- * it's Schema ID and Schema Name.
+ * \section object Object
  *
- * An Index is a strategy for quickly finding an Object in a container
- * based on the value of one of it's Attributes. Whether or not an
- * Attribute has an Index is specified by the Object's Schema.
+ * An Object is a collection of Attributes. An Attribute has a Name
+ * and a Type. There are built-in types for an Attribute and
+ * user-defined types. The built in types include the familiar
+ * <tt>int</tt>, <tt>long</tt>, <tt>double</tt> types as well as
+ * arrays of these types. A special Attribute type is
+ * <tt>SOS_TYPE_OBJ</tt>, which is a <tt>Reference</tt> to another
+ * Object. This allows complex data structures like linked lists to be
+ * implemented in the Container.
+ *
+ * The user-defined types are Objects.
+ *
+ * \section sindex Index
+ *
+ * An Index is an ordered collection for for quickly finding an Object
+ * in a container based on a key. Indexes can be associated with a
+ * Schema or be independent of a particular Schema, for example,
+ * allowing a single Index to refer to objects of different types. If
+ * an Index is associated with a Schema Attribute, all management and
+ * insertion is handled automatically by the sos_obj_index() function.
+ *
+ * Indexes that are not directly related to a Schema are managed
+ * directly by the application; including the creation of keys, and
+ * insertion of Objects into the index.
  */
 
 #include <sys/queue.h>
@@ -123,26 +138,28 @@ LIST_HEAD(cont_list_head, sos_container_s) cont_list;
 pthread_mutex_t cont_list_lock;
 
 /**
- * \page container_overview Container Overview
+ * \page container_overview Containers
  *
- * SOS Container group Schmema, Objects, and Indices together into a
- * single namespace. The root of the namespace is the container's
- * name. Containers are created with the sos_container_new(). SOS
- * implements the POSIX security model. When a Container is created,
- * it inherits the owner and group of the process that created the
- * container. The sos_container_new() function takes an o_mode
- * parameter that identifies the standard POSIX umask to specify RO/RW
- * access for owner/group/other.
+ * A SOS Container groups Partitions, Schema, Objects, and Indices
+ * together into a single namespace. The root of the namespace is the
+ * Container's name. Containers are created with the
+ * sos_container_new() function. SOS implements the POSIX security
+ * model. When a Container is created, it inherits the owner and group
+ * of the process that created the container. The sos_container_new()
+ * function takes an <tt>o_mode</tt> parameter that identifies the
+ * standard POSIX umask to specify RO/RW access for owner/group/other.
  *
  * The sos_container_open() function opens a previously created
  * container. The user/group of the process opening the container must
  * have adequate permission to provide the requested R/W access. The
- * sos_container_open() function returns a sos_t container handle that
+ * sos_container_open() function returns a <tt>sos_t</tt> container handle that
  * is used in subsequent SOS API.
  *
  * Changes to a container are opportunistically commited to stable
  * storage. An application can initiate a commit to storage with the
  * sos_container_commit() function.
+ *
+ * The SOS Container API include the following:
  *
  * - sos_container_new() Create a new Container
  * - sos_container_open() Open a previously created Container
@@ -560,9 +577,9 @@ static int __sos_open_partitions(sos_t sos, char *tmp_path)
  *
  * Removes all resources associated with the Container. The sos_t
  * handle must be provided (requiring an open) because it is necessary
- * to know the associated indexes in order to be able to know the
- * names of the associated files. sos_destroy will also close \c sos, as the
- * files should be closed before removed.
+ * to know the associated Indices in order to be able to know the
+ * names of the associated files. sos_destroy() will also close \c sos, as the
+ * files should be closed before begin removed.
  *
  * \param c	The container handle
  * \retval 0	The container was deleted
@@ -572,12 +589,6 @@ static int __sos_open_partitions(sos_t sos, char *tmp_path)
 int sos_container_delete(sos_t c)
 {
 	return ENOSYS;
-}
-
-int sos_index_commit(sos_index_t index, sos_commit_t flags)
-{
-	ods_idx_commit(index->idx, flags);
-	return 0;
 }
 
 /**
