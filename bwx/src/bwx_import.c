@@ -205,8 +205,8 @@ struct Job {
 
 struct Sample {
 	struct sos_timestamp_s time;
-	struct kvs key;
 	uint32_t comp_id;
+	struct kvs key;
 	char data[0];
 };
 

@@ -72,8 +72,8 @@ typedef struct job_time_s {
 
 typedef struct job_sample_s {
 	struct sos_timestamp_s Time;
-	struct job_time_s JobTime;
 	uint32_t CompId;
+	struct job_time_s JobTime;
 	uint64_t Tesla_K20X_gpu_util_rate;
 	uint64_t Tesla_K20X_gpu_agg_dbl_ecc_total_errors;
 	uint64_t Tesla_K20X_gpu_agg_dbl_ecc_texture_memory;

@@ -52,7 +52,7 @@ function update_img_src(start, duration) {
     var img = \$("#metric_graph");
     var src="/JOB/plot?container=" + container
         + "&job_id=" + job_id
-        + "&plot=" + metric_name
+        + "&metric_name=" + metric_name
         + "&start=" + start
         + "&duration=" + duration;
     img.attr('src', src);
@@ -257,7 +257,7 @@ function restart_progress(wait) {
   <br style="clear:both"/>
   <div>
     <img id="metric_graph"
-         src="/JOB/plot?container=$container&job_id=$job_id&plot=$metric_name"/>
+         src="/JOB/plot?container=$container&job_id=$job_id&metric_name=$metric_name"/>
   </div>
   <div>
     <div style="float:left; width: 30%">

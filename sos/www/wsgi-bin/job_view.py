@@ -152,8 +152,8 @@ class WwwJobPlot(object):
 
     def GET(self):
         start_dt = datetime.now()
-        input = web.input()
-        container = input.container
+        args = web.input()
+        container = args.container
         self.container = SOS.Container(str(sos_root + '/' + container),
                                        mode=SOS.Container.RO)
 
@@ -164,18 +164,18 @@ class WwwJobPlot(object):
 
         x_axis = []
 
-        if 'job_id' in input:
-            job_id = int(input.job_id)
+        if 'job_id' in args:
+            job_id = int(args.job_id)
         else:
             return(5, 'A job_id must be specified.')
 
-        if 'duration' in input:
-            duration = int(input.duration)
+        if 'duration' in args:
+            duration = int(args.duration)
         else:
             duration = 3600
 
-        if 'start' in input:
-            start_secs = int(float(input.start))
+        if 'start' in args:
+            start_secs = int(float(args.start))
         else:
             start_secs = 0
 
@@ -185,13 +185,15 @@ class WwwJobPlot(object):
         self.iter.key_set(sample_key, str((job_id << 32) | start_secs))
         sample_obj = self.iter.sup(sample_key)
         if not sample_obj:
-            raise Exception('The specified job {0} was not found at start {1}'.format(job_id, start_secs))
+            raise Exception('The specified job {0} was not found at start {1}'.
+                            format(job_id, start_secs))
         sample = bwx.job_sample(sample_obj)
         if start_secs == 0:
             start_secs = float(sample.JobTime.secs)
 
         series = {}
-        metric_name = str(input.metric_name)
+        # sys.stderr.write("ARGS {0}\n".format(str(args)))
+        metric_name = str(args.metric_name)
         metric_id = sample.idx(metric_name)
         x_axis_comp = sample.CompId
         while sample_obj is not None:
