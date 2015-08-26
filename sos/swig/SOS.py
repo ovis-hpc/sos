@@ -243,8 +243,14 @@ class Object(object):
         key.set(str(self.values[attr_name]))
         return key
 
+    def release(self):
+        if self.obj:
+            sos.sos_obj_put(self.obj)
+            self.obj = None
+
+    # Unfortunately, we can't assume that Python will call this
     def __del__(self):
-        sos.sos_obj_put(self.obj)
+        self.release()
 
     def json_header(self):
         return ''
