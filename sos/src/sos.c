@@ -56,9 +56,9 @@
 /**
  * \mainpage Introduction
  *
- * The Scalable Object Storage (SOS) Service is a high performance
- * storage engine designed to efficiently store and manage structured
- * data in persistent media.
+ * The Scalable Object Storage (SOS) is a high performance storage
+ * engine designed to efficiently manage structured data in persistent
+ * media.
  *
  * \section cont Container
  *
@@ -68,14 +68,18 @@
  * name space. This is a convenience and does not mean that a
  * Container is necessarily stored in a Filesytem.
  *
+ * See \ref container_overview for more information.
+
  * \section partition Partition
  *
  * In order to facilitate management of the storage consumed by a
  * Container, a Container is divided up into one or more
  * Partitions. Paritions contain the objects that are created in the
  * Container. The purpose of a Partition is to allow subsets of a
- * Containers objects to be migrated from primary storage to secondary
+ * Container's objects to be migrated from primary storage to secondary
  * storage.
+ *
+ * See \ref partition_overview for more information
  *
  * \section schema Schema
  *
@@ -86,6 +90,8 @@
  * created, the Schema handle is specified to inform the object store
  * of the size and format of the object and whether or not one or more
  * of it's attributes has an Index.
+ *
+ * See \ref schema_overview for more information.
  *
  * \section object Object
  *
@@ -915,7 +921,7 @@ sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
 	sos_obj->obj = ods_obj;
 	sos_obj->obj_ref = obj_ref;
 	ods_atomic_inc(&schema->data->ref_count);
-	sos_obj->schema = sos_schema_get(schema);
+	sos_obj->schema = schema;
 	sos_obj->ref_count = 1;
 
 	return sos_obj;
@@ -1453,7 +1459,7 @@ sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val)
  */
 sos_schema_t sos_obj_schema(sos_obj_t obj)
 {
-	return sos_schema_get(obj->schema);
+	return obj->schema;
 }
 
 /**
@@ -1528,12 +1534,10 @@ void sos_obj_put(sos_obj_t obj)
 {
 	if (obj && !ods_atomic_dec(&obj->ref_count)) {
 		sos_t sos = obj->sos;
-		sos_schema_t schema = obj->schema;
 		ods_obj_put(obj->obj);
 		pthread_mutex_lock(&sos->lock);
 		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
 		pthread_mutex_unlock(&sos->lock);
-		sos_schema_put(schema);
 	}
 }
 

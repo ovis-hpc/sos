@@ -247,8 +247,6 @@ int sos_schema_add(sos_t sos, sos_schema_t schema);
 sos_schema_t sos_schema_by_name(sos_t sos, const char *name);
 sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id);
 int sos_schema_delete(sos_t sos, const char *name);
-sos_schema_t sos_schema_get(sos_schema_t schema);
-void sos_schema_put(sos_schema_t schema);;
 const char *sos_schema_name(sos_schema_t schema);
 int sos_schema_attr_count(sos_schema_t schema);
 int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type);

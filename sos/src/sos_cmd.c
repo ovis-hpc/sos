@@ -1078,7 +1078,6 @@ int add_object(sos_t sos, FILE* fp)
 			break;
 		case YAML_SEQUENCE_END_EVENT:
 			if (schema) {
-				sos_schema_put(schema);
 				schema = NULL;
 			}
 			if (sos_obj) {
@@ -1107,8 +1106,6 @@ int add_object(sos_t sos, FILE* fp)
 				state = SCHEMA_VALUE;
 				break;
 			case SCHEMA_VALUE:
-				if (schema)
-					sos_schema_put(schema);
 				schema = sos_schema_by_name(sos, kw_.str);
 				if (!schema) {
 					printf("The schema '%s' was not found.\n",

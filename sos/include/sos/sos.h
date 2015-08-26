@@ -204,8 +204,6 @@ void sos_schema_print(sos_schema_t schema, FILE *fp);
 int sos_schema_delete(sos_t sos, const char *name);
 sos_schema_t sos_schema_first(sos_t sos);
 sos_schema_t sos_schema_next(sos_schema_t schema);
-sos_schema_t sos_schema_get(sos_schema_t schema);
-void sos_schema_put(sos_schema_t schema);
 const char *sos_schema_name(sos_schema_t schema);
 int sos_schema_id(sos_schema_t schema);
 int sos_schema_attr_count(sos_schema_t schema);

@@ -41,8 +41,8 @@
  */
 
 /**
- * \page partitions Partitions
- * \section partitions Partitions
+ * \page partition_overview Partitions
+ * \section part_sect Partitions
  *
  * In order to faciliate management of the storage consumed by a
  * Container, a Container is divided up into one or more Partitions. A
@@ -66,19 +66,18 @@
  * Partition. When a Container is newly created, this Partition is
  * automatically created as well.
  *
- * Typically an administrator will use the <tt>sos_part</tt> command
- * to manage partitions. This command can be used to create, modify
- * and delete Partitions. Suppose, for example, the administrator
- * wishes to keep 5 days worth of live data. One approach is to create
- * partitions named for the date. This date, formatted as a Timestamp,
- * might look like the following "2015-03-03", "2015-03-04",
- * etc... For example, the following command creates a new partition
- * with the name 2015-03-03:
+ * Typically an administrator will use the \ref sos_part to manage
+ * partitions. This command can be used to create, modify and delete
+ * Partitions. Suppose, for example, the administrator wishes to keep
+ * 5 days worth of live data. One approach is to create partitions
+ * named for the date. This date might look like the following
+ * "2015-03-03", "2015-03-04", etc... The following
+ * command creates a new partition with the name 2015-03-03:
  *
  *       sos_part -C MyContainer -c -n "2015-03-03"
  *
  * Then to activate and make the Parition the target of new
- * allocations, it must be made Primary as follows:
+ * allocations, it can be made Primary as follows:
  *
  *       sos_part -C MyContainer -m primary -n "2015-03-03"
  *
@@ -107,7 +106,7 @@
  *      00000003                    3 ONLINE PRIMARY         2M 2015/08/25 11:39 2015/08/25 13:51
  *
  *
- * \section sos_part sos_part Command
+ * \section sos_part sos_part command
  *
  * \b NAME
  *
@@ -134,6 +133,7 @@
  * Create the partition and set it's initial state to 'offline'.
  *
  * \b -q
+ *
  * Query the Container's Partitions and their state. This is the default option.
  *
  * \b -d

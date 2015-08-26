@@ -210,7 +210,7 @@ void print_record(FILE *fp, sos_t sos, sos_obj_t obj, int col_count, int *width)
 	printf("\n");
 }
 
-const char *type_name(enum sos_type_e vtype)
+static const char *type_name(enum sos_type_e vtype)
 {
 	switch (vtype) {
 	case SOS_TYPE_INT32:

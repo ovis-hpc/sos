@@ -113,7 +113,8 @@ static uint32_t type_sizes[] = {
  * - sos_schema_attr_add()   Add an attribute to a schema
  * - sos_schema_index_add()  Add an index to an attribute
  * - sos_schema_add()	     Add a schema to a container
- * - sos_schema_find()	     Find the schema with the specified name
+ * - sos_schema_by_name()    Find the schema with the specified name
+ * - sos_schema_by_id()      Find the schema with the specified integer id
  * - sos_schema_delete()     Remove a schema from the container
  * - sos_schema_count()	     Returns the number of schema in the container
  * - sos_schema_get()        Take a reference on a schema
@@ -184,20 +185,30 @@ void __sos_schema_free(sos_schema_t schema)
 /**
  * \brief Create a schema from a SOS template
  *
- * This convenience function provides a service that creates a SOS
- * schema from a structure that specifies the schema name and an array
- * of attribute definitions. For example:
+ * This convenience function creates a SOS schema from a structure
+ * that specifies the schema name and an array of attribute
+ * definitions. For example:
  *
- *   struct sos_schema_template employee = {
- *       .name = "employee",
- *       .attrs = {
- *            { "First", SOS_TYPE_BYTE_ARRAY },
- *            { "LAST", SOS_TYPE_BYTE_ARRAY, 1 },
- *            { "Salary", SOS_TYPE_FLOAT },
- *            { NULL } // terminates attribute list
- *       }
- *   };
- *   sos_schema_t schema = sos_schema_from_template(&employee);
+ *     struct sos_schema_template employee = {
+ *         .name = "employee",
+ *         .attrs = {
+ *              {
+ *                  .name = "First",
+ *                  .TYPE = SOS_TYPE_BYTE_ARRAY
+ *              },
+ *              {
+ *                   .name = "Last",
+ *                   .type = SOS_TYPE_BYTE_ARRAY,
+ *                   .indexed = 1
+ *              },
+ *              {
+ *                   .name = "Salary",
+ *                   .type = SOS_TYPE_FLOAT
+ *              },
+ *              { NULL } // terminates attribute list
+ *         }
+ *     };
+ *     sos_schema_t schema = sos_schema_from_template(&employee);
  *
  * \param t   Pointer to a template structure
  * \retval sos_schema_t created from the structure definition.
@@ -252,13 +263,22 @@ const char *sos_schema_name(sos_schema_t schema)
 	return schema->data->name;
 }
 
+/**
+ * \brief Return the schema's unique id
+ *
+ * Every schema has a unique Id that is stored along with the object
+ * in the database. This a llows the object's type to be identified.
+ *
+ * \param schema The schema handle.
+ * \retval The schema Id
+ */
 int sos_schema_id(sos_schema_t schema)
 {
 	return schema->data->id;
 }
 
 /**
- * \brief Return number of schema in container
+ * \brief Return the number of schema in container
  *
  * \param sos The container handle
  * \retval The number of schema in the container
@@ -268,50 +288,7 @@ size_t sos_schema_count(sos_t sos)
 	return sos->schema_count;
 }
 
-/**
- * \brief Take a reference on a schema
- *
- * SOS schema are reference counted. This function takes a reference
- * on a SOS schema and returns a pointer to the same. The typical
- * calling sequence is:
- *
- *     sos_schema_t my_schema_ptr = sos_schema_get(schema);
- *
- *
- * This allows for the schema to be safely pointed to from multiple
- * places. The sos_schema_put() function is used to drop a reference on
- * the schema. For example:
- *
- *     sos_schema_put(my_schema_ptr);
- *     my_schema_ptr = NULL;
- *
- * \param schema	The SOS schema handle
- * \returns The schema handle
- */
-sos_schema_t sos_schema_get(sos_schema_t schema)
-{
-	ods_atomic_inc(&schema->ref_count);
-	return schema;
-}
-
-/**
- * \brief Drop a reference on a schema
- *
- * The memory consumed by a schema is not released until all
- * references have been dropped.
- *
- * \param schema	The schema handle
- */
-void sos_schema_put(sos_schema_t schema)
-{
-	/* Ignore for internal schemas */
-	if (!schema || (schema->flags & SOS_SCHEMA_F_INTERNAL))
-		return;
-	if (!ods_atomic_dec(&schema->ref_count))
-		__sos_schema_free(schema);
-}
-
-const char *key_types[] = {
+static const char *key_types[] = {
 	[SOS_TYPE_INT32] = "INT32",
 	[SOS_TYPE_INT64] = "INT64",
 	[SOS_TYPE_UINT32] = "UINT32",
@@ -436,12 +413,12 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type)
  * to the container.
  *
  * \param schema	The schema handle
- * \param name		The attribute name
+ * \param attr_name	The attribute name
  * \retval 0		The index was succesfully added.
  * \retval ENOENT	The specified attribute does not exist.
  * \retval EINVAL	One or more parameters was invalid.
  */
-int sos_schema_index_add(sos_schema_t schema, const char *name)
+int sos_schema_index_add(sos_schema_t schema, const char *attr_name)
 {
 	sos_attr_t attr;
 
@@ -449,7 +426,7 @@ int sos_schema_index_add(sos_schema_t schema, const char *name)
 		return EBUSY;
 
 	/* Find the attribute */
-	attr = _attr_by_name(schema, name);
+	attr = _attr_by_name(schema, attr_name);
 	if (!attr)
 		return ENOENT;
 
@@ -753,7 +730,7 @@ int sos_attr_index(sos_attr_t attr)
  * \brief Return the size of an attribute's data
  *
  * \param attr The sos_attr_t handle
- * \returns The size of the attribute's data
+ * \returns The size of the attribute's data in bytes
  */
 size_t sos_attr_size(sos_attr_t attr)
 {
@@ -765,7 +742,7 @@ size_t sos_attr_size(sos_attr_t attr)
  *
  * \param value The value handle
  *
- * \returns The size of the attribute value
+ * \returns The size of the attribute value in bytes
  */
 size_t sos_value_size(sos_value_t value)
 {
@@ -973,7 +950,7 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 }
 
 /**
- * \brief Find a schema in a container.
+ * \brief Find the schema with the specified name
  *
  * Find the schema with the specified name. The schema returned may be
  * used to create objects of this type in the container.
@@ -996,9 +973,21 @@ sos_schema_t sos_schema_by_name(sos_t sos, const char *name)
 	if (!rbn)
 		return NULL;
 	schema = container_of(rbn, struct sos_schema_s, name_rbn);
-	return sos_schema_get(schema);
+	return schema;
 }
 
+/**
+ * \brief Find a schema by id
+ *
+ * Each schema is assigned a unique identifier when it is created.
+ * Find the schema with the specified identifier. The schema returned may be
+ * used to create objects of this type in the container.
+ *
+ * \param sos	The container handle
+ * \param id	The schema id
+ * \retval A pointer to the schema
+ * \retval NULL pointer if a schema with that name does not exist in the container
+ */
 sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id)
 {
 	sos_schema_t schema;
@@ -1008,7 +997,7 @@ sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id)
 	if (!rbn)
 		return NULL;
 	schema = container_of(rbn, struct sos_schema_s, id_rbn);
-	return sos_schema_get(schema);
+	return schema;
 }
 
 /**
@@ -1135,19 +1124,33 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	return rc;
 }
 
+/**
+ * \brief Return a handle to the first schema in the container
+ *
+ * \param sos The SOS handle
+ * \retval The schema pointer
+ * \retval NULL If there are no schema defined in the container
+ */
 sos_schema_t sos_schema_first(sos_t sos)
 {
 	sos_schema_t first = LIST_FIRST(&sos->schema_list);
 	if (first)
-		return sos_schema_get(first);
+		return first;
 	return NULL;
 }
 
+/**
+ * \brief Return a handle to the next schema in the container
+ *
+ * \param schema The schema handle returned by sos_schema_first() or sos_schema_next()
+ * \retval The schema pointer
+ * \retval NULL If there are no more schema defined in the container
+ */
 sos_schema_t sos_schema_next(sos_schema_t schema)
 {
 	sos_schema_t next = LIST_NEXT(schema, entry);
 	if (next)
-		return sos_schema_get(next);
+		return next;
 	return NULL;
 }
 
@@ -1170,7 +1173,7 @@ int sos_schema_delete(sos_t sos, const char *name)
 	return ENOSYS;
 }
 
-const char *type_names[] = {
+static const char *type_names[] = {
 	[SOS_TYPE_INT32] = "INT32",
 	[SOS_TYPE_INT64] = "INT64",
 	[SOS_TYPE_UINT32] = "UINT32",
@@ -1191,7 +1194,7 @@ const char *type_names[] = {
 	[SOS_TYPE_OBJ_ARRAY] = "OBJ_ARRAY"
 };
 
-const char *type_name(sos_type_t t)
+static const char *type_name(sos_type_t t)
 {
 	if (t <= SOS_TYPE_LAST)
 		return type_names[t];
@@ -1202,14 +1205,14 @@ const char *type_name(sos_type_t t)
 /**
  * \brief Print the schema to a File pointer
  *
- * This convenience function formats the schema definition in YAML an
+ * This convenience function formats the schema definition in YAML and
  * writes it to the specified FILE pointer. For example:
  *
  *     sos_schema_t schema = sos_container_find(sos, "Sample");
  *     sos_schema_print(schema, stdout);
  *
  * \param schema The schema handle
- * \param fp A FILE pointer
+ * \param fp The output FILE pointer
  */
 void sos_schema_print(sos_schema_t schema, FILE *fp)
 {

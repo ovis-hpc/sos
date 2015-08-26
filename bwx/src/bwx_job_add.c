@@ -171,8 +171,6 @@ sos_obj_t job_new(sos_t sos, char *id, char *start, char *end, char *uid, char *
 	}
 	return job_obj;
  err:
-	if (job_schema)
-		sos_schema_put(job_schema);
 	if (job_id_iter)
 		sos_iter_free(job_id_iter);
 	if (job_obj) {
