@@ -117,8 +117,6 @@ static uint32_t type_sizes[] = {
  * - sos_schema_by_id()      Find the schema with the specified integer id
  * - sos_schema_delete()     Remove a schema from the container
  * - sos_schema_count()	     Returns the number of schema in the container
- * - sos_schema_get()        Take a reference on a schema
- * - sos_schema_put()        Drop a reference on a schema
  * - sos_schema_name()	     Get the schema's name
  * - sos_schema_attr_count() Returns the number of attributes in the schema.
  * - sos_schema_attr_by_id() Returns the attribute by ordinal id

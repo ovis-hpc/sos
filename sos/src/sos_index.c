@@ -80,23 +80,22 @@
  * - sos_index_open() Open an existing index
  * - sos_index_insert() Insert an Object into an Index
  * - sos_index_obj_remove() Remove an Object from the index
-sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
-sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
-sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
-int sos_index_commit(sos_index_t index, sos_commit_t flags);
-int sos_index_close(sos_index_t index, sos_commit_t flags);
-size_t sos_index_key_size(sos_index_t index);
-sos_key_t sos_index_key_new(sos_index_t index, size_t size);
-int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
-const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
-int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
-void sos_index_print(sos_index_t index, FILE *fp);
-void sos_container_index_list(sos_t sos, FILE *fp);
-typedef struct sos_container_index_iter_s *sos_container_index_iter_t;
-sos_container_index_iter_t sos_container_index_iter_new(sos_t sos);
-void sos_container_index_iter_free(sos_container_index_iter_t iter);
-sos_index_t sos_container_index_iter_first(sos_container_index_iter_t iter);
-sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter);
+ * - sos_index_find() Find an object in the index with the specified key
+ * - sos_index_find_inf() Find the object inferior (i.e. greatest lower bound) to the specified key
+ * - sos_index_find_sup() Find the object superior (i.e. least upper bound) orf the specified key
+ * - sos_index_commit() Commit index changes to stable storage
+ * - sos_index_close() Close the index
+ * - sos_index_key_size() Return the size of a key on this index
+ * - sos_index_key_new() Create a key for this index
+ * - sos_index_key_from_str() Assign a value to a key from a string
+ * - sos_index_key_to_str() Return a formated string representation of a key
+ * - sos_index_key_cmp() Compare two keys
+ * - sos_index_print() Print an internal representation of the index
+ * - sos_container_index_list() Print a list of indices defined on the container
+ * - sos_container_index_iter_new() Create a container index iterator
+ * - sos_container_index_iter_free() Destroy a container index iterator
+ * - sos_container_index_iter_first() Return the first index in the container
+ * - sos_container_index_iter_next() Return the next index on the iterator
  */
 
 #include <sys/types.h>
@@ -119,6 +118,17 @@ static sos_index_t __sos_index_alloc(sos_t sos)
 	return index;
 }
 
+/**
+ * \brief Create a new Index
+ *
+ * \param sos The container handle
+ * \param name The unique index name
+ * \param idx_type The index type, e.g. "BXTREE"
+ * \param key_type The key type, e.g. "UINT64"
+ * \param idx_args The index type specific arguments, e.g. "ORDER=5" for a B+Tree
+ * \retval 0 Success
+ * \retval !0 A Unix error code
+ */
 int sos_index_new(sos_t sos, const char *name,
 		  const char *idx_type, const char *key_type,
 		  const char *idx_args)
@@ -188,6 +198,14 @@ int sos_index_new(sos_t sos, const char *name,
 	return rc;
 }
 
+/**
+ * \brief Open an existing Index
+ *
+ * \param sos The container handle
+ * \param name The unique index name
+ * \retval 0 Success
+ * \retval !0 A Unix error code
+ */
 sos_index_t sos_index_open(sos_t sos, const char *name)
 {
 	size_t name_len;
@@ -249,11 +267,33 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 	return NULL;
 }
 
+/**
+ * \brief Add an object to an index
+ *
+ * \param index The index handle
+ * \param key The key
+ * \param obj The object to which the key will refer
+ * \retval 0 Success
+ * \retval !0 A Unix error code
+ */
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
 	return ods_idx_insert(index->idx, key, obj->obj_ref.idx_data);
 }
 
+/**
+ * \brief Remove a key from an index
+ *
+ * Remove a key/value from the index. Note that the function takes an
+ * object as a paramter. This is necessary to discriminate when
+ * multiple objects are referred to by the same key.
+ *
+ * \param index The index handle
+ * \param key The key
+ * \param obj The specific object to which the key will refer
+ * \retval 0 Success
+ * \retval !0 A Unix error code
+ */
 int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
 	sos_obj_ref_t idx_ref;
