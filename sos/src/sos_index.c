@@ -535,3 +535,30 @@ int sos_index_commit(sos_index_t index, sos_commit_t flags)
 	return 0;
 }
 
+/**
+ * \brief Return the size in bytes of the Index
+ *
+ * \param index The index handle
+ * \retval off_t in bytes of the Index
+ */
+off_t sos_index_size(sos_index_t index)
+{
+	struct ods_idx_stat_s sb;
+	ods_idx_stat(index->idx, &sb);
+	return sb.size;
+}
+
+/**
+ * \brief Return the statistics of the Index
+ *
+ * \param index The index handle
+ * \retval 0 Success
+ * \retval !0 A Unix errno
+ */
+int sos_index_stat(sos_index_t index, sos_index_stat_t sb)
+{
+	if (!index || !sb)
+		return EINVAL;
+	return ods_idx_stat(index->idx, (ods_idx_stat_t)sb);
+}
+

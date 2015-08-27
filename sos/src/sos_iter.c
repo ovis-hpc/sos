@@ -615,6 +615,25 @@ sos_obj_t sos_filter_next(sos_filter_t filt)
 	return NULL;
 }
 
+sos_obj_t sos_filter_skip(sos_filter_t filt, int count)
+{
+	sos_obj_t obj = NULL;
+	while (count) {
+		if (obj)
+			sos_obj_put(obj);
+		if (count < 0) {
+			count++;
+			obj = sos_filter_prev(filt);
+		} else {
+			count--;
+			obj = sos_filter_next(filt);
+		}
+		if (!obj)
+			break;
+	}
+	return obj;
+}
+
 int sos_filter_set(sos_filter_t filt, const sos_pos_t pos)
 {
 	return sos_iter_set(filt->iter, pos);

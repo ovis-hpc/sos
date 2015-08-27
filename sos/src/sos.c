@@ -140,7 +140,9 @@
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
+#ifndef DOXYGEN
 LIST_HEAD(cont_list_head, sos_container_s) cont_list;
+#endif
 pthread_mutex_t cont_list_lock;
 
 /**
@@ -1267,6 +1269,25 @@ const char *pretty_file_size(off_t size)
 		size = size / 1000;
 	}
 	return NULL;		/* NB: can't happen */
+}
+
+int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
+{
+	int rc = 0;
+	struct stat sb;
+
+	if (!part || !stat || !part->obj_ods)
+		return EINVAL;
+	rc = ods_stat(part->obj_ods, &sb);
+	if (rc)
+		goto out;
+
+	stat->size = sb.st_size;
+	stat->modified = sb.st_mtime;
+	stat->accessed = sb.st_atime;
+	stat->created = sb.st_ctime;
+ out:
+	return rc;
 }
 
 void sos_container_part_list(sos_t sos, FILE *fp)

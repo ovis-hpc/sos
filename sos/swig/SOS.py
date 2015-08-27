@@ -151,7 +151,14 @@ class Value(object):
         else:
             raise ValueError()
 
-class NewObject(object):
+    def release(self):
+        if self.value:
+            sos.sos_value_put(self.value)
+
+    def __del__(self):
+        self.release()
+
+class Object(object):
     json_fmt = 1
     csv_fmt = 2
     table_fmt = 3
@@ -162,22 +169,114 @@ class NewObject(object):
             self.str_fmt = self.def_fmt
         else:
             self.str_fmt = str_fmt
+        self.values = {}
         self.obj = obj
+        self.schema = sos.sos_obj_schema(self.obj)
+        if not self.schema:
+            raise ValueError()
 
     def __getattr__(self, name):
+        return self[name]
+
+    def __getitem__(self, name):
+        n = str(name)
+        if n in self.values:
+            return self.values[n]
         try:
-            schema = sos.sos_obj_schema(self.obj)
-            if schema is None:
+            if self.schema is None:
                 return None
-            attr = sos.sos_schema_attr_by_name(schema, str(name))
+            attr = sos.sos_schema_attr_by_name(self.schema, n)
             if attr is None:
                 return None
             value = sos.sos_value(self.obj, attr)
-            return Value(value)
+            v = Value(value)
+            self.values[n] = v
+            return v
         except Exception as e:
             return None
 
-class Object(object):
+    def release(self):
+        for n in self.values:
+            v = self.values[n]
+            v.release()
+        self.values.clear()
+
+    def __del__(self):
+        self.release()
+
+    def key(self, attr_name):
+        attr = self.schema.attr(attr_name)
+        key = Key(attr)
+        key.set(str(self.values[attr_name]))
+        return key
+
+    def json_header(self):
+        return ''
+
+    def json_str(self):
+        s = '{{"{0}":{{'.format(self.schema.name())
+        comma = False
+        for attr_name, value in self.values.iteritems():
+            if comma:
+                s += ','
+            s += '"{0}":"{1}"'.format(
+                attr_name, value)
+            comma = True
+        s += "}}"
+        return s
+
+    def csv_header(self):
+        comma = False
+        s = '#'
+        for attr_name, value in self.values.iteritems():
+            if comma:
+                s += ','
+            s += attr_name
+            comma = True
+        return s
+
+    def csv_str(self):
+        comma = False
+        s = ''
+        for attr_name, value in self.values.iteritems():
+            if comma:
+                s += ','
+            s += str(value)
+            comma = True
+        return s
+
+    def table_header(self):
+        s = ''
+        l = ''
+        for attr_name, value in self.values.iteritems():
+            w = self.col_widths[attr_name]
+            s += "{0!s:{1}} ".format(attr_name, w)
+            l += '-'*w + ' '
+        return s + '\n' + l + '\n'
+
+    def table_str(self):
+        s = ''
+        for attr_name, value in self.values.iteritems():
+            s += "{0!s:{1}} ".format(value, self.col_widths[attr_name])
+        return s
+
+    def header_str(self):
+        if self.str_fmt == self.json_fmt:
+            return self.json_header()
+        elif self.str_fmt == self.csv_fmt:
+            return self.csv_header()
+        elif self.table_fmt == self.table_fmt:
+            return self.table_header()
+
+    def __str__(self):
+        if self.str_fmt == self.json_fmt:
+            return self.json_str()
+        elif self.str_fmt == self.csv_fmt:
+            return self.csv_str()
+        elif self.table_fmt == self.table_fmt:
+            return self.table_str()
+
+class OldObject(object):
     json_fmt = 1
     csv_fmt = 2
     table_fmt = 3
@@ -426,7 +525,7 @@ class AttrIterator:
         sos.sos_key_put(key)
         return rv;
 
-class Filter:
+class Filter(object):
     comparators = {
         'lt' : sos.SOS_COND_LT,
         'le' : sos.SOS_COND_LE,
@@ -490,6 +589,12 @@ class Filter:
 
     def prev(self):
         obj = sos.sos_filter_prev(self.filt)
+        if obj:
+            return Object(obj)
+        return None
+
+    def skip(self, count):
+        obj = sos.sos_filter_skip(self.filt, count)
         if obj:
             return Object(obj)
         return None

@@ -1980,11 +1980,14 @@ static void bxt_commit(ods_idx_t idx)
 	ods_commit(idx->ods, ODS_COMMIT_SYNC);
 }
 
-int bxt_stat(ods_idx_t idx, ods_idx_stat_t sb)
+int bxt_stat(ods_idx_t idx, ods_idx_stat_t idx_sb)
 {
+	struct stat sb;
 	bxt_t t = idx->priv;
-	sb->cardinality = t->udata->card;
-	sb->duplicates = t->udata->dups;
+	idx_sb->cardinality = t->udata->card;
+	idx_sb->duplicates = t->udata->dups;
+	ods_stat(idx->ods, &sb);
+	idx_sb->size = sb.st_size;
 	return 0;
 }
 

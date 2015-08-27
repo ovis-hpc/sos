@@ -85,6 +85,20 @@ const char *pos_to_str(sos_pos_t pos)
 	return str;
 }
 
+sos_index_stat_t sos_index_stat_new() {
+	sos_index_stat_t stat = malloc(sizeof *stat);
+	return stat;
+}
+void sos_index_stat_free(sos_index_stat_t stat) {
+	free(stat);
+}
+sos_part_stat_t sos_part_stat_new() {
+	sos_part_stat_t stat = malloc(sizeof *stat);
+	return stat;
+}
+void sos_part_stat_free(sos_part_stat_t stat) {
+	free(stat);
+}
 %}
 
 const char *value_as_str(sos_value_t value);
@@ -102,6 +116,7 @@ sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt);
 sos_obj_t sos_filter_begin(sos_filter_t filt);
 sos_obj_t sos_filter_next(sos_filter_t filt);
 sos_obj_t sos_filter_prev(sos_filter_t filt);
+sos_obj_t sos_filter_skip(sos_filter_t filt, int skip);
 sos_obj_t sos_filter_end(sos_filter_t filt);
 int sos_filter_pos(sos_filter_t filt, sos_pos_t pos);
 int sos_filter_set(sos_filter_t filt, const sos_pos_t pos);
@@ -307,6 +322,13 @@ uint32_t sos_part_state(sos_part_t part);
 void sos_part_primary_set(sos_part_t part);
 int sos_part_active_set(sos_part_t part, int active);
 uint32_t sos_part_refcount(sos_part_t part);
+typedef struct sos_part_stat_s {
+	uint64_t size;		/*! Size of the partition in bytes */
+	uint64_t accessed;	/*! Last access time as a Unix timestamp */
+	uint64_t modified;	/*! Last modify time as a Unix timestamp */
+	uint64_t created;	/*! The partition create time as a Unix timestamp */
+} *sos_part_stat_t;
+int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
 void sos_part_put(sos_part_t part);
 void sos_container_part_list(sos_t sos, FILE *fp);
 
@@ -382,6 +404,16 @@ sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
 int sos_index_commit(sos_index_t index, sos_commit_t flags);
 int sos_index_close(sos_index_t index, sos_commit_t flags);
 size_t sos_index_key_size(sos_index_t index);
+typedef struct sos_index_stat_s {
+	uint64_t cardinality;
+	uint64_t duplicates;
+	uint64_t size;
+} *sos_index_stat_t;
+int sos_index_stat(sos_index_t index, sos_index_stat_t sb);
+%newobject sos_index_stat_new;
+sos_index_stat_t sos_index_stat_new();
+%delobject sos_index_stat_free;
+void sos_index_stat_free(sos_index_stat_t stat);
 %newobject sos_index_key_new;
 sos_key_t sos_index_key_new(sos_index_t index, size_t size);
 int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);

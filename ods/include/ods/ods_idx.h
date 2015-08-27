@@ -549,6 +549,7 @@ int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 typedef struct ods_idx_stat_s {
 	uint64_t cardinality;
 	uint64_t duplicates;
+	uint64_t size;
 } *ods_idx_stat_t;
 
 /**

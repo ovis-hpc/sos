@@ -1,3 +1,4 @@
+import sys
 import os
 import web
 import os
@@ -310,12 +311,12 @@ class SosQuery(SosRequest):
             self.reset()
             obj = self.filt.begin()
         elif self.start + self.count >= self.card:
+            sys.stderr.write("past the end!\n")
             self.reset()
             obj = self.filt.end()
             skip = self.card % self.count
-            while obj and skip > 0:
-                obj = self.filt.prev()
-                skip = skip - 1
+            sys.stderr.write("start {0} count {1} skip {2}\n".format(self.start, self.count, -skip))
+            obj = self.filt.skip(-skip)
         else:
             if session.pos:
                 self.filt.set(session.pos)
@@ -324,13 +325,9 @@ class SosQuery(SosRequest):
                 self.filt.begin()
                 skip = self.start
             obj = self.filt.obj()
-            while obj and skip != 0:
-                if skip > 0:
-                    obj = self.filt.next()
-                    skip = skip - 1
-                else:
-                    obj = self.filt.prev()
-                    skip = skip + 1
+            sys.stderr.write("start {0} count {1} skip {2}\n".format(self.start, self.count, -skip))
+            if obj:
+                obj = self.filt.skip(skip)
 
         rc, pos = self.filt.pos()
         if rc == 0:
@@ -352,12 +349,12 @@ class SosTable(SosQuery):
         rows = []
         count = 0
         while obj is not None and count < self.count:
-            row = [ session.recordNo + count, obj.values[self.index_name] ]
+            row = [ session.recordNo + count, obj[self.index_name] ]
             for attr_name in self.view_cols:
                 if attr_name == self.index_name:
                     continue
                 try:
-                    value = str(obj.values[attr_name])
+                    value = str(obj[attr_name])
                 except:
                     value = "bad_name"
                 row.append(value)
@@ -415,7 +412,7 @@ class SosGraph(SosQuery):
         maxDt = datetime.datetime.fromtimestamp(0)
         minDt = datetime.datetime.now()
         while obj and count < self.count:
-            t = obj.values[self.x_axis]
+            t = obj[self.x_axis]
             dt = datetime.datetime.fromtimestamp(t.seconds()) + datetime.timedelta(seconds=count)
             # dt = datetime.datetime.now() + datetime.timedelta(seconds=count)
             if dt < minDt:
@@ -427,7 +424,7 @@ class SosGraph(SosQuery):
                 if attr_name == self.index_name:
                     continue
                 try:
-                    value = float(obj.values[attr_name])
+                    value = float(obj[attr_name])
                 except:
                     value = 0.0
                 series[attr_name].append(value)

@@ -159,11 +159,12 @@ typedef union sos_value_data_u {
 	struct sos_array_s array;
 } *sos_value_data_t;
 
+/*! Describes the value of an attribute in an object */
 typedef struct sos_value_s {
-	sos_obj_t obj;
-	sos_attr_t attr;
-	union sos_value_data_u data_;
-	sos_value_data_t data;
+	sos_obj_t obj;		/*! The object to which the value refers  */
+	sos_attr_t attr;	/*! The attribute in the object */
+	union sos_value_data_u data_; /*! Memory based value data */
+	sos_value_data_t data;	      /*! Object based value */
 } *sos_value_t;
 
 enum sos_cond_e {
@@ -304,6 +305,15 @@ uint32_t sos_part_refcount(sos_part_t part);
 void sos_part_put(sos_part_t part);
 void sos_container_part_list(sos_t sos, FILE *fp);
 
+/*! Describes a Partitions storage attributes */
+typedef struct sos_part_stat_s {
+	uint64_t size;		/*! Size of the partition in bytes */
+	uint64_t accessed;	/*! Last access time as a Unix timestamp */
+	uint64_t modified;	/*! Last modify time as a Unix timestamp */
+	uint64_t created;	/*! The partition create time as a Unix timestamp */
+} *sos_part_stat_t;
+int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
+
 /** \defgroup objects SOS Objects
  * @{
  */
@@ -406,6 +416,12 @@ int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
 const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
 int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
 void sos_index_print(sos_index_t index, FILE *fp);
+typedef struct sos_index_stat_s {
+	uint64_t cardinality;
+	uint64_t duplicates;
+	uint64_t size;
+} *sos_index_stat_t;
+int sos_index_stat(sos_index_t index, sos_index_stat_t sb);
 void sos_container_index_list(sos_t sos, FILE *fp);
 typedef struct sos_container_index_iter_s *sos_container_index_iter_t;
 sos_container_index_iter_t sos_container_index_iter_new(sos_t sos);
@@ -513,6 +529,7 @@ int sos_filter_cond_add(sos_filter_t f, sos_attr_t attr, enum sos_cond_e cond_e,
 sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt);
 sos_obj_t sos_filter_begin(sos_filter_t filt);
 sos_obj_t sos_filter_next(sos_filter_t filt);
+sos_obj_t sos_filter_skip(sos_filter_t filt, int count);
 sos_obj_t sos_filter_prev(sos_filter_t filt);
 sos_obj_t sos_filter_end(sos_filter_t filt);
 int sos_filter_pos(sos_filter_t filt, sos_pos_t pos);
