@@ -218,7 +218,6 @@ job_iter_mvec_new(job_iter_t job_iter, size_t attr_count, const char *names[])
 	free(mvec);
 	mvec = NULL;
  out:
-	sos_schema_put(schema);
 	return mvec;
 }
 
@@ -315,8 +314,6 @@ static sos_obj_t __init_job(job_iter_t job_iter)
 
 	return job_iter->job_obj;
  err:
-	if (schema)
-		sos_schema_put(schema);
 	__iter_reset(job_iter);
 	return NULL;
 }
@@ -463,7 +460,6 @@ job_iter_t job_iter_new(sos_t sos, job_iter_order_t order_by)
 	job_iter->job__size_attr = sos_schema_attr_by_name(schema, "JobSize");
 	job_iter->job__comp_head_attr = sos_schema_attr_by_name(schema, "CompHead");
 	job_iter->job__comp_tail_attr = sos_schema_attr_by_name(schema, "CompTail");
-	sos_schema_put(schema);
 	if (!job_iter->job__size_attr || !job_iter->job__comp_head_attr
 	    || !job_iter->job__time_attr || !job_iter->job__id_attr)
 		goto err_1;
@@ -487,7 +483,6 @@ job_iter_t job_iter_new(sos_t sos, job_iter_order_t order_by)
 	job_iter->comp__prev_comp_attr = sos_schema_attr_by_name(schema, "PrevComp");
 	job_iter->comp__sample_head_attr = sos_schema_attr_by_name(schema, "SampleHead");
 	job_iter->comp__sample_tail_attr = sos_schema_attr_by_name(schema, "SampleTail");
-	sos_schema_put(schema);
 	if (!job_iter->comp__id_attr || !job_iter->comp__next_comp_attr
 	    || !job_iter->comp__sample_head_attr)
 		goto err_3;
@@ -503,13 +498,10 @@ job_iter_t job_iter_new(sos_t sos, job_iter_order_t order_by)
 	job_iter->sample__prev_sample_attr = sos_schema_attr_by_name(schema, "PrevSample");
 	if (!job_iter->sample__time_attr  || !job_iter->sample__comp_id_attr
 	    || !job_iter->sample__next_sample_attr || !job_iter->sample__prev_sample_attr)
-		goto err_4;
+		goto err_3;
 
-	sos_schema_put(schema);
 	return job_iter;
 
- err_4:
-	sos_schema_put(schema);
  err_3:
 	sos_iter_free(job_iter->time_iter);
  err_2:
