@@ -54,11 +54,11 @@ if __name__ == "__main__":
     print(job.table_header())
     while job is not None:
         print(job)
-        jobtime = job.Id() << 32
+        jobtime = int(job.Id) << 32
         sample_key.set(str(jobtime))
         sample = sample_iter.sup(sample_key)
-        while sample and (sample.JobTime() >> 32) == job.Id():
-            print(sample.current_freemem())
+        while sample and (int(sample.JobTime) >> 32) == job.Id:
+            print(sample.current_freemem)
             sample = sample_iter.next()
         job = job_iter.next()
 

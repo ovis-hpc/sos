@@ -174,6 +174,7 @@ class Object(object):
         self.schema = sos.sos_obj_schema(self.obj)
         if not self.schema:
             raise ValueError()
+        self.col_widths = {}
 
     def __getattr__(self, name):
         return self[name]
@@ -188,11 +189,17 @@ class Object(object):
             attr = sos.sos_schema_attr_by_name(self.schema, n)
             if attr is None:
                 return None
+            w = col_widths[sos.sos_attr_type(attr)]
+            if w < 0:
+                self.col_widths[n] = sos.sos_attr_size(attr)
+            else:
+                self.col_widths[n] = w
             value = sos.sos_value(self.obj, attr)
             v = Value(value)
             self.values[n] = v
             return v
         except Exception as e:
+            print("Uh oh...{0}".format(str(e)))
             return None
 
     def release(self):
@@ -210,10 +217,22 @@ class Object(object):
         key.set(str(self.values[attr_name]))
         return key
 
+    def instantiate(self):
+        if len(self.values) > 0:
+            return False
+        attr = sos.sos_schema_attr_first(self.schema)
+        while attr:
+            n = str(sos.sos_attr_name(attr))
+            v = self[n]
+            attr = sos.sos_schema_attr_next(attr)
+        return True
+
     def json_header(self):
+        self.instantiate()
         return ''
 
     def json_str(self):
+        self.instantiate()
         s = '{{"{0}":{{'.format(self.schema.name())
         comma = False
         for attr_name, value in self.values.iteritems():
@@ -226,6 +245,7 @@ class Object(object):
         return s
 
     def csv_header(self):
+        self.instantiate()
         comma = False
         s = '#'
         for attr_name, value in self.values.iteritems():
@@ -236,6 +256,7 @@ class Object(object):
         return s
 
     def csv_str(self):
+        self.instantiate()
         comma = False
         s = ''
         for attr_name, value in self.values.iteritems():
@@ -246,6 +267,7 @@ class Object(object):
         return s
 
     def table_header(self):
+        self.instantiate()
         s = ''
         l = ''
         for attr_name, value in self.values.iteritems():
@@ -255,12 +277,14 @@ class Object(object):
         return s + '\n' + l + '\n'
 
     def table_str(self):
+        self.instantiate()
         s = ''
         for attr_name, value in self.values.iteritems():
             s += "{0!s:{1}} ".format(value, self.col_widths[attr_name])
         return s
 
     def header_str(self):
+        self.instantiate()
         if self.str_fmt == self.json_fmt:
             return self.json_header()
         elif self.str_fmt == self.csv_fmt:
@@ -268,143 +292,6 @@ class Object(object):
         elif self.table_fmt == self.table_fmt:
             return self.table_header()
 
-    def __str__(self):
-        if self.str_fmt == self.json_fmt:
-            return self.json_str()
-        elif self.str_fmt == self.csv_fmt:
-            return self.csv_str()
-        elif self.table_fmt == self.table_fmt:
-            return self.table_str()
-
-class OldObject(object):
-    json_fmt = 1
-    csv_fmt = 2
-    table_fmt = 3
-    def_fmt = json_fmt
-
-    def __init__(self, obj, str_fmt=None):
-        if not str_fmt:
-            self.str_fmt = self.def_fmt
-        else:
-            self.str_fmt = str_fmt
-        self.obj = obj
-        self.schema = Schema(sos.sos_obj_schema(obj))
-        self.values = {}
-        self.col_widths = {}
-        for attr_name, attr in self.schema.attrs.iteritems():
-            self.col_widths[attr_name] = attr.col_width
-            v = sos.sos_value(obj, attr.attr)
-            t = attr.sos_type
-            an_ = attr_name+'_'
-            if t == sos.SOS_TYPE_INT32:
-                self.__dict__[an_] = v.data.prim.int32_
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            elif t == sos.SOS_TYPE_INT64:
-                self.__dict__[an_] = v.data.prim.int64_
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            elif t == sos.SOS_TYPE_UINT32:
-                self.__dict__[an_] = v.data.prim.uint32_
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            elif t == sos.SOS_TYPE_UINT64:
-                self.__dict__[an_] = v.data.prim.uint64_
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            elif t == sos.SOS_TYPE_FLOAT:
-                self.__dict__[an_] = v.data.prim.float_
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            elif t == sos.SOS_TYPE_DOUBLE:
-                self.__dict__[an_] = v.data.prim.double_
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            elif t == sos.SOS_TYPE_LONG_DOUBLE:
-                self.__dict__[an_] = v.data.prim.long_double_
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            elif t == sos.SOS_TYPE_TIMESTAMP:
-                self.__dict__[an_] = Timestamp(v.data.prim.timestamp_.fine.secs,
-                                               v.data.prim.timestamp_.fine.usecs)
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            elif t == sos.SOS_TYPE_BYTE_ARRAY:
-                self.__dict__[an_] = sos.value_as_str(v)
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            elif t == sos.SOS_TYPE_OBJ:
-                self.__dict__[an_] = sos.value_as_str(v)
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            else:
-                self.__dict__[an_] = ""
-                self.__dict__[attr_name] = lambda an=an_ : self.__dict__[an]
-            self.values[attr_name] = self.__dict__[an_]
-            sos.sos_value_put(v)
-
-    def __getitem__(self, key):
-        return self.values[key]
-
-    def key(self, attr_name):
-        attr = self.schema.attr(attr_name)
-        key = Key(attr)
-        key.set(str(self.values[attr_name]))
-        return key
-
-    def release(self):
-        if self.obj:
-            sos.sos_obj_put(self.obj)
-            self.obj = None
-
-    # Unfortunately, we can't assume that Python will call this
-    def __del__(self):
-        self.release()
-
-    def json_header(self):
-        return ''
-    def json_str(self):
-        s = '{{"{0}":{{'.format(self.schema.name())
-        comma = False
-        for attr_name, value in self.values.iteritems():
-            if comma:
-                s += ','
-            s += '"{0}":"{1}"'.format(
-                attr_name, value)
-            comma = True
-        s += "}}"
-        return s
-
-    def csv_header(self):
-        comma = False
-        s = '#'
-        for attr_name, value in self.values.iteritems():
-            if comma:
-                s += ','
-            s += attr_name
-            comma = True
-        return s
-    def csv_str(self):
-        comma = False
-        s = ''
-        for attr_name, value in self.values.iteritems():
-            if comma:
-                s += ','
-            s += str(value)
-            comma = True
-        return s
-
-    def table_header(self):
-        s = ''
-        l = ''
-        for attr_name, value in self.values.iteritems():
-            w = self.col_widths[attr_name]
-            s += "{0!s:{1}} ".format(attr_name, w)
-            l += '-'*w + ' '
-        return s + '\n' + l + '\n'
-    def table_str(self):
-        s = ''
-        for attr_name, value in self.values.iteritems():
-            s += "{0!s:{1}} ".format(value, self.col_widths[attr_name])
-        return s
-
-    def header_str(self):
-        if self.str_fmt == self.json_fmt:
-            return self.json_header()
-        elif self.str_fmt == self.csv_fmt:
-            return self.csv_header()
-        elif self.table_fmt == self.table_fmt:
-            return self.table_header()
     def __str__(self):
         if self.str_fmt == self.json_fmt:
             return self.json_str()
@@ -429,7 +316,12 @@ class AttrIterator:
         self.pos_ = sos.sos_pos()
 
     def __del__(self):
-        sos.sos_iter_free(self.iter_)
+        self.release()
+
+    def release(self):
+        if self.iter_:
+            sos.sos_iter_free(self.iter_)
+            self.iter_ = None
 
     def attr(self):
         return self.attr_
@@ -538,6 +430,17 @@ class Filter(object):
         self.iter_ = iter_
         self.filt = sos.sos_filter_new(iter_.iter_)
         self.pos_ = sos.sos_pos()
+
+    def __del__(self):
+        self.release()
+
+    def release(self):
+        if self.filt:
+            sos.sos_filter_free(self.filt);
+            self.filt = None
+        if self.iter_:
+            self.iter_.release()
+            self.iter_ = None
 
     def cardinality(self):
         return sos.sos_iter_card(self.iter_.iter_)
@@ -662,6 +565,14 @@ class Iterator(object):
         self.schema_ = sos.sos_schema_by_name(self.container_, schemaName)
         self.attr_ = sos.sos_schema_attr_by_name(self.schema_, attrName)
         self.iter_ = sos.sos_attr_iter_new(self.attr_)
+
+    def __del__(self):
+        self.release()
+
+    def release(self):
+        if self.iter_:
+            sos.sos_iter_free(self.iter_)
+            self.iter_ = None
 
     def key_set(self, key, val):
         sos.sos_attr_key_from_str(self.attr_, key, val)
