@@ -80,7 +80,9 @@ function update_jobs(container) {
 
     var dataSrc = "/SOS/table?container=" + encodeURIComponent(container)
         + "&schema=Job"
-        + "&index=StartTime";
+        + "&index=StartTime"
+	+ "&where=StartTime:ge:" + tbl_start_time
+	+ ",EndTime:le:" + tbl_end_time;
 
     var columns = [
         {
@@ -115,6 +117,7 @@ function update_jobs(container) {
     var columnDefs = [
     ];
     jobTable = $("#jobTable").dataTable({
+        "sDom": '<"top">rt<"bottom"ip><"clear">',
         bAutoWidth : true,
         order : [ [ 0, 'asc' ] ],
         ordering : true,
@@ -140,8 +143,11 @@ function update_jobs(container) {
     });
 }
 
+var tbl_start_time;
+var tbl_end_time;
+
 function update_container(container_el) {
-    var cname = $("#containers").val()
+    var cname = $("#containers").val();
     $.ajax({
         url: "/SOS/schema",
         data: "container="+cname+"&schema=Sample",
@@ -164,6 +170,7 @@ function update_container(container_el) {
                 var aTime = parseInt(attr.min_key);
                 /* Convert aTime to seconds */
                 aTime = aTime / 1024 / 1024 / 1024 / 4;
+                tbl_start_time = aTime;
                 /* Convert aTime to milliseconds and construct a Date */
                 aTime = aTime * 1000;
                 var aDate = new Date(aTime);
@@ -174,20 +181,32 @@ function update_container(container_el) {
                     hmspicker : false,
                     format : "Y/m/d H:i",
                     step : 30,
-                    value : aDate
+                    value : aDate,
+                    onClose : function(time, el, event) {
+			var cname = $("#containers").val();
+                        tbl_start_time = Date.parse(el.val()) / 1000;
+			update_jobs(cname);
+                    },
                 });
                 var aDateStr = formatDate(aDate);
                 $('#job_start_time').val(aDateStr);
+
                 aTime = parseInt(attr.max_key);
-                aTime = aTime / 1024 / 1024 / 1024 / 4 * 1000;
-                aDate = new Date(aTime);
+                aTime = aTime / 1024 / 1024 / 1024 / 4;
+                tbl_end_time = aTime;
+                aDate = new Date(aTime * 1000);
                 $('#job_end_time').datetimepicker({
                     mask: '9999/19/39 29:59',
                     timepicker : true,
                     hmspicker : false,
                     format : "Y/m/d H:i",
                     step : 30,
-                    value : aDate
+                    value : aDate,
+                    onClose : function(time, el, event) {
+			var cname = $("#containers").val();
+                        tbl_end_time = Date.parse(el.val()) / 1000;
+			update_jobs(cname);
+                    },
                 });
                 aDateStr = formatDate(aDate);
                 $('#job_end_time').val(aDateStr);
@@ -236,10 +255,6 @@ $(document).ready( function() {
                 return 1;
             });
             $("#containers").empty().append(idxOpts);
-            /*
-            $("#containers").selectmenu({ change : update_container });
-            $("#containers").selectmenu("option", "width", "12em");
-            */
             if ($("#containers").length > 0) {
                 $("#containers option:first-child").attr("selected","selected");
                 update_container();
@@ -263,7 +278,8 @@ $(document).ready( function() {
     });
     var aaData = new Array();
     metricTable = $("#metricTable").dataTable({
-        pagingType : "full",
+        "sDom": '<"top"f>rt<"bottom"l><"clear">',
+        paging : false,
         bAutoWidth : true,
         order : [ [ 0, 'asc' ] ],
         ordering : true,
@@ -305,7 +321,7 @@ function add_graph() {
         + "&metric_name=" + encodeURIComponent(metric_name)
         + "&start=" + graph_start
         + "&end=" + graph_end;
-    window.open(url, "Binkus", "width=850, height=300, modal=yes");
+    window.open(url, "Binkus", "width=850px, height=320px, modal=yes");
 }
 
 </script>
@@ -337,7 +353,7 @@ function add_graph() {
       </div>
     </div>
     <br style="clear:both"/>
-    <div style="float: left; margin-top: 1em; width: 75%;">
+    <div id="jobTableDiv" style="float: left; margin-top: 1em; width: 75%;">
       <table id="jobTable" class="display"></table>
     </div>
     <div style="float: left; margin-top: 1em; width: 25%;">

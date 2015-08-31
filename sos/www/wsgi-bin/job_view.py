@@ -54,7 +54,6 @@ class JobPlot(object):
         self.output = output
 
     def plot(self):
-        print("Generating Job Plot")
         start_dt = datetime.now()
         mfc = [ 'b', 'g', 'r', 'c', 'm', 'y', 'k' ]
         ls = []
@@ -105,7 +104,10 @@ class JobPlot(object):
         dur = datetime.now() - start_dt
         secs0 = dur.seconds + (dur.microseconds / 1.0e6);
 
-        figure = Figure(figsize=(10,2.5),facecolor='w')
+        if self.output == 'gui':
+            figure = plt.figure(figsize=(10,2.5),facecolor='w')
+        else:
+            figure = Figure(figsize=(10,2.5),facecolor='w')
         props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
         axis = figure.add_axes([0.1, 0.225, 0.875, 0.65], axisbg='w')
         x_axis_len = len(x_axis)
@@ -134,11 +136,11 @@ class JobPlot(object):
         axis.text(0.050, 1.1, textstr, transform=axis.transAxes,
                   fontsize=10, verticalalignment='top', bbox=props)
         if self.output == 'gui':
-            print("Presenting Job Plot")
+            # print("Presenting Job Plot")
             plt.show()
             return None
 
-        print("Rending Job Plot as PNG image file")
+        # print("Rending Job Plot as PNG image file")
         canvas = FigureCanvasAgg(figure)
         imgdata = StringIO.StringIO()
         canvas.print_png(imgdata, dpi=150)
@@ -151,6 +153,34 @@ class WwwJobPlot(object):
         self.container = None
 
     def GET(self):
+        args = web.input()
+        if 'container' not in args:
+            return render.error("The 'container' parameter must be specified.")
+        container = sos_root + '/' + str(args.container)
+
+        if 'job_id' not in args:
+            return render.error("The 'job_id' parameter must be specified.")
+        job_id = int(args.job_id)
+
+        if 'metric_name' not in args:
+            return render.error("The 'metric_name' parameter must be specified.")
+        metric_name = str(args.metric_name)
+
+        if 'duration' in args:
+            duration = int(args.duration)
+        else:
+            duration = 3600
+
+        if 'start' in args:
+            start_secs = int(float(args.start))
+        else:
+            start_secs = 0
+
+        job = JobPlot(container, job_id, metric_name,
+                      start_secs, duration, 'www')
+        return job.plot()
+
+    def GET_(self):
         start_dt = datetime.now()
         args = web.input()
         container = args.container

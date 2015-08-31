@@ -311,11 +311,9 @@ class SosQuery(SosRequest):
             self.reset()
             obj = self.filt.begin()
         elif self.start + self.count >= self.card:
-            sys.stderr.write("past the end!\n")
             self.reset()
             obj = self.filt.end()
             skip = self.card % self.count
-            sys.stderr.write("start {0} count {1} skip {2}\n".format(self.start, self.count, -skip))
             obj = self.filt.skip(-skip)
         else:
             if session.pos:
@@ -325,7 +323,6 @@ class SosQuery(SosRequest):
                 self.filt.begin()
                 skip = self.start
             obj = self.filt.obj()
-            sys.stderr.write("start {0} count {1} skip {2}\n".format(self.start, self.count, -skip))
             if obj:
                 obj = self.filt.skip(skip)
 
