@@ -55,7 +55,12 @@ class Key(object):
         return s
 
     def __del__(self):
-        sos.sos_key_put(self.key)
+        self.release()
+
+    def release(self):
+        if self.key:
+            sos.sos_key_put(self.key)
+            self.key = None
 
 class Timestamp:
     def __init__(self, secs, usecs):
@@ -680,9 +685,6 @@ class Schema:
     def attr_count(self):
         return sos.sos_schema_attr_count(self.schema)
 
-    def __del__(self):
-        sos.sos_schema_put(self.schema)
-
 class Partition:
     def __init__(self, container, name, flags):
         self.container = container
@@ -690,7 +692,7 @@ class Partition:
         self.flags = flags
         sos.partition = sos.sos_part_new(container.name(), name, flags)
 
-class Container:
+class Container(object):
     RW = sos.SOS_PERM_RW
     RO = sos.SOS_PERM_RO
     def __init__(self, path, mode=RW):
@@ -723,6 +725,15 @@ class Container:
     def close(self):
         if self.container:
             sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
+            self.container = None
+
+    def release(self):
+        if self.container:
+            self.close()
+            sos.container = None
+
+    def __del__(self):
+        self.release()
 
 def dump_schema_objects(schema):
     # Find the first attribute with an index and use it to iterate
