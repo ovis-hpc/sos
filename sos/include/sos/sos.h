@@ -75,9 +75,13 @@ typedef struct sos_schema_s *sos_schema_t;
 typedef struct sos_obj_s *sos_obj_t;
 
 #define SOS_CONTAINER_NAME_LEN  64
-#define SOS_CONFIG_NAME_LEN  64
+#define SOS_CONFIG_NAME_LEN	64
 #define SOS_SCHEMA_NAME_LEN	64
 #define SOS_ATTR_NAME_LEN	64
+#define SOS_INDEX_NAME_LEN	128
+#define SOS_INDEX_KEY_TYPE_LEN	64
+#define SOS_INDEX_TYPE_LEN	64
+#define SOS_INDEX_ARGS_LEN	256
 
 typedef enum sos_type_e {
 	/** All types up to the arrays are fixed size */
@@ -183,6 +187,7 @@ enum sos_cond_e {
  * @{
  */
 sos_schema_t sos_schema_new(const char *name);
+void sos_schema_free(sos_schema_t schema);
 sos_schema_t sos_schema_dup(sos_schema_t schema);
 size_t sos_schema_count(sos_t sos);
 int sos_schema_add(sos_t sos, sos_schema_t schema);
@@ -416,6 +421,7 @@ int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
 const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
 int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
 void sos_index_print(sos_index_t index, FILE *fp);
+const char *sos_index_name(sos_index_t index);
 typedef struct sos_index_stat_s {
 	uint64_t cardinality;
 	uint64_t duplicates;

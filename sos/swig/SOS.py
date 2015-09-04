@@ -4,7 +4,7 @@ import sys
 import sos
 import os
 
-class Error(Exception):
+class SosError(Exception):
     def __init__(self, value):
         self.value = value
     def __str__(self):
@@ -79,8 +79,12 @@ class Timestamp:
         return float(self.secs)
 
 class Index(object):
-    def __init__(self, container, name):
-        self.index = sos.sos_index_open(container, name)
+    def __init__(self):
+        self.index = None
+        self.stats = None
+
+    def init(self, index):
+        self.index = index
         if not self.index:
             raise ValueError("Invalid container or index name")
         self.iter = sos.sos_index_iter_new(self.index)
@@ -89,6 +93,10 @@ class Index(object):
             self.done = True
         else:
             self.done = False
+
+    def open(self, container, name):
+        self.index = sos.sos_index_open(container, name)
+        self.init(index)
 
     def __iter__(self):
         return self
@@ -103,6 +111,48 @@ class Index(object):
         else:
             self.done = False
         return obj
+
+    def release(self):
+        if self.index:
+            sos.sos_index_close(self.index, sos.SOS_COMMIT_ASYNC)
+            self.index = None
+        if self.stats:
+            sos.sos_index_stat_free(self.stats)
+            self.stats = None
+
+    def __del__(self):
+        self.release()
+
+    def name(self):
+        return sos.sos_index_name(self.index)
+
+    def update_stats(self):
+        if not self.stats:
+            self.stats = sos.sos_index_stat_new()
+        if self.stats:
+            sos.sos_index_stat(self.index, self.stats)
+        return self.stats
+
+    def cardinality(self):
+        if self.stats:
+            return self.stats.cardinality
+        if self.update_stats():
+            return self.stats.cardinality
+        return None
+
+    def duplicates(self):
+        if self.stats:
+            return self.stats.duplicates
+        if self.update_stats():
+            return self.stats.duplicates
+        return None
+
+    def size(self):
+        if self.stats:
+            return self.stats.size
+        if self.update_stats():
+            return self.stats.size
+        return None
 
 class Value(object):
     def __init__(self, value):
@@ -458,21 +508,21 @@ class Filter(object):
         value_str = value_str.replace('"', '')
         cond_v = sos.sos_value_new()
         if not cond_v:
-            raise Error("The attribute value for {0} "
-                        "could not be created.".format(attr.name()))
+            raise SosError("The attribute value for {0} "
+                           "could not be created.".format(attr.name()))
         cond_v = sos.sos_value_init(cond_v, None, attr.attr);
         rc = sos.sos_value_from_str(cond_v, str(value_str), None)
         if rc != 0:
-            raise Error("The value {0} is invalid for the {1} attribute."
-                        .format(value_str, attr.name()))
+            raise SosError("The value {0} is invalid for the {1} attribute."
+                           .format(value_str, attr.name()))
 
         if not cmp_str.lower() in Filter.comparators:
-            raise Error("The comparison {0} is invalid.".format(comp_str))
+            raise SosError("The comparison {0} is invalid.".format(comp_str))
 
         rc = sos.sos_filter_cond_add(self.filt, attr.attr,
                                      Filter.comparators[cmp_str.lower()], cond_v)
         if rc != 0:
-            raise Error("Invalid filter condition, error {0}".format(rc))
+            raise SosError("Invalid filter condition, error {0}".format(rc))
 
     def unique(self):
         sos.sos_filter_flags_set(self.filt, sos.SOS_ITER_F_UNIQUE)
@@ -685,30 +735,100 @@ class Schema:
     def attr_count(self):
         return sos.sos_schema_attr_count(self.schema)
 
-class Partition:
-    def __init__(self, container, name, flags):
-        self.container = container
-        self.name = name
-        self.flags = flags
-        sos.partition = sos.sos_part_new(container.name(), name, flags)
+class Partition(object):
+    def __init__(self, part):
+        self.part = part
+        self.stat = None;
+
+    def update_stat(self):
+        if not self.stat:
+            self.stat = sos.sos_part_stat_new()
+        if self.stat:
+            sos.sos_part_stat(self.part, self.stat)
+        return self.stat
+
+    def name(self):
+        return sos.sos_part_name(self.part)
+
+    def state(self):
+        return sos.sos_part_state(self.part)
+
+    def Id(self):
+        return sos.sos_part_id(self.part)
+
+    def size(self):
+        if not self.stat:
+            self.update_stat()
+        if self.stat:
+            return self.stat.size
+        return None
+
+    def accessed(self):
+        if not self.stat:
+            self.update_stat()
+        if self.stat:
+            return self.stat.accessed
+        return None
+
+    def modified(self):
+        if not self.stat:
+            self.update_stat()
+        if self.stat:
+            return self.stat.modified
+        return None
+
+    def created(self):
+        if not self.stat:
+            self.update_stat()
+        if self.stat:
+            return self.stat.created
+        return None
+
+    def release(self):
+        if self.stat:
+            sos.sos_part_stat_free(self.stat)
+            self.stat = None
+
+    def __del__(self):
+        self.release()
 
 class Container(object):
     RW = sos.SOS_PERM_RW
     RO = sos.SOS_PERM_RO
+    idx_iter = None
     def __init__(self, path, mode=RW):
         self.schemas = {}
+        self.indexes = {}
+        self.partitions = {}
         try:
             self.path = path
             self.container = sos.sos_container_open(path, mode)
             if self.container == None:
-                raise Error('The container "{0}" could not be opened.'.format(path))
-            self.schemas = {}
+                raise SosError('The container "{0}" could not be opened.'.format(path))
             schema = sos.sos_schema_first(self.container)
             while schema != None:
                 self.schemas[sos.sos_schema_name(schema)] = Schema(schema)
                 schema = sos.sos_schema_next(schema)
+            idx_iter = sos.sos_container_index_iter_new(self.container)
+            idx = sos.sos_container_index_iter_first(idx_iter)
+            while idx:
+                name = sos.sos_index_name(idx)
+                idxObj = Index()
+                idxObj.init(idx)
+                self.indexes[name] = idxObj
+                idx = sos.sos_container_index_iter_next(idx_iter)
+            sos.sos_container_index_iter_free(idx_iter)
+            part_iter = sos.sos_part_iter_new(self.container)
+            part = sos.sos_part_first(part_iter)
+            while part:
+                name = sos.sos_part_name(part)
+                print name
+                self.partitions[name] = Partition(part)
+                part = sos.sos_part_next(part_iter)
+            sos.sos_part_iter_free(part_iter)
         except Exception as e:
-            raise Error('Exception: ' + str(e))
+            print(str(e))
+            raise SosError(str(e))
 
     def name(self):
         return self.path
@@ -731,6 +851,9 @@ class Container(object):
         if self.container:
             self.close()
             sos.container = None
+        for index_name, index in self.indexes.iteritems():
+            index.release()
+        self.indexes.clear()
 
     def __del__(self):
         self.release()

@@ -109,12 +109,14 @@
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
-static sos_index_t __sos_index_alloc(sos_t sos)
+static sos_index_t __sos_index_alloc(sos_t sos, const char *name)
 {
 	sos_index_t index = calloc(1, sizeof *index);
 	if (!index)
 		return NULL;
 	index->sos = sos;
+	strcpy(index->name, name);
+
 	return index;
 }
 
@@ -140,21 +142,21 @@ int sos_index_new(sos_t sos, const char *name,
 	SOS_KEY(idx_key);
 
 	size_t len = strlen(name);
-	if (len >= SOS_IDX_NAME_LEN)
+	if (len >= SOS_INDEX_NAME_LEN)
 		return EINVAL;
 
 	len = strlen(idx_type);
-	if (len >= SOS_IDX_TYPE_LEN)
+	if (len >= SOS_INDEX_TYPE_LEN)
 		return EINVAL;
 
 	len = strlen(key_type);
-	if (len >= SOS_IDX_KEY_TYPE_LEN)
+	if (len >= SOS_INDEX_KEY_TYPE_LEN)
 		return EINVAL;
 
 	if (!idx_args)
 		idx_args = "";
 	len = strlen(idx_args);
-	if (len >= SOS_IDX_ARGS_LEN)
+	if (len >= SOS_INDEX_ARGS_LEN)
 		return EINVAL;
 
 	ods_spin_lock(&sos->idx_lock, -1);
@@ -217,12 +219,12 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 	int rc;
 
 	name_len = strlen(name);
-	if (name_len >= SOS_IDX_NAME_LEN) {
+	if (name_len >= SOS_INDEX_NAME_LEN) {
 		errno = EINVAL;
 		goto err_0;
 	}
 
-	index = __sos_index_alloc(sos);
+	index = __sos_index_alloc(sos, name);
 	if (!index)
 		goto err_1;
 
@@ -546,6 +548,16 @@ off_t sos_index_size(sos_index_t index)
 	struct ods_idx_stat_s sb;
 	ods_idx_stat(index->idx, &sb);
 	return sb.size;
+}
+
+/**
+ * \brief Return the index's name
+ * \param index The index handle
+ * \retval The index name
+ */
+const char *sos_index_name(sos_index_t index)
+{
+	return index->name;
 }
 
 /**

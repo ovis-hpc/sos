@@ -381,7 +381,7 @@ int sos_container_new(const char *path, int o_mode)
 	ods_obj_put(udata);
 	ods_close(idx_ods, ODS_COMMIT_ASYNC);
 
-	/* Create the index to look up the schema names */
+	/* Create the index to look up the indexes */
 	sprintf(tmp_path, "%s/.__index_idx", path);
  	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "STRING", NULL);
  	if (rc)

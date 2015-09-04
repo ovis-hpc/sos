@@ -93,7 +93,7 @@ void sos_index_stat_free(sos_index_stat_t stat) {
 	free(stat);
 }
 sos_part_stat_t sos_part_stat_new() {
-	sos_part_stat_t stat = malloc(sizeof *stat);
+	sos_part_stat_t stat = calloc(1, sizeof *stat);
 	return stat;
 }
 void sos_part_stat_free(sos_part_stat_t stat) {
@@ -328,6 +328,10 @@ typedef struct sos_part_stat_s {
 	uint64_t modified;	/*! Last modify time as a Unix timestamp */
 	uint64_t created;	/*! The partition create time as a Unix timestamp */
 } *sos_part_stat_t;
+%newobject sos_part_stat_new;
+sos_part_stat_t sos_part_stat_new();
+%delobject sos_part_stat_free;
+void sos_part_stat_free(sos_part_stat_t stat);
 int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
 void sos_part_put(sos_part_t part);
 void sos_container_part_list(sos_t sos, FILE *fp);
@@ -394,8 +398,11 @@ typedef struct sos_pos *sos_pos_t;
  */
 int sos_index_new(sos_t sos, const char *name,
 		  const char *idx_type, const char *key_type, ...);
+
+typedef sos_index_s *sos_index_t;
 %newobject sos_index_open;
 sos_index_t sos_index_open(sos_t sos, const char *name);
+const char *sos_index_name(sos_index_t index);
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
 sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
@@ -421,6 +428,12 @@ int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
 const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
 int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
 void sos_container_index_list(sos_t sos, FILE *fp);
+%newobject sos_container_index_iter_new;
+sos_container_index_iter_t sos_container_index_iter_new(sos_t sos);
+%delobject sos_container_index_iter_free;
+void sos_container_index_iter_free(sos_container_index_iter_t iter);
+sos_index_t sos_container_index_iter_first(sos_container_index_iter_t iter);
+sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter);
 
 /*
  * Iterators

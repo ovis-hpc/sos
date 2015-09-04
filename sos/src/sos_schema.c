@@ -164,6 +164,13 @@ sos_schema_t sos_schema_new(const char *name)
 	return schema;
 }
 
+void sos_schema_free(sos_schema_t schema)
+{
+	if (schema->sos)
+		return;
+	__sos_schema_free(schema);
+}
+
 void __sos_schema_free(sos_schema_t schema)
 {
 	/* Drop our reference on the schema object */
@@ -174,7 +181,8 @@ void __sos_schema_free(sos_schema_t schema)
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		sos_attr_t attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
-		sos_index_close(attr->index, ODS_COMMIT_ASYNC);
+		if (attr->index)
+			sos_index_close(attr->index, ODS_COMMIT_ASYNC);
 		free(attr);
 	}
 	free(schema);

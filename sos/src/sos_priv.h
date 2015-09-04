@@ -191,6 +191,7 @@ typedef int (*sos_value_from_str_fn_t)(sos_value_t, const char *, char **);
 typedef void *(*sos_value_key_value_fn_t)(sos_value_t);
 
 struct sos_index_s {
+	char name[SOS_INDEX_NAME_LEN];
 	sos_t sos;
 	ods_idx_t idx;
 };
@@ -238,17 +239,13 @@ struct sos_schema_s {
 	TAILQ_HEAD(sos_attr_list, sos_attr_s) attr_list;
 };
 
-#define SOS_IDX_NAME_LEN 128
-#define SOS_IDX_KEY_TYPE_LEN 64
-#define SOS_IDX_TYPE_LEN 64
-#define SOS_IDX_ARGS_LEN 256
 typedef struct sos_idx_data_s {
 	ods_atomic_t ref_count;
 	uint32_t mode;
-	char name[SOS_IDX_NAME_LEN];
-	char key_type[SOS_IDX_KEY_TYPE_LEN];
-	char idx_type[SOS_IDX_TYPE_LEN];
-	char args[SOS_IDX_ARGS_LEN];
+	char name[SOS_INDEX_NAME_LEN];
+	char key_type[SOS_INDEX_KEY_TYPE_LEN];
+	char idx_type[SOS_INDEX_TYPE_LEN];
+	char args[SOS_INDEX_ARGS_LEN];
 } *sos_idx_data_t;
 
 #define SOS_SCHEMA(_o_) ODS_PTR(sos_schema_data_t, _o_)
