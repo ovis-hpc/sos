@@ -411,6 +411,22 @@ int sos_container_new(const char *path, int o_mode)
 	return rc;
 }
 
+static ods_t find_part_ods(sos_t sos, const char *name)
+{
+	ods_t ods = NULL;
+	sos_part_t part;
+	pthread_mutex_lock(&sos->lock);
+	TAILQ_FOREACH(part, &sos->part_list, entry) {
+		if (0 == strcmp(name, SOS_PART(part->part_obj)->name)) {
+			ods  = part->obj_ods;
+			goto out;
+		}
+	}
+ out:
+	pthread_mutex_unlock(&sos->lock);
+	return ods;
+}
+
 sos_part_t __sos_part_new(sos_t sos, ods_obj_t part_obj)
 {
 	sos_part_t part = calloc(1, sizeof(*part));
@@ -418,6 +434,7 @@ sos_part_t __sos_part_new(sos_t sos, ods_obj_t part_obj)
 		return NULL;
 	part->sos = sos;
 	part->part_obj = part_obj;
+	part->obj_ods = find_part_ods(sos, SOS_PART(part_obj)->name);
 	return part;
 }
 
@@ -672,6 +689,8 @@ int print_schema(struct rbn *n, void *fp_, int level)
  */
 void sos_container_info(sos_t sos, FILE *fp)
 {
+	if (!fp)
+		fp = stdout;
 	rbt_traverse(&sos->schema_name_rbt, print_schema, fp);
 	ods_idx_info(sos->schema_idx, fp);
 	ods_info(ods_idx_ods(sos->schema_idx), fp);
@@ -1081,10 +1100,6 @@ sos_part_t sos_part_next(sos_part_iter_t iter)
 {
 	sos_part_t part = NULL;
 	ods_obj_t part_obj = __sos_part_data_next(iter->sos, iter->part_obj);
-#if 0
-	if (iter->part_obj)
-		__sos_part_obj_put(iter->sos, iter->part_obj);
-#endif
 	if (part_obj) {
 		part = __sos_part_new(iter->sos, part_obj);
 		if (!part) {

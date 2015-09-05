@@ -84,9 +84,12 @@ class Index(object):
         self.stats = None
 
     def init(self, index):
+        self.release()          # support re-init
         self.index = index
         if not self.index:
             raise ValueError("Invalid container or index name")
+        self.stats = sos.sos_index_stat_s()
+        sos.sos_index_stat(self.index, self.stats)
         self.iter = sos.sos_index_iter_new(self.index)
         rc = sos.sos_iter_begin(self.iter)
         if rc != 0:
@@ -95,6 +98,7 @@ class Index(object):
             self.done = False
 
     def open(self, container, name):
+        self.release()          # support re-open
         self.index = sos.sos_index_open(container, name)
         self.init(index)
 
@@ -117,7 +121,7 @@ class Index(object):
             sos.sos_index_close(self.index, sos.SOS_COMMIT_ASYNC)
             self.index = None
         if self.stats:
-            sos.sos_index_stat_free(self.stats)
+            del self.stats
             self.stats = None
 
     def __del__(self):
@@ -127,39 +131,23 @@ class Index(object):
         return sos.sos_index_name(self.index)
 
     def update_stats(self):
-        if not self.stats:
-            self.stats = sos.sos_index_stat_new()
-        if self.stats:
-            sos.sos_index_stat(self.index, self.stats)
         return self.stats
 
     def cardinality(self):
-        if self.stats:
-            return self.stats.cardinality
-        if self.update_stats():
-            return self.stats.cardinality
-        return None
+        return self.stats.cardinality
 
     def duplicates(self):
-        if self.stats:
-            return self.stats.duplicates
-        if self.update_stats():
-            return self.stats.duplicates
-        return None
+        return self.stats.duplicates
 
     def size(self):
-        if self.stats:
-            return self.stats.size
-        if self.update_stats():
-            return self.stats.size
-        return None
+        return self.stats.size
 
 class Value(object):
     def __init__(self, value):
         self.value = value
 
     def __str__(self):
-        return sos.value_as_str(self.value)
+        return sos.py_value_as_str(self.value)
 
     def __int__(self):
         t = sos.sos_attr_type(self.value.attr)
@@ -440,10 +428,10 @@ class AttrIterator:
 
     def pos(self):
         rc = sos.sos_iter_pos(self.iter_, self.pos_)
-        return (rc, sos.pos_to_str(self.pos_))
+        return (rc, sos.py_pos_to_str(self.pos_))
 
     def set(self, pos):
-        rc = sos.pos_from_str(self.pos_, pos)
+        rc = sos.py_pos_from_str(self.pos_, pos)
         if rc == 0:
             return sos.sos_iter_set(self.iter_, self.pos_)
         return 22;
@@ -564,10 +552,10 @@ class Filter(object):
 
     def pos(self):
         rc = sos.sos_filter_pos(self.filt, self.pos_)
-        return (rc, sos.pos_to_str(self.pos_))
+        return (rc, sos.py_pos_to_str(self.pos_))
 
     def set(self, pos):
-        rc = sos.pos_from_str(self.pos_, pos)
+        rc = sos.py_pos_from_str(self.pos_, pos)
         if rc == 0:
             return sos.sos_filter_set(self.filt, self.pos_)
         return 22;
@@ -738,14 +726,8 @@ class Schema:
 class Partition(object):
     def __init__(self, part):
         self.part = part
-        self.stat = None;
-
-    def update_stat(self):
-        if not self.stat:
-            self.stat = sos.sos_part_stat_new()
-        if self.stat:
-            sos.sos_part_stat(self.part, self.stat)
-        return self.stat
+        self.stat = sos.sos_part_stat_s()
+        sos.sos_part_stat(self.part, self.stat)
 
     def name(self):
         return sos.sos_part_name(self.part)
@@ -757,36 +739,20 @@ class Partition(object):
         return sos.sos_part_id(self.part)
 
     def size(self):
-        if not self.stat:
-            self.update_stat()
-        if self.stat:
-            return self.stat.size
-        return None
+        return self.stat.size
 
     def accessed(self):
-        if not self.stat:
-            self.update_stat()
-        if self.stat:
-            return self.stat.accessed
-        return None
+        return self.stat.accessed
 
     def modified(self):
-        if not self.stat:
-            self.update_stat()
-        if self.stat:
-            return self.stat.modified
-        return None
+        return self.stat.modified
 
     def created(self):
-        if not self.stat:
-            self.update_stat()
-        if self.stat:
-            return self.stat.created
-        return None
+        return self.stat.created
 
     def release(self):
         if self.stat:
-            sos.sos_part_stat_free(self.stat)
+            del self.stat
             self.stat = None
 
     def __del__(self):
@@ -822,12 +788,10 @@ class Container(object):
             part = sos.sos_part_first(part_iter)
             while part:
                 name = sos.sos_part_name(part)
-                print name
                 self.partitions[name] = Partition(part)
                 part = sos.sos_part_next(part_iter)
             sos.sos_part_iter_free(part_iter)
         except Exception as e:
-            print(str(e))
             raise SosError(str(e))
 
     def name(self):

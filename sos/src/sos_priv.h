@@ -363,7 +363,7 @@ struct sos_iter_s {
 	sos_index_t index;
 	ods_iter_t iter;
 };
-
+#ifndef SWIG
 /**
  * Internal routines
  */
@@ -392,5 +392,5 @@ void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj);
 ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj);
 int __sos_schema_open(sos_t sos, sos_schema_t schema);
 int __sos_schema_name_cmp(void *a, void *b);
-
+#endif
 #endif

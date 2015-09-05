@@ -59,7 +59,7 @@ if __name__ == "__main__":
     max_y = 0
     while rc == 0:
         comp_obj = sos.sos_iter_obj(comp_id_iter)
-        compObj = SOS.NewObject(comp_obj)
+        compObj = SOS.Object(comp_obj)
         x = float(compObj.x_2d)
         if x < min_x:
             min_x = x
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         r = None
         if rc == 0:
             job_obj = sos.sos_iter_obj(comptime_iter)
-            jobObj = SOS.NewObject(job_obj)
+            jobObj = SOS.Object(job_obj)
 
             # test if the sample time window overlaps the job
             job_start = int(jobObj.StartTime)
