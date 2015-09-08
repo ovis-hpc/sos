@@ -58,22 +58,27 @@ typedef struct job_attr_vector_s {
 
 #pragma pack(4)
 typedef struct job_s {
-	uint32_t Id;
+	uint32_t job_id;
 	struct sos_timestamp_s StartTime;
 	struct sos_timestamp_s EndTime;
 	sos_obj_ref_t JobName;
 	sos_obj_ref_t EndName;
 } *job_t;
 
-typedef struct job_time_s {
-	uint32_t secs;
-	uint32_t id;
-} *job_time_t;
+typedef struct job_time_key_s {
+	uint32_t secs;		/* Secondary Key */
+	uint32_t job_id;	/* Primary Key */
+} *job_time_key_t;
+
+typedef struct job_comp_key_s {
+	uint32_t comp_id;	/* Secondary Key */
+	uint32_t job_id;	/* Primary Key */
+} *job_comp_key_t;
 
 typedef struct job_sample_s {
 	struct sos_timestamp_s Time;
 	uint32_t CompId;
-	struct job_time_s JobTime;
+	struct job_time_key_s JobTime;
 	uint64_t Tesla_K20X_gpu_util_rate;
 	uint64_t Tesla_K20X_gpu_agg_dbl_ecc_total_errors;
 	uint64_t Tesla_K20X_gpu_agg_dbl_ecc_texture_memory;
@@ -303,6 +308,11 @@ typedef struct job_metric_s {
 	double time_sum_xi_sq;
 } *job_metric_t;
 
+typedef struct comp_time_key_s {
+	uint32_t secs;		/* Secondary Key */
+	uint32_t comp_id;	/* Primary Key */
+} *comp_time_key_t;
+
 typedef enum job_iter_status_e {
 	JOB_ITER_OK = 0,
 	JOB_ITER_END,
@@ -339,36 +349,4 @@ typedef enum job_metric_flags_e {
 } job_metric_flags_t;
 
 typedef struct job_iter_s *job_iter_t;
-/*
-job_iter_t job_iter_new(sos_t sos, job_iter_order_t order_by);
-void job_iter_set_bin_width(job_iter_t job_iter, double width);
-double job_iter_get_bin_width(job_iter_t job_iter);
-void job_iter_free(job_iter_t job_iter);
-sos_obj_t job_iter_begin_job(job_iter_t job_iter);
-sos_obj_t job_iter_next_job(job_iter_t job_iter);
-sos_obj_t job_iter_prev_job(job_iter_t job_iter);
-sos_obj_t job_iter_end_job(job_iter_t job_iter);
-sos_obj_t job_iter_find_job_by_id(job_iter_t job_iter, long job_id);
-sos_obj_t job_iter_find_job_by_timestamp(job_iter_t job_iter, sos_value_t job_time);
-sos_obj_t job_iter_next_comp(job_iter_t job_iter);
-
-job_metric_vector_t
-job_iter_mvec_new(job_iter_t job_iter, size_t attr_count, const char **names);
-void job_iter_mvec_del(job_metric_vector_t mvec);
-
-int job_iter_begin_sample(job_iter_t job_iter,
-			  job_metric_flags_t flags,
-			  job_metric_vector_t mvec);
-int job_iter_next_sample(job_iter_t job_iter);
-
-sos_obj_t job_iter_sample_first(job_iter_t job_iter, sos_obj_t comp_obj);
-sos_obj_t job_iter_sample_last(job_iter_t job_iter, sos_obj_t comp_obj);
-sos_obj_t job_iter_sample_next(job_iter_t job_iter, sos_obj_t sample_obj);
-sos_obj_t job_iter_sample_prev(job_iter_t job_iter, sos_obj_t sample_obj);
-
-sos_obj_t job_iter_comp_first(job_iter_t job_iter, sos_obj_t job_obj);
-sos_obj_t job_iter_comp_last(job_iter_t job_iter, sos_obj_t job_obj);
-sos_obj_t job_iter_comp_next(job_iter_t job_iter, sos_obj_t comp_obj);
-sos_obj_t job_iter_comp_prev(job_iter_t job_iter, sos_obj_t comp_obj);
-*/
 #endif

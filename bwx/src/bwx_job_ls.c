@@ -70,25 +70,6 @@
 #include <bwx/bwx.h>
 
 
-#pragma pack(4)
-struct Kvs {
-	uint32_t secondary;
-	uint32_t primary;
-};
-
-struct Job {
-	uint32_t id;
-	struct sos_timestamp_s start;
-	struct sos_timestamp_s end;
-};
-
-struct Sample {
-	struct sos_timestamp_s time;
-	struct Kvs job_time;
-	uint32_t comp_id;
-};
-#pragma pack()
-
 const char *short_options = "C:D:X:ja:b:tu:V:J:cdv";
 
 struct option long_options[] = {
@@ -322,11 +303,11 @@ void show_by_comp(sos_t sos)
 	if (comp_str) {
 		SOS_KEY(comp_key);
 		comp_id = strtoul(comp_str, NULL, 0);
-		struct Kvs kv = {
-			.primary = comp_id,
-			.secondary = 0
+		struct comp_time_key_s comp_time_key = {
+			.comp_id = comp_id,
+			.secs = 0
 		};
-		sos_key_set(comp_key, &kv, sizeof(kv));
+		sos_key_set(comp_key, &comp_time_key, sizeof(comp_time_key));
 		rc = sos_iter_sup(job_iter, comp_key);
 	} else {
 		rc = sos_iter_begin(job_iter);
@@ -334,15 +315,15 @@ void show_by_comp(sos_t sos)
 	for (; !rc; rc = sos_iter_next(job_iter)) {
 		job_obj = sos_iter_obj(job_iter);
 		sos_key_t key = sos_iter_key(job_iter);
-		struct Kvs *kv = (struct Kvs *)sos_key_value(key);
+		comp_time_key_t kv = (comp_time_key_t)sos_key_value(key);
 		if (comp_str) {
-			if (comp_id != kv->primary) {
+			if (comp_id != kv->comp_id) {
 				sos_obj_put(job_obj);
 				sos_key_put(key);
 				break;
 			}
 		} else
-			comp_id = kv->primary;
+			comp_id = kv->comp_id;
 		if (comp_id != last_comp_id) {
 			printf("%12d ", comp_id);
 			last_comp_id = comp_id;
@@ -388,7 +369,7 @@ void show_samples(sos_t sos, uint32_t job_id)
 	sos_schema_t sample_schema;
 	sos_attr_t jobtime_attr;
 	sos_iter_t sample_iter;
-	struct Kvs kvs;
+	struct job_time_key_s job_time_key;
 	int rc;
 	SOS_KEY(sample_key);
 
@@ -430,19 +411,18 @@ void show_samples(sos_t sos, uint32_t job_id)
 			col->width = col_widths[sos_attr_type(attr)];
 	}
 
-	kvs.primary = job_id;
-	kvs.secondary = 0;
-	sos_key_set(sample_key, &kvs, sizeof(kvs));
+	job_time_key.job_id = job_id;
+	job_time_key.secs = 0;
+	sos_key_set(sample_key, &job_time_key, sizeof(job_time_key));
 	for (rc = sos_iter_sup(sample_iter, sample_key);
 	     rc == 0; rc = sos_iter_next(sample_iter)) {
 		sos_obj_t obj = sos_iter_obj(sample_iter);
-		struct Sample *sample = sos_obj_ptr(obj);
-		if (sample->job_time.primary != job_id)
+		job_sample_t sample = (job_sample_t)sos_obj_ptr(obj);
+		if (sample->JobTime.job_id != job_id)
 			break;
 		table_row(stdout, sample_schema, obj);
 		sos_obj_put(obj);
 	}
-
 }
 
 void show_sample_by_job(sos_t sos)
@@ -451,7 +431,7 @@ void show_sample_by_job(sos_t sos)
 	sos_attr_t id_attr;
 	sos_iter_t job_iter;
 	sos_obj_t job_obj;
-	struct Job *job;
+	job_t job;
 	uint32_t job_id = 0;
 	int rc;
 
@@ -485,18 +465,18 @@ void show_sample_by_job(sos_t sos)
 	}
 	for (; !rc; rc = sos_iter_next(job_iter)) {
 		job_obj = sos_iter_obj(job_iter);
-		job = sos_obj_ptr(job_obj);
-		if (job_id && job_id != job->id) {
+		job = (job_t)sos_obj_ptr(job_obj);
+		if (job_id && job_id != job->job_id) {
 			sos_obj_put(job_obj);
 			break;
 		}
-		printf("%12d ", job->id);
+		printf("%12d ", job->job_id);
 		printf("%22s ", attr_as_str(job_obj, "StartTime"));
 		printf("%22s ", attr_as_str(job_obj, "EndTime"));
 		printf("%-12s ", attr_as_str(job_obj, "UserName"));
 		printf("%s\n", attr_as_str(job_obj, "JobName"));
 		if (verbose)
-			show_samples(sos, job->id);
+			show_samples(sos, job->job_id);
 		sos_obj_put(job_obj);
 	}
 	sos_iter_free(job_iter);
@@ -521,8 +501,8 @@ void show_comp_by_job(sos_t sos)
 	for (rc = sos_iter_begin(job_iter); !rc; rc = sos_iter_next(job_iter)) {
 		job_obj = sos_iter_obj(job_iter);
 		sos_key_t key = sos_iter_key(job_iter);
-		struct Kvs *kv = (struct Kvs *)sos_key_value(key);
-		job_id = kv->primary;
+		job_comp_key_t kv = (job_comp_key_t)sos_key_value(key);
+		job_id = kv->job_id;
 		if (job_id != last_job_id) {
 			printf("\n%12d ", job_id);
 			last_job_id = job_id;
@@ -530,12 +510,12 @@ void show_comp_by_job(sos_t sos)
 			printf("%22s ", attr_as_str(job_obj, "EndTime"));
 			printf("%-12s ", attr_as_str(job_obj, "UserName"));
 			printf("%s\n            %8d ",
-			       attr_as_str(job_obj, "JobName"), kv->secondary);
+			       attr_as_str(job_obj, "JobName"), kv->comp_id);
 			comp_count = 1;
 		} else {
 			if (!(comp_count % 8))
 				printf("\n            ");
-			printf("%8d ", kv->secondary);
+			printf("%8d ", kv->comp_id);
 			comp_count++;
 		}
 		sos_obj_put(job_obj);
@@ -548,18 +528,15 @@ void usage(int argc, char *argv[])
 {
 	printf("%s: Query Jobs and Job Sample data in a Container:\n"
 	       "    -C <container>  The Container name\n"
-	       "    -j <job_id>     An optional Job Id\n"
+	       "    -j              order the output by Job Id\n"
+	       "    -J <job_id>     Show results for only this Job Id\n"
 	       "    -a <start-time> Show jobs starting on or after start-time\n"
 	       "    -b <start-time> Show jobs starting before start-time\n"
 	       "    -u <user-id>    Show only jobs for this user-id\n"
 	       "    -c              Order results by component\n"
-	       "    -t <bin-width>  Order results by time; bin-width specifies the\n"
-	       "                    width of the time window to use for grouping.\n"
-	       "                    The default is 1 second.\n"
-	       "    -d              Treat the data as a cumulative value, process\n"
-	       "                    differences\n"
+	       "    -t              Order results by time.\n"
 	       "    -v              Dump all sample data for the Job\n"
-	       "    -V              Add this metric to the set of processed data\n",
+	       "    -V              Add this metric to the displayed output\n",
 	       argv[0]);
 	exit(1);
 }

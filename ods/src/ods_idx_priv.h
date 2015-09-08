@@ -115,6 +115,8 @@ struct ods_idx_class {
 };
 
 struct ods_idx {
+	/** open and iterator references */
+	ods_atomic_t ref_count;
 	/** The index and key handler functions */
 	struct ods_idx_class *idx_class;
 	/** The ODS object store for the index */

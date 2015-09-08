@@ -43,6 +43,7 @@
 %include "cpointer.i"
 %include "cstring.i"
 %include "carrays.i"
+%include "exception.i"
 %{
 #include <stdio.h>
 #include <sys/queue.h>
@@ -288,6 +289,24 @@ static int map(const char *name)
 	return -1;
 }
 
+static uint64_t getval(struct job_sample_s *sample, size_t i)
+{
+	if (i < 0)
+		return -1L;
+	if (i >= sizeof(name_map) / sizeof(name_map[0]))
+		return -1L;
+	switch (i) {
+	case 0:
+		return *(uint64_t *)&sample->Time;
+	case 2:
+		return *(uint64_t *)&sample->JobTime;
+	case 1:
+		return (uint64_t)*(uint32_t *)&sample->CompId;
+	default:
+		return ((uint64_t *)&sample->Tesla_K20X_gpu_util_rate)[i-3];
+	}
+}
+
 %}
 
 typedef unsigned int uint32_t;
@@ -314,23 +333,41 @@ job_sample_t job_sample(sos_obj_t obj);
  }
 
 %extend job_sample_s {
-	inline size_t __len__() { return 209; }
+	inline void __del__() {
+		printf("Doh!!!\n");
+	}
+	inline size_t __len__() { return sizeof(name_map) / sizeof(name_map[0]); }
+	inline uint64_t __getattr__(const char *name) {
+		size_t i = map(name);
+		if (i < 0)
+			SWIG_exception(SWIG_IndexError, name);
+		return getval(self, i);
+	fail:
+		return -1L;
+	}
 	inline uint64_t __getitem__(size_t i) {
-		switch (i) {
-		case 0:
-			return *(uint64_t *)&self->Time;
-		case 2:
-			return *(uint64_t *)&self->JobTime;
-		case 1:
-			return (uint64_t)*(uint32_t *)&self->CompId;
-		default:
-			return ((uint64_t *)&self->Tesla_K20X_gpu_util_rate)[i-3];
-		}
+		if (i < 0 || i >= sizeof(name_map) / sizeof(name_map[0]))
+			SWIG_exception(SWIG_IndexError, "Index out of range");
+		return getval(self, i);
+	fail:
+		return -1L;
 	}
 	inline int idx(const char *name) {
 		return map(name);
 	}
 }
 
+%extend job_time_key_s {
+	inline uint64_t __getattr__(const char *name) {
+		SWIG_exception(SWIG_IndexError, name);
+	fail:
+		return -1L;
+	}
+	inline uint64_t __getitem__(size_t i) {
+		SWIG_exception(SWIG_IndexError, "Index out of bounds");
+	fail:
+		return -1L;
+	}
+}
 %pythoncode %{
 %}

@@ -225,6 +225,7 @@ ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm)
 	if (idx_class->prv->open(idx))
 		goto err_1;
 	ods_obj_put(obj);
+	idx->ref_count = 1;
 	return idx;
  err_1:
 	ods_obj_put(obj);
@@ -244,8 +245,11 @@ void ods_idx_close(ods_idx_t idx, int flags)
 {
 	if (!idx)
 		return;
-	idx->idx_class->prv->close(idx);
-	ods_close(idx->ods, flags);
+	if (0 == ods_atomic_dec(&idx->ref_count)) {
+		idx->idx_class->prv->close(idx);
+		ods_close(idx->ods, flags);
+	} else
+		ods_commit(idx->ods, flags);
 }
 
 void ods_idx_commit(ods_idx_t idx, int flags)
@@ -293,7 +297,10 @@ int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 
 ods_iter_t ods_iter_new(ods_idx_t idx)
 {
-	return idx->idx_class->prv->iter_new(idx);
+	ods_iter_t iter = idx->idx_class->prv->iter_new(idx);
+	if (iter)
+		ods_atomic_inc(&idx->ref_count);
+	return iter;
 }
 
 ods_idx_t ods_iter_idx(ods_iter_t iter)
@@ -316,7 +323,11 @@ ods_iter_flags_t ods_iter_flags_get(ods_iter_t i)
 
 void ods_iter_delete(ods_iter_t iter)
 {
-	return iter->idx->idx_class->prv->iter_delete(iter);
+	iter->idx->idx_class->prv->iter_delete(iter);
+	if (0 == ods_atomic_dec(&iter->idx->ref_count)) {
+		iter->idx->idx_class->prv->close(iter->idx);
+		ods_close(iter->idx->ods, ODS_COMMIT_SYNC);
+	}
 }
 
 int ods_iter_find(ods_iter_t iter, ods_key_t key)
