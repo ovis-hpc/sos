@@ -224,24 +224,9 @@ static char *long_double_to_str_fn(sos_value_t v, char *str, size_t len)
 
 static char *timestamp_to_str_fn(sos_value_t v, char *str, size_t len)
 {
-	struct tm tm_;
-	struct tm *tm = &tm_;
-	size_t sz;
-	time_t ts;
-
-	memset(&tm_, 0, sizeof(tm_));
-	/* NB: time_t is 8B on some machines and 4B on others. This is
-	 * _not_ a 64b/32b issue, it's an OS choice and is not part of
-	 * the C standards. Therefore fine.secs must be assigned to a
-	 * time_t var and then passed to localtime to ensure
-	 * correctness
-	 */
-	ts = (time_t)v->data->prim.timestamp_.fine.secs;
-	tm = localtime_r(&ts, tm);
-	sz = strftime(str, len, "%Y/%m/%d %H:%M:%S", tm);
-	if (sz < len)
-		snprintf(&str[sz], len - sz, ".%d",
-			 v->data->prim.timestamp_.fine.usecs);
+	double t= (double)v->data->prim.timestamp_.fine.secs +
+		((double)v->data->prim.timestamp_.fine.usecs) / 1.0e6;
+	snprintf(str, len, "%.6f", t);
 	return str;
 }
 

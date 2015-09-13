@@ -71,10 +71,10 @@ class Timestamp:
     def nanoseconds(self):
         return self.usecs
     def __str__(self):
-        t = time.localtime(self.secs)
-        return time.strftime('%Y/%m/%d %H:%M:%S', t)
+        t = self.secs + self.usecs / 1e6
+        return str(t)
     def __float__(self):
-        return float(self.secs) + float(self.usecs) / 1.0e9
+        return float(self.secs) + float(self.usecs) / 1.0e6
     def __int__(self):
         return float(self.secs)
 
