@@ -75,10 +75,16 @@ typedef struct job_comp_key_s {
 	uint32_t job_id;	/* Primary Key */
 } *job_comp_key_t;
 
+typedef struct comp_time_key_s {
+	uint32_t secs;		/* Secondary Key */
+	uint32_t comp_id;	/* Primary Key */
+} *comp_time_key_t;
+
 typedef struct job_sample_s {
 	struct sos_timestamp_s Time;
 	uint32_t CompId;
 	struct job_time_key_s JobTime;
+	struct comp_time_key_s CompTime;
 	uint64_t Tesla_K20X_gpu_util_rate;
 	uint64_t Tesla_K20X_gpu_agg_dbl_ecc_total_errors;
 	uint64_t Tesla_K20X_gpu_agg_dbl_ecc_texture_memory;
@@ -307,11 +313,6 @@ typedef struct job_metric_s {
 	double time_sum_xi;
 	double time_sum_xi_sq;
 } *job_metric_t;
-
-typedef struct comp_time_key_s {
-	uint32_t secs;		/* Secondary Key */
-	uint32_t comp_id;	/* Primary Key */
-} *comp_time_key_t;
 
 typedef enum job_iter_status_e {
 	JOB_ITER_OK = 0,

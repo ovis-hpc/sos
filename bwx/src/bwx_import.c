@@ -54,6 +54,7 @@
 #include <sos/sos.h>
 #include <ods/ods_atomic.h>
 #include <sos/sos_yaml.h>
+#include <bwx/bwx.h>
 
 const char *short_options = "I:M:C:S:T:";
 
@@ -191,25 +192,6 @@ size_t col_count;
 int *col_map;
 sos_attr_t *attr_map;
 
-struct kvs {
-	uint32_t secondary;
-	uint32_t primary;
-};
-
-struct Job {
-	uint32_t id;
-	struct sos_timestamp_s start;
-	struct sos_timestamp_s end;
-	char data[0];
-};
-
-struct Sample {
-	struct sos_timestamp_s time;
-	uint32_t comp_id;
-	struct kvs key;
-	char data[0];
-};
-
 void *add_proc(void *arg)
 {
 	struct obj_q_s *queue = arg;
@@ -263,17 +245,19 @@ void *add_proc(void *arg)
 			next_tok++; /* skip ',' */
 			cols++;
 		}
-		struct Sample *sample = sos_obj_ptr(work->obj);
-		struct kvs the_key;
+		job_sample_t sample = sos_obj_ptr(work->obj);
+		struct comp_time_key_s the_key;
 		SOS_KEY(job_key);
-		the_key.primary = sample->comp_id;
-		the_key.secondary = sample->time.secs;
+		the_key.comp_id = sample->CompId;
+		the_key.secs = sample->Time.secs;
 		sos_key_set(job_key, &the_key, sizeof(the_key));
 		sos_obj_t job_obj = sos_index_find_inf(comptime_idx, job_key);
 		if (job_obj) {
-			struct Job *job = sos_obj_ptr(job_obj);
-			sample->key.primary = job->id;
-			sample->key.secondary = sample->time.secs;
+			job_t job = sos_obj_ptr(job_obj);
+			sample->JobTime.job_id = job->job_id;
+			sample->JobTime.secs = sample->Time.secs;
+			sample->CompTime.comp_id = sample->CompId;
+			sample->CompTime.secs = sample->Time.secs;
 			sos_obj_put(job_obj);
 		}
 		rc = sos_obj_index(work->obj);
