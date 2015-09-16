@@ -256,10 +256,10 @@ void *add_proc(void *arg)
 			job_t job = sos_obj_ptr(job_obj);
 			sample->JobTime.job_id = job->job_id;
 			sample->JobTime.secs = sample->Time.secs;
-			sample->CompTime.comp_id = sample->CompId;
-			sample->CompTime.secs = sample->Time.secs;
 			sos_obj_put(job_obj);
 		}
+		sample->CompTime.comp_id = sample->CompId;
+		sample->CompTime.secs = sample->Time.secs;
 		rc = sos_obj_index(work->obj);
 		sos_obj_put(work->obj);
 		if (rc) {
