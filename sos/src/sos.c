@@ -593,6 +593,7 @@ static int __sos_open_partitions(sos_t sos, char *tmp_path)
 	sos_part_iter_free(iter);
  err_1:
 	ods_close(sos->part_ods, ODS_COMMIT_ASYNC);
+	sos->part_ods = NULL;
  err_0:
 	return errno;
 }
@@ -885,32 +886,13 @@ int sos_container_stat(sos_t sos, struct stat *sb)
 }
 
 /**
- * \brief Extend the size of a Container
- *
- * Expand the size of  Container's object store. This function cannot
- * be used to make the container smaller. See the
- * sos_container_truncate() function.
- *
- * \param sos	The container handle
- * \param new_size The desired size of the container
- * \retval 0 The container was successfully extended.
- * \retval ENOSPC There is insufficient storage to extend the container
- * \retval EINVAL The container is currently larger than the requested size
- */
-int sos_container_extend(sos_t sos, size_t new_size)
-{
-	return ods_extend(sos->primary_part->obj_ods, new_size);
-}
-
-/**
  * \brief Close a Container
  *
- * This function commits the index changes to stable storage and
- * releases all in-memory resources associated with the container.
+ * This function commits changes to stable storage and releases all
+ * in-memory resources associated with the container.
  *
- * If SOS_COMMIT_SYNC is specified in the flags parameter, the function
- * will wait until the changes are commited to stable stroage before
- * returning.
+ * If SOS_COMMIT_SYNC is specified in the flags parameter, the
+ * function will wait until the changes are commited before returning.
  *
  * \param sos	The SOS container handle
  * \param flags	The commit flags

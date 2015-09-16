@@ -260,7 +260,6 @@ typedef enum sos_commit_e {
 	SOS_COMMIT_SYNC
 } sos_commit_t;
 
-int sos_container_extend(sos_t sos, size_t new_size);
 int sos_container_stat(sos_t sos, struct stat *sb);
 void sos_container_close(sos_t c, sos_commit_t flags);
 int sos_container_commit(sos_t c, sos_commit_t flags);
