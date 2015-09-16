@@ -40,6 +40,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/**
+ * \page commands Commands
+ *
+ * There are two commands for managing and querying SOS Containers:
+ * <tt>sos_cmd</tt> and <tt>sos_part</tt>. The \c sos_cmd command is
+ * used to create containers, add schema, import objects and query
+ * containers. The \c sos_part command is used to manage partitions
+ * within a container. See \ref partition_overview for more
+ * information on partitions.
+ */
 #include <pthread.h>
 #include <sys/time.h>
 #include <sys/queue.h>
