@@ -1,4 +1,13 @@
 *~
 build/*
 *cscope*
-
+Makefile.in
+aclocal.m4
+configure
+m4/libtool.m4
+m4/lt*.m4
+config/
+build*/
+autom4te.cache/
+config.h.in
+*.swp

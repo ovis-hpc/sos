@@ -9,19 +9,31 @@ TODO
 
 - Implement object linking code
 
-BUILD
+BUILD with CMAKE
 
 In the simplest case, where all dependencies are in default
 locations. Do the following in order to build:
 
 # mkdir build
 # cd build
-# cmake .. -DCMAKE_BUILD_TYPE=<type>
+# cmake .. -DCMAKE_BUILD_TYPE=<type> -DCMAKE_INSTALL_PREFIX=<prefix>
 
 where <type> is one of DEBUG or RELEASE.
 
-If you have installed the Zap transport in a private build location,
-use the ZAP_PATH variable to inform CMake where to look. For example,
 
-# cmake .. -DCMAKE_BUILD_TYPE=DEBUG -DZAP_PATH=/home/tom/build/ovis
+BUILD with Automake
 
+mkdir build
+cd build
+../configure --prefix=<prefix> [CFLAGS=... LDFLAGS=...]
+make
+make install
+
+
+RPM BUILD
+
+mkdir build
+cd build
+../configure --prefix=<prefix> [CFLAGS=... LDFLAGS=...]
+make rpm7
+# After finished, the RPMs will be in rpm7/RPMS/<arch>/ directory.
