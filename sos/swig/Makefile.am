@@ -2,6 +2,7 @@
 AM_CFLAGS = -I$(srcdir)/../include \
 	    -I$(srcdir)/../src \
 	    -I$(top_srcdir)/ods/include \
+	    -I/usr/include/x86_64-linux-gnu \
 	    -I/usr/include
 
 BUILT_SOURCES = sos.c sos.py
@@ -16,7 +17,7 @@ nodist__sos_la_SOURCES = sos.c
 _sos_la_SOURCES = $(SWIG_SOURCES)
 _sos_la_CFLAGS = -g $(AM_CFLAGS) $(SWIG_PYTHON_CPPFLAGS)
 _sos_la_LDFLAGS = $(PYTHON_LDFLAGS) -module
-_sos_la_LIBADD = ../src/libsos.la
+_sos_la_LIBADD = ../src/libsos.la -lpthread
 
 # Forcing this so that _sos.so will be in lib not lib64
 #pkgpyexecdir = $(pkgpythondir)
