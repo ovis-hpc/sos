@@ -111,6 +111,7 @@ typedef struct sos_schema_udata_s {
 #define SOS_PART_SIGNATURE 0x534f535041525430 /* 'SOSPART0' */
 typedef struct sos_part_udata_s {
 	uint64_t signature;
+	ods_atomic_t gen;	/* Generation number */
 	ods_atomic_t next_part_id;
 	ods_atomic_t lock;	/* Protects the partition list */
 	ods_ref_t head;		/* Head of the partition list */
@@ -121,6 +122,7 @@ typedef struct sos_part_udata_s {
 
 typedef struct sos_part_data_s {
 	char name[SOS_PART_NAME_LEN];
+	char path[SOS_PART_PATH_LEN];
 	uint64_t part_id;
 	uint32_t state;		/* PRIMARY (2), ACTIVE (1), INACTIVE (0) */
 	ods_atomic_t ref_count;
@@ -132,6 +134,7 @@ typedef struct sos_part_data_s {
  * This is the in-memory partition structure that is created when the partition is opened.
  */
 struct sos_part_s {
+	ods_atomic_t ref_count;
 	sos_t sos;
 	ods_obj_t part_obj;
 	ods_t obj_ods;
@@ -140,7 +143,7 @@ struct sos_part_s {
 
 struct sos_part_iter_s {
 	sos_t sos;
-	ods_obj_t part_obj;
+	sos_part_t part;
 };
 
 #define SOS_IDXDIR_SIGNATURE 0x534f534958444952 /* 'SOSIXDIR' */
@@ -392,5 +395,8 @@ void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj);
 ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj);
 int __sos_schema_open(sos_t sos, sos_schema_t schema);
 int __sos_schema_name_cmp(void *a, void *b);
+int __sos_open_partitions(sos_t sos, char *tmp_path);
+int __sos_make_all_dir(const char *inp_path, mode_t omode);
+sos_part_t __sos_container_part_find(sos_t sos, const char *name);
 #endif
 #endif

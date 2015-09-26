@@ -69,7 +69,7 @@
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
-const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:s:o:icqlp";
+const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:s:o:icql";
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
@@ -78,7 +78,6 @@ struct option long_options[] = {
 	{"query",	no_argument,        0,  'q'},
 	{"schema",      required_argument,  0,  's'},
 	{"dir",         no_argument,        0,  'l'},
-	{"ls",          no_argument,        0,  'p'},
 	{"object",	required_argument,  0,  'o'},
 	{"help",        no_argument,        0,  '?'},
 	{"container",   required_argument,  0,  'C'},
@@ -195,12 +194,6 @@ int schema_dir(sos_t sos)
 	     schema = sos_schema_next(schema))
 		sos_schema_print(schema, stdout);
 	printf("\n");
-	return 0;
-}
-
-int part_dir(sos_t sos)
-{
-	sos_container_part_list(sos, stdout);
 	return 0;
 }
 
@@ -1188,7 +1181,6 @@ int add_object(sos_t sos, FILE* fp)
 #define OBJECT		0x008
 #define QUERY		0x010
 #define SCHEMA_DIR	0x020
-#define PART_DIR	0x040
 #define CSV		0x080
 #define CONFIG  	0x100
 
@@ -1319,9 +1311,6 @@ int main(int argc, char **argv)
 		case 'l':
 			action |= SCHEMA_DIR;
 			break;
-		case 'p':
-			action |= PART_DIR;
-			break;
 		case 'q':
 			action |= QUERY;
 			break;
@@ -1425,8 +1414,6 @@ int main(int argc, char **argv)
 		       errno, path);
 		exit(1);
 	}
-	if (action & PART_DIR)
-		rc = part_dir(sos);
 	if (action & OBJECT) {
 		rc = add_object(sos, obj_file);
 		if (rc) {
