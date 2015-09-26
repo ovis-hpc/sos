@@ -41,40 +41,27 @@
  */
 
 /**
- * \section sos_part_modify sos_part_modify command
+ * \section sos_part_move sos_part_move command
  *
  * \b NAME
  *
- * sos_part_modify - Modify a partition in a Container
+ * sos_part_move - Move a partition to another storage location
  *
  * \b SYNOPSIS
  *
- * sos_part_modify -C <container> -s <state> <name>
+ * sos_part_move -C <container> -p <new_path> <name>
  *
  * \b DESCRIPTION
  *
- *  Modify a parition in a Container
+ *  Move a parition to another storage location
  *
- * \b -C=PATH
+ * \b -C=CONT_PATH
  *
  * Specify the PATH to the Container. This option is required.
  *
- * \b -s=STATE
+ * \b -p=PART_PATH
  *
- * Modify the state of a partition. Valid values for the STATE parameter
- * are: "primary", "active", and "offline".
- *
- * If the "primary" STATE is requested, the current primary Partition
- * is made "active" and the specified partition is made primary.
- *
- * If the "active" STATE is requested and the named Partition is
- * Primary, an error is returned indicating the Partition is busy.
- *
- * If the "offline" STATE is requested, and the Partition is Primary,
- * an error is returned indicating the Partition is busy. Otherwise,
- * all keys referring to an Object in the named Partition are removed
- * from all Indices in the Container and the Paritition is moved to
- * the "offline" state.
+ * The new path for the paritition data.
  *
  * \b <name>
  *
@@ -99,7 +86,7 @@ struct option long_options[] = {
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_part -C <path> -s <state> <name>\n");
+	printf("sos_part_move -C <path> -p <part_path> <name>\n");
 	printf("    -C <path>      The path to the container.\n");
 	printf("    -p <part_path> The desired new path for the partition.\n");
 	printf("    <name>	   The partition name.\n");

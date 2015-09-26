@@ -79,7 +79,6 @@
  * - sos_index_new() Create a new index
  * - sos_index_open() Open an existing index
  * - sos_index_insert() Insert an Object into an Index
- * - sos_index_obj_remove() Remove an Object from the index
  * - sos_index_find() Find an object in the index with the specified key
  * - sos_index_find_inf() Find the object inferior (i.e. greatest lower bound) to the specified key
  * - sos_index_find_sup() Find the object superior (i.e. least upper bound) orf the specified key
@@ -310,6 +309,14 @@ int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
 	return 0;
 }
 
+/**
+ * \brief Find a key in the indesx
+ *
+ * \param index The index handle
+ * \param key The key
+ * \retval !NULL The object associated with the key
+ * \retval NULL The object was not found
+ */
 sos_obj_t sos_index_find(sos_index_t index, sos_key_t key)
 {
 	sos_obj_ref_t idx_ref;
@@ -325,6 +332,14 @@ sos_obj_t sos_index_find(sos_index_t index, sos_key_t key)
 	return obj;
 }
 
+/**
+ * \brief Find the supremum (least upper bound) of the specified key
+ *
+ * \param index The index handle
+ * \param key The key
+ * \retval !NULL The object associated with the key
+ * \retval NULL The object was not found
+ */
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key)
 {
 	sos_obj_ref_t idx_ref;
@@ -340,6 +355,14 @@ sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key)
 	return obj;
 }
 
+/**
+ * \brief Find the infinum (greatest lower bound) of the specified key
+ *
+ * \param index The index handle
+ * \param key The key
+ * \retval !NULL The object associated with the key
+ * \retval NULL The object was not found
+ */
 sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key)
 {
 	sos_obj_ref_t idx_ref;
@@ -355,6 +378,14 @@ sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key)
 	return obj;
 }
 
+/**
+ * \brief Close the index and commit changes to storage
+ *
+ * \index index The index handle
+ * \index flags The commit flags: SOS_COMMIT_SYNC, SOS_COMMIT_ASYNC
+ * \retval 0 Success
+ * \retval !0 A unix errno
+ */
 int sos_index_close(sos_index_t index, sos_commit_t flags)
 {
 	if (!index)
