@@ -41,8 +41,8 @@
  */
 
 /**
- * \page partition_overview Partitions
- * \section sos_part Partitions
+ * \page partitions Partitions
+ * \section partitions Partitions
  *
  * In order to faciliate management of the storage consumed by a
  * Container, a Container is divided up into one or more Partitions. A
@@ -56,17 +56,13 @@
  * - \b Active   The contents of the Partition are
  *               accessible and it's objects may be
  *               referred to by one or more Indices.
- * - \b Offline  The contents of the Partition are in the
- *               process of being migrated to backup or
- *               secondary storage. The objects that are
- *               part of the Partition are or have been
- *               removed from all Indices.
+ * - \b Offline  The contents of the Partition are not accessible.
+ * - \b Moving   The contents of the Partition are being moved to
+ *               another storage location.
  *
- * A Container always has at least one partition called the "Default"
- * Partition. When a Container is newly created, this Partition is
- * automatically created as well.
- *
- * There are several commands available to manipulate partitions
+ * In order to store data, a Container must have at least one
+ * partition. There are several commands available to manipulate
+ * partitions
  *
  * - \ref sos_part_create Create a new partition
  * - \ref sos_part_query Query the partitions in a container
@@ -113,9 +109,27 @@
  *      00000002                    3 ONLINE                 2M 2015/08/25 11:39 2015/08/25 13:51
  *      00000003                    3 ONLINE PRIMARY         2M 2015/08/25 11:39 2015/08/25 13:51
  *
- * When a partition is no longer needed, it can be deleted
- * with the sos_part_delete command.
+ * There are API for manipulating Partitions from a program. In
+ * general, only management applications should call these
+ * functions. It is possible to corrupt and otherwise destroy the
+ * object store by using these functions incorrectly.
  *
+ * The Partition API include the following:
+ *
+ * - sos_part_create() Create a new partition
+ * - sos_part_delete() Delete a partition
+ * - sos_part_move() Move a parition to another storage location
+ * - sos_part_copy() Copy a partition to another storage location
+ * - sos_part_iter_new() Create a partition iterator
+ * - sos_part_iter_free() Free a partition iterator
+ * - sos_part_first() Return the first partition in the Container
+ * - sos_part_next() Return the next partition in the Container
+ * - sos_part_find() Find a partition by name
+ * - sos_part_put() Drop a reference on the partition
+ * - sos_part_stat() Return size and access information about a partition
+ * - sos_part_state() Return the state of a parittion
+ * - sos_part_name() Return the name of a partition
+ * - sos_part_path() Return a partitions storage path
  */
 #include <sys/queue.h>
 #include <sys/types.h>
@@ -323,11 +337,32 @@ static void __make_part_primary(sos_t sos, sos_part_t part)
 	sos->primary_part = part;
 }
 
-int sos_part_state_set(sos_part_t part, sos_port_state_t state)
+/**
+ * \brief Set the state of a partition
+ *
+ * Partition state transitions are limited by the current state. If
+ * the current state is PRIMARY, there are no state changes
+ * allowed. The only way to change the state of the PRIMARY partition
+ * is to make another partition PRIMARY. When this occurs, the
+ * partition is made ACTIVE.
+ *
+ * Any partition in the ACTIVE state can be made PRIMARY. Any
+ * partition in the ACTIVE state can be made OFFLINE and an OFFLINE
+ * partition can be made ACTIVE. Note that when a parition is made
+ * OFFLINE, all Keys that refer to objects in that partition are
+ * removed from all indices in the container.
+ *
+ * \param part The partition handle
+ * \param state The desired state of the partition
+ * \retval 0 The state was successfully changed
+ * \retval EINVAL The specified state is invalid given the current
+ * state of the partition.
+ */
+int sos_part_state_set(sos_part_t part, sos_part_state_t state)
 {
 	sos_t sos = part->sos;
 	int rc = 0;
-	sos_port_state_t cur_state;
+	sos_part_state_t cur_state;
 
 	pthread_mutex_unlock(&sos->lock);
 	ods_spin_lock(&sos->part_lock, -1);
@@ -396,6 +431,17 @@ out:
 	ods_spin_unlock(&sos->part_lock);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
+}
+
+static sos_part_t __sos_part_new(sos_t sos, ods_obj_t part_obj)
+{
+	sos_part_t part = calloc(1, sizeof(*part));
+	if (!part)
+		return NULL;
+	part->ref_count = 1;
+	part->sos = sos;
+	part->part_obj = part_obj;
+	return part;
 }
 
 int __sos_open_partitions(sos_t sos, char *tmp_path)
@@ -469,17 +515,18 @@ static ods_t find_part_ods(sos_t sos, const char *name)
 	return ods;
 }
 
-sos_part_t __sos_part_new(sos_t sos, ods_obj_t part_obj)
-{
-	sos_part_t part = calloc(1, sizeof(*part));
-	if (!part)
-		return NULL;
-	part->ref_count = 1;
-	part->sos = sos;
-	part->part_obj = part_obj;
-	return part;
-}
-
+/**
+ * \brief Drop a reference on a partition
+ *
+ * Partitions are reference counted. When the reference count goes to
+ * zero, it is destroyed and all of it's storage is released. The
+ * sos_part_first(), sos_part_next(), and sos_part_find() functions
+ * take a reference on behalf of the application. This reference
+ * should be dropped by the application when the application is
+ * finished with the partition.
+ *
+ * \param part The partition handle.
+ */
 void sos_part_put(sos_part_t part)
 {
 	if (0 == ods_atomic_dec(&part->ref_count)) {
@@ -559,6 +606,11 @@ ods_obj_t __sos_part_data_next(sos_t sos, ods_obj_t part_obj)
 	return next_obj;
 }
 
+/**
+ * \brief Free the memory associated with the Iterator
+ *
+ * \param iter The iterator handle
+ */
 void sos_part_iter_free(sos_part_iter_t iter)
 {
 	if (iter->part)
@@ -603,6 +655,15 @@ int sos_part_create(sos_t sos, const char *part_name, const char *part_path)
 	return rc;
 }
 
+/**
+ * \brief Create a partition iterator
+ *
+ * A partition iterator is used to iterate through all partitions
+ * in the container.
+ *
+ * \param sos The container handle
+ * \returns A partition iterator handle
+ */
 sos_part_iter_t sos_part_iter_new(sos_t sos)
 {
 	sos_part_iter_t iter = calloc(1, sizeof(struct sos_part_iter_s));
@@ -615,6 +676,10 @@ sos_part_iter_t sos_part_iter_new(sos_t sos)
  *
  * Returns the partition handle for the partition with the name
  * specified by the \c name parameter.
+ *
+ * The application should call sos_part_put() when finished with the
+ * partition object. Note that calling sos_part_put() too many times
+ * can result in destroying the partition.
  *
  * \param sos The container handle
  * \param name The name of the partition
@@ -639,6 +704,17 @@ sos_part_t sos_part_find(sos_t sos, const char *name)
 	return part;
 }
 
+/**
+ * \brief Return the first partition in the container
+ *
+ * The application should call sos_part_put() when finished with the
+ * partition object. Note that calling sos_part_put() too many times
+ * can result in destroying the partition.
+ *
+ * \param iter The partition iterator handle
+ * \returns The first partition object or NULL if there are no
+ * partitions in the container.
+ */
 sos_part_t sos_part_first(sos_part_iter_t iter)
 {
 	sos_part_t part = NULL;
@@ -655,6 +731,17 @@ sos_part_t sos_part_first(sos_part_iter_t iter)
 	return part;
 }
 
+/**
+ * \brief Return the next partition in the container
+ *
+ * The application should call sos_part_put() when finished with the
+ * partition object. Note that calling sos_part_put() too many times
+ * can result in destroying the partition.
+ *
+ * \param iter The partition iterator handle
+ * \returns The next partition object or NULL if there are no more
+ * partitions in the container.
+ */
 sos_part_t sos_part_next(sos_part_iter_t iter)
 {
 	sos_part_t part;
@@ -675,7 +762,7 @@ sos_part_t sos_part_next(sos_part_iter_t iter)
 /**
  * \brief Return the partition's name
  * \param part The partition handle
- * \retval Pointer to a string containing the name
+ * \returns Pointer to a string containing the name
  */
 const char *sos_part_name(sos_part_t part)
 {
@@ -685,7 +772,7 @@ const char *sos_part_name(sos_part_t part)
 /**
  * \brief Return the partition's path
  * \param part The partition handle
- * \retval Pointer to a string containing the path
+ * \returns Pointer to a string containing the path
  */
 const char *sos_part_path(sos_part_t part)
 {
@@ -695,9 +782,9 @@ const char *sos_part_path(sos_part_t part)
 /**
  * \brief Return the partition's state
  * \param part The partition handle
- * \retval An integer representing the partition's state
+ * \returns An integer representing the partition's state
  */
-uint32_t sos_part_state(sos_part_t part)
+sos_part_state_t sos_part_state(sos_part_t part)
 {
 	return SOS_PART(part->part_obj)->state;
 }
@@ -710,7 +797,7 @@ uint32_t sos_part_state(sos_part_t part)
  * object is allocated.
  *
  * \param part The partition handle
- * \retval An integer representing the partition's id
+ * \returns An integer representing the partition's id
  */
 uint32_t sos_part_id(sos_part_t part)
 {
@@ -743,7 +830,7 @@ int sos_part_delete(sos_part_t part)
 {
 	int rc = EBUSY;
 	sos_t sos = part->sos;
-	sos_port_state_t cur_state;
+	sos_part_state_t cur_state;
 
 	pthread_mutex_unlock(&sos->lock);
 	ods_spin_lock(&sos->part_lock, -1);
@@ -790,7 +877,7 @@ int sos_part_move(sos_part_t part, const char *part_path)
 	struct stat sb;
 	int rc;
 	sos_t sos = part->sos;
-	sos_port_state_t cur_state;
+	sos_part_state_t cur_state;
 
 	if (0 == strcmp(part_path, sos_part_path(part)))
 		return EINVAL;
@@ -886,3 +973,32 @@ int sos_part_move(sos_part_t part, const char *part_path)
 	sos_part_put(part);
 	return rc;
 }
+
+/**
+ * \brief Return size and access data for the partition
+ *
+ * \param part The partition handle
+ * \param stat The stat buffer
+ * \retval 0 Success
+ * \retval EINVAL The partition or stat buffer handles were NULL or
+ * the partition is not open, for example, OFFLINE.
+ */
+int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
+{
+	int rc = 0;
+	struct stat sb;
+
+	if (!part || !stat || !part->obj_ods)
+		return EINVAL;
+	rc = ods_stat(part->obj_ods, &sb);
+	if (rc)
+		goto out;
+
+	stat->size = sb.st_size;
+	stat->modified = sb.st_mtime;
+	stat->accessed = sb.st_atime;
+	stat->created = sb.st_ctime;
+ out:
+	return rc;
+}
+

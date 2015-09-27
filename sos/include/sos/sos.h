@@ -61,6 +61,65 @@
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
 
+/** \defgroup cont SOS Containers
+ * @{
+ */
+
+/** \defgroup cont_types Container Types
+ * @{
+ */
+typedef struct sos_container_s *sos_t;
+typedef enum sos_perm_e {
+	SOS_PERM_RO = 0,
+	SOS_PERM_RW,
+} sos_perm_t;
+
+#define SOS_CONTAINER_PARTITION_ENABLE		"PARTITION_ENABLE"
+#define SOS_CONTAINER_PARTITION_SIZE		"PARTITION_SIZE"
+#define SOS_CONTAINER_PARTITION_PERIOD		"PARTITION_PERIOD"
+#define SOS_CONTAINER_PARTITION_EXTEND		"PARTITION_EXTEND"
+
+#define SOS_CONTAINER_NAME_LEN  64
+#define SOS_CONFIG_NAME_LEN	64
+
+/**
+ * \brief Specifies whether to commit synchronously or asynchronously
+ */
+typedef enum sos_commit_e {
+	/** Returns immediately, the sync to storage will be completed
+	 *  asynchronously */
+	SOS_COMMIT_ASYNC,
+	/** Does not return until the sync is complete */
+	SOS_COMMIT_SYNC
+} sos_commit_t;
+
+typedef struct sos_config_iter_s *sos_config_iter_t;
+typedef struct sos_config_data_s {
+	char name[SOS_CONFIG_NAME_LEN];
+	char value[0];
+} *sos_config_t;
+
+/** @} */
+/** \defgroup cont_funcs Container Functions
+ * @{
+ */
+int sos_container_new(const char *path, int o_mode);
+sos_t sos_container_open(const char *path, sos_perm_t o_perm);
+int sos_container_delete(sos_t c);
+int sos_container_stat(sos_t sos, struct stat *sb);
+void sos_container_close(sos_t c, sos_commit_t flags);
+int sos_container_commit(sos_t c, sos_commit_t flags);
+void sos_container_info(sos_t sos, FILE* fp);
+int sos_container_config_set(const char *path, const char *option, const char *value);
+char *sos_container_config_get(const char *path, const char *option);
+sos_config_iter_t sos_config_iter_new(const char *path);
+void sos_config_iter_free(sos_config_iter_t iter);
+sos_config_t sos_config_first(sos_config_iter_t iter);
+sos_config_t sos_config_next(sos_config_iter_t iter);
+void sos_config_print(const char *path, FILE *fp);
+/** @} */
+/** @} */
+
 /** \defgroup schema SOS Schema
  * @{
  */
@@ -68,14 +127,11 @@
 /** \defgroup schema_types Schema Types
  * @{
  */
-typedef struct sos_container_s *sos_t;
 typedef struct sos_attr_s *sos_attr_t;
 typedef struct sos_index_s *sos_index_t;
 typedef struct sos_schema_s *sos_schema_t;
 typedef struct sos_obj_s *sos_obj_t;
 
-#define SOS_CONTAINER_NAME_LEN  64
-#define SOS_CONFIG_NAME_LEN	64
 #define SOS_SCHEMA_NAME_LEN	64
 #define SOS_ATTR_NAME_LEN	64
 #define SOS_INDEX_NAME_LEN	128
@@ -180,18 +236,6 @@ enum sos_cond_e {
 	SOS_COND_NE,
 };
 
-#pragma pack()
-/** @} */
-
-/** \defgroup schema_funcs Schema Functions
- * @{
- */
-sos_schema_t sos_schema_new(const char *name);
-void sos_schema_free(sos_schema_t schema);
-sos_schema_t sos_schema_dup(sos_schema_t schema);
-size_t sos_schema_count(sos_t sos);
-int sos_schema_add(sos_t sos, sos_schema_t schema);
-
 typedef struct sos_schema_template_attr {
 	const char *name;
 	sos_type_t type;
@@ -203,6 +247,17 @@ typedef struct sos_schema_template {
 	struct sos_schema_template_attr attrs[];
 } *sos_schema_template_t;
 
+#pragma pack()
+/** @} */
+
+/** \defgroup schema_funcs Schema Functions
+ * @{
+ */
+sos_schema_t sos_schema_new(const char *name);
+void sos_schema_free(sos_schema_t schema);
+sos_schema_t sos_schema_dup(sos_schema_t schema);
+size_t sos_schema_count(sos_t sos);
+int sos_schema_add(sos_t sos, sos_schema_t schema);
 sos_schema_t sos_schema_from_template(sos_schema_template_t pt);
 sos_schema_t sos_schema_by_name(sos_t sos, const char *name);
 sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id);
@@ -238,58 +293,19 @@ int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 /** @} */
 /** @} */
 
-int sos_container_new(const char *path, int o_mode);
-
-typedef enum sos_perm_e {
-	SOS_PERM_RO = 0,
-	SOS_PERM_RW,
-} sos_perm_t;
-
-sos_t sos_container_open(const char *path, sos_perm_t o_perm);
-
-int sos_container_delete(sos_t c);
-
-/**
- * \brief Specifies whether to commit synchronously or asynchronously
+/** \defgroup partitions SOS Partitions
+ * @{
  */
-typedef enum sos_commit_e {
-	/** Returns immediately, the sync to storage will be completed
-	 *  asynchronously */
-	SOS_COMMIT_ASYNC,
-	/** Does not return until the sync is complete */
-	SOS_COMMIT_SYNC
-} sos_commit_t;
-
-int sos_container_stat(sos_t sos, struct stat *sb);
-void sos_container_close(sos_t c, sos_commit_t flags);
-int sos_container_commit(sos_t c, sos_commit_t flags);
-void sos_container_info(sos_t sos, FILE* fp);
-
-#define SOS_CONTAINER_PARTITION_ENABLE		"PARTITION_ENABLE"
-#define SOS_CONTAINER_PARTITION_SIZE		"PARTITION_SIZE"
-#define SOS_CONTAINER_PARTITION_PERIOD		"PARTITION_PERIOD"
-#define SOS_CONTAINER_PARTITION_EXTEND		"PARTITION_EXTEND"
-
-int sos_container_config_set(const char *path, const char *option, const char *value);
-char *sos_container_config_get(const char *path, const char *option);
-typedef struct sos_config_iter_s *sos_config_iter_t;
-sos_config_iter_t sos_config_iter_new(const char *path);
-void sos_config_iter_free(sos_config_iter_t iter);
-typedef struct sos_config_data_s {
-	char name[SOS_CONFIG_NAME_LEN];
-	char value[0];
-} *sos_config_t;
-sos_config_t sos_config_first(sos_config_iter_t iter);
-sos_config_t sos_config_next(sos_config_iter_t iter);
-void sos_config_print(const char *path, FILE *fp);
-
+/** \defgroup part_types Partition Types
+ * @{
+ */
 #define SOS_PART_NAME_DEFAULT			"00000000"
 /** The maximum length of a partition name */
 #define SOS_PART_NAME_LEN			64
 /** The maximum length of a partition path */
 #define SOS_PART_PATH_LEN			512
 typedef enum sos_part_state_e {
-	/** Partition is being moved up or otherwise not used */
+	/** Partition is not being used */
 	SOS_PART_STATE_OFFLINE = 0,
 	/** Consulted for queries/iteration */
 	SOS_PART_STATE_ACTIVE = 1,
@@ -297,10 +313,23 @@ typedef enum sos_part_state_e {
 	SOS_PART_STATE_PRIMARY = 2,
 	/** Partition is being moved */
 	SOS_PART_STATE_MOVING = 3,
-} sos_port_state_t;
+} sos_part_state_t;
+
+/** Describes a Partitions storage attributes */
+typedef struct sos_part_stat_s {
+	uint64_t size;		/*! Size of the partition in bytes */
+	uint64_t accessed;	/*! Last access time as a Unix timestamp */
+	uint64_t modified;	/*! Last modify time as a Unix timestamp */
+	uint64_t created;	/*! The partition create time as a Unix timestamp */
+} *sos_part_stat_t;
 
 typedef struct sos_part_iter_s *sos_part_iter_t;
 typedef struct sos_part_s *sos_part_t;
+/** @} */
+/**
+ * \defgroup part_funcs Partition Functions
+ * @{
+ */
 int sos_part_create(sos_t sos, const char *name, const char *path);
 int sos_part_delete(sos_part_t part);
 sos_part_t sos_part_find(sos_t sos, const char *name);
@@ -311,19 +340,13 @@ sos_part_t sos_part_next(sos_part_iter_t iter);
 const char *sos_part_name(sos_part_t part);
 const char *sos_part_path(sos_part_t part);
 uint32_t sos_part_id(sos_part_t part);
-sos_port_state_t sos_part_state(sos_part_t part);
-int sos_part_state_set(sos_part_t part, sos_port_state_t state);
+sos_part_state_t sos_part_state(sos_part_t part);
+int sos_part_state_set(sos_part_t part, sos_part_state_t state);
 uint32_t sos_part_refcount(sos_part_t part);
 void sos_part_put(sos_part_t part);
-
-/*! Describes a Partitions storage attributes */
-typedef struct sos_part_stat_s {
-	uint64_t size;		/*! Size of the partition in bytes */
-	uint64_t accessed;	/*! Last access time as a Unix timestamp */
-	uint64_t modified;	/*! Last modify time as a Unix timestamp */
-	uint64_t created;	/*! The partition create time as a Unix timestamp */
-} *sos_part_stat_t;
 int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
+/** @} */
+/** @} */
 
 /** \defgroup objects SOS Objects
  * @{
@@ -408,8 +431,19 @@ char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj, const char *attr_name,
 /** \defgroup indices SOS Indices
  * @{
  */
+/** \defgroup index_types Index Types
+ * @{
+ */
 typedef struct ods_obj_s *sos_key_t;
-
+typedef struct sos_index_stat_s {
+	uint64_t cardinality;
+	uint64_t duplicates;
+	uint64_t size;
+} *sos_index_stat_t;
+/** @} */
+/** \defgroup index_funcs Index Functions
+ * @{
+ */
 int sos_index_new(sos_t sos, const char *name,
 		  const char *idx_type, const char *key_type,
 		  const char *args);
@@ -428,11 +462,6 @@ const char *sos_index_key_to_str(sos_index_t index, sos_key_t key);
 int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
 void sos_index_print(sos_index_t index, FILE *fp);
 const char *sos_index_name(sos_index_t index);
-typedef struct sos_index_stat_s {
-	uint64_t cardinality;
-	uint64_t duplicates;
-	uint64_t size;
-} *sos_index_stat_t;
 int sos_index_stat(sos_index_t index, sos_index_stat_t sb);
 void sos_container_index_list(sos_t sos, FILE *fp);
 typedef struct sos_container_index_iter_s *sos_container_index_iter_t;
@@ -440,7 +469,7 @@ sos_container_index_iter_t sos_container_index_iter_new(sos_t sos);
 void sos_container_index_iter_free(sos_container_index_iter_t iter);
 sos_index_t sos_container_index_iter_first(sos_container_index_iter_t iter);
 sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter);
-
+/** @} */
 /** @} */
 
 /** \defgroup keys SOS Keys
@@ -486,10 +515,12 @@ int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b);
 size_t sos_attr_key_size(sos_attr_t attr);
 
 /** @} */
-
 /** @} */
 
 /** \defgroup iter SOS Iterators
+ * @{
+ */
+/** \defgroup iter_types Iterator Types
  * @{
  */
 typedef struct sos_iter_s *sos_iter_t;
@@ -497,7 +528,19 @@ struct sos_pos {
 	char data[16];
 };
 typedef struct sos_pos *sos_pos_t;
+typedef enum sos_iter_flags_e {
+	SOS_ITER_F_ALL = ODS_ITER_F_ALL,
+	/** The iterator will skip duplicate keys in the index */
+	SOS_ITER_F_UNIQUE = ODS_ITER_F_UNIQUE,
+	SOS_ITER_F_MASK = ODS_ITER_F_MASK
+} sos_iter_flags_t;
+typedef struct sos_filter_cond_s *sos_filter_cond_t;
+typedef struct sos_filter_s *sos_filter_t;
 
+/** @} */
+/** \defgroup iter_funcs Iterator Functions
+ * @{
+ */
 sos_iter_t sos_index_iter_new(sos_index_t index);
 sos_iter_t sos_attr_iter_new(sos_attr_t attr);
 void sos_iter_free(sos_iter_t iter);
@@ -507,13 +550,6 @@ int sos_iter_find_first(sos_iter_t iter, sos_key_t key);
 int sos_iter_find_last(sos_iter_t iter, sos_key_t key);
 int sos_iter_inf(sos_iter_t i, sos_key_t key);
 int sos_iter_sup(sos_iter_t i, sos_key_t key);
-
-typedef enum sos_iter_flags_e {
-	SOS_ITER_F_ALL = ODS_ITER_F_ALL,
-	/** The iterator will skip duplicate keys in the index */
-	SOS_ITER_F_UNIQUE = ODS_ITER_F_UNIQUE,
-	SOS_ITER_F_MASK = ODS_ITER_F_MASK
-} sos_iter_flags_t;
 
 int sos_iter_flags_set(sos_iter_t i, sos_iter_flags_t flags);
 sos_iter_flags_t sos_iter_flags_get(sos_iter_t i);
@@ -530,12 +566,10 @@ sos_obj_t sos_iter_obj(sos_iter_t iter);
 sos_obj_ref_t sos_iter_ref(sos_iter_t iter);
 int sos_iter_entry_remove(sos_iter_t iter);
 
-typedef struct sos_filter_cond_s *sos_filter_cond_t;
-typedef struct sos_filter_s *sos_filter_t;
-
 sos_filter_t sos_filter_new(sos_iter_t iter);
 void sos_filter_free(sos_filter_t f);
-int sos_filter_cond_add(sos_filter_t f, sos_attr_t attr, enum sos_cond_e cond_e, sos_value_t value);
+int sos_filter_cond_add(sos_filter_t f, sos_attr_t attr,
+			enum sos_cond_e cond_e, sos_value_t value);
 sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt);
 sos_obj_t sos_filter_begin(sos_filter_t filt);
 sos_obj_t sos_filter_next(sos_filter_t filt);
@@ -547,6 +581,7 @@ int sos_filter_set(sos_filter_t filt, const sos_pos_t pos);
 sos_obj_t sos_filter_obj(sos_filter_t filt);
 int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags);
 
+/** @} */
 /** @} */
 
 #endif

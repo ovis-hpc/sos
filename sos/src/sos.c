@@ -57,7 +57,7 @@
  * \mainpage Introduction
  *
  * The Scalable Object Storage (SOS) is a high performance storage
- * engine designed to efficiently manage structured data in persistent
+ * engine designed to efficiently manage structured data on persistent
  * media.
  *
  * \section cont Container
@@ -70,7 +70,7 @@
  *
  * See \ref container_overview for more information.
 
- * \section partition Partition
+ * \section part Partition
  *
  * In order to facilitate management of the storage consumed by a
  * Container, a Container is divided up into one or more
@@ -79,7 +79,7 @@
  * Container's objects to be migrated from primary storage to secondary
  * storage.
  *
- * See \ref partition_overview for more information
+ * See the \ref partitions section for more information
  *
  * \section schema Schema
  *
@@ -106,18 +106,21 @@
  *
  * The user-defined types are Objects.
  *
- * \section sindex Index
+ * \section index Index
  *
- * An Index is an ordered collection for for quickly finding an Object
- * in a container based on a key. Indexes can be associated with a
- * Schema or be independent of a particular Schema, for example,
- * allowing a single Index to refer to objects of different types. If
- * an Index is associated with a Schema Attribute, all management and
- * insertion is handled automatically by the sos_obj_index() function.
+ * An Index is a named, ordered collection of Keyy/Value references to
+ * Objects. Their purpose is to quickly find an Object in a container
+ * based on a Key. Indexes can be associated with a Schema or be
+ * independent of a Schema, for example, allowing a single Index to
+ * refer to objects of different types. If an Index is associated with
+ * a Schema Attribute, all management and insertion is handled
+ * automatically by the sos_obj_index() function.
  *
- * Indexes that are not directly related to a Schema are managed
- * directly by the application; including the creation of keys, and
- * insertion of Objects into the index.
+ * Indexes that are not part of a Schema, i.e. not associated with an
+ * indexed attribute, are managed by the application; including the
+ * creation of keys, and insertion of Objects into the index.
+ *
+ * See the \ref indices section for more information.
  */
 
 #include <sys/queue.h>
@@ -696,6 +699,16 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 	return NULL;
 }
 
+/**
+ * \brief Return information about a container
+ *
+ * Fills a Unix struct stat buffer with information about a container's meta data.
+ *
+ * \param sos The container handle
+ * \param sb The struct stat buffer
+ * \retval 0 Success
+ * \retval !0 A Unix error code
+ */
 int sos_container_stat(sos_t sos, struct stat *sb)
 {
 	sos_part_t part = TAILQ_FIRST(&sos->part_list);
@@ -745,25 +758,6 @@ sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
 	sos_obj->ref_count = 1;
 
 	return sos_obj;
-}
-
-int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
-{
-	int rc = 0;
-	struct stat sb;
-
-	if (!part || !stat || !part->obj_ods)
-		return EINVAL;
-	rc = ods_stat(part->obj_ods, &sb);
-	if (rc)
-		goto out;
-
-	stat->size = sb.st_size;
-	stat->modified = sb.st_mtime;
-	stat->accessed = sb.st_atime;
-	stat->created = sb.st_ctime;
- out:
-	return rc;
 }
 
 /* Must be called with sos->lock held */

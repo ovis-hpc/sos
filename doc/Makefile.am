@@ -4,17 +4,22 @@ doc: docs
 docs: doxygen-out
 
 DOCINPUT = $(top_srcdir)/sos/include/sos/sos.h \
+		       $(top_srcdir)/ods/include/ods/ods.h \
+		       $(top_srcdir)/ods/include/ods/ods_idx.h \
 		       $(top_srcdir)/sos/src/sos.c \
 		       $(top_srcdir)/sos/src/sos_part.c \
-		       $(top_srcdir)/sos/src/sos_cmd.c \
 		       $(top_srcdir)/sos/src/sos_config.c \
 		       $(top_srcdir)/sos/src/sos_schema.c \
 		       $(top_srcdir)/sos/src/sos_index.c \
 		       $(top_srcdir)/sos/src/sos_iter.c \
 		       $(top_srcdir)/sos/src/sos_value.c \
 		       $(top_srcdir)/sos/src/sos_key.c \
-		       $(top_srcdir)/ods/include/ods/ods.h \
-		       $(top_srcdir)/ods/include/ods/ods_idx.h
+		       $(top_srcdir)/sos/src/sos_cmd.c \
+		       $(top_srcdir)/sos/src/sos_part_create.c \
+		       $(top_srcdir)/sos/src/sos_part_query.c \
+		       $(top_srcdir)/sos/src/sos_part_modify.c \
+		       $(top_srcdir)/sos/src/sos_part_delete.c \
+		       $(top_srcdir)/sos/src/sos_part_move.c
 
 
 doxygen-out: $(DOCINPUT)
