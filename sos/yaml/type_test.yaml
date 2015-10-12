@@ -1,0 +1,41 @@
+schema:
+  - name: type_test
+  - attribute : type_int32
+    type: int32
+    indexed: true
+  - attribute: type_int64
+    type: int64
+  - attribute: type_uint32
+    type: uint32
+  - attribute: type_uint64
+    type: uint64
+  - attribute: type_float
+    type: float
+  - attribute: type_double
+    type: double
+  - attribute: type_long_double
+    type: long_double
+  - attribute: type_timestamp
+    type: timestamp
+  - attribute: type_obj
+    type: obj
+  - attribute: type_byte_array
+    type: byte_array
+  - attribute: type_char_array
+    type: char_array
+  - attribute: type_int32_array
+    type: int32_array
+  - attribute: type_int64_array
+    type: int64_array
+  - attribute: type_uint32_array
+    type: uint32_array
+  - attribute: type_uint64_array
+    type: uint64_array
+  - attribute: type_float_array
+    type: float_array
+  - attribute: type_double_array
+    type: double_array
+  - attribute: type_long_double_array
+    type: long_double_array
+  - attribute: type_obj_array
+    type: obj_array

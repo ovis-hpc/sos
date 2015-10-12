@@ -1,4 +1,4 @@
- /*
+/*
  * Copyright (c) 2013-2015 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2013-2015 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
@@ -58,6 +58,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <wchar.h>
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
 
@@ -142,6 +143,7 @@ typedef struct sos_obj_s *sos_obj_t;
 typedef enum sos_type_e {
 	/** All types up to the arrays are fixed size */
 	SOS_TYPE_INT32 = 0,
+	SOS_TYPE_FIRST = SOS_TYPE_INT32,
 	SOS_TYPE_INT64,
 	SOS_TYPE_UINT32,
 	SOS_TYPE_UINT64,
@@ -150,9 +152,9 @@ typedef enum sos_type_e {
 	SOS_TYPE_LONG_DOUBLE,
 	SOS_TYPE_TIMESTAMP,
 	SOS_TYPE_OBJ,
-	/** Arrays are variable sized */
-	SOS_TYPE_BYTE_ARRAY,
+	SOS_TYPE_BYTE_ARRAY = 32,
 	SOS_TYPE_ARRAY = SOS_TYPE_BYTE_ARRAY,
+	SOS_TYPE_CHAR_ARRAY,
 	SOS_TYPE_INT32_ARRAY,
 	SOS_TYPE_INT64_ARRAY,
 	SOS_TYPE_UINT32_ARRAY,
@@ -165,17 +167,25 @@ typedef enum sos_type_e {
 } sos_type_t;
 
 #pragma pack(1)
+typedef union sos_obj_ref_s {
+	ods_idx_data_t idx_data;
+	struct sos_idx_ref_s {
+		ods_ref_t ods;	/* The reference to the ODS */
+		ods_ref_t obj;	/* The object reference */
+	} ref;
+} sos_obj_ref_t;
+
 union sos_array_element_u {
+	char char_[0];
 	uint8_t byte_[0];
-	uint16_t uint16_[0];
 	uint32_t uint32_[0];
 	uint64_t uint64_[0];
-	int16_t int16_[0];
 	int32_t int32_[0];
 	int64_t int64_[0];
 	float float_[0];
 	double double_[0];
 	long double long_double_[0];
+	sos_obj_ref_t ref_[0];
 };
 
 typedef struct sos_array_s {
@@ -191,20 +201,10 @@ union sos_timestamp_u {
 	} fine;
 };
 
-typedef union sos_obj_ref_s {
-	ods_idx_data_t idx_data;
-	struct sos_idx_ref_s {
-		ods_ref_t ods;	/* The reference to the ODS */
-		ods_ref_t obj;	/* The object reference */
-	} ref;
-} sos_obj_ref_t;
-
 union sos_primary_u {
 	unsigned char byte_;
-	uint16_t uint16_;
 	uint32_t uint32_;
 	uint64_t uint64_;
-	int16_t int16_;
 	int32_t int32_;
 	int64_t int64_;
 	float float_;

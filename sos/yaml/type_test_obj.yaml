@@ -1,0 +1,22 @@
+obj:
+  - schema		: type_test
+  - type_int32		: -1234
+  - type_int64		: -12345678
+  - type_uint32		: 1234
+  - type_uint64		: 12345678
+  - type_float		: 3.14159
+  - type_double		: 3.14159
+  - type_long_double	: 3.14159
+  - type_timestamp	: 1425362400.010947
+  - type_obj		: 1@deadbeef
+  - type_byte_array	: 01:02:03:04:05:06
+  - type_char_array	: This is a test
+  - type_int32_array	: -1,-2,-3,-4,-5,-6,-7,-8
+  - type_int64_array	: -1,-2,-3,-4,-5,-6,-7,-8
+  - type_uint32_array	: 1,2,3,4,5,6,7,8
+  - type_uint64_array	: 1,2,3,4,5,6,7,8
+  - type_float_array	: 1.14159,2.14159,3.14159,4.14159
+  - type_double_array	: 1.14159,2.14159,3.14159,4.14159
+  - type_long_double_array: 1.14159,2.14159,3.14159,4.14159
+  - type_obj_array	: 1@deadbeef,2@deadbeef,3@deadbeef
+

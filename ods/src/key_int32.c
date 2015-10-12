@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2015 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -53,29 +53,29 @@
 
 static const char *get_type(void)
 {
-	return "UINT32";
+	return "INT32";
 }
 
 static const char *get_doc(void)
 {
-	return  "ODS_KEY_UINT32: The key is an unsigned 32b integer.\n"
-		"                The comparator returns -1,0,1 for a <,=,> b respectively.\n";
+	return  "ODS_KEY_INT32: The key is an signed 32b integer.\n"
+		"               The comparator returns -1,0,1 for a <,=,> b respectively.\n";
 }
 
-static int uint32_comparator(ods_key_t a, ods_key_t b)
+static int int32_comparator(ods_key_t a, ods_key_t b)
 {
 	ods_key_value_t av = ods_key_value(a);
 	ods_key_value_t bv = ods_key_value(b);
 	assert(av->len == 4);
 	assert(bv->len == 4);
-	return (*(uint32_t*)av->value) - (*(uint32_t*)bv->value);
+	return (*(int32_t*)av->value) - (*(int32_t*)bv->value);
 }
 
 static const char *to_str(ods_key_t key, char *sbuf)
 {
 	ods_key_value_t kv = ods_key_value(key);
 	assert(kv->len == 4);
-	sprintf(sbuf, "0x%08x", *(uint32_t *)kv->value);
+	sprintf(sbuf, "%d", *(int32_t *)kv->value);
 	return sbuf;
 }
 
@@ -83,12 +83,12 @@ static int from_str(ods_key_t key, const char *str)
 {
 	ods_key_value_t kv = ods_key_value(key);
 	unsigned long lv;
-	uint32_t v;
+	int32_t v;
 	errno = 0;
-	lv = strtoul(str, NULL, 0);
+	lv = strtol(str, NULL, 0);
 	if (errno)
 		return -1;
-	v = (uint32_t)lv;
+	v = (int32_t)lv;
 	memcpy(kv->value, &v, 4);
 	kv->len = 4;
 	return 0;
@@ -96,7 +96,7 @@ static int from_str(ods_key_t key, const char *str)
 
 static size_t size(void)
 {
-	return sizeof(uint32_t);
+	return sizeof(int32_t);
 }
 
 static size_t str_size(void)
@@ -111,7 +111,7 @@ static struct ods_idx_comparator key_comparator = {
 	from_str,
 	size,
 	str_size,
-	uint32_comparator
+	int32_comparator
 };
 
 struct ods_idx_comparator *get(void)

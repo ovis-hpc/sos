@@ -19,9 +19,11 @@ struct keyword {
 	enum keyword_e id;
 };
 
+/* This table must be sorted */
 struct keyword keyword_table[] = {
 	{ "ATTRIBUTE", ATTRIBUTE_KW },
 	{ "BYTE_ARRAY", SOS_TYPE_BYTE_ARRAY },
+	{ "CHAR_ARRAY", SOS_TYPE_CHAR_ARRAY },
 	{ "DOUBLE", SOS_TYPE_DOUBLE },
 	{ "DOUBLE_ARRAY", SOS_TYPE_DOUBLE_ARRAY },
 	{ "FALSE", FALSE_KW },

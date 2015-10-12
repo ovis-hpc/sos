@@ -1,28 +1,28 @@
 schema:
   - name : employee
   - attribute : first
-    type: byte_array
+    type: char_array
   - attribute : middle
-    type: byte_array
+    type: char_array
   - attribute : last
-    type: byte_array
+    type: char_array
     indexed: true
   - attribute : addr1
-    type: byte_array
+    type: char_array
   - attribute : addr2
-    type: byte_array
+    type: char_array
   - attribute : city
-    type: byte_array
+    type: char_array
   - attribute : state
-    type: byte_array
+    type: char_array
   - attribute : zip
-    type: byte_array
+    type: char_array
   - attribute : country
-    type: byte_array
+    type: char_array
   - attribute : emp_no
     type: uint32
     indexed: true
   - attribute : title
-    type: byte_array
+    type: char_array
   - attribute : salary
     type: float

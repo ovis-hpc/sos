@@ -53,55 +53,59 @@
 
 static const char *get_type(void)
 {
-	return "UINT32";
+	return "INT64";
 }
 
 static const char *get_doc(void)
 {
-	return  "ODS_KEY_UINT32: The key is an unsigned 32b integer.\n"
-		"                The comparator returns -1,0,1 for a <,=,> b respectively.\n";
+	return  "ODS_KEY_INT64: The key is an unsigned 64b long.\n"
+		"               The comparator returns -1,1,0 if a <,>,= b respectively.\n";
 }
 
-static int uint32_comparator(ods_key_t a, ods_key_t b)
+static int int64_comparator(ods_key_t a, ods_key_t b)
 {
 	ods_key_value_t av = ods_key_value(a);
 	ods_key_value_t bv = ods_key_value(b);
-	assert(av->len == 4);
-	assert(bv->len == 4);
-	return (*(uint32_t*)av->value) - (*(uint32_t*)bv->value);
+	int64_t aa = *(int64_t*)av->value;
+	int64_t bb = *(int64_t*)bv->value;
+	assert(av->len == 8);
+	assert(bv->len == 8);
+	if (aa < bb)
+		return -1;
+	if (aa > bb)
+		return 1;
+
+	return 0;
 }
 
-static const char *to_str(ods_key_t key, char *sbuf)
+static const char *to_str(ods_key_t key, char *buf)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	assert(kv->len == 4);
-	sprintf(sbuf, "0x%08x", *(uint32_t *)kv->value);
-	return sbuf;
+	sprintf(buf, "0x%"PRId64"", *(int64_t *)kv->value);
+	return buf;
 }
 
 static int from_str(ods_key_t key, const char *str)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	unsigned long lv;
-	uint32_t v;
+	int64_t v;
 	errno = 0;
-	lv = strtoul(str, NULL, 0);
+	v = strtoll(str, NULL, 0);
 	if (errno)
 		return -1;
-	v = (uint32_t)lv;
-	memcpy(kv->value, &v, 4);
-	kv->len = 4;
+	memcpy(kv->value, &v, 8);
+	kv->len = 8;
 	return 0;
 }
 
 static size_t size(void)
 {
-	return sizeof(uint32_t);
+	return sizeof(int64_t);
 }
 
 static size_t str_size(void)
 {
-	return 16;
+	return 32;
 }
 
 static struct ods_idx_comparator key_comparator = {
@@ -111,7 +115,7 @@ static struct ods_idx_comparator key_comparator = {
 	from_str,
 	size,
 	str_size,
-	uint32_comparator
+	int64_comparator
 };
 
 struct ods_idx_comparator *get(void)

@@ -1264,6 +1264,8 @@ void ods_ref_delete(ods_t ods, ods_ref_t ref)
 void ods_obj_delete(ods_obj_t obj)
 {
 	ods_ref_t ref;
+	if (!obj->ods)
+		return;
 	if (!obj->ods->o_perm) {
 		errno = EPERM;
 		return;

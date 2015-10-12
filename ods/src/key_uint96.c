@@ -53,7 +53,7 @@
 
 static const char *get_type(void)
 {
-	return "UINT64";
+	return "UINT96";
 }
 
 static const char *get_doc(void)

@@ -78,6 +78,7 @@ static uint32_t type_sizes[] = {
 	[SOS_TYPE_TIMESTAMP] = 8,
 	[SOS_TYPE_OBJ] = 16,
 	[SOS_TYPE_BYTE_ARRAY] = 16,
+	[SOS_TYPE_CHAR_ARRAY] = 16,
 	[SOS_TYPE_INT32_ARRAY] = 16,
 	[SOS_TYPE_INT64_ARRAY] = 16,
 	[SOS_TYPE_UINT32_ARRAY] = 16,
@@ -305,6 +306,7 @@ static const char *key_types[] = {
 	[SOS_TYPE_TIMESTAMP] = "UINT64",
 	[SOS_TYPE_OBJ] = "NONE",
 	[SOS_TYPE_BYTE_ARRAY] = "STRING",
+	[SOS_TYPE_CHAR_ARRAY] = "STRING",
  	[SOS_TYPE_INT32_ARRAY] = "NONE",
 	[SOS_TYPE_INT64_ARRAY] = "NONE",
 	[SOS_TYPE_UINT32_ARRAY] = "NONE",
@@ -798,6 +800,8 @@ int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char 
 	int rc;
 	sos_value_t v;
 	struct sos_value_s v_;
+	size_t sz;
+
 	if (!sos_attr_is_array(attr)) {
 		v = sos_value_init(&v_, obj, attr);
 		if (v) {
@@ -805,25 +809,43 @@ int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char 
 			sos_value_put(v);
 		} else
 			rc = EINVAL;
-	} else if (sos_attr_type(attr) == SOS_TYPE_BYTE_ARRAY) {
-		v = sos_value_init(&v_, obj, attr);
-		size_t sz = strlen(str) + 1;
-		if (v && sos_array_count(v) < sz) {
-			/* Too short, delete and re-alloc */
-			sos_obj_delete(v->obj);
-			sos_obj_put(v->obj);
-			v = NULL;
+		return rc;
+	}
+	/*
+	 * Char has no delimiters. All other types have delimeters in
+	 * the input string. Delimters considered are [,:_]. Note that
+	 * potential delimiters such as '-' and '.' will not work with
+	 * numbers in the general case.
+	 * TODO: Make the delimiters a container configuration option
+	 */
+	if (sos_attr_type(attr) == SOS_TYPE_CHAR_ARRAY) {
+		sz = strlen(str) + 1;
+	} else {
+		const char *p = str;
+		char *q;
+		const char *delim = ",:_";
+		for (sz = 1, q = strpbrk(p, delim);
+		     q; q = strpbrk(p, delim)) {
+			sz += 1;
+			p = q + 1;
 		}
-		if (!v) {
-			/* The array has not been allocated yet */
-			v = sos_array_new(&v_, attr, obj, sz);
-			if (!v)
-				return ENOMEM;
-			rc = sos_value_from_str(v, str, endptr);
-			sos_value_put(v);
-		}
-	} else
-		rc = EINVAL;
+	}
+	rc = ENOMEM;
+	v = sos_value_init(&v_, obj, attr);
+	if (v && sos_array_count(v) < sz) {
+		/* Too short, delete and re-alloc */
+		sos_obj_delete(v->obj);
+		sos_obj_put(v->obj);
+		v = NULL;
+	}
+	if (!v) {
+		/* The array has not been allocated yet, or was too short */
+		v = sos_array_new(&v_, attr, obj, sz);
+	}
+	if (v) {
+		rc = sos_value_from_str(v, str, endptr);
+		sos_value_put(v);
+	}
 	return rc;
 }
 
@@ -1190,6 +1212,7 @@ static const char *type_names[] = {
 	[SOS_TYPE_TIMESTAMP] = "TIMESTAMP",
 	[SOS_TYPE_OBJ] = "OBJ",
 	[SOS_TYPE_BYTE_ARRAY] = "BYTE_ARRAY",
+	[SOS_TYPE_CHAR_ARRAY] = "CHAR_ARRAY",
 	[SOS_TYPE_INT32_ARRAY] = "INT32_ARRAY",
 	[SOS_TYPE_INT64_ARRAY] = "INT64_ARRAY",
 	[SOS_TYPE_UINT32_ARRAY] = "UINT32_ARRAY",
@@ -1266,6 +1289,9 @@ struct ischema_data {
 } ischema_data_[] = {
 	{ "__BYTE_ARRAY_OBJ", SOS_ISCHEMA_BYTE_ARRAY,
 	  SOS_TYPE_BYTE_ARRAY, sizeof(char) },
+
+	{ "__CHAR_ARRAY_OBJ", SOS_ISCHEMA_CHAR_ARRAY,
+	  SOS_TYPE_CHAR_ARRAY, sizeof(char) },
 
 	{ "__INT32_ARRAY_OBJ", SOS_ISCHEMA_INT32_ARRAY,
 	  SOS_TYPE_INT32_ARRAY, sizeof(int32_t) },
