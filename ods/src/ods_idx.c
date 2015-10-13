@@ -179,6 +179,8 @@ int ods_idx_create(const char *path, int mode,
 
 	/* Set up the IDX meta data in the ODS store. */
 	obj = ods_get_user_data(ods);
+	if (!obj)
+		goto err_1;
 	udata_sz = ods_obj_size(obj);
 	udata = ods_obj_as_ptr(obj);
 	memset(udata, 0, udata_sz);
@@ -190,6 +192,9 @@ int ods_idx_create(const char *path, int mode,
 	ods_close(ods, ODS_COMMIT_ASYNC);
 	errno = 0;
  out:
+	return errno;
+ err_1:
+	ods_close(ods, ODS_COMMIT_ASYNC);
 	return errno;
 }
 
@@ -208,27 +213,30 @@ ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm)
 		goto err_0;
 
 	obj = ods_get_user_data(idx->ods);
+	if (!obj)
+		goto err_1;
 	udata = ods_obj_as_ptr(obj);
 	if (strcmp(udata->signature, ODS_IDX_SIGNATURE)) {
 		/* This file doesn't point to an index */
 		errno = EBADF;
-		goto err_1;
+		goto err_2;
 	}
 	idx_class = get_idx_class(udata->type_name, udata->key_name);
 	if (!idx_class) {
 		/* The libraries necessary to handle this index
 		   type/key combinationare not present */
 		errno = ENOENT;
-		goto err_1;
+		goto err_2;
 	}
 	idx->idx_class = idx_class;
 	if (idx_class->prv->open(idx))
-		goto err_1;
+		goto err_2;
 	ods_obj_put(obj);
 	idx->ref_count = 1;
 	return idx;
- err_1:
+ err_2:
 	ods_obj_put(obj);
+ err_1:
 	ods_close(idx->ods, ODS_COMMIT_ASYNC);
  err_0:
 	free(idx);
