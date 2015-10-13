@@ -1,7 +1,7 @@
 .PHONY: all doc docs
 all: doc
 doc: docs
-docs: doxygen-out
+docs: doxygen-out doc_latex
 
 DOCINPUT = $(top_srcdir)/sos/include/sos/sos.h \
 		       $(top_srcdir)/ods/include/ods/ods.h \
@@ -33,7 +33,7 @@ install-doc-dir:
 .PHONY: install-doc-latex uninstall-doc-latex
 if ENABLE_DOC_LATEX
 DEST_PDF = $(DESTDIR)$(docdir)/$(PACKAGE)-$(VERSION).pdf
-docs: latex/refman.pdf
+doc_latex: latex/refman.pdf
 
 latex/refman.pdf: doxygen-out
 	$(MAKE) -C latex
@@ -47,6 +47,10 @@ uninstall-doc-latex:
 	rm -f $(DEST_PDF)
 
 uninstall-local: uninstall-doc-latex
+else
+
+doc_latex:
+
 endif # ENABLE_DOC_LATEX
 
 .PHONY: install-doc-html uninstall-doc-html
