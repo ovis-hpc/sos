@@ -313,6 +313,7 @@ struct sos_container_s {
 	/*
 	 * The object partitions
 	 */
+	ods_atomic_t part_gn;	/* partition generation number */
 	ods_obj_t part_udata;
 	sos_part_t primary_part;
 	ods_t part_ods;

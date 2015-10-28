@@ -442,11 +442,49 @@ static sos_part_t __sos_part_new(sos_t sos, ods_obj_t part_obj)
 	return part;
 }
 
+
+static int __refresh_part_list(sos_t sos)
+{
+	int rc = 0;
+	sos_part_t part;
+	ods_obj_t part_obj;
+
+	while (!TAILQ_EMPTY(&sos->part_list)) {
+		part = TAILQ_FIRST(&sos->part_list);
+		sos_part_put(part);
+		TAILQ_REMOVE(&sos->part_list, part, entry);
+	}
+	sos->part_gn = SOS_PART_UDATA(sos->part_udata)->gen;
+	for (part_obj = __sos_part_data_first(sos);
+	     part_obj; part_obj = __sos_part_data_next(sos, part_obj)) {
+		part = __sos_part_new(sos, part_obj);
+		if (!part) {
+			rc = ENOMEM;
+			goto out;
+		}
+		TAILQ_INSERT_TAIL(&sos->part_list, part, entry);
+		if (SOS_PART(part_obj) != SOS_PART_STATE_OFFLINE) {
+			rc = __sos_open_partition(sos, part);
+			if (rc)
+				goto out;
+		}
+	}
+ out:
+	return rc;
+}
+
+static int refresh_part_list(sos_t sos)
+{
+	int rc;
+	ods_spin_lock(&sos->part_lock, -1);
+	rc = __refresh_part_list(sos);
+	ods_spin_unlock(&sos->part_lock);
+	return rc;
+}
+
 int __sos_open_partitions(sos_t sos, char *tmp_path)
 {
 	int rc;
-	sos_part_t part;
-	ods_obj_t part_obj;
 
 	/* Open the partition ODS */
 	sprintf(tmp_path, "%s/.__part", sos->path);
@@ -457,19 +495,8 @@ int __sos_open_partitions(sos_t sos, char *tmp_path)
 	if (!sos->part_udata)
 		goto err_1;
 	ods_spin_init(&sos->part_lock, &(SOS_PART_UDATA(sos->part_udata)->lock));
-	for (part_obj = __sos_part_data_first(sos);
-	     part_obj; part_obj = __sos_part_data_next(sos, part_obj)) {
-		part = __sos_part_new(sos, part_obj);
-		if (!part)
-			goto err_1;
-		TAILQ_INSERT_TAIL(&sos->part_list, part, entry);
-		if (SOS_PART(part_obj) != SOS_PART_STATE_OFFLINE) {
-			rc = __sos_open_partition(sos, part);
-			if (rc)
-				goto err_1;
-		}
-	}
-	return 0;
+	rc = refresh_part_list(sos);
+	return rc;
  err_1:
 	ods_close(sos->part_ods, ODS_COMMIT_ASYNC);
 	sos->part_ods = NULL;
@@ -486,6 +513,12 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 		return sos->primary_part;
 
 	pthread_mutex_lock(&sos->lock);
+	ods_spin_lock(&sos->part_lock, -1);
+	if (sos->part_gn != SOS_PART_UDATA(sos->part_udata)->gen) {
+		int rc = __refresh_part_list(sos);
+		if (rc)
+			goto out;
+	}
 	TAILQ_FOREACH(part, &sos->part_list, entry) {
 		if (SOS_PART(part->part_obj)->state == SOS_PART_STATE_PRIMARY) {
 			sos->primary_part = part;
@@ -493,6 +526,7 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 		}
 	}
  out:
+	ods_spin_unlock(&sos->part_lock);
 	pthread_mutex_unlock(&sos->lock);
 	return part;
 }
@@ -560,11 +594,9 @@ ods_obj_t __sos_part_data_first(sos_t sos)
 	ods_obj_t part_obj;
 
 	/* Take the partition lock */
-	ods_spin_lock(&sos->part_lock, -1);
 	part_obj = ods_ref_as_obj(sos->part_ods, SOS_PART_UDATA(sos->part_udata)->head);
 	if (part_obj)
 		__sos_part_obj_get(sos, part_obj);
-	ods_spin_unlock(&sos->part_lock);
 	return part_obj;
 }
 
@@ -581,11 +613,9 @@ ods_obj_t __sos_part_data_next(sos_t sos, ods_obj_t part_obj)
 		return NULL;
 
 	/* Take the partition lock */
-	ods_spin_lock(&sos->part_lock, -1);
 	next_obj = ods_ref_as_obj(sos->part_ods, next_ref);
 	if (next_obj)
 		__sos_part_obj_get(sos, next_obj);
-	ods_spin_unlock(&sos->part_lock);
 	return next_obj;
 }
 
