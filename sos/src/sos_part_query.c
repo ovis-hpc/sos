@@ -147,11 +147,11 @@ void part_list(sos_t sos, FILE *fp)
 		if (!rc) {
 			fprintf(fp, "%8s ", pretty_file_size(sb.size));
 
-			tm = localtime(&sb.modified);
+			tm = localtime((const time_t *)&sb.modified);
 			strftime(datestr, sizeof(datestr), "%Y/%m/%d %H:%M", tm);
 			fprintf(fp, "%-16s ", datestr);
 
-			tm = localtime(&sb.accessed);
+			tm = localtime((const time_t *)&sb.accessed);
 			strftime(datestr, sizeof(datestr), "%Y/%m/%d %H:%M", tm);
 			fprintf(fp, "%-16s ", datestr);
 		} else

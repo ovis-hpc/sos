@@ -796,8 +796,10 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 	if (!schema->sos)
 		return NULL;
 	part = __sos_primary_obj_part(schema->sos);
-	if (!part)
+	if (!part) {
+		errno = ENOENT;
 		return NULL;
+	}
 	ods_obj = __sos_obj_new(part->obj_ods, schema->data->obj_sz,
 				&schema->sos->lock);
 	if (!ods_obj)

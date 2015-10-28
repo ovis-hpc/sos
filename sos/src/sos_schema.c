@@ -68,8 +68,10 @@ static struct sos_schema_s *ischema_dir[SOS_TYPE_LAST+1];
 static struct rbt ischema_rbt;
 
 static uint32_t type_sizes[] = {
+	[SOS_TYPE_INT16] = 2,
 	[SOS_TYPE_INT32] = 4,
 	[SOS_TYPE_INT64] = 8,
+	[SOS_TYPE_UINT16] = 2,
 	[SOS_TYPE_UINT32] = 4,
 	[SOS_TYPE_UINT64] = 8,
 	[SOS_TYPE_FLOAT] = 4,
@@ -79,8 +81,10 @@ static uint32_t type_sizes[] = {
 	[SOS_TYPE_OBJ] = 16,
 	[SOS_TYPE_BYTE_ARRAY] = 16,
 	[SOS_TYPE_CHAR_ARRAY] = 16,
+	[SOS_TYPE_INT16_ARRAY] = 16,
 	[SOS_TYPE_INT32_ARRAY] = 16,
 	[SOS_TYPE_INT64_ARRAY] = 16,
+	[SOS_TYPE_UINT16_ARRAY] = 16,
 	[SOS_TYPE_UINT32_ARRAY] = 16,
 	[SOS_TYPE_UINT64_ARRAY] = 16,
 	[SOS_TYPE_FLOAT_ARRAY] = 16,
@@ -296,8 +300,10 @@ size_t sos_schema_count(sos_t sos)
 }
 
 static const char *key_types[] = {
+	[SOS_TYPE_INT16] = "INT16",
 	[SOS_TYPE_INT32] = "INT32",
 	[SOS_TYPE_INT64] = "INT64",
+	[SOS_TYPE_UINT16] = "UINT16",
 	[SOS_TYPE_UINT32] = "UINT32",
 	[SOS_TYPE_UINT64] = "UINT64",
 	[SOS_TYPE_FLOAT] = "FLOAT",
@@ -307,8 +313,10 @@ static const char *key_types[] = {
 	[SOS_TYPE_OBJ] = "NONE",
 	[SOS_TYPE_BYTE_ARRAY] = "STRING",
 	[SOS_TYPE_CHAR_ARRAY] = "STRING",
+	[SOS_TYPE_INT16_ARRAY] = "NONE",
  	[SOS_TYPE_INT32_ARRAY] = "NONE",
 	[SOS_TYPE_INT64_ARRAY] = "NONE",
+	[SOS_TYPE_UINT16_ARRAY] = "NONE",
 	[SOS_TYPE_UINT32_ARRAY] = "NONE",
 	[SOS_TYPE_UINT64_ARRAY] = "NONE",
 	[SOS_TYPE_FLOAT_ARRAY] = "NONE",
@@ -726,7 +734,6 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
  * \brief Test if an attribute has an index.
  *
  * \param attr	The sos_attr_t handle
-
  * \returns !0 if the attribute has an index
  */
 int sos_attr_index(sos_attr_t attr)
@@ -1202,8 +1209,10 @@ int sos_schema_delete(sos_t sos, const char *name)
 }
 
 static const char *type_names[] = {
+	[SOS_TYPE_INT16] = "INT16",
 	[SOS_TYPE_INT32] = "INT32",
 	[SOS_TYPE_INT64] = "INT64",
+	[SOS_TYPE_UINT16] = "UINT16",
 	[SOS_TYPE_UINT32] = "UINT32",
 	[SOS_TYPE_UINT64] = "UINT64",
 	[SOS_TYPE_FLOAT] = "FLOAT",
@@ -1213,8 +1222,10 @@ static const char *type_names[] = {
 	[SOS_TYPE_OBJ] = "OBJ",
 	[SOS_TYPE_BYTE_ARRAY] = "BYTE_ARRAY",
 	[SOS_TYPE_CHAR_ARRAY] = "CHAR_ARRAY",
+	[SOS_TYPE_INT16_ARRAY] = "INT16_ARRAY",
 	[SOS_TYPE_INT32_ARRAY] = "INT32_ARRAY",
 	[SOS_TYPE_INT64_ARRAY] = "INT64_ARRAY",
+	[SOS_TYPE_UINT16_ARRAY] = "UINT16_ARRAY",
 	[SOS_TYPE_UINT32_ARRAY] = "UINT32_ARRAY",
 	[SOS_TYPE_UINT64_ARRAY] = "UINT64_ARRAY",
 	[SOS_TYPE_FLOAT_ARRAY] = "FLOAT_ARRAY",
@@ -1293,13 +1304,21 @@ struct ischema_data {
 	{ "__CHAR_ARRAY_OBJ", SOS_ISCHEMA_CHAR_ARRAY,
 	  SOS_TYPE_CHAR_ARRAY, sizeof(char) },
 
+	{ "__INT16_ARRAY_OBJ", SOS_ISCHEMA_INT16_ARRAY,
+	  SOS_TYPE_INT16_ARRAY, sizeof(int16_t) },
+
+	{ "__UINT16_ARRAY_OBJ", SOS_ISCHEMA_UINT16_ARRAY,
+	  SOS_TYPE_UINT16_ARRAY, sizeof(uint16_t) },
+
 	{ "__INT32_ARRAY_OBJ", SOS_ISCHEMA_INT32_ARRAY,
 	  SOS_TYPE_INT32_ARRAY, sizeof(int32_t) },
+
 	{ "__UINT32_ARRAY_OBJ", SOS_ISCHEMA_UINT32_ARRAY,
 	  SOS_TYPE_UINT32_ARRAY, sizeof(uint32_t) },
 
 	{ "__INT64_ARRAY_OBJ", SOS_ISCHEMA_INT64_ARRAY,
 	  SOS_TYPE_INT64_ARRAY, sizeof(int64_t) },
+
 	{ "__UINT64_ARRAY_OBJ", SOS_ISCHEMA_UINT64_ARRAY,
 	  SOS_TYPE_UINT64_ARRAY, sizeof(uint64_t) },
 
@@ -1308,6 +1327,7 @@ struct ischema_data {
 
 	{ "__DOUBLE_ARRAY_OBJ", SOS_ISCHEMA_DOUBLE_ARRAY,
 	  SOS_TYPE_DOUBLE_ARRAY, sizeof(double) },
+
 	{ "__LONG_DOUBLE_ARRAY_OBJ", SOS_ISCHEMA_LONG_DOUBLE_ARRAY,
 	  SOS_TYPE_LONG_DOUBLE_ARRAY, sizeof(long double) },
 

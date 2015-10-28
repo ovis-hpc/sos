@@ -142,9 +142,11 @@ typedef struct sos_obj_s *sos_obj_t;
 
 typedef enum sos_type_e {
 	/** All types up to the arrays are fixed size */
-	SOS_TYPE_INT32 = 0,
-	SOS_TYPE_FIRST = SOS_TYPE_INT32,
+	SOS_TYPE_INT16 = 0,
+	SOS_TYPE_FIRST = SOS_TYPE_INT16,
+	SOS_TYPE_INT32,
 	SOS_TYPE_INT64,
+	SOS_TYPE_UINT16,
 	SOS_TYPE_UINT32,
 	SOS_TYPE_UINT64,
 	SOS_TYPE_FLOAT,
@@ -155,8 +157,10 @@ typedef enum sos_type_e {
 	SOS_TYPE_BYTE_ARRAY = 32,
 	SOS_TYPE_ARRAY = SOS_TYPE_BYTE_ARRAY,
 	SOS_TYPE_CHAR_ARRAY,
+	SOS_TYPE_INT16_ARRAY,
 	SOS_TYPE_INT32_ARRAY,
 	SOS_TYPE_INT64_ARRAY,
+	SOS_TYPE_UINT16_ARRAY,
 	SOS_TYPE_UINT32_ARRAY,
 	SOS_TYPE_UINT64_ARRAY,
 	SOS_TYPE_FLOAT_ARRAY,
@@ -178,8 +182,10 @@ typedef union sos_obj_ref_s {
 union sos_array_element_u {
 	char char_[0];
 	uint8_t byte_[0];
+	uint32_t uint16_[0];
 	uint32_t uint32_[0];
 	uint64_t uint64_[0];
+	int32_t int16_[0];
 	int32_t int32_[0];
 	int64_t int64_[0];
 	float float_[0];
@@ -203,8 +209,10 @@ union sos_timestamp_u {
 
 union sos_primary_u {
 	unsigned char byte_;
+	uint16_t uint16_;
 	uint32_t uint32_;
 	uint64_t uint64_;
+	int16_t int16_;
 	int32_t int32_;
 	int64_t int64_;
 	float float_;
@@ -332,6 +340,7 @@ typedef struct sos_part_s *sos_part_t;
  */
 int sos_part_create(sos_t sos, const char *name, const char *path);
 int sos_part_delete(sos_part_t part);
+int sos_part_move(sos_part_t part, const char *part_path);
 sos_part_t sos_part_find(sos_t sos, const char *name);
 sos_part_iter_t sos_part_iter_new(sos_t sos);
 void sos_part_iter_free(sos_part_iter_t iter);
@@ -401,21 +410,17 @@ int sos_attr_is_ref(sos_attr_t attr);
 int sos_attr_is_array(sos_attr_t attr);
 size_t sos_array_count(sos_value_t val);
 sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count);
-static inline void *sos_array_ptr(sos_value_t val) {
-	return val->data->array.data.byte_;
-}
 sos_value_t sos_value_new();
 void sos_value_free(sos_value_t v);
 void *sos_obj_ptr(sos_obj_t obj);
 sos_value_t sos_value_init(sos_value_t value, sos_obj_t obj, sos_attr_t attr);
 #define SOS_VALUE(_name_)				\
 	struct sos_value_s  _name_ ## __, *_name_ = &_name_ ## __;
-
 sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr);
 void sos_value_put(sos_value_t value);
 int sos_value_cmp(sos_value_t a, sos_value_t b);
 size_t sos_value_size(sos_value_t value);
-size_t sos_value_memset(sos_value_t value, void *buf, size_t buflen);
+size_t sos_value_memcpy(sos_value_t value, void *buf, size_t buflen);
 char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len);
 int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char **endptr);
 const char *sos_value_to_str(sos_value_t value, char *str, size_t len);

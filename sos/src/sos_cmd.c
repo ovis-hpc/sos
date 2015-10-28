@@ -167,8 +167,10 @@ int create(const char *path, int o_mode)
 }
 
 int col_widths[] = {
+	[SOS_TYPE_INT16] = 6,
 	[SOS_TYPE_INT32] = 10,
 	[SOS_TYPE_INT64] = 18,
+	[SOS_TYPE_UINT16] = 6,
 	[SOS_TYPE_UINT32] = 10,
 	[SOS_TYPE_UINT64] = 18,
 	[SOS_TYPE_FLOAT] = 12,
@@ -178,8 +180,10 @@ int col_widths[] = {
 	[SOS_TYPE_OBJ] = 8,
 	[SOS_TYPE_BYTE_ARRAY] = 32,
 	[SOS_TYPE_CHAR_ARRAY] = 32,
+ 	[SOS_TYPE_INT16_ARRAY] = 6,
  	[SOS_TYPE_INT32_ARRAY] = 8,
 	[SOS_TYPE_INT64_ARRAY] = 8,
+	[SOS_TYPE_UINT16_ARRAY] = 6,
 	[SOS_TYPE_UINT32_ARRAY] = 8,
 	[SOS_TYPE_UINT64_ARRAY] = 8,
 	[SOS_TYPE_FLOAT_ARRAY] = 8,
