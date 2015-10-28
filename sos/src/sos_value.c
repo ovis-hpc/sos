@@ -231,7 +231,7 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
  * \param buflen The number of bytes to write from the buffer
  * \retval The number of bytes written
  */
-size_t sos_value_memset(sos_value_t val, void *buf, size_t buflen)
+size_t sos_value_memcpy(sos_value_t val, void *buf, size_t buflen)
 {
 	void *dst;
 	if (buflen > sos_value_size(val))

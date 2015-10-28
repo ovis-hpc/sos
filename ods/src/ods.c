@@ -104,20 +104,22 @@ static void *ods_ref_to_ptr(ods_map_t map, uint64_t off)
 {
 	if (!off)
 		return NULL;
-	/* GUARD */
-	assert(off < map->obj_sz);
 	return (void *)((uint64_t)off + (uint64_t)map->obj_data);
 }
 
-static uint64_t ods_ptr_to_ref(ods_map_t map, void *p)
+static ods_ref_t ods_ptr_to_ref(ods_map_t map, void *p)
 {
+	ods_ref_t ref;
 	if (!p)
 		return 0;
-	return (uint64_t)p - (uint64_t)map->obj_data;
+	ref = (uint64_t)p - (uint64_t)map->obj_data;
+	assert(ref < map->obj_sz);
+	return ref;
 }
 
 static inline uint64_t ods_ref_to_page(ods_map_t map, ods_ref_t ref)
 {
+	assert(ref < map->obj_sz);
 	return ref >> ODS_PAGE_SHIFT;
 }
 
@@ -950,8 +952,10 @@ static void *alloc_pages(ods_map_t map, size_t sz, int bkt)
 		if (pg_needed <= pg->count)
 			break;
 	}
-	if (!pg)
+	if (!pg) {
+		errno = ENOMEM;
 		goto out;
+	}
 
 	if (pg->count > pg_needed) {
 		page = ods_ptr_to_page(map, pg);
@@ -1002,8 +1006,10 @@ static void replenish_bkt(ods_map_t map, int bkt)
 static void *alloc_bkt(ods_map_t map, int bkt)
 {
 	ods_blk_t blk = ods_ref_to_ptr(map, map->obj_data->blk_free[bkt]);
-	if (!blk)
+	if (!blk) {
+		errno = ENOMEM;
 		goto out;
+	}
 	map->obj_data->blk_free[bkt] = blk->next;
  out:
 	return blk;
@@ -1240,6 +1246,7 @@ static void free_ref(ods_t ods, ods_ref_t ref)
 {
 	uint64_t page;
 	ods_map_t map = _ods_map_get(ods);
+	assert(ref < map->obj_sz);
 	/* Get the page this ptr is in */
 	page = ods_ref_to_page(map, ref);
 	if (map->pg_table->pages[page] & ODS_F_IDX_VALID)

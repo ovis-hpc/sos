@@ -35,5 +35,11 @@ lib_LTLIBRARIES += libkey_UINT32.la
 libkey_INT32_la_SOURCES = key_int32.c
 lib_LTLIBRARIES += libkey_INT32.la
 
+libkey_UINT16_la_SOURCES = key_uint16.c
+lib_LTLIBRARIES += libkey_UINT16.la
+
+libkey_INT16_la_SOURCES = key_int16.c
+lib_LTLIBRARIES += libkey_INT16.la
+
 libkey_DOUBLE_la_SOURCES = key_double.c
 lib_LTLIBRARIES += libkey_DOUBLE.la

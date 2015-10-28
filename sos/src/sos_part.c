@@ -135,6 +135,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/sendfile.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -308,13 +309,11 @@ void __make_part_offline(sos_t sos, sos_part_t part)
 
 static void __make_part_active(sos_t sos, sos_part_t part)
 {
-	int rc;
-
 	SOS_PART(part->part_obj)->state = SOS_PART_STATE_ACTIVE;
 	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
 
 	/* Open the partition and add it to the container */
-	rc = __sos_open_partition(part->sos, part);
+	(void)__sos_open_partition(part->sos, part);
 }
 
 static void __make_part_primary(sos_t sos, sos_part_t part)
@@ -427,7 +426,6 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state)
 		rc = EBUSY;
 		break;
 	}
-out:
 	ods_spin_unlock(&sos->part_lock);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
@@ -496,23 +494,7 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 	}
  out:
 	pthread_mutex_unlock(&sos->lock);
-	return part;;
-}
-
-static ods_t find_part_ods(sos_t sos, const char *name)
-{
-	ods_t ods = NULL;
-	sos_part_t part;
-	pthread_mutex_lock(&sos->lock);
-	TAILQ_FOREACH(part, &sos->part_list, entry) {
-		if (0 == strcmp(name, SOS_PART(part->part_obj)->name)) {
-			ods  = part->obj_ods;
-			goto out;
-		}
-	}
- out:
-	pthread_mutex_unlock(&sos->lock);
-	return ods;
+	return part;
 }
 
 /**
@@ -562,6 +544,7 @@ static void __sos_part_obj_delete(sos_t sos, ods_obj_t part_obj)
 ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj)
 {
 	ods_atomic_inc(&SOS_PART(part_obj)->ref_count);
+	return part_obj;
 }
 
 void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj)
@@ -1001,4 +984,3 @@ int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
  out:
 	return rc;
 }
-

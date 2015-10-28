@@ -63,6 +63,11 @@
 #include <sos/sos.h>
 #include "sos_priv.h"
 
+static size_t int16_size_fn(sos_value_t value)
+{
+	return sizeof(int16_t);
+}
+
 static size_t int32_size_fn(sos_value_t value)
 {
 	return sizeof(int32_t);
@@ -112,6 +117,11 @@ static size_t char_array_size_fn(sos_value_t value)
 	return value->data->array.count;
 }
 
+static size_t int16_array_size_fn(sos_value_t value)
+{
+	return value->data->array.count * sizeof(int16_t);
+}
+
 static size_t int32_array_size_fn(sos_value_t value)
 {
 	return value->data->array.count * sizeof(int32_t);
@@ -142,49 +152,43 @@ static size_t obj_array_size_fn(sos_value_t value)
 	return value->data->array.count * sizeof(ods_ref_t);
 }
 
+static sos_value_size_fn_t __attr_size_fn_for_type[] = {
+	[SOS_TYPE_INT16] = int16_size_fn,
+	[SOS_TYPE_INT32] = int32_size_fn,
+	[SOS_TYPE_INT64] = int64_size_fn,
+	[SOS_TYPE_UINT16] = int16_size_fn,
+	[SOS_TYPE_UINT32] = int32_size_fn,
+	[SOS_TYPE_UINT64] = int64_size_fn,
+	[SOS_TYPE_FLOAT] = float_size_fn,
+	[SOS_TYPE_DOUBLE] = double_size_fn,
+	[SOS_TYPE_LONG_DOUBLE] = long_double_size_fn,
+	[SOS_TYPE_TIMESTAMP] = timestamp_size_fn,
+	[SOS_TYPE_OBJ] = obj_size_fn,
+	[SOS_TYPE_BYTE_ARRAY] = byte_array_size_fn,
+	[SOS_TYPE_CHAR_ARRAY] = char_array_size_fn,
+	[SOS_TYPE_INT16_ARRAY] = int16_array_size_fn,
+	[SOS_TYPE_INT32_ARRAY] = int32_array_size_fn,
+	[SOS_TYPE_INT64_ARRAY] = int64_array_size_fn,
+	[SOS_TYPE_UINT16_ARRAY] = int16_array_size_fn,
+	[SOS_TYPE_UINT32_ARRAY] = int32_array_size_fn,
+	[SOS_TYPE_UINT64_ARRAY] = int64_array_size_fn,
+	[SOS_TYPE_FLOAT_ARRAY] = float_array_size_fn,
+	[SOS_TYPE_DOUBLE_ARRAY] = double_array_size_fn,
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = long_double_array_size_fn,
+	[SOS_TYPE_OBJ_ARRAY] = obj_array_size_fn,
+};
+
 sos_value_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type)
 {
-	switch (type) {
-	case SOS_TYPE_INT32:
-		return int32_size_fn;
-	case SOS_TYPE_INT64:
-		return int64_size_fn;
-	case SOS_TYPE_UINT32:
-		return int32_size_fn;
-	case SOS_TYPE_UINT64:
-		return int64_size_fn;
-	case SOS_TYPE_FLOAT:
-		return float_size_fn;
-	case SOS_TYPE_DOUBLE:
-		return double_size_fn;
-	case SOS_TYPE_LONG_DOUBLE:
-		return long_double_size_fn;
-	case SOS_TYPE_TIMESTAMP:
-		return timestamp_size_fn;
-	case SOS_TYPE_OBJ:
-		return obj_size_fn;
-	case SOS_TYPE_BYTE_ARRAY:
-		return byte_array_size_fn;
-	case SOS_TYPE_CHAR_ARRAY:
-		return char_array_size_fn;
-	case SOS_TYPE_INT32_ARRAY:
-		return int32_array_size_fn;
-	case SOS_TYPE_INT64_ARRAY:
-		return int64_array_size_fn;
-	case SOS_TYPE_UINT32_ARRAY:
-		return int32_array_size_fn;
-	case SOS_TYPE_UINT64_ARRAY:
-		return int64_array_size_fn;
-	case SOS_TYPE_FLOAT_ARRAY:
-		return float_array_size_fn;
-	case SOS_TYPE_DOUBLE_ARRAY:
-		return double_array_size_fn;
-	case SOS_TYPE_LONG_DOUBLE_ARRAY:
-		return long_double_array_size_fn;
-	case SOS_TYPE_OBJ_ARRAY:
-		return obj_array_size_fn;
-	}
+	if (type >= SOS_TYPE_FIRST && type <= SOS_TYPE_LAST)
+		return __attr_size_fn_for_type[type];
 	return NULL;
+}
+
+static char *int16_to_str_fn(sos_value_t v, char *str, size_t len)
+{
+	snprintf(str, len, "%hd", v->data->prim.int16_);
+	return str;
 }
 
 static char *int32_to_str_fn(sos_value_t v, char *str, size_t len)
@@ -196,6 +200,12 @@ static char *int32_to_str_fn(sos_value_t v, char *str, size_t len)
 static char *int64_to_str_fn(sos_value_t v, char *str, size_t len)
 {
 	snprintf(str, len, "%"PRId64, v->data->prim.int64_);
+	return str;
+}
+
+static char *uint16_to_str_fn(sos_value_t v, char *str, size_t len)
+{
+	snprintf(str, len, "%hu", v->data->prim.uint16_);
 	return str;
 }
 
@@ -268,7 +278,7 @@ static char *char_array_to_str_fn(sos_value_t v, char *str, size_t len)
 {
 	if (!v)
 		return "";
-	strncpy(str, v->data->array.data.byte_, v->data->array.count);
+	strncpy(str, (char *)v->data->array.data.byte_, v->data->array.count);
 	return str;
 }
 
@@ -285,6 +295,42 @@ static char *int32_array_to_str_fn(sos_value_t v, char *str, size_t len)
 			p++; len--;
 		}
 		count = snprintf(p, len, "%d", v->data->array.data.int32_[i]);
+		p += count; len -= count;
+	}
+	return str;
+}
+
+static char *uint16_array_to_str_fn(sos_value_t v, char *str, size_t len)
+{
+	char *p = str;
+	size_t count;
+	int i;
+	if (!v)
+		return "";
+	for (i = 0; i < v->data->array.count; i++) {
+		if (i) {
+			count = snprintf(p, len, ",");
+			p++; len--;
+		}
+		count = snprintf(p, len, "0x%04hx", v->data->array.data.uint16_[i]);
+		p += count; len -= count;
+	}
+	return str;
+}
+
+static char *int16_array_to_str_fn(sos_value_t v, char *str, size_t len)
+{
+	char *p = str;
+	size_t count;
+	int i;
+	if (!v)
+		return "";
+	for (i = 0; i < v->data->array.count; i++) {
+		if (i) {
+			count = snprintf(p, len, ",");
+			p++; len--;
+		}
+		count = snprintf(p, len, "%hd", v->data->array.data.int16_[i]);
 		p += count; len -= count;
 	}
 	return str;
@@ -413,8 +459,10 @@ static char *obj_array_to_str_fn(sos_value_t v, char *str, size_t len)
 }
 
 static sos_value_to_str_fn_t __attr_to_str_fn_for_type[] = {
+	[SOS_TYPE_INT16] = int16_to_str_fn,
 	[SOS_TYPE_INT32] = int32_to_str_fn,
 	[SOS_TYPE_INT64] = int64_to_str_fn,
+	[SOS_TYPE_UINT16] = uint16_to_str_fn,
 	[SOS_TYPE_UINT32] = uint32_to_str_fn,
 	[SOS_TYPE_UINT64] = uint64_to_str_fn,
 	[SOS_TYPE_FLOAT] = float_to_str_fn,
@@ -424,8 +472,10 @@ static sos_value_to_str_fn_t __attr_to_str_fn_for_type[] = {
 	[SOS_TYPE_OBJ] = obj_to_str_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_to_str_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_to_str_fn,
+	[SOS_TYPE_INT16_ARRAY] = int16_array_to_str_fn,
 	[SOS_TYPE_INT32_ARRAY] = int32_array_to_str_fn,
 	[SOS_TYPE_INT64_ARRAY] = int64_array_to_str_fn,
+	[SOS_TYPE_UINT16_ARRAY] = uint16_array_to_str_fn,
 	[SOS_TYPE_UINT32_ARRAY] = uint32_array_to_str_fn,
 	[SOS_TYPE_UINT64_ARRAY] = uint64_array_to_str_fn,
 	[SOS_TYPE_FLOAT_ARRAY] = float_array_to_str_fn,
@@ -441,6 +491,12 @@ sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type)
 	return NULL;
 }
 
+int int16_from_str_fn(sos_value_t v, const char *value, char **endptr)
+{
+	v->data->prim.int16_ = strtol(value, endptr, 0);
+	return 0;
+}
+
 int int32_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
 	v->data->prim.int32_ = strtol(value, endptr, 0);
@@ -450,6 +506,12 @@ int int32_from_str_fn(sos_value_t v, const char *value, char **endptr)
 int int64_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
 	v->data->prim.int64_ = strtol(value, endptr, 0);
+	return 0;
+}
+
+int uint16_from_str_fn(sos_value_t v, const char *value, char **endptr)
+{
+	v->data->prim.uint16_ = strtoul(value, endptr, 0);
 	return 0;
 }
 
@@ -530,11 +592,10 @@ static int obj_from_str_fn(sos_value_t v, const char *value, char **endptr)
 
 static int byte_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, res_cnt, match;
+	int i, cnt, match;
 	const char *str;
 	char c;
 
-	res_cnt = 0;
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%hhx%n", &c, &cnt);
@@ -557,13 +618,35 @@ static int char_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 	return 0;
 }
 
+static int int16_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
+{
+	int i, cnt, match;
+	const char *str;
+	int16_t c;
+
+	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
+	     i++, str += cnt) {
+		match = sscanf(str, "%hd%n", &c, &cnt);
+		if (match < 1) {
+			match = sscanf(str, "%hx%n", &c, &cnt);
+			if (match < 1)
+				return EINVAL;
+		}
+		v->data->array.data.int16_[i] = c;
+		if (str[cnt] != '\0')
+			cnt ++;	/* skip delimiter */
+	}
+	if (endptr)
+		*endptr = (char *)str;
+	return 0;
+}
+
 static int int32_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, res_cnt, match;
+	int i, cnt, match;
 	const char *str;
 	int32_t c;
 
-	res_cnt = 0;
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%d%n", &c, &cnt);
@@ -583,11 +666,10 @@ static int int32_array_from_str_fn(sos_value_t v, const char *value, char **endp
 
 static int int64_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, res_cnt, match;
+	int i, cnt, match;
 	const char *str;
 	int64_t c;
 
-	res_cnt = 0;
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%ld%n", &c, &cnt);
@@ -605,13 +687,35 @@ static int int64_array_from_str_fn(sos_value_t v, const char *value, char **endp
 	return 0;
 }
 
+static int uint16_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
+{
+	int i, cnt, match;
+	const char *str;
+	uint16_t c;
+
+	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
+	     i++, str += cnt) {
+		match = sscanf(str, "%hx%n", &c, &cnt);
+		if (match < 1) {
+			match = sscanf(str, "%hu%n", &c, &cnt);
+			if (match < 1)
+				return EINVAL;
+		}
+		v->data->array.data.uint16_[i] = c;
+		if (str[cnt] != '\0')
+			cnt ++;	/* skip delimiter */
+	}
+	if (endptr)
+		*endptr = (char *)str;
+	return 0;
+}
+
 static int uint32_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, res_cnt, match;
+	int i, cnt, match;
 	const char *str;
 	uint32_t c;
 
-	res_cnt = 0;
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%x%n", &c, &cnt);
@@ -631,11 +735,10 @@ static int uint32_array_from_str_fn(sos_value_t v, const char *value, char **end
 
 static int uint64_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, res_cnt, match;
+	int i, cnt, match;
 	const char *str;
 	uint64_t c;
 
-	res_cnt = 0;
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%lx%n", &c, &cnt);
@@ -655,11 +758,10 @@ static int uint64_array_from_str_fn(sos_value_t v, const char *value, char **end
 
 static int float_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, res_cnt, match;
+	int i, cnt, match;
 	const char *str;
 	float c;
 
-	res_cnt = 0;
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%f%n", &c, &cnt);
@@ -676,11 +778,10 @@ static int float_array_from_str_fn(sos_value_t v, const char *value, char **endp
 
 static int double_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, res_cnt, match;
+	int i, cnt, match;
 	const char *str;
 	double c;
 
-	res_cnt = 0;
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%lf%n", &c, &cnt);
@@ -697,11 +798,10 @@ static int double_array_from_str_fn(sos_value_t v, const char *value, char **end
 
 static int long_double_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, res_cnt, match;
+	int i, cnt, match;
 	const char *str;
 	long double c;
 
-	res_cnt = 0;
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%Lf%n", &c, &cnt);
@@ -718,12 +818,11 @@ static int long_double_array_from_str_fn(sos_value_t v, const char *value, char 
 
 static int obj_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, res_cnt, match;
+	int i, cnt, match;
 	const char *str;
 	ods_ref_t obj_ref;
 	ods_ref_t part_ref;
 
-	res_cnt = 0;
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%lu@%lx%n", &part_ref, &obj_ref, &cnt);
@@ -741,8 +840,10 @@ static int obj_array_from_str_fn(sos_value_t v, const char *value, char **endptr
 
 
 static sos_value_from_str_fn_t __str_fn_t[] = {
+	[SOS_TYPE_INT16] = int16_from_str_fn,
 	[SOS_TYPE_INT32] = int32_from_str_fn,
 	[SOS_TYPE_INT64] = int64_from_str_fn,
+	[SOS_TYPE_UINT16] = int16_from_str_fn,
 	[SOS_TYPE_UINT32] = int32_from_str_fn,
 	[SOS_TYPE_UINT64] = int64_from_str_fn,
 	[SOS_TYPE_FLOAT] = float_from_str_fn,
@@ -752,10 +853,12 @@ static sos_value_from_str_fn_t __str_fn_t[] = {
 	[SOS_TYPE_OBJ] = obj_from_str_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_from_str_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_from_str_fn,
+	[SOS_TYPE_INT16_ARRAY] = int16_array_from_str_fn,
 	[SOS_TYPE_INT32_ARRAY] = int32_array_from_str_fn,
 	[SOS_TYPE_INT64_ARRAY] = int64_array_from_str_fn,
-	[SOS_TYPE_UINT32_ARRAY] = int32_array_from_str_fn,
-	[SOS_TYPE_UINT64_ARRAY] = int64_array_from_str_fn,
+	[SOS_TYPE_UINT16_ARRAY] = uint16_array_from_str_fn,
+	[SOS_TYPE_UINT32_ARRAY] = uint32_array_from_str_fn,
+	[SOS_TYPE_UINT64_ARRAY] = uint64_array_from_str_fn,
 	[SOS_TYPE_FLOAT_ARRAY] = float_array_from_str_fn,
 	[SOS_TYPE_DOUBLE_ARRAY] = double_array_from_str_fn,
 	[SOS_TYPE_LONG_DOUBLE_ARRAY] = long_double_array_from_str_fn,
@@ -771,6 +874,11 @@ sos_value_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type)
 
 /* Key Value Functions */
 
+static void *int16_key_value_fn(sos_value_t val)
+{
+	return &val->data->prim.int16_;
+}
+
 static void *int32_key_value_fn(sos_value_t val)
 {
 	return &val->data->prim.int32_;
@@ -779,6 +887,11 @@ static void *int32_key_value_fn(sos_value_t val)
 static void *int64_key_value_fn(sos_value_t val)
 {
 	return &val->data->prim.int64_;
+}
+
+static void *uint16_key_value_fn(sos_value_t val)
+{
+	return &val->data->prim.uint16_;
 }
 
 static void *uint32_key_value_fn(sos_value_t val)
@@ -826,6 +939,11 @@ static void *char_array_key_value_fn(sos_value_t val)
 	return val->data->array.data.char_;
 }
 
+static void *int16_array_key_value_fn(sos_value_t val)
+{
+	return val->data->array.data.int16_;
+}
+
 static void *int32_array_key_value_fn(sos_value_t val)
 {
 	return val->data->array.data.int32_;
@@ -857,8 +975,10 @@ static void *obj_array_key_value_fn(sos_value_t val)
 }
 
 static sos_value_key_value_fn_t __key_value_fn_t[] = {
+	[SOS_TYPE_INT16] = int16_key_value_fn,
 	[SOS_TYPE_INT32] = int32_key_value_fn,
 	[SOS_TYPE_INT64] = int64_key_value_fn,
+	[SOS_TYPE_UINT32] = uint16_key_value_fn,
 	[SOS_TYPE_UINT32] = uint32_key_value_fn,
 	[SOS_TYPE_UINT64] = uint64_key_value_fn,
 	[SOS_TYPE_FLOAT] = float_key_value_fn,
@@ -868,8 +988,10 @@ static sos_value_key_value_fn_t __key_value_fn_t[] = {
 	[SOS_TYPE_OBJ] = obj_key_value_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_key_value_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_key_value_fn,
+	[SOS_TYPE_INT16_ARRAY] = int16_array_key_value_fn,
 	[SOS_TYPE_INT32_ARRAY] = int32_array_key_value_fn,
 	[SOS_TYPE_INT64_ARRAY] = int64_array_key_value_fn,
+	[SOS_TYPE_UINT16_ARRAY] = int16_array_key_value_fn,
 	[SOS_TYPE_UINT32_ARRAY] = int32_array_key_value_fn,
 	[SOS_TYPE_UINT64_ARRAY] = int64_array_key_value_fn,
 	[SOS_TYPE_FLOAT_ARRAY] = float_array_key_value_fn,
