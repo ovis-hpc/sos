@@ -66,7 +66,9 @@ Group: %{_grp}
 Documetnation for SOS package.
 %files doc
 %defattr(-,root,root)
-%{_datadir}/doc/
+%if "@ENABLE_DOC_HTML_TRUE@x" == "x"
+%{_datadir}/doc
+%endif
 %endif
 
 

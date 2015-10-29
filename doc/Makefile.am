@@ -66,19 +66,5 @@ uninstall-doc-html:
 uninstall-local: uninstall-doc-html
 endif # ENABLE_DOC_HTML
 
-.PHONY: install-doc-man uninstall-doc-man
-
-if ENABLE_DOC_MAN
-install-doc-man: install-doc-dir doxygen-out
-	cp -r man $(DESTDIR)$(docdir)/
-
-install-data-local: install-doc-man
-
-uninstall-doc-man:
-	rm -rf $(DESTDIR)$(docdir)/man
-
-uninstall-local: uninstall-doc-man
-endif # ENABLE_DOC_MAN
-
 clean-local:
 	rm -rf html latex man doxygen-out
