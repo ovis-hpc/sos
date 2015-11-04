@@ -16,12 +16,16 @@ OPTION_DEFAULT_DISABLE([bwx], [ENABLE_BWX])
 
 dnl yaml stuff
 OPTION_WITH([yaml], [YAML])
+OLD_CFLAGS=${CFLAGS}
+CFLAGS="${CFLAGS} -I${YAML_INCDIR}"
 AC_CHECK_HEADER(yaml.h, [],
 		AC_MSG_ERROR([yaml.h not found. Please specify yaml prefix with
 			--with-yaml configuration option.]))
+CFLAGS="${OLD_CFLAGS}"
 AC_CHECK_LIB(yaml, yaml_parser_load, [],
 		AC_MSG_ERROR([libyaml not found. Please specify yaml prefix with
-			--with-yaml configuration option.]))
+			--with-yaml configuration option.]),
+			[-lyaml ${YAML_LIBDIR_FLAG}])
 dnl Reset LIBS variable.
 LIBS=""
 

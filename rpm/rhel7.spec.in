@@ -41,7 +41,7 @@ rm -rf %{buildroot}
 %{_libdir}/libods.*
 %{_libdir}/libsos.*
 %if "@ENABLE_SWIG_TRUE@x" == "x"
-%{_prefix}/lib/python*/site-packages/sos/
+%{_prefix}/lib*/python*/site-packages/sos/
 %endif
 
 
@@ -83,7 +83,7 @@ SOS - Blue Water specific package.
 %files bwx
 %defattr(-,root,root)
 %{_bindir}/bwx_*
-%{_prefix}/lib/python*/site-packages/bwx/
+%{_prefix}/lib*/python*/site-packages/bwx/
 
 # SOS-bwx package
 %package bwx-devel
