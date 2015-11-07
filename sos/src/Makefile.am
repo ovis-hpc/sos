@@ -18,7 +18,11 @@ lib_LTLIBRARIES += libsos.la
 
 sos_cmd_SOURCES = sos_cmd.c
 sos_cmd_CFLAGS = $(AM_CFLAGS) @YAML_INCDIR_FLAG@
-sos_cmd_LDADD = libsos.la -lyaml @YAML_LIBDIR_FLAG@ -lpthread
+sos_cmd_LDADD = libsos.la -lpthread
+if ENABLE_YAML
+sos_cmd_CFLAGS += -DENABLE_YAML
+sos_cmd_LDADD += -lyaml @YAML_LIBDIR_FLAG@
+endif
 bin_PROGRAMS += sos_cmd
 
 sos_part_create_SOURCES = sos_part_create.c

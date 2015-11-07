@@ -60,25 +60,33 @@
 #include <getopt.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <yaml.h>
 #include <assert.h>
 #include <sos/sos.h>
 #include <ods/ods_atomic.h>
+#ifdef ENABLE_YAML
+#include <yaml.h>
 #include <sos/sos_yaml.h>
+#endif
 
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
+#ifdef ENABLE_YAML
 const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:s:o:icql";
+#else
+const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:icql";
+#endif
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
 	{"info",	no_argument,	    0,  'i'},
 	{"create",	no_argument,	    0,  'c'},
 	{"query",	no_argument,        0,  'q'},
-	{"schema",      required_argument,  0,  's'},
 	{"dir",         no_argument,        0,  'l'},
+#ifdef ENABLE_YAML
+	{"schema",      required_argument,  0,  's'},
 	{"object",	required_argument,  0,  'o'},
+#endif
 	{"help",        no_argument,        0,  '?'},
 	{"container",   required_argument,  0,  'C'},
 	{"mode",	required_argument,  0,  'O'},
@@ -94,8 +102,13 @@ struct option long_options[] = {
 
 void usage(int argc, char *argv[])
 {
-	printf("sos { -l | -i | -c | -s | -q } -C <container> "
+#ifdef ENABLE_YAML
+	printf("sos { -l | -i | -c | -o | -s | -q } -C <container> "
 	       "[-o <mode_mask>] [-Y <yaml-file>]\n");
+#else
+	printf("sos { -l | -i | -c | -q } -C <container> "
+	       "[-o <mode_mask>]\n");
+#endif
 	printf("    -C <path>      The path to the container. Required for all options.\n");
 	printf("    -K <key>=<value> Set a container configuration option.\n");
 	printf("\n");
@@ -107,10 +120,12 @@ void usage(int argc, char *argv[])
 	printf("       -O <mode>   The file mode bits for the container files,\n"
 	       "                   see the open() system call.\n");
 	printf("\n");
+#ifdef ENABLE_YAML
 	printf("    -s <path>      Add a schema to a container.\n");
 	printf("\n");
 	printf("    -o <path>      Add an object to a container.\n");
 	printf("\n");
+#endif
 	printf("    -I <csv_file>  Import a CSV file into the container.\n");
 	printf("       -S <schema> The schema for objects.\n");
 	printf("       -M <map>    String that maps CSV columns to object attributes.\n");
@@ -500,7 +515,7 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 	}
 	return 0;
 }
-
+#ifdef ENABLE_YAML
 int add_schema(sos_t sos, FILE *fp)
 {
 	yaml_parser_t parser;
@@ -756,6 +771,7 @@ int add_schema(sos_t sos, FILE *fp)
 
 	return rc;
 }
+#endif
 
 int import_done = 0;
 
@@ -1031,6 +1047,7 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 	return 0;
 }
 
+#ifdef ENABLE_YAML
 int add_object(sos_t sos, FILE* fp)
 {
 	yaml_parser_t parser;
@@ -1179,6 +1196,7 @@ int add_object(sos_t sos, FILE* fp)
 	yaml_parser_delete(&parser);
 	return 0;
 }
+#endif
 
 #define INFO		0x001
 #define CREATE		0x002
@@ -1419,6 +1437,7 @@ int main(int argc, char **argv)
 		       errno, path);
 		exit(1);
 	}
+#ifdef ENABLE_YAML
 	if (action & OBJECT) {
 		rc = add_object(sos, obj_file);
 		if (rc) {
@@ -1427,9 +1446,6 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (action & INFO)
-		sos_container_info(sos, stdout);
-
 	if (action & SCHEMA) {
 		rc = add_schema(sos, schema_file);
 		if (rc) {
@@ -1437,6 +1453,10 @@ int main(int argc, char **argv)
 			exit(2);
 		}
 	}
+#endif
+
+	if (action & INFO)
+		sos_container_info(sos, stdout);
 
 	if (action & QUERY) {
 		if (!index_name || !schema_name) {
