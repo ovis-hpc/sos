@@ -17,7 +17,9 @@ OPTION_DEFAULT_DISABLE([bwx], [ENABLE_BWX])
 dnl yaml stuff
 OPTION_WITH([yaml], [YAML])
 OLD_CFLAGS=${CFLAGS}
-CFLAGS="${CFLAGS} -I${YAML_INCDIR}"
+if test ! -z "${YAML_INCDIR}"; then
+   CFLAGS="${CFLAGS} -I${YAML_INCDIR}"
+fi
 AC_CHECK_HEADER(yaml.h, [],
 		AC_MSG_ERROR([yaml.h not found. Please specify yaml prefix with
 			--with-yaml configuration option.]))
