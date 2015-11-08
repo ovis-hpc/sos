@@ -251,7 +251,6 @@ static ods_map_t map_new(ods_t ods)
 		goto err_0;
 	map->ods = ods;
 	map->refcount = 1;
-	LIST_INSERT_HEAD(&ods->map_list, map, entry);
 
 	rc = fstat(ods->pg_fd, &sb);
 	if (rc)
@@ -282,7 +281,7 @@ static ods_map_t map_new(ods_t ods)
 	map->obj_data = obj_map;
 	map->obj_gen = map->obj_data->gen; /* cache gen from mapped memory */
 
-	// map->ods = ods;
+	LIST_INSERT_HEAD(&ods->map_list, map, entry);
 	return map;
 
  err_2:
