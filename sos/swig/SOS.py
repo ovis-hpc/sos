@@ -151,10 +151,14 @@ class Value(object):
 
     def __int__(self):
         t = sos.sos_attr_type(self.value.attr)
-        if t == sos.SOS_TYPE_INT32:
+        if t == sos.SOS_TYPE_INT16:
+            return self.value.data.prim.int16_
+        elif t == sos.SOS_TYPE_INT32:
             return self.value.data.prim.int32_
         elif t == sos.SOS_TYPE_INT64:
             return self.value.data.prim.int64_
+        elif t == sos.SOS_TYPE_UINT16:
+            return self.value.data.prim.uint16_
         elif t == sos.SOS_TYPE_UINT32:
             return self.value.data.prim.uint32_
         elif t == sos.SOS_TYPE_UINT64:
@@ -174,10 +178,14 @@ class Value(object):
 
     def __float__(self):
         t = sos.sos_attr_type(self.value.attr)
-        if t == sos.SOS_TYPE_INT32:
+        if t == sos.SOS_TYPE_INT16:
+            return float(self.value.data.prim.int16_)
+        elif t == sos.SOS_TYPE_INT32:
             return float(self.value.data.prim.int32_)
         elif t == sos.SOS_TYPE_INT64:
             return float(self.value.data.prim.int64_)
+        elif t == sos.SOS_TYPE_UINT16:
+            return float(self.value.data.prim.uint16_)
         elif t == sos.SOS_TYPE_UINT32:
             return float(self.value.data.prim.uint32_)
         elif t == sos.SOS_TYPE_UINT64:
@@ -561,8 +569,10 @@ class Filter(object):
         return 22;
 
 col_widths = {
+    sos.SOS_TYPE_INT16 : 8,
     sos.SOS_TYPE_INT32 : 10,
     sos.SOS_TYPE_INT64 : 18,
+    sos.SOS_TYPE_UINT16 : 8,
     sos.SOS_TYPE_UINT32 : 10,
     sos.SOS_TYPE_UINT64 : 18,
     sos.SOS_TYPE_FLOAT : 12,
@@ -570,9 +580,12 @@ col_widths = {
     sos.SOS_TYPE_LONG_DOUBLE : 48,
     sos.SOS_TYPE_TIMESTAMP : 18,
     sos.SOS_TYPE_OBJ : 8,
+    sos.SOS_TYPE_CHAR_ARRAY : -1,
     sos.SOS_TYPE_BYTE_ARRAY : -1,
+    sos.SOS_TYPE_INT16_ARRAY : 6,
     sos.SOS_TYPE_INT32_ARRAY : 8,
     sos.SOS_TYPE_INT64_ARRAY : 8,
+    sos.SOS_TYPE_UINT16_ARRAY : 6,
     sos.SOS_TYPE_UINT32_ARRAY : 8,
     sos.SOS_TYPE_UINT64_ARRAY : 8,
     sos.SOS_TYPE_FLOAT_ARRAY : 8,
@@ -582,8 +595,10 @@ col_widths = {
 }
 
 sos_type_name = {
+    sos.SOS_TYPE_INT16 : "INT16",
     sos.SOS_TYPE_INT32 : "INT32",
     sos.SOS_TYPE_INT64 : "INT64",
+    sos.SOS_TYPE_UINT16 : "UINT16",
     sos.SOS_TYPE_UINT32 : "UINT32",
     sos.SOS_TYPE_UINT64 : "UINT64",
     sos.SOS_TYPE_FLOAT : "FLOAT",
@@ -591,9 +606,12 @@ sos_type_name = {
     sos.SOS_TYPE_LONG_DOUBLE : "LONG_DOUBLE",
     sos.SOS_TYPE_TIMESTAMP : "TIMESTAMP",
     sos.SOS_TYPE_OBJ : "OBJ",
+    sos.SOS_TYPE_CHAR_ARRAY : "CHAR_ARRAY",
     sos.SOS_TYPE_BYTE_ARRAY : "BYTE_ARRAY",
+    sos.SOS_TYPE_INT16_ARRAY : "INT16_ARRAY",
     sos.SOS_TYPE_INT32_ARRAY : "INT32_ARRAY",
     sos.SOS_TYPE_INT64_ARRAY : "INT64_ARRAY",
+    sos.SOS_TYPE_UINT16_ARRAY : "UINT16_ARRAY",
     sos.SOS_TYPE_UINT32_ARRAY : "UINT32_ARRAY",
     sos.SOS_TYPE_UINT64_ARRAY : "UINT64_ARRAY",
     sos.SOS_TYPE_FLOAT_ARRAY : "FLOAT_ARRAY",
