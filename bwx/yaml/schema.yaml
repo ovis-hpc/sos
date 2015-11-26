@@ -9,9 +9,9 @@ schema:
         - attribute: EndTime
           type: timestamp
         - attribute: JobName
-          type: byte_array
+          type: char_array
         - attribute: UserName
-          type: byte_array
+          type: char_array
           indexed: true
 schema:
         - name: Component
@@ -21,9 +21,9 @@ schema:
         - attribute: State
           type: uint32
         - attribute: Name
-          type: byte_array
+          type: char_array
         - attribute: Description
-          type: byte_array
+          type: char_array
         - attribute: CabinetId
           type: uint32
         - attribute: x_3d
