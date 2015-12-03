@@ -463,7 +463,7 @@ static int __refresh_part_list(sos_t sos)
 			goto out;
 		}
 		TAILQ_INSERT_TAIL(&sos->part_list, part, entry);
-		if (SOS_PART(part_obj) != SOS_PART_STATE_OFFLINE) {
+		if (SOS_PART(part_obj)->state != SOS_PART_STATE_OFFLINE) {
 			rc = __sos_open_partition(sos, part);
 			if (rc)
 				goto out;

@@ -596,6 +596,22 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 		errno = E2BIG;
 		return NULL;
 	}
+	if (path[0] != '/') {
+		if (!getcwd(tmp_path, sizeof(tmp_path)))
+			return NULL;
+		if (strlen(tmp_path) + strlen(path) > SOS_PART_PATH_LEN) {
+			errno = E2BIG;
+			return NULL;
+		}
+		strcat(tmp_path, "/");
+		strcat(tmp_path, path);
+		path = strdup(tmp_path);
+	} else
+		path = strdup(path);
+	if (!path) {
+		errno = ENOMEM;
+		return NULL;
+	}
 	sos = calloc(1, sizeof(*sos));
 	if (!sos) {
 		errno = ENOMEM;
@@ -606,10 +622,8 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 	LIST_INIT(&sos->obj_free_list);
 	TAILQ_INIT(&sos->part_list);
 
-	sos->path = strdup(path);
-	if (!sos->path)
-		goto err;
 	/* Stat the container path to get the file mode bits */
+	sos->path = (char *)path;
 	rc = stat(sos->path, &sb);
 	if (rc)
 		goto err;
