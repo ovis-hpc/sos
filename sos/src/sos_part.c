@@ -913,8 +913,9 @@ int sos_part_delete(sos_part_t part)
  * \retval EEXIST The destination path already exists
  * \retval EPERM The user has insufficient privilege to write to the destination path
  */
-int sos_part_move(sos_part_t part, const char *part_path)
+int sos_part_move(sos_part_t part, const char *new_part_path)
 {
+	char *old_part_path;
 	char tmp_path[PATH_MAX];
 	off_t offset;
 	ssize_t sz;
@@ -924,10 +925,13 @@ int sos_part_move(sos_part_t part, const char *part_path)
 	sos_t sos = part->sos;
 	sos_part_state_t cur_state;
 
-	if (0 == strcmp(part_path, sos_part_path(part)))
+	old_part_path = strdup(sos_part_path(part));
+	if (!old_part_path)
+		return ENOMEM;
+	if (0 == strcmp(new_part_path, old_part_path))
 		return EINVAL;
 
-	sprintf(tmp_path, "%s/%s", part_path, sos_part_name(part));
+	sprintf(tmp_path, "%s/%s", new_part_path, sos_part_name(part));
 	pthread_mutex_unlock(&sos->lock);
 	ods_spin_lock(&sos->part_lock, -1);
 
@@ -951,14 +955,14 @@ int sos_part_move(sos_part_t part, const char *part_path)
 		goto out;
 
 	/* Copy the PG file */
-	sprintf(tmp_path, "%s/%s/objects.PG", sos_part_path(part), sos_part_name(part));
+	sprintf(tmp_path, "%s/%s/objects.PG", old_part_path, sos_part_name(part));
 	in_fd = open(tmp_path, O_RDONLY);
 	if (in_fd < 0) {
 		rc = errno;
 		goto out;
 	}
 	rc = fstat(in_fd, &sb);
-	sprintf(tmp_path, "%s/%s/objects.PG", part_path, sos_part_name(part));
+	sprintf(tmp_path, "%s/%s/objects.PG", new_part_path, sos_part_name(part));
 	out_fd = open(tmp_path, O_RDWR | O_CREAT, sos->o_mode);
 	if (out_fd < 0) {
 		rc = errno;
@@ -975,14 +979,14 @@ int sos_part_move(sos_part_t part, const char *part_path)
 	out_fd = -1;
 
 	/* Copy the OBJ file */
-	sprintf(tmp_path, "%s/%s/objects.OBJ", sos_part_path(part), sos_part_name(part));
+	sprintf(tmp_path, "%s/%s/objects.OBJ", old_part_path, sos_part_name(part));
 	in_fd = open(tmp_path, O_RDONLY);
 	if (in_fd < 0) {
 		rc = errno;
 		goto out_2;
 	}
 	rc = fstat(in_fd, &sb);
-	sprintf(tmp_path, "%s/%s/objects.OBJ", part_path, sos_part_name(part));
+	sprintf(tmp_path, "%s/%s/objects.OBJ", new_part_path, sos_part_name(part));
 	out_fd = open(tmp_path, O_RDWR | O_CREAT, sos->o_mode);
 	if (out_fd < 0) {
 		rc = errno;
@@ -994,25 +998,44 @@ int sos_part_move(sos_part_t part, const char *part_path)
 		rc = errno;
 		goto out_3;
 	}
-	strcpy(SOS_PART(part->part_obj)->path, part_path);
+	close(in_fd);
+	close(out_fd);
+	strcpy(SOS_PART(part->part_obj)->path, new_part_path);
 	ods_close(part->obj_ods, SOS_COMMIT_ASYNC);
 	rc = __sos_open_partition(part->sos, part);
+
 	goto out;
 
  out_3:
 	close(out_fd);
 	out_fd = -1;
-	sprintf(tmp_path, "%s/%s/objects.OBJ", part_path, sos_part_name(part));
+	sprintf(tmp_path, "%s/%s/objects.OBJ", new_part_path, sos_part_name(part));
 	unlink(tmp_path);
  out_2:
 	close(out_fd);
-	sprintf(tmp_path, "%s/%s/objects.PG", part_path, sos_part_name(part));
+	sprintf(tmp_path, "%s/%s/objects.PG", new_part_path, sos_part_name(part));
 	unlink(tmp_path);
  out_1:
-	sprintf(tmp_path, "%s/%s", part_path, sos_part_name(part));
+	sprintf(tmp_path, "%s/%s", new_part_path, sos_part_name(part));
 	rmdir(tmp_path);
 	close(in_fd);
  out:
+	if (!rc) {
+		/* Remove the original files */
+		sprintf(tmp_path, "%s/%s/objects.PG", old_part_path, sos_part_name(part));
+		rc = remove(tmp_path);
+		if (rc)
+			perror("Removing objects.PG file");
+		sprintf(tmp_path, "%s/%s/objects.OBJ", old_part_path, sos_part_name(part));
+		rc = remove(tmp_path);
+		if (rc)
+			perror("Removing objects.OBJ file");
+		sprintf(tmp_path, "%s/%s", old_part_path, sos_part_name(part));
+		rc = remove(tmp_path);
+		if (rc)
+			perror("Removing partition directory");
+	}
+	free(old_part_path);
 	ods_spin_unlock(&sos->part_lock);
 	pthread_mutex_unlock(&sos->lock);
 	sos_part_put(part);

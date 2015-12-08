@@ -74,12 +74,16 @@
 #include <time.h>
 #include <string.h>
 #include <stdlib.h>
+#include <getopt.h>
 #include <errno.h>
 #include <sos/sos.h>
 
+int verbose;
+
 void usage(int argc, char *argv[])
 {
-	printf("sos_part_query <path>\n");
+	printf("sos_part_query [-v] <path>\n");
+	printf("    -v       Print offline partition information.\n");
 	printf("    <path>   The path to the container.\n");
 	exit(1);
 }
@@ -121,8 +125,11 @@ void part_list(sos_t sos, FILE *fp)
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
 
 		char *statestr;
+		sos_part_state_t state = sos_part_state(part);
+		if (state == SOS_PART_STATE_OFFLINE && !verbose)
+			continue;
 		fprintf(fp, "%-20s %8d ", sos_part_name(part), sos_part_refcount(part));
-		switch (sos_part_state(part)) {
+		switch (state) {
 		case SOS_PART_STATE_OFFLINE:
 			statestr = "OFFLINE";
 			break;
@@ -162,14 +169,33 @@ void part_list(sos_t sos, FILE *fp)
 	sos_part_iter_free(iter);
 }
 
+const char *short_options = "v";
+
+struct option long_options[] = {
+	{"help",        no_argument,        0,  '?'},
+	{"verbose",     no_argument,        0,  'v'},
+	{0,             0,                  0,  0}
+};
+
 int main(int argc, char **argv)
 {
 	sos_t sos;
+	int opt;
+	while (0 < (opt = getopt_long(argc, argv, short_options, long_options, NULL))) {
+		switch (opt) {
+		case 'v':
+			verbose = 1;
+			break;
+		case '?':
+		default:
+			usage(argc, argv);
+		}
+	}
 
-	if (argc < 2)
+	if (optind == argc)
 		usage(argc, argv);
 
-	sos = sos_container_open(argv[1], SOS_PERM_RO);
+	sos = sos_container_open(argv[optind], SOS_PERM_RO);
 	if (!sos) {
 		printf("Error %d opening the container %s.\n",
 		       errno, argv[1]);
