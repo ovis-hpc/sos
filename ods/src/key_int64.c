@@ -81,6 +81,7 @@ static int int64_comparator(ods_key_t a, ods_key_t b)
 static const char *to_str(ods_key_t key, char *buf)
 {
 	ods_key_value_t kv = ods_key_value(key);
+	assert(kv->len == 8);
 	sprintf(buf, "0x%"PRId64"", *(int64_t *)kv->value);
 	return buf;
 }

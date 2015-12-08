@@ -271,6 +271,14 @@ extern void ods_obj_delete(ods_obj_t obj);
  */
 extern void ods_ref_delete(ods_t ods, ods_ref_t ref);
 
+#define ODS_REF_STATUS_INVALID	0x80000000
+#define ODS_REF_STATUS_FREE	0x40000000
+#define ODS_REF_STATUS_INTERIOR	0x20000000
+#define ODS_REF_STATUS_CORRUPT	0x10000000
+#define ODS_REF_SIZE_MASK	0x0FFFFFFF
+
+uint32_t ods_ref_status(ods_t ods, ods_ref_t ref);
+
 /**
  * \brief Drop a reference to the object
  *

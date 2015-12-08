@@ -17,6 +17,8 @@
 #include <ods/ods.h>
 #include "bxt.h"
 
+/* #define BXT_DEBUG */
+
 pthread_mutex_t client_list_lock;
 LIST_HEAD(active_clients, bxt_s) client_list;
 
@@ -28,42 +30,54 @@ static int node_neigh(bxt_t t, ods_obj_t node, ods_obj_t *left, ods_obj_t *right
 void dump_node(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *fp)
 {
 	int i;
-	fprintf(fp, "%p - %*s%s[%d] | %p : ", (void *)(unsigned long)NODE(n)->parent,
+	if (fp) fprintf(fp, "%p - %*s%s[%d] | %p : ", (void *)(unsigned long)NODE(n)->parent,
 	       indent, "", "NODE", ent, n->as.ptr);
 	for (i = 0; i < NODE(n)->count; i++) {
 		char *keystr = malloc(ods_idx_key_str_size(idx));
 		ods_key_t key = ods_ref_as_obj(t->ods, N_ENT(n,i).key_ref);
-		fprintf(fp, "%s:%p, ",
-			(key ? ods_key_to_str(idx, key, keystr) : "-"),
+		if (key) {
+			ods_key_to_str(idx, key, keystr);
+		} else {
+			keystr[0] = '-';
+			keystr[1] = '\0';
+		}
+		if (fp) fprintf(fp, "%s:%p, ",
+				keystr,
 		       (void *)(unsigned long)N_ENT(n, i).node_ref);
 		free(keystr);
 		ods_obj_put(key);
 	}
-	fprintf(fp, "\n");
+	if (fp) fprintf(fp, "\n");
 }
 
 void dump_leaf(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *fp)
 {
 	int i;
 	char *keystr = malloc(ods_idx_key_str_size(idx));
-	fprintf(fp, "%p - %*s%s[%d] | %p :\n", (void *)(unsigned long)NODE(n)->parent,
+	if (fp) fprintf(fp, "%p - %*s%s[%d] | %p :\n", (void *)(unsigned long)NODE(n)->parent,
 	       indent-2, "", "LEAF", ent, n->as.ptr);
 	for (i = 0; i < NODE(n)->count; i++) {
 		ods_obj_t rec;
 		ods_key_t key;
 		ods_ref_t tail = L_ENT(n,i).tail_ref;
 		ods_ref_t head = L_ENT(n,i).head_ref;
-		fprintf(fp, "%*sENTRY#%2d : head %p tail %p\n", indent+11, "", i,
+		if (fp) fprintf(fp, "%*sENTRY#%2d : head %p tail %p\n", indent+11, "", i,
 			(void *)(unsigned long)head,
 			(void *)(unsigned long)tail);
 		do {
 			rec = ods_ref_as_obj(t->ods, head);
 			key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
-			fprintf(fp,
+			if (key) {
+				ods_key_to_str(idx, key, keystr);
+			} else {
+				keystr[0] = '-';
+				keystr[1] = '\0';
+			}
+			if (fp) fprintf(fp,
 				"%*srec_ref %p key %s ref %p user %p prev_ref %p next_ref %p\n",
 				indent+16, "",
 				(void *)(unsigned long)head,
-				ods_key_to_str(idx, key, keystr),
+				keystr,
 				(void *)*(unsigned long *)&REC(rec)->value.bytes[0],
 				(void *)*(unsigned long *)&REC(rec)->value.bytes[8],
 				(void *)(unsigned long)REC(rec)->prev_ref,
@@ -76,7 +90,7 @@ void dump_leaf(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *f
 		ods_obj_put(rec);
 	}
 	free(keystr);
-	fprintf(fp, "\n");
+	if (fp) fprintf(fp, "\n");
 }
 
 
@@ -86,7 +100,7 @@ static void print_node(ods_idx_t idx, int ent, ods_obj_t n, int indent, FILE *fp
 	int i;
 
 	if (!n) {
-		fprintf(fp, "<nil>\n");
+		if (fp) fprintf(fp, "<nil>\n");
 		return;
 	}
 
@@ -127,6 +141,34 @@ static void print_info(ods_idx_t idx, FILE *fp)
 	fprintf(fp, "%*s : %d\n", 12, "Cardinality", t->udata->card);
 	fprintf(fp, "%*s : %d\n", 12, "Duplicates", t->udata->dups);
 	fflush(fp);
+}
+
+static void verify_node(bxt_t t, ods_obj_t node)
+{
+	int i, j;
+	ods_obj_t rec;
+	ods_ref_t rec_ref;
+	if (!node)
+	    return;
+	assert(NODE(node)->count <= t->udata->order);
+	for (i = 0; i < NODE(node)->count; i++) {
+		if (NODE(node)->is_leaf) {
+			for (j = i + 1; j < NODE(node)->count; j++) {
+				assert(L_ENT(node,i).head_ref != L_ENT(node,j).head_ref);
+				assert(L_ENT(node,i).tail_ref != L_ENT(node,j).tail_ref);
+			}
+			assert(L_ENT(node,i).head_ref && L_ENT(node,i).tail_ref);
+			rec_ref = L_ENT(node, i).head_ref;
+			rec = ods_ref_as_obj(t->ods, rec_ref);
+			assert(REC(rec)->next_ref != rec_ref);
+			assert(REC(rec)->prev_ref != rec_ref);
+			ods_obj_put(rec);
+		} else {
+			assert(N_ENT(node,i).node_ref);
+			if (i)
+				assert(N_ENT(node,i).node_ref != N_ENT(node,i-1).node_ref);
+		}
+	}
 }
 
 static int bxt_open(ods_idx_t idx)
@@ -666,6 +708,10 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 	NODE(right)->is_leaf = 1;
 	NODE(right)->parent = NODE(left)->parent;
 
+#ifdef BXT_DEBUG
+	verify_node(t, left);
+	verify_node(t, right);
+#endif
 	/* Insert the new record in the list */
 	if (ins_idx < NODE(left)->count) {
 		ods_obj_t next_rec = ods_ref_as_obj(t->ods, L_ENT(left,ins_idx).head_ref);
@@ -728,6 +774,9 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 				j ++;
 			NODE(right)->entries[j] = NODE(left)->entries[i];
 			NODE(left)->entries[i] = ENTRY_INITIALIZER;
+#ifdef BXT_DEBUG
+			assert(NODE(left)->count <= t->udata->order);
+#endif
 			NODE(left)->count--;
 			NODE(right)->count++;
 		}
@@ -738,6 +787,10 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 		L_ENT(right, ins_idx).tail_ref = ods_obj_ref(new_rec);
 		NODE(right)->count++;
 	}
+#ifdef BXT_DEBUG
+	verify_node(t, left);
+	verify_node(t, right);
+#endif
 }
 
 static void node_insert(bxt_t t, ods_obj_t node, ods_obj_t left,
@@ -776,6 +829,10 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 	int count;
 	int midpoint = split_midpoint(t->udata->order);
 
+#ifdef BXT_DEBUG
+	verify_node(t, left_node);
+	verify_node(t, right_node);
+#endif
 	/* Take our own reference on these parameters */
 	left_node = ods_obj_get(left_node);
 	right_node = ods_obj_get(right_node);
@@ -934,6 +991,9 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 		leaf = leaf_find(t, new_key);
 		ent = find_key_idx(t, leaf, new_key, &is_dup);
 	}
+#ifdef BXT_DEBUG
+	verify_node(t, leaf);
+#endif
 
 	/* Allocate a record object */
 	new_rec = rec_new(idx, new_key, data, is_dup);
@@ -959,6 +1019,9 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 			}
 			ods_obj_put(parent);
 		}
+#ifdef BXT_DEBUG
+		verify_node(t, leaf);
+#endif
 		ods_atomic_inc(&t->udata->card);
 		ods_obj_put(leaf);
 		ods_obj_put(new_rec);
@@ -1007,6 +1070,11 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 	ods_obj_put(parent);
 	parent = node_split_insert(idx, t, leaf, new_leaf_key_ref, new_leaf);
  out:
+#ifdef BXT_DEBUG
+	verify_node(t, leaf);
+	verify_node(t, new_leaf);
+	verify_node(t, parent);
+#endif
 	ods_atomic_inc(&t->udata->card);
 	ods_obj_put(leaf);
 	ods_obj_put(new_leaf);
@@ -1194,7 +1262,7 @@ static int combine_right(bxt_t t, ods_obj_t right, int idx, ods_obj_t node)
 		return idx;
 
 	/* Make room to the left */
-	for (i = NODE(right)->count + count - 1; i > idx + count - 1; i--)
+	for (i = NODE(right)->count + count - 1; i - count >= 0; i--)
 		NODE(right)->entries[i] = NODE(right)->entries[i-count];
 
 	right_ref = ods_obj_ref(right);
@@ -1210,19 +1278,25 @@ static int combine_right(bxt_t t, ods_obj_t right, int idx, ods_obj_t node)
 		NODE(right)->count ++;
 		idx++;
 	}
+#ifdef BXT_DEBUG
+	verify_node(t, right);
+	verify_node(t, node);
+#endif
 	return idx;
 }
 
 static int combine_left(bxt_t t, ods_obj_t left, ods_obj_t node)
 {
 	int i, j;
-	int count = NODE(node)->count;
+	int count;
 	ods_obj_t entry;
 	ods_ref_t left_ref;
 
 	if (!left)
 		return 0;
-
+	count = NODE(node)->count;
+	if (NODE(left)->count + count > t->udata->order)
+		count = t->udata->order - NODE(left)->count;
 	left_ref = ods_obj_ref(left);
 	for (i = NODE(left)->count, j = 0; j < count; i++, j++) {
 		/* Update the entry's parent */
@@ -1235,6 +1309,10 @@ static int combine_left(bxt_t t, ods_obj_t left, ods_obj_t node)
 		NODE(left)->entries[i] = NODE(node)->entries[j];
 		NODE(left)->count++;
 	}
+#ifdef BXT_DEBUG
+	verify_node(t, left);
+	verify_node(t, node);
+#endif
 	return j;
 }
 
@@ -1294,6 +1372,10 @@ static void merge_from_left(bxt_t t, ods_obj_t left, ods_obj_t node, int midpoin
 		NODE(left)->count--;
 		NODE(node)->count++;
 	}
+#ifdef BXT_DEBUG
+	verify_node(t, node);
+	verify_node(t, left);
+#endif
 }
 
 static void merge_from_right(bxt_t t, ods_obj_t right, ods_obj_t node, int midpoint)
@@ -1323,6 +1405,10 @@ static void merge_from_right(bxt_t t, ods_obj_t right, ods_obj_t node, int midpo
 	for (j = NODE(right)->count; j < NODE(right)->count + count; j++)
 		NODE(right)->entries[j] = ENTRY_INITIALIZER;
 
+#ifdef BXT_DEBUG
+	verify_node(t, node);
+	verify_node(t, right);
+#endif
 	/* Fixup right's parents. */
 	parent = ods_ref_as_obj(t->ods, NODE(right)->parent);
 	fixup_parents(t, parent, right);
@@ -1349,6 +1435,10 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 
  next_level:
 	parent = ods_ref_as_obj(t->ods, NODE(node)->parent);
+#ifdef BXT_DEBUG
+	verify_node(t, node);
+	verify_node(t, parent);
+#endif
 	/* Remove the record and object from the node */
 	for (i = ent; i < NODE(node)->count - 1; i++)
 		NODE(node)->entries[i] = NODE(node)->entries[i+1];
@@ -1398,6 +1488,11 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 	}
 	node_idx = node_neigh(t, node, &left, &right);
 	count = space(t, left) + space(t, right);
+#ifdef BXT_DEBUG
+	verify_node(t, left);
+	verify_node(t, right);
+	verify_node(t, node);
+#endif
 	if (count < NODE(node)->count) {
 		/*
 		 * There's not enough room in the left and right
@@ -1409,9 +1504,12 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 			if (NODE(left)->count > midpoint) {
 				merge_from_left(t, left, node, midpoint);
 			}
+#ifdef BXT_DEBUG
+			verify_node(t, left);
+			verify_node(t, node);
+#endif
 			ods_obj_put(left);
 		}
-
 		if (right) {
 			if (NODE(right)->count > midpoint
 			    && NODE(node)->count < midpoint) {
@@ -1440,6 +1538,9 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 		 * Combining right will always modify the 0-th
 		 * element, therefore a parent fixup is required.
 		 */
+#ifdef BXT_DEBUG
+		assert(NODE(right)->count + (NODE(node)->count - ent) <= t->udata->order);
+#endif
 		combine_right(t, right, ent, node);
 		if (NODE(right)->is_leaf) {
 			ods_obj_t rec = ods_ref_as_obj(t->ods, L_ENT(right,0).head_ref);
@@ -1538,6 +1639,9 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	ods_obj_delete(key);
 	ods_obj_put(rec);
 	ods_spin_unlock(&t->lock);
+#ifdef BXT_DEBUG
+	print_idx(idx, NULL);
+#endif
 	return 0;
  noent:
 	ods_obj_put(leaf);
@@ -1582,6 +1686,10 @@ static int _iter_begin(bxt_iter_t i)
 		ods_obj_put(node);
 	} else
 		  i->rec = node;
+#ifdef BXT_DEBUG
+	if (i->rec)
+		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+#endif
 	return i->rec ? 0 : ENOENT;
 }
 
@@ -1599,8 +1707,12 @@ static int _iter_end_unique(bxt_iter_t i)
 	if (i->rec)
 		ods_obj_put(i->rec);
 	i->rec = bxt_max_node(t);
-	if (i->rec)
+	if (i->rec) {
+#ifdef BXT_DEBUG
+		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+#endif
 		i->ent = NODE(i->rec)->count-1;
+	}
 	return i->rec ? 0 : ENOENT;
 }
 
@@ -1614,6 +1726,9 @@ static int _iter_end(bxt_iter_t i)
 	if (node) {
 		i->ent = NODE(node)->count-1;
 		i->rec = ods_ref_as_obj(t->ods, L_ENT(node, i->ent).tail_ref);
+#ifdef BXT_DEBUG
+		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+#endif
 		ods_obj_put(node);
 	} else
 		i->rec = NULL;
@@ -1802,6 +1917,10 @@ static int _iter_next_unique(bxt_iter_t i)
 		ods_obj_put(i->rec);
 		i->rec = right;
 		i->ent = 0;
+#ifdef BXT_DEBUG
+		if (i->rec)
+			assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+#endif
 	}
 	return i->rec ? 0 : ENOENT;
 }
@@ -1812,10 +1931,22 @@ static int _iter_next(bxt_iter_t i)
 	ods_obj_t next_rec;
 
 	if (i->rec) {
-		next_rec = ods_ref_as_obj(t->ods,
-					  REC(i->rec)->next_ref);
+		ods_ref_t next_ref = REC(i->rec)->next_ref;
+#ifdef BXT_DEBUG
+		ods_ref_t rec_ref = ods_obj_ref(i->rec);
+		ods_ref_t prev_ref = REC(i->rec)->prev_ref;
+		assert(next_ref != rec_ref);
+		assert(prev_ref != rec_ref);
+		if (next_ref)
+			assert(prev_ref != next_ref);
+#endif
+		next_rec = ods_ref_as_obj(t->ods, next_ref);
 		ods_obj_put(i->rec);
 		i->rec = next_rec;
+#ifdef BXT_DEBUG 
+		if (i->rec)
+			assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+#endif
 	}
 	return i->rec ? 0 : ENOENT;
 }
@@ -1857,6 +1988,10 @@ static int _iter_prev(bxt_iter_t i)
 		prev_rec = ods_ref_as_obj(t->ods, REC(i->rec)->prev_ref);
 		ods_obj_put(i->rec);
 		i->rec = prev_rec;
+#ifdef BXT_DEBUG
+		if (i->rec)
+			assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+#endif
 	}
 	return i->rec ? 0 : ENOENT;
 }
@@ -1896,6 +2031,10 @@ static int bxt_iter_set(ods_iter_t oi, const ods_pos_t pos_)
 
 	i->rec = rec;
 	i->ent = pos->ent;
+#ifdef BXT_DEBUG
+	if (i->rec)
+		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+#endif
 	return 0;
 }
 
@@ -1906,6 +2045,9 @@ static int bxt_iter_pos(ods_iter_t oi, ods_pos_t pos_)
 
 	if (!i->rec)
 		return ENOENT;
+#ifdef BXT_DEBUG
+	assert(REC(i->rec)->next_ref != 0xffffffffffffffff);
+#endif
 	pos->pad = POS_PAD;
 	pos->ent = i->ent;
 	pos->rec_ref = ods_obj_ref(i->rec);
@@ -1921,42 +2063,59 @@ static int bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
 	ods_obj_t leaf, rec;
 	int found;
 	ods_key_t key;
+	ods_ref_t prev_ref, next_ref;
 
 	if (ods_spin_lock(&t->lock, -1))
 		return EBUSY;
 
+	uint32_t status = ods_ref_status(t->ods, pos->rec_ref);
+	assert(0 == (status & ODS_REF_STATUS_FREE));
 	rec = ods_ref_as_obj(t->ods, pos->rec_ref);
 	if (!rec)
 		goto norec;
-
-	/* If the rec has a prev, move the iterator to it, if not move to the next */
-	/* TODO: unique iterators */
-	if (REC(rec)->prev_ref)
-		i->rec = ods_ref_as_obj(t->ods, REC(rec)->prev_ref);
-	else
-		i->rec = ods_ref_as_obj(t->ods, REC(rec)->next_ref);
-
+#ifdef BXT_DEBUG
+	assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+#endif
 	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 	leaf = leaf_find(t, key);
 	if (!leaf)
 		goto noent;
+
 	ent = find_key_idx(t, leaf, key, &found);
 	if (!found)
 		goto noent;
 
-	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref)
-		ods_atomic_dec(&t->udata->dups);
+	prev_ref = REC(rec)->prev_ref;
+	next_ref = REC(rec)->next_ref;
+#ifdef BXT_DEBUG
+	assert(prev_ref != pos->rec_ref);
+	assert(next_ref != pos->rec_ref);
+#endif
 	ods_atomic_dec(&t->udata->card);
+
+	/* If the rec has a prev, move the iterator to it, if not move to the next */
+	if (prev_ref)
+		i->rec = ods_ref_as_obj(t->ods, prev_ref);
+	else
+		i->rec = ods_ref_as_obj(t->ods, next_ref);
+#ifdef BXT_DEBUG
+	if (i->rec) {
+		assert(i->rec->ref != 0xFFFFFFFFFFFFFFFF);
+		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+	}
+#endif
 	/*
 	 * Trivial case is that this is a dup key. In this case,
-	 * delete the first entry on the list and return
+	 * delete the pos entry on the REC list and return
 	 */
 	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref) {
+		ods_atomic_dec(&t->udata->dups);
 		delete_dup_rec(t, leaf, rec, ent);
 		ods_obj_put(leaf);
 		ods_spin_unlock(&t->lock);
 		return 0;
 	}
+
 	t->udata->root_ref = entry_delete(t, leaf, rec, ent);
 	ods_obj_delete(key);
 	ods_obj_put(rec);

@@ -307,6 +307,36 @@ void __make_part_offline(sos_t sos, sos_part_t part)
 	}
 }
 
+/* Iterate through all objects in the partition and call sos_obj_index
+ * for each one. This function is used when partitions are moving from
+ * OFFLINE --> ACTIVE or OFFLINE --> PRIMARY
+ */
+static void __reindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
+{
+	int rc;
+	sos_obj_ref_t ref;
+	sos_obj_t sos_obj;
+	sos_part_t part = arg;
+	sos_obj_data_t sos_obj_data = obj->as.ptr;
+	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
+	if (!schema)
+		/* This is a garbage object that should not be here */
+		return;
+	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
+	ref.ref.obj = ods_obj_ref(obj);
+	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
+	rc = sos_obj_index(sos_obj);
+	if (rc) {
+		/* The object couldn't be indexed for some reason */
+	}
+	sos_obj_put(sos_obj);
+}
+
+static void __reindex_part_objects(sos_t sos, sos_part_t part)
+{
+	ods_iter(part->obj_ods, __reindex_callback_fn, part);
+}
+
 static void __make_part_active(sos_t sos, sos_part_t part)
 {
 	SOS_PART(part->part_obj)->state = SOS_PART_STATE_ACTIVE;
@@ -374,9 +404,11 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state)
 			break;
 		case SOS_PART_STATE_ACTIVE:
 			__make_part_active(sos, part);
+			__reindex_part_objects(sos, part);
 			break;
 		case SOS_PART_STATE_PRIMARY:
 			__make_part_primary(sos, part);
+			__reindex_part_objects(sos, part);
 			break;
 		case SOS_PART_STATE_MOVING:
 			rc = EINVAL;
