@@ -809,8 +809,8 @@ class Container(object):
                 self.partitions[name] = Partition(part)
                 part = sos.sos_part_next(part_iter)
             sos.sos_part_iter_free(part_iter)
-        except Exception as e:
-            raise SosError(str(e))
+        except Exception as f:
+            raise SosError(str(f))
 
     def name(self):
         return self.path
@@ -825,14 +825,12 @@ class Container(object):
         sos.container_info(self.container)
 
     def close(self):
-        if self.container:
-            sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
-            self.container = None
+        self.release()
 
     def release(self):
         if self.container:
-            self.close()
-            sos.container = None
+            sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
+            self.container = None
         for index_name, index in self.indexes.iteritems():
             index.release()
         self.indexes.clear()

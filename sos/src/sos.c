@@ -548,12 +548,12 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		ods_idx_close(sos->idx_idx, flags);
 	if (sos->idx_ods)
 		ods_close(sos->idx_ods, flags);
-
 	sos_part_t part;
 	while (!TAILQ_EMPTY(&sos->part_list)) {
 		part = TAILQ_FIRST(&sos->part_list);
 		TAILQ_REMOVE(&sos->part_list, part, entry);
-		sos_part_put(part);
+		sos_part_put(part); /* the new reference */
+		sos_part_put(part); /* the list reference */
 	}
 
 	if (sos->part_ods)
