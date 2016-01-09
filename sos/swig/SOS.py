@@ -8,7 +8,7 @@ class SosError(Exception):
     def __init__(self, value):
         self.value = value
     def __str__(self):
-        return repr(self.value)
+        return "SosError: {0}".format(str(self.value))
 
 class Key(object):
     def __init__(self, attr, size=0):
@@ -222,9 +222,10 @@ class Object(object):
             self.str_fmt = str_fmt
         self.values = {}
         self.obj = obj
-        self.schema = sos.sos_obj_schema(self.obj)
-        if not self.schema:
+        self.schema_ = sos.sos_obj_schema(self.obj)
+        if not self.schema_:
             raise ValueError()
+        self.schema = Schema(self.schema_)
         self.col_widths = {}
 
     def __getattr__(self, name):
@@ -235,9 +236,9 @@ class Object(object):
         if n in self.values:
             return self.values[n]
         try:
-            if self.schema is None:
+            if self.schema_ is None:
                 return None
-            attr = sos.sos_schema_attr_by_name(self.schema, n)
+            attr = sos.sos_schema_attr_by_name(self.schema_, n)
             if attr is None:
                 return None
             w = col_widths[sos.sos_attr_type(attr)]
@@ -271,7 +272,7 @@ class Object(object):
     def instantiate(self):
         if len(self.values) > 0:
             return False
-        attr = sos.sos_schema_attr_first(self.schema)
+        attr = sos.sos_schema_attr_first(self.schema_)
         while attr:
             n = str(sos.sos_attr_name(attr))
             v = self[n]
@@ -622,10 +623,20 @@ sos_type_name = {
 
 class Iterator(object):
     def __init__(self, container, schemaName, attrName):
+        # In case exception is raised, _del_ needs this defined
+        self.iter_ = None
         self.container_ = container.container
+        if not container or not container.container:
+            raise SosError("The container '{0}' is invalid.".format(container.name()))
         self.schema_ = sos.sos_schema_by_name(self.container_, schemaName)
+        if not self.schema_:
+            raise SosError("The schema '{0}' does not exist.".format(schemaName))
         self.attr_ = sos.sos_schema_attr_by_name(self.schema_, attrName)
+        if not self.attr_:
+            raise SosError("The attribute '{0}' does not exist.".format(attrName))
         self.iter_ = sos.sos_attr_iter_new(self.attr_)
+        if not self.iter_:
+            raise SosError("The attribute '{0}' is not indexed.".format(attrName))
 
     def __del__(self):
         self.release()
@@ -829,7 +840,7 @@ class Container(object):
 
     def release(self):
         if self.container:
-            sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
+            # sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
             self.container = None
         for index_name, index in self.indexes.iteritems():
             index.release()
