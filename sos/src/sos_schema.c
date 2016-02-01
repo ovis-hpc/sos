@@ -942,7 +942,6 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
 	rbn_init(&schema->id_rbn, &schema->data->id);
 	rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
-	sos->schema_count++;
 	return schema;
  err_1:
 	free(schema->dict);
@@ -1144,6 +1143,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
 
 	sos->schema_count++;
+	LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
 
 	ods_obj_put(schema_key);
 	ods_obj_put(udata);
