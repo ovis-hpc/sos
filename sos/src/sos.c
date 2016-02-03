@@ -552,7 +552,6 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 	while (!TAILQ_EMPTY(&sos->part_list)) {
 		part = TAILQ_FIRST(&sos->part_list);
 		TAILQ_REMOVE(&sos->part_list, part, entry);
-		sos_part_put(part); /* the new reference */
 		sos_part_put(part); /* the list reference */
 	}
 

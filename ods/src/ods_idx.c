@@ -144,9 +144,8 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 	idx_class->cmp = cmp;
 	rbn_init(&idx_class->rb_node, strdup(idx_classname));
 	rbt_ins(&dylib_tree, &idx_class->rb_node);
-	free(idx_classname);
-
  out:
+	free(idx_classname);
 	pthread_spin_unlock(&ods_idx_lock);
 	return idx_class;
 }
@@ -256,6 +255,7 @@ void ods_idx_close(ods_idx_t idx, int flags)
 	if (0 == ods_atomic_dec(&idx->ref_count)) {
 		idx->idx_class->prv->close(idx);
 		ods_close(idx->ods, flags);
+		free(idx);
 	} else
 		ods_commit(idx->ods, flags);
 }

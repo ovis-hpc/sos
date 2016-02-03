@@ -182,12 +182,17 @@ void __sos_schema_free(sos_schema_t schema)
 	if (schema->schema_obj)
 		ods_obj_put(schema->schema_obj);
 
+	if (schema->dict)
+		free(schema->dict);
+
 	/* Free all of our attributes and close it's indices */
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		sos_attr_t attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
 		if (attr->index)
 			sos_index_close(attr->index, ODS_COMMIT_ASYNC);
+		free(attr->key_type);
+		free(attr->idx_type);
 		free(attr);
 	}
 	free(schema);
@@ -314,7 +319,7 @@ static const char *key_types[] = {
 	[SOS_TYPE_BYTE_ARRAY] = "STRING",
 	[SOS_TYPE_CHAR_ARRAY] = "STRING",
 	[SOS_TYPE_INT16_ARRAY] = "NONE",
- 	[SOS_TYPE_INT32_ARRAY] = "NONE",
+	[SOS_TYPE_INT32_ARRAY] = "NONE",
 	[SOS_TYPE_INT64_ARRAY] = "NONE",
 	[SOS_TYPE_UINT16_ARRAY] = "NONE",
 	[SOS_TYPE_UINT32_ARRAY] = "NONE",

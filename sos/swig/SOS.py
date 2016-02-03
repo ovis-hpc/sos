@@ -205,6 +205,7 @@ class Value(object):
     def release(self):
         if self.value:
             sos.sos_value_put(self.value)
+            self.value = None
 
     def __del__(self):
         self.release()
@@ -840,7 +841,7 @@ class Container(object):
 
     def release(self):
         if self.container:
-            # sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
+            sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
             self.container = None
         for index_name, index in self.indexes.iteritems():
             index.release()

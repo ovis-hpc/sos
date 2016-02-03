@@ -513,6 +513,8 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 		table_footer(stdout, rec_count, iter_count);
 		break;
 	}
+	sos_filter_free(filt);
+	sos_iter_free(iter);
 	return 0;
 }
 #ifdef ENABLE_YAML
@@ -1475,5 +1477,6 @@ int main(int argc, char **argv)
 			usage(argc, argv);
 		rc = import_csv(sos, csv_file, schema_name, col_map);
 	}
+	sos_container_close(sos, SOS_COMMIT_SYNC);
 	return rc;
 }
