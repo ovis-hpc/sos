@@ -72,9 +72,9 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
 #ifdef ENABLE_YAML
-const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:s:o:icql";
+const char *short_options = "f:I:M:C:K:O:S:X:V:F:T:s:o:icql";
 #else
-const char *short_options = "f:I:M:C:K:O:y:S:X:V:F:T:icql";
+const char *short_options = "f:I:M:C:K:O:S:X:V:F:T:icql";
 #endif
 
 struct option long_options[] = {
@@ -97,19 +97,21 @@ struct option long_options[] = {
 	{"filter",	required_argument,  0,  'F'},
 	{"threads",	required_argument,  0,  'T'},
 	{"option",      optional_argument,  0,  'K'},
+	{"column",      optional_argument,  0,  'V'},
 	{0,             0,                  0,  0}
 };
 
 void usage(int argc, char *argv[])
 {
 #ifdef ENABLE_YAML
-	printf("sos { -l | -i | -c | -o | -s | -q } -C <container> "
-	       "[-o <mode_mask>] [-Y <yaml-file>]\n");
+	printf("sos_cmd { -l | -i | -c | -o | -s | -K | -q } -C <container> "
+	       "[-O <mode_mask>]\n");
 #else
-	printf("sos { -l | -i | -c | -q } -C <container> "
-	       "[-o <mode_mask>]\n");
+	printf("sos_cmd { -l | -i | -c | -K | -q } -C <container> "
+	       "[-O <mode_mask>]\n");
 #endif
 	printf("    -C <path>      The path to the container. Required for all options.\n");
+	printf("\n");
 	printf("    -K <key>=<value> Set a container configuration option.\n");
 	printf("\n");
 	printf("    -l             Print a directory of the schemas.\n");
@@ -121,9 +123,11 @@ void usage(int argc, char *argv[])
 	       "                   see the open() system call.\n");
 	printf("\n");
 #ifdef ENABLE_YAML
-	printf("    -s <path>      Add a schema to a container.\n");
+	printf("    -s <path>      Add a schema to a container.\n"
+	       "                   <path> is the path to the YAML file defining the schema\n");
 	printf("\n");
-	printf("    -o <path>      Add an object to a container.\n");
+	printf("    -o <path>      Add an object to a container.\n"
+	       "                   <path> is the path to the YAML file containing the data\n");
 	printf("\n");
 #endif
 	printf("    -I <csv_file>  Import a CSV file into the container.\n");
@@ -131,8 +135,8 @@ void usage(int argc, char *argv[])
 	printf("       -M <map>    String that maps CSV columns to object attributes.\n");
 	printf("\n");
 	printf("    -q             Query the container.\n");
-	printf("       -S <schema> Object type to query.\n");
-	printf("       -X <index>  Attribute's index to query.\n");
+	printf("       -S <schema> Schema of objects to query.\n");
+	printf("       -X <index>  Attribute's index or name to query.\n");
 	printf("       [-f <fmt>]  Specifies the format of the output data. Valid formats are:\n");
 	printf("                   table  - Tabular format, one row per object. [default]\n");
 	printf("                   csv    - Comma separated file with a single header row defining columns\n");

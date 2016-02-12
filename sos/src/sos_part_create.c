@@ -96,7 +96,7 @@ struct option long_options[] = {
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_part\n");
+	printf("sos_part_create -C <path> [-p <path>] [-s <state>] <name>\n");
 	printf("    -C <path>   The path to the container. Required for all options.\n");
 	printf("    -p <path>	Optional partition path. The container path is used by default.\n");
 	printf("    -s <state>  The initial state of a partition. Valid states are:\n"
@@ -104,6 +104,7 @@ void usage(int argc, char *argv[])
 	       "                online   - Objects are accessible, the partition does not grow\n"
 	       "                offline  - Object references are invalid; the partition\n"
 	       "                           may be moved or deleted.\n"
+	       "    <name>      The partition name.\n"
 	       "     The default initial state is OFFLINE.\n");
 	exit(1);
 }
