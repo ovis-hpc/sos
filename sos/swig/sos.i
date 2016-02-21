@@ -48,6 +48,8 @@
 #include <sos/sos.h>
 #include "sos_priv.h"
 
+#pragma GCC diagnostic ignored "-Wignored-qualifiers"
+
 const char *py_value_as_str(sos_value_t value)
 {
 	static char buff[1024];

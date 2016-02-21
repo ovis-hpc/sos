@@ -70,27 +70,21 @@
 #include <bwx/bwx.h>
 
 
-const char *short_options = "C:D:X:ja:b:tu:V:J:cdv";
+const char *short_options = "C:X:ja:b:tV:J:cv";
 
 struct option long_options[] = {
 	{"container",   required_argument,  0,  'C'},
-	{"uid",         required_argument,  0,  'u'},
 	{"after",       required_argument,  0,  'a'},
 	{"before",      required_argument,  0,  'b'},
-	{"by_component",no_argument,        0,  'c'},
 	{"component",   required_argument,  0,  'D'},
 	{"by_job",      no_argument,        0,  'j'},
 	{"job",         required_argument,  0,  'J'},
-	{"diff",        no_argument,        0,  'd'},
 	{"verbose",     no_argument,        0,  'v'},
 	{"view",        required_argument,  0,  'V'},
-	{"bin-width",   required_argument,  0,  'w'},
 	{0,             0,                  0,    0}
 };
 static int verbose = 0;
 static char *job_str = NULL;
-static char *comp_str = NULL;
-static char *uid_str = NULL;
 static char *start_str = NULL;
 static struct sos_timestamp_s start_time = { 0, 0 };
 static char *end_str = NULL;
@@ -104,117 +98,15 @@ struct col_s {
 };
 TAILQ_HEAD(col_list_s, col_s) col_list = TAILQ_HEAD_INITIALIZER(col_list);
 
-void table_header(FILE *outp)
+const char *fmt_timestamp(sos_obj_t obj, sos_attr_t attr)
 {
-	struct col_s *col;
-	/* Print the header labels */
-	TAILQ_FOREACH(col, &col_list, entry)
-		fprintf(outp, "%-*s ", col->width, col->name);
-	fprintf(outp, "\n");
-
-	/* Print the header separators */
-	TAILQ_FOREACH(col, &col_list, entry) {
-		int i;
-		for (i = 0; i < col->width; i++)
-			fprintf(outp, "-");
-		fprintf(outp, " ");
-	}
-	fprintf(outp, "\n");
-}
-
-void csv_header(FILE *outp)
-{
-	struct col_s *col;
-	int first = 1;
-	/* Print the header labels */
-	fprintf(outp, "# ");
-	TAILQ_FOREACH(col, &col_list, entry) {
-		if (!first)
-			fprintf(outp, ",");
-		fprintf(outp, "%s", col->name);
-		first = 0;
-	}
-	fprintf(outp, "\n");
-}
-
-void json_header(FILE *outp)
-{
-	fprintf(outp, "{ \"data\" : [\n");
-}
-
-void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
-{
-	struct col_s *col;
-	sos_attr_t attr;
 	static char str[80];
-	TAILQ_FOREACH(col, &col_list, entry) {
-		attr = sos_schema_attr_by_id(schema, col->id);
-		fprintf(outp, "%*s ", col->width,
-			sos_obj_attr_to_str(obj, attr, str, 80));
-	}
-	fprintf(outp, "\n");
-}
-
-void csv_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
-{
-	struct col_s *col;
-	int first = 1;
-	sos_attr_t attr;
-	static char str[80];
-	TAILQ_FOREACH(col, &col_list, entry) {
-		attr = sos_schema_attr_by_id(schema, col->id);
-		if (!first)
-			fprintf(outp, ",");
-		fprintf(outp, "%s", sos_obj_attr_to_str(obj, attr, str, 80));
-		first = 0;
-	}
-	fprintf(outp, "\n");
-}
-
-void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
-{
-	struct col_s *col;
-	static int first_row = 1;
-	int first = 1;
-	sos_attr_t attr;
-	static char str[80];
-	if (!first_row)
-		fprintf(outp, ",\n");
-	first_row = 0;
-	fprintf(outp, "{");
-	TAILQ_FOREACH(col, &col_list, entry) {
-		attr = sos_schema_attr_by_id(schema, col->id);
-		if (!first)
-			fprintf(outp, ",");
-		fprintf(outp, "\"%s\" : \"%s\"", col->name, sos_obj_attr_to_str(obj, attr, str, 80));
-		first = 0;
-	}
-	fprintf(outp, "}");
-}
-
-void table_footer(FILE *outp, int rec_count, int iter_count)
-{
-	struct col_s *col;
-	/* Print the footer separators */
-	TAILQ_FOREACH(col, &col_list, entry) {
-		int i;
-		for (i = 0; i < col->width; i++)
-			fprintf(outp, "-");
-		fprintf(outp, " ");
-	}
-	fprintf(outp, "\n");
-	fprintf(outp, "Records %d/%d.\n", rec_count, iter_count);
-}
-
-void csv_footer(FILE *outp, int rec_count, int iter_count)
-{
-	fprintf(outp, "# Records %d/%d.\n", rec_count, iter_count);
-}
-
-void json_footer(FILE *outp, int rec_count, int iter_count)
-{
-	fprintf(outp, "], \"%s\" : %d, \"%s\" : %d}\n",
-		"totalRecords", rec_count, "recordCount", iter_count);
+	sos_value_t v = sos_value(obj, attr);
+	time_t t = v->data->prim.timestamp_.fine.secs;
+	sos_value_put(v);
+	struct tm *tm = localtime(&t);
+	strftime(str, sizeof(str), "%F %R", tm);
+	return str;
 }
 
 /*
@@ -245,102 +137,6 @@ int add_column(const char *str)
 	return ENOMEM;
 }
 
-void show_by_time(sos_t sos)
-{
-	sos_schema_t job_schema = sos_schema_by_name(sos, "Job");
-	sos_attr_t StartTime_attr = sos_schema_attr_by_name(job_schema, "StartTime");
-	sos_iter_t job_iter = sos_attr_iter_new(StartTime_attr);
-	if (!job_iter) {
-		perror("sos_attr_iter_new: ");
-		exit(1);
-	}
-	sos_obj_t job_obj;
-	char str[80];
-	int rc;
-	SOS_KEY(start_key);
-	sos_key_set(start_key, &start_time, sizeof(start_time));
-	for (rc = sos_iter_sup(job_iter, start_key);
-	     !rc; rc = sos_iter_next(job_iter)) {
-		job_obj = sos_iter_obj(job_iter);
-		job_t job = sos_obj_ptr(job_obj);
-		if (job->StartTime.secs >= end_time.secs) {
-			sos_obj_put(job_obj);
-			break;
-		}
-		sos_key_t key = sos_iter_key(job_iter);
-		printf("%-12s ", sos_obj_attr_by_name_to_str(job_obj, "Id", str, sizeof(str)));
-		printf("%22s ", sos_obj_attr_by_name_to_str(job_obj, "StartTime", str, sizeof(str)));
-		printf("%22s ", sos_obj_attr_by_name_to_str(job_obj, "EndTime", str, sizeof(str)));
-		printf("%7s ", sos_obj_attr_by_name_to_str(job_obj, "JobName", str, sizeof(str)));
-		printf("%s\n", sos_obj_attr_by_name_to_str(job_obj, "UserName", str, sizeof(str)));
-		sos_obj_put(job_obj);
-		sos_key_put(key);
-	}
-	sos_iter_free(job_iter);
-}
-
-const char *attr_as_str(sos_obj_t obj, const char *attr_name)
-{
-	static char str[1024];
-	return sos_obj_attr_by_name_to_str(obj, attr_name, str, sizeof(str));
-}
-
-void show_by_comp(sos_t sos)
-{
-	sos_index_t comptime_idx = sos_index_open(sos, "CompTime");
-	sos_iter_t job_iter = sos_index_iter_new(comptime_idx);
-	if (!job_iter) {
-		perror("sos_index_iter_new: ");
-		exit(1);
-	}
-	sos_obj_t job_obj;
-	uint32_t comp_id, last_comp_id;
-	last_comp_id = -1;
-	int rc;
-	printf("%-12s %-12s %-22s %-22s %-12s %-s\n",
-	       "Comp Id", "Job Id", "Start Time", "End Time", "Username", "Job Name");
-	printf("------------ ------------ ---------------------- ---------------------- ------------ --------\n");
-	if (comp_str) {
-		SOS_KEY(comp_key);
-		comp_id = strtoul(comp_str, NULL, 0);
-		struct comp_time_key_s comp_time_key = {
-			.comp_id = comp_id,
-			.secs = 0
-		};
-		sos_key_set(comp_key, &comp_time_key, sizeof(comp_time_key));
-		rc = sos_iter_sup(job_iter, comp_key);
-	} else {
-		rc = sos_iter_begin(job_iter);
-	}
-	for (; !rc; rc = sos_iter_next(job_iter)) {
-		job_obj = sos_iter_obj(job_iter);
-		sos_key_t key = sos_iter_key(job_iter);
-		comp_time_key_t kv = (comp_time_key_t)sos_key_value(key);
-		if (comp_str) {
-			if (comp_id != kv->comp_id) {
-				sos_obj_put(job_obj);
-				sos_key_put(key);
-				break;
-			}
-		} else
-			comp_id = kv->comp_id;
-		if (comp_id != last_comp_id) {
-			printf("%12d ", comp_id);
-			last_comp_id = comp_id;
-		} else {
-			printf("             ");
-		}
-		printf("%12s ", attr_as_str(job_obj, "Id"));
-		printf("%22s ", attr_as_str(job_obj, "StartTime"));
-		printf("%22s ", attr_as_str(job_obj, "EndTime"));
-		printf("%-12s ", attr_as_str(job_obj, "UserName"));
-		printf("%s\n", attr_as_str(job_obj, "JobName"));
-		sos_obj_put(job_obj);
-		sos_key_put(key);
-	}
-	sos_index_close(comptime_idx, SOS_COMMIT_ASYNC);
-}
-
 int col_widths[] = {
 	[SOS_TYPE_INT16] = 6,
 	[SOS_TYPE_INT32] = 10,
@@ -351,7 +147,7 @@ int col_widths[] = {
 	[SOS_TYPE_FLOAT] = 12,
 	[SOS_TYPE_DOUBLE] = 24,
 	[SOS_TYPE_LONG_DOUBLE] = 48,
-	[SOS_TYPE_TIMESTAMP] = 32,
+	[SOS_TYPE_TIMESTAMP] = 16,
 	[SOS_TYPE_OBJ] = 8,
 	[SOS_TYPE_BYTE_ARRAY] = 32,
 	[SOS_TYPE_CHAR_ARRAY] = 32,
@@ -366,6 +162,44 @@ int col_widths[] = {
 	[SOS_TYPE_LONG_DOUBLE_ARRAY] = 8,
 	[SOS_TYPE_OBJ_ARRAY] = 8,
 };
+
+void table_header(FILE *outp)
+{
+	struct col_s *col;
+	/* Print the header labels */
+	fprintf(outp, "    ");
+	TAILQ_FOREACH(col, &col_list, entry)
+		fprintf(outp, "%-*s ", col->width, col->name);
+	fprintf(outp, "\n");
+
+	/* Print the header separators */
+	fprintf(outp, "    ");
+	TAILQ_FOREACH(col, &col_list, entry) {
+		int i;
+		for (i = 0; i < col->width; i++)
+			fprintf(outp, "-");
+		fprintf(outp, " ");
+	}
+	fprintf(outp, "\n");
+}
+
+void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
+{
+	struct col_s *col;
+	sos_attr_t attr;
+	static char str[80];
+	fprintf(outp, "    ");
+	TAILQ_FOREACH(col, &col_list, entry) {
+		attr = sos_schema_attr_by_id(schema, col->id);
+		if (sos_attr_type(attr) != SOS_TYPE_TIMESTAMP)
+			fprintf(outp, "%*s ", col->width,
+				sos_obj_attr_to_str(obj, attr, str, 80));
+		else
+			fprintf(outp, "%-*s ", col->width, fmt_timestamp(obj, attr));
+	}
+	fprintf(outp, "\n");
+}
+
 void show_samples(sos_t sos, uint32_t job_id)
 {
 	sos_attr_t attr;
@@ -383,7 +217,7 @@ void show_samples(sos_t sos, uint32_t job_id)
 		perror("sos_schema_by_name: ");
 		exit(2);
 	}
-	jobtime_attr = sos_schema_attr_by_name(sample_schema, "JobTime");
+	jobtime_attr = sos_schema_attr_by_name(sample_schema, "job_time");
 	if (!jobtime_attr) {
 		perror("sos_schema_attr_by_name: ");
 		exit(2);
@@ -415,15 +249,15 @@ void show_samples(sos_t sos, uint32_t job_id)
 		if (!col->width)
 			col->width = col_widths[sos_attr_type(attr)];
 	}
-
 	job_time_key.job_id = job_id;
 	job_time_key.secs = 0;
 	sos_key_set(sample_key, &job_time_key, sizeof(job_time_key));
+	table_header(stdout);
 	for (rc = sos_iter_sup(sample_iter, sample_key);
 	     rc == 0; rc = sos_iter_next(sample_iter)) {
 		sos_obj_t obj = sos_iter_obj(sample_iter);
 		job_sample_t sample = (job_sample_t)sos_obj_ptr(obj);
-		if (sample->JobTime.job_id != job_id)
+		if (sample->job_time.job_id != job_id)
 			break;
 		table_row(stdout, sample_schema, obj);
 		sos_obj_put(obj);
@@ -433,18 +267,24 @@ void show_samples(sos_t sos, uint32_t job_id)
 void show_sample_by_job(sos_t sos)
 {
 	sos_schema_t job_schema;
+	sos_attr_t StartTime_attr, EndTime_attr, UserName_attr, JobName_attr;
 	sos_attr_t id_attr;
 	sos_iter_t job_iter;
 	sos_obj_t job_obj;
 	job_t job;
 	uint32_t job_id = 0;
 	int rc;
+	static char str[80];
 
 	job_schema = sos_schema_by_name(sos, "Job");
 	if (!job_schema) {
 		perror("sos_schema_by_name: ");
 		exit(2);
 	}
+	StartTime_attr = sos_schema_attr_by_name(job_schema, "StartTime");
+	EndTime_attr = sos_schema_attr_by_name(job_schema, "EndTime");
+	UserName_attr = sos_schema_attr_by_name(job_schema, "UserName");
+	JobName_attr = sos_schema_attr_by_name(job_schema, "JobName");
 	id_attr = sos_schema_attr_by_name(job_schema, "Id");
 	if (!id_attr) {
 		perror("sos_schema_attr_by_name: ");
@@ -456,10 +296,10 @@ void show_sample_by_job(sos_t sos)
 		exit(1);
 	}
 
-	printf("%-12s %-22s %-22s %-12s %-s\n",
+	printf("%-12s %-16s %-16s %-16s %s\n",
 	       "Job Id", "Start Time", "End Time", "Username", "Job Name");
-	printf("------------ ---------------------- "
-	       "---------------------- ------------ --------\n");
+	printf("------------ ---------------- "
+	       "---------------- ---------------- --------------\n");
 	if (!job_str)
 		rc = sos_iter_begin(job_iter);
 	else {
@@ -476,10 +316,12 @@ void show_sample_by_job(sos_t sos)
 			break;
 		}
 		printf("%12d ", job->job_id);
-		printf("%22s ", attr_as_str(job_obj, "StartTime"));
-		printf("%22s ", attr_as_str(job_obj, "EndTime"));
-		printf("%-12s ", attr_as_str(job_obj, "UserName"));
-		printf("%s\n", attr_as_str(job_obj, "JobName"));
+		printf("%-16s ", fmt_timestamp(job_obj, StartTime_attr));
+		printf("%-16s ", fmt_timestamp(job_obj, EndTime_attr));
+		printf("%-16s ", sos_obj_attr_to_str(job_obj, UserName_attr,
+						     str, sizeof(str)));
+		printf("%s\n", sos_obj_attr_to_str(job_obj, JobName_attr,
+						   str, sizeof(str)));
 		if (verbose)
 			show_samples(sos, job->job_id);
 		sos_obj_put(job_obj);
@@ -487,46 +329,51 @@ void show_sample_by_job(sos_t sos)
 	sos_iter_free(job_iter);
 }
 
-void show_comp_by_job(sos_t sos)
+void show_by_time(sos_t sos)
 {
-	sos_index_t jobcomp_idx = sos_index_open(sos, "JobComp");
-	sos_iter_t job_iter = sos_index_iter_new(jobcomp_idx);
+	sos_schema_t job_schema = sos_schema_by_name(sos, "Job");
+	sos_attr_t Id_attr = sos_schema_attr_by_name(job_schema, "Id");
+	sos_attr_t StartTime_attr = sos_schema_attr_by_name(job_schema, "StartTime");
+	sos_attr_t EndTime_attr = sos_schema_attr_by_name(job_schema, "EndTime");
+	sos_attr_t UserName_attr = sos_schema_attr_by_name(job_schema, "UserName");
+	sos_attr_t JobName_attr = sos_schema_attr_by_name(job_schema, "JobName");
+	sos_iter_t job_iter = sos_attr_iter_new(StartTime_attr);
 	if (!job_iter) {
-		perror("sos_index_iter_new: ");
+		perror("sos_attr_iter_new: ");
 		exit(1);
 	}
 	sos_obj_t job_obj;
-	uint32_t job_id, last_job_id;
-	last_job_id = -1;
+	char str[80];
 	int rc;
-	printf("%-12s %-22s %-22s %-12s %-s\n",
-	       "Job Id", "Start Time", "End Time", "Username", "Job Name");
-	printf("------------ ---------------------- ---------------------- ------------ --------\n");
-	int comp_count = 1;
-	for (rc = sos_iter_begin(job_iter); !rc; rc = sos_iter_next(job_iter)) {
+	SOS_KEY(start_key);
+	sos_key_set(start_key, &start_time, sizeof(start_time));
+
+	printf("%-12s %-16s %-16s %-16s %s\n",
+	       "Job Id", "Start Time", "End Time", "User Name", "Job Name");
+	printf("------------ ---------------- ---------------- ---------------- ----------------\n");
+	for (rc = sos_iter_sup(job_iter, start_key);
+	     !rc; rc = sos_iter_next(job_iter)) {
 		job_obj = sos_iter_obj(job_iter);
-		sos_key_t key = sos_iter_key(job_iter);
-		job_comp_key_t kv = (job_comp_key_t)sos_key_value(key);
-		job_id = kv->job_id;
-		if (job_id != last_job_id) {
-			printf("\n%12d ", job_id);
-			last_job_id = job_id;
-			printf("%22s ", attr_as_str(job_obj, "StartTime"));
-			printf("%22s ", attr_as_str(job_obj, "EndTime"));
-			printf("%-12s ", attr_as_str(job_obj, "UserName"));
-			printf("%s\n            %8d ",
-			       attr_as_str(job_obj, "JobName"), kv->comp_id);
-			comp_count = 1;
-		} else {
-			if (!(comp_count % 8))
-				printf("\n            ");
-			printf("%8d ", kv->comp_id);
-			comp_count++;
+		job_t job = sos_obj_ptr(job_obj);
+		if (job->StartTime.secs >= end_time.secs) {
+			sos_obj_put(job_obj);
+			break;
 		}
+		sos_key_t key = sos_iter_key(job_iter);
+		printf("%-12s ", sos_obj_attr_to_str(job_obj, Id_attr,
+							     str, sizeof(str)));
+		printf("%-16s ", fmt_timestamp(job_obj, StartTime_attr));
+		printf("%-16s ", fmt_timestamp(job_obj, EndTime_attr));
+		printf("%-16s ", sos_obj_attr_to_str(job_obj, UserName_attr,
+						     str, sizeof(str)));
+		printf("%s\n", sos_obj_attr_to_str(job_obj, JobName_attr,
+						   str, sizeof(str)));
+		if (verbose)
+			show_samples(sos, job->job_id);
 		sos_obj_put(job_obj);
 		sos_key_put(key);
 	}
-	sos_index_close(jobcomp_idx, SOS_COMMIT_ASYNC);
+	sos_iter_free(job_iter);
 }
 
 void usage(int argc, char *argv[])
@@ -537,11 +384,9 @@ void usage(int argc, char *argv[])
 	       "    -J <job_id>     Show results for only this Job Id\n"
 	       "    -a <start-time> Show jobs starting on or after start-time\n"
 	       "    -b <start-time> Show jobs starting before start-time\n"
-	       "    -u <user-id>    Show only jobs for this user-id\n"
-	       "    -c              Order results by component\n"
-	       "    -t              Order results by time.\n"
+	       "    -t              Order results by time [default].\n"
 	       "    -v              Dump all sample data for the Job\n"
-	       "    -V              Add this metric to the displayed output\n",
+	       "    -V              Add this metric to the sample output\n",
 	       argv[0]);
 	exit(1);
 }
@@ -569,29 +414,18 @@ int main(int argc, char *argv[])
 	sos_t sos;
 	char *path = NULL;
 	int o;
-	int by_time = 0;
+	int by_time = 1;
 	int by_job = 0;
-	int comp_by_job = 0;
-	int by_comp = 0;
 
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (o) {
 		case 't':
+			by_job = 0;
 			by_time = 1;
-			verbose = 1;
-			break;
-		case 'c':
-			by_comp = 1;
-			verbose = 1;
-			break;
-		case 'D':
-			comp_str = strdup(optarg);
-			break;
-		case 'X':
-			comp_by_job = 1;
 			break;
 		case 'j':
 			by_job = 1;
+			by_time = 0;
 			break;
 		case 'J':
 			job_str = strdup(optarg);
@@ -606,9 +440,6 @@ int main(int argc, char *argv[])
 			break;
 		case 'C':
 			path = strdup(optarg);
-			break;
-		case 'u':
-			uid_str = strdup(optarg);
 			break;
 		case 'v':
 			verbose = 1;
@@ -631,11 +462,7 @@ int main(int argc, char *argv[])
 	}
 	if (by_job)
 		show_sample_by_job(sos);
-	if (comp_by_job)
-		show_comp_by_job(sos);
 	if (by_time)
 		show_by_time(sos);
-	if (by_comp)
-		show_by_comp(sos);
 	return 0;
 }

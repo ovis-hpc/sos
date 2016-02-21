@@ -1280,7 +1280,6 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
 	ods_map_t map;
 	int bkt;
 	unsigned char flags;
-	ods_blk_t blk;
 	uint32_t status = 0;
 
 	pthread_spin_lock(&ods->lock);
@@ -1506,48 +1505,76 @@ int ods_pack(ods_t ods)
 	return errno;
 }
 
+void ods_obj_iter_pos_init(ods_obj_iter_pos_t pos)
+{
+	pos->page_no = 1;
+	pos->blk = NULL;
+}
+
 /*
  * This function is _not_ thread safe
  */
-void ods_iter(ods_t ods, ods_iter_fn_t iter_fn, void *arg)
+int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
+		 ods_obj_iter_fn_t iter_fn, void *arg)
 {
 	ods_pg_t pg;
 	uint64_t i, start, end;
-	int bkt;
-	char *blk;
+	int bkt, rc = 0;
+	char *blk = NULL;
 	char *next;
 	size_t sz;
 	ods_map_t map;
 	ods_obj_t obj;
 
 	map = ods_map_get(ods);
-	for(i = 1; i < map->pg_table->count; i++) {
+	if (pos) {
+		i = pos->page_no;
+		if (!i)
+			i = 1;
+		blk = pos->blk;
+	} else
+		i = 1;
+
+	for(; i < map->pg_table->count; i++) {
 		if (!(map->pg_table->pages[i] & ODS_F_ALLOCATED))
 			continue;
 		if (map->pg_table->pages[i] & ODS_F_IDX_VALID) {
 			bkt = map->pg_table->pages[i] & ODS_M_IDX;
 			sz = ods_bkt_to_size(bkt);
-			blk = (char *)ods_page_to_ptr(map, i);
+			if (!blk)
+				blk = (char *)ods_page_to_ptr(map, i);
 			next = (char *)ods_page_to_ptr(map, i+1);
 			for (; blk < next; blk += sz) {
 				if (blk_is_free(map, bkt, blk))
 					continue;
 				obj = ods_ref_as_obj(ods, ods_ptr_to_ref(map, blk));
-				iter_fn(ods, obj, arg);
+				rc = iter_fn(ods, obj, arg);
 				ods_obj_put(obj);
+				if (rc)
+					goto out;
 			}
 		} else {
+			blk = NULL;
 			for (start = end = i;
 			     (end < map->pg_table->count) &&
 				     (0 != (map->pg_table->pages[end] & ODS_F_NEXT));
 			     end++);
 			pg = ods_page_to_ptr(map, start);
 			obj = ods_ref_as_obj(ods, ods_ptr_to_ref(map, pg));
-			iter_fn(ods, obj, arg);
+			rc = iter_fn(ods, obj, arg);
 			ods_obj_put(obj);
 			i = end;
+			if (rc)
+				goto out;
 		}
+		blk = NULL;
 	}
+ out:
+	if (pos) {
+		pos->page_no = i;
+		pos->blk = blk;
+	}
+	return rc;
 }
 
 static void __attribute__ ((constructor)) ods_lib_init(void)

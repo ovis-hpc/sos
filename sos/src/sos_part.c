@@ -152,6 +152,10 @@
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
+static sos_part_t __sos_part_first(sos_part_iter_t iter);
+static sos_part_t __sos_part_next(sos_part_iter_t iter);
+static int __refresh_part_list(sos_t sos);
+
 /*
  * New partition objects show up in the address space through:
  * __sos_part_create(), __sos_part_data_first(), and
@@ -268,73 +272,133 @@ static int __sos_open_partition(sos_t sos, sos_part_t part)
 	return rc;
 }
 
-void __make_part_offline(sos_t sos, sos_part_t part)
+struct iter_args {
+	double start;
+	double timeout;
+	sos_part_t part;
+	uint64_t count;
+};
+#define DUTY_CYCLE 500000
+
+static int __unindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 {
-	uint64_t part_id;
-	sos_container_index_iter_t idx_iter;
-	sos_index_t idx;
-	sos_iter_t obj_iter;
-	int rc;
-
-	/*
-	 * Remove the partition from the open SOS instance
-	 */
-	// TAILQ_REMOVE(&sos->part_list, part, entry);
-	SOS_PART(part->part_obj)->state = SOS_PART_STATE_OFFLINE;
-	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
-	/*
-	 * Remove all keys that refer to objects in
-	 * this partition from all indices
-	 */
-	part_id = sos_part_id(part);
-	idx_iter = sos_container_index_iter_new(part->sos);
-	for (idx = sos_container_index_iter_first(idx_iter); idx;
-	     idx = sos_container_index_iter_next(idx_iter)) {
-
-		obj_iter = sos_index_iter_new(idx);
-		for (rc = sos_iter_begin(obj_iter); !rc;
-		     rc = sos_iter_next(obj_iter)) {
-
-			sos_obj_ref_t ref = sos_iter_ref(obj_iter);
-			while (ref.ref.ods == part_id) {
-				rc = sos_iter_entry_remove(obj_iter);
-				if (rc)
-					break;
-				ref = sos_iter_ref(obj_iter);
-			}
-		}
-		sos_index_close(idx, SOS_COMMIT_ASYNC);
-	}
-}
-
-/* Iterate through all objects in the partition and call sos_obj_index
- * for each one. This function is used when partitions are moving from
- * OFFLINE --> ACTIVE or OFFLINE --> PRIMARY
- */
-static void __reindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
-{
-	int rc;
 	sos_obj_ref_t ref;
 	sos_obj_t sos_obj;
-	sos_part_t part = arg;
+	struct iter_args *uarg = arg;
+	sos_part_t part = uarg->part;
 	sos_obj_data_t sos_obj_data = obj->as.ptr;
 	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
 	if (!schema)
 		/* This is a garbage object that should not be here */
-		return;
+		return 0;
 	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
 	ref.ref.obj = ods_obj_ref(obj);
-	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
+	sos_obj = __sos_init_obj_no_lock(part->sos, schema, obj, ref);
+
+	sos_obj_remove(sos_obj);
+	__sos_obj_put_no_lock(sos_obj);
+	struct timeval tv;
+	(void)gettimeofday(&tv, NULL);
+	double now = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
+	double dur = now - uarg->start;
+	uarg->count++;
+	if (dur > uarg->timeout) {
+		printf("Processed %ld objects in %f microseconds\n", uarg->count, dur);
+		return 1;
+	}
+	return 0;
+}
+
+void __make_part_offline(sos_t sos, sos_part_t part)
+{
+	int rc;
+	struct iter_args uargs;
+	struct ods_obj_iter_pos_s pos;
+	SOS_PART(part->part_obj)->state = SOS_PART_STATE_OFFLINE;
+	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
+
+	/*
+	 * Remove all objects in this partition from the indices
+	 */
+	ods_obj_iter_pos_init(&pos);
+	do {
+		struct timeval tv;
+		(void)gettimeofday(&tv, NULL);
+		uargs.start = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
+		uargs.timeout = DUTY_CYCLE;
+		uargs.part = part;
+		uargs.count = 0;
+		rc = ods_obj_iter(part->obj_ods, &pos, __unindex_callback_fn, &uargs);
+		if (rc) {
+			ods_spin_unlock(&sos->part_lock);
+			pthread_mutex_unlock(&sos->lock);
+			usleep(DUTY_CYCLE);
+			pthread_mutex_lock(&sos->lock);
+			ods_spin_lock(&sos->part_lock, -1);
+		}
+	} while (rc);
+}
+
+/*
+ * Iterate through all objects in the partition and call sos_obj_index
+ * for each one. This function is used when partitions are moving from
+ * OFFLINE --> ACTIVE or OFFLINE --> PRIMARY
+ */
+static int __reindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
+{
+	struct timeval tv;
+	int rc;
+	sos_obj_ref_t ref;
+	sos_obj_t sos_obj;
+	struct iter_args *rarg = arg;
+	sos_part_t part = rarg->part;
+	sos_obj_data_t sos_obj_data = obj->as.ptr;
+	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
+	if (!schema)
+		/* This is a garbage object that should not be here */
+		return 0;
+	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
+	ref.ref.obj = ods_obj_ref(obj);
+	sos_obj = __sos_init_obj_no_lock(part->sos, schema, obj, ref);
 	rc = sos_obj_index(sos_obj);
 	if (rc) {
 		/* The object couldn't be indexed for some reason */
 	}
-	sos_obj_put(sos_obj);
+	__sos_obj_put_no_lock(sos_obj);
+	rc = gettimeofday(&tv, NULL);
+	double now = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
+	double dur = now - rarg->start;
+	rarg->count++;
+	if (now - rarg->start > rarg->timeout) {
+		printf("Processed %ld objects in %f microseconds\n", rarg->count, dur);
+		return 1;
+	}
+	return 0;
 }
 
-static void __reindex_part_objects(sos_t sos, sos_part_t part)
+static int __reindex_part_objects(sos_t sos, sos_part_t part)
 {
-	ods_iter(part->obj_ods, __reindex_callback_fn, part);
+	struct ods_obj_iter_pos_s pos;
+	struct timeval tv;
+	struct iter_args rargs;
+	int rc;
+	ods_obj_iter_pos_init(&pos);
+	do {
+		rc = gettimeofday(&tv, NULL);
+		rargs.start = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
+		rargs.timeout = DUTY_CYCLE;
+		rargs.part = part;
+		rargs.count = 0;
+		rc = ods_obj_iter(part->obj_ods, &pos, __reindex_callback_fn, &rargs);
+		if (rc) {
+			ods_spin_unlock(&sos->part_lock);
+			pthread_mutex_unlock(&sos->lock);
+			usleep(DUTY_CYCLE);
+			pthread_mutex_lock(&sos->lock);
+			ods_spin_lock(&sos->part_lock, -1);
+		}
+	} while (rc);
+	return 0;
 }
 
 static void __make_part_active(sos_t sos, sos_part_t part)
@@ -366,6 +430,22 @@ static void __make_part_primary(sos_t sos, sos_part_t part)
 	sos->primary_part = part;
 }
 
+sos_part_t __sos_part_find_by_ref(sos_t sos, ods_ref_t ref)
+{
+	sos_part_t part;
+	sos_part_iter_t iter = sos_part_iter_new(sos);
+	if (!iter)
+		return NULL;
+
+	for (part = __sos_part_first(iter); part; part = __sos_part_next(iter)) {
+		if (ref == ods_obj_ref(part->part_obj))
+			goto out;
+		sos_part_put(part);
+	}
+ out:
+	sos_part_iter_free(iter);
+	return part;
+}
 /**
  * \brief Set the state of a partition
  *
@@ -392,8 +472,9 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state)
 	sos_t sos = part->sos;
 	int rc = 0;
 	sos_part_state_t cur_state;
+	ods_ref_t part_ref = ods_obj_ref(part->part_obj);
 
-	pthread_mutex_unlock(&sos->lock);
+	pthread_mutex_lock(&sos->lock);
 	ods_spin_lock(&sos->part_lock, -1);
 	cur_state = SOS_PART(part->part_obj)->state;
 
@@ -404,10 +485,15 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state)
 			break;
 		case SOS_PART_STATE_ACTIVE:
 			__make_part_active(sos, part);
+			__refresh_part_list(sos);
+			part = __sos_part_find_by_ref(sos, part_ref);
 			__reindex_part_objects(sos, part);
 			break;
 		case SOS_PART_STATE_PRIMARY:
 			__make_part_primary(sos, part);
+			__refresh_part_list(sos);
+			sos_part_put(part);
+			part = __sos_part_find_by_ref(sos, part_ref);
 			__reindex_part_objects(sos, part);
 			break;
 		case SOS_PART_STATE_MOVING:
@@ -422,6 +508,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state)
 		switch (state) {
 		case SOS_PART_STATE_OFFLINE:
 			__make_part_offline(sos, part);
+			__refresh_part_list(sos);
 			break;
 		case SOS_PART_STATE_ACTIVE:
 			break;
@@ -749,6 +836,20 @@ sos_part_t sos_part_find(sos_t sos, const char *name)
 	return part;
 }
 
+static sos_part_t __sos_part_first(sos_part_iter_t iter)
+{
+	sos_part_t part = NULL;
+	part = TAILQ_FIRST(&iter->sos->part_list);
+	if (iter->part)
+		sos_part_put(iter->part); /* drop iterator ref */
+	iter->part = part;
+	if (part) {
+		ods_atomic_inc(&part->ref_count); /* iterator reference */
+		ods_atomic_inc(&part->ref_count); /* application reference */
+	}
+	return part;
+}
+
 /**
  * \brief Return the first partition in the container
  *
@@ -762,17 +863,25 @@ sos_part_t sos_part_find(sos_t sos, const char *name)
  */
 sos_part_t sos_part_first(sos_part_iter_t iter)
 {
-	sos_part_t part = NULL;
+	sos_part_t part;
 	pthread_mutex_lock(&iter->sos->lock);
-	part = TAILQ_FIRST(&iter->sos->part_list);
-	if (iter->part)
-		sos_part_put(iter->part); /* drop iterator ref */
+	part = __sos_part_first(iter);
+	pthread_mutex_unlock(&iter->sos->lock);
+	return part;
+}
+
+static sos_part_t __sos_part_next(sos_part_iter_t iter)
+{
+	sos_part_t part;
+	if (!iter->part)
+		return NULL;
+	part = TAILQ_NEXT(iter->part, entry);
+	sos_part_put(iter->part);	  /* drop iterator reference */
 	iter->part = part;
 	if (part) {
 		ods_atomic_inc(&part->ref_count); /* iterator reference */
 		ods_atomic_inc(&part->ref_count); /* application reference */
 	}
-	pthread_mutex_unlock(&iter->sos->lock);
 	return part;
 }
 
@@ -790,20 +899,11 @@ sos_part_t sos_part_first(sos_part_iter_t iter)
 sos_part_t sos_part_next(sos_part_iter_t iter)
 {
 	sos_part_t part;
-	if (!iter->part)
-		return NULL;
 	pthread_mutex_lock(&iter->sos->lock);
-	part = TAILQ_NEXT(iter->part, entry);
-	sos_part_put(iter->part);	  /* drop iterator reference */
-	iter->part = part;
-	if (part) {
-		ods_atomic_inc(&part->ref_count); /* iterator reference */
-		ods_atomic_inc(&part->ref_count); /* application reference */
-	}
+	part = __sos_part_next(iter);
 	pthread_mutex_unlock(&iter->sos->lock);
 	return part;
 }
-
 /**
  * \brief Return the partition's name
  * \param part The partition handle
@@ -1068,4 +1168,36 @@ int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
 	stat->created = sb.st_ctime;
  out:
 	return rc;
+}
+
+struct part_obj_iter_args_s {
+	sos_part_t part;
+	sos_part_obj_iter_fn_t fn;
+	void *arg;
+};
+
+static int __part_obj_iter_cb(ods_t ods, ods_obj_t obj, void *arg)
+{
+	struct part_obj_iter_args_s *oi_args = arg;
+	sos_obj_ref_t ref;
+	sos_obj_t sos_obj;
+	sos_part_t part = oi_args->part;
+	sos_obj_data_t sos_obj_data = obj->as.ptr;
+	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
+	if (!schema)
+		/* This is a garbage object that should not be here */
+		return 0;
+	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
+	ref.ref.obj = ods_obj_ref(obj);
+	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
+	return oi_args->fn(oi_args->part, sos_obj, oi_args->arg);
+}
+
+int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_fn_t fn, void *arg)
+{
+	struct part_obj_iter_args_s args;
+	args.part = part;
+	args.fn = fn;
+	args.arg = arg;
+	return ods_obj_iter(part->obj_ods, NULL, __part_obj_iter_cb, &args);
 }

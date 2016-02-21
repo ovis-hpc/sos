@@ -749,17 +749,15 @@ void sos_container_close(sos_t sos, sos_commit_t flags)
 	free_sos(sos, SOS_COMMIT_ASYNC);
 }
 
-sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
-			 sos_obj_ref_t obj_ref)
+sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
+				 sos_obj_ref_t obj_ref)
 {
 	sos_obj_t sos_obj;
-	pthread_mutex_lock(&sos->lock);
 	if (!LIST_EMPTY(&sos->obj_free_list)) {
 		sos_obj = LIST_FIRST(&sos->obj_free_list);
 		LIST_REMOVE(sos_obj, entry);
 	} else
 		sos_obj = malloc(sizeof *sos_obj);
-	pthread_mutex_unlock(&sos->lock);
 	if (!sos_obj)
 		return NULL;
 	SOS_OBJ(ods_obj)->schema = schema->data->id;
@@ -770,6 +768,16 @@ sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
 	sos_obj->schema = schema;
 	sos_obj->ref_count = 1;
 
+	return sos_obj;
+}
+
+sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
+			 sos_obj_ref_t obj_ref)
+{
+	sos_obj_t sos_obj;
+	pthread_mutex_lock(&sos->lock);
+	sos_obj = __sos_init_obj_no_lock(sos, schema, ods_obj, obj_ref);
+	pthread_mutex_unlock(&sos->lock);
 	return sos_obj;
 }
 
@@ -1005,6 +1013,14 @@ void sos_obj_put(sos_obj_t obj)
 		pthread_mutex_lock(&sos->lock);
 		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
 		pthread_mutex_unlock(&sos->lock);
+	}
+}
+void __sos_obj_put_no_lock(sos_obj_t obj)
+{
+	if (obj && !ods_atomic_dec(&obj->ref_count)) {
+		sos_t sos = obj->sos;
+		ods_obj_put(obj->obj);
+		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
 	}
 }
 

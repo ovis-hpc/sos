@@ -81,10 +81,11 @@ typedef struct comp_time_key_s {
 } *comp_time_key_t;
 
 typedef struct job_sample_s {
-	struct sos_timestamp_s Time;
-	uint32_t CompId;
-	struct job_time_key_s JobTime;
-	struct comp_time_key_s CompTime;
+	struct sos_timestamp_s timestamp;
+	struct comp_time_key_s comp_time;
+	struct job_time_key_s job_time;
+	uint32_t component_id;
+	uint32_t job_id;
 	uint64_t Tesla_K20X_gpu_util_rate;
 	uint64_t Tesla_K20X_gpu_agg_dbl_ecc_total_errors;
 	uint64_t Tesla_K20X_gpu_agg_dbl_ecc_texture_memory;

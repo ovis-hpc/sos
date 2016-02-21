@@ -38,18 +38,21 @@ schema:
           type: uint32
 schema:
         - name: Sample
-        - attribute: Time
+        - attribute: timestamp
           type: timestamp
           indexed: true
-        - attribute: CompId
+        - attribute: comp_time
+          type: uint64
+          indexed: true, uint64, bxtree, 5
+        - attribute: job_time
+          type: uint64
+          indexed: true, uint64, bxtree, 5
+        - attribute: component_id
           type: uint32
           indexed: true
-        - attribute: JobTime
-          type: uint64
-          indexed: true, uint64, bxtree, 5
-        - attribute: CompTime
-          type: uint64
-          indexed: true, uint64, bxtree, 5
+        - attribute: job_id
+          type: uint32
+          indexed: true
         - attribute: Tesla_K20X.gpu_util_rate
           type: uint64
         - attribute: Tesla_K20X.gpu_agg_dbl_ecc_total_errors

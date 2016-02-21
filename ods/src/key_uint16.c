@@ -51,6 +51,8 @@
 #include <ods/ods_idx.h>
 #include "ods_idx_priv.h"
 
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+
 static const char *get_type(void)
 {
 	return "UINT16";

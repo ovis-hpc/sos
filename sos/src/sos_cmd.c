@@ -43,12 +43,9 @@
 /**
  * \page commands Commands
  *
- * There are two commands for managing and querying SOS Containers:
- * <tt>sos_cmd</tt> and <tt>sos_part</tt>. The \c sos_cmd command is
- * used to create containers, add schema, import objects and query
- * containers. The \c sos_part command is used to manage partitions
- * within a container. See \ref partition_overview for more
- * information on partitions.
+ * The \c sos_cmd command is used to create containers, add schema,
+ * import objects and query containers. See \ref partition_overview
+ * for more information on partitions.
  */
 #include <pthread.h>
 #include <sys/time.h>
@@ -555,8 +552,8 @@ int add_schema(sos_t sos, FILE *fp)
 	char *key_type = NULL;
 	char *index_type = NULL;
 	char *index_str = NULL;
-	int attr_indexed;
-	sos_type_t attr_type;
+	int attr_indexed = 0;
+	sos_type_t attr_type = SOS_TYPE_FIRST;
 	int rc = 0;
 	do {
 		if (!yaml_parser_parse(&parser, &event)) {
@@ -857,9 +854,6 @@ void *add_proc(void *arg)
 	struct obj_q_s *queue = arg;
 	struct obj_entry_s *work;
 	char *tok;
-#if 0
-	char *next_tok;
-#endif
 	int rc;
 	int cols;
 
@@ -880,8 +874,7 @@ void *add_proc(void *arg)
 		if (import_done && !work)
 			break;
 		cols = 0;
-#if 1
-		char *pos;
+		char *pos = NULL;
 		for (tok = strtok_r(work->buf, ",", &pos); tok; tok = strtok_r(NULL, ",", &pos)) {
 			if (cols >= col_count) {
 				printf("Warning: line contains more columns "
@@ -901,36 +894,6 @@ void *add_proc(void *arg)
 			}
 			cols++;
 		}
-#else
-		for (tok = work->buf; *tok != '\0'; tok = next_tok) {
-			if (cols >= col_count) {
-				printf("Warning: line contains more columns "
-				       "than are in column map.\n\"%s\"",
-				       work->buf);
-				break;
-			}
-			int id = col_map[cols];
-			if (id < 0) {
-				while (*tok != ',' && *tok != '\0')
-					tok++;
-				if (*tok == ',')
-					tok++;
-				next_tok = tok;
-				cols++;
-				continue;
-			}
-			struct sos_value_s v_;
-			sos_value_t v = sos_value_init(&v_, work->obj, attr_map[cols]);
-			rc = value_from_str(attr_map[cols], v, tok, &next_tok);
-			sos_value_put(v);
-			if (rc) {
-				printf("Warning: formatting error setting %s = %s.\n",
-				       sos_attr_name(attr_map[cols]), tok);
-			}
-			next_tok++; /* skip ',' */
-			cols++;
-		}
-#endif
 		rc = sos_obj_index(work->obj);
 		sos_obj_put(work->obj);
 		if (rc) {
@@ -1304,15 +1267,15 @@ int main(int argc, char **argv)
 {
 	char *path = NULL;
 	char *col_map = NULL;
-	int o, rc;
+	int o, rc = 0;
 	int o_mode = 0660;
 	int action = 0;
 	sos_t sos;
 	char *index_name = NULL;
 	char *schema_name = NULL;
-	FILE *schema_file;
-	FILE *obj_file;
-	FILE *csv_file;
+	FILE *schema_file = NULL;
+	FILE *obj_file = NULL;
+	FILE *csv_file = NULL;
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (o) {
 		case 'c':
@@ -1432,11 +1395,11 @@ int main(int argc, char **argv)
 	if (!action)
 		return 0;
 
-	int mode;
+	sos_perm_t mode;
 	if (!(action & (CSV | OBJECT | SCHEMA)))
-		mode = O_RDONLY;
+		mode = SOS_PERM_RO;
 	else
-		mode = O_RDWR;
+		mode = SOS_PERM_RW;
 	sos = sos_container_open(path, mode);
 	if (!sos) {
 		printf("Error %d opening the container %s.\n",

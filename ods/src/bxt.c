@@ -18,7 +18,7 @@
 #include "bxt.h"
 
 /* #define BXT_DEBUG */
-
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
 pthread_mutex_t client_list_lock;
 LIST_HEAD(active_clients, bxt_s) client_list;
 
@@ -143,6 +143,7 @@ static void print_info(ods_idx_t idx, FILE *fp)
 	fflush(fp);
 }
 
+#ifdef BXT_DEBUG
 static void verify_node(bxt_t t, ods_obj_t node)
 {
 	int i, j;
@@ -170,6 +171,7 @@ static void verify_node(bxt_t t, ods_obj_t node)
 		}
 	}
 }
+#endif
 
 static int bxt_open(ods_idx_t idx)
 {
@@ -344,8 +346,8 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 			    ods_iter_flags_t flags)
 {
 	int i;
-	ods_ref_t tail_ref;
-	ods_ref_t head_ref;
+	ods_ref_t head_ref = 0;
+	ods_ref_t tail_ref = 0;
 	bxt_t t = idx->priv;
 	ods_obj_t leaf = leaf_find(t, key);
 	ods_obj_t rec = NULL;
@@ -1143,7 +1145,7 @@ static ods_obj_t bxt_max_node(bxt_t t)
 
 static ods_obj_t left_sibling(bxt_t t, ods_obj_t node)
 {
-	int idx;
+	int idx = 0;
 	ods_ref_t node_ref;
 	ods_obj_t pparent, parent, left;
 
@@ -1181,7 +1183,7 @@ static ods_obj_t left_sibling(bxt_t t, ods_obj_t node)
 
 static ods_obj_t right_sibling(bxt_t t, ods_obj_t node)
 {
-	int idx;
+	int idx = 0;
 	ods_ref_t node_ref;
 	ods_obj_t pparent, parent, right;
 
@@ -2123,8 +2125,8 @@ static int bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
 	return 0;
  noent:
 	ods_obj_put(key);
- norec:
 	ods_obj_put(leaf);
+ norec:
 	ods_spin_unlock(&t->lock);
 	return ENOENT;
 }

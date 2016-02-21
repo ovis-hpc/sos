@@ -331,28 +331,55 @@ extern size_t ods_size(ods_t ods);
 extern void ods_dump(ods_t ods, FILE *fp);
 
 /**
- * \brief The callback function called by the ods_iter() function
+ * \brief The callback function called by the ods_obj_iter() function
+ *
+ * Called by the ods_obj_iter() function for each object in the ODS. If
+ * the function wishes to cancel iteration, return !0, otherwise,
+ * return 0.
  *
  * \param ods	The ODS handle
  * \param obj	The object handle
  * \param sz	The size of the object
- * \param arg	The 'arg' passed into ods_iter()
+ * \param arg	The 'arg' passed into ods_obj_iter()
+ * \retval 0	Continue iterating
+ * \retval !0	Stop iterating
  */
-typedef void (*ods_iter_fn_t)(ods_t ods, ods_obj_t obj, void *arg);
+typedef int (*ods_obj_iter_fn_t)(ods_t ods, ods_obj_t obj, void *arg);
+
+typedef struct ods_obj_iter_pos_s {
+	int page_no;
+	void *blk;
+} *ods_obj_iter_pos_t;
+
+void ods_obj_iter_pos_init(ods_obj_iter_pos_t pos);
 
 /**
- * \brief Iterate over all objects in the ODS
+ * \brief Iterate over objects in the ODS
  *
- * This function iterates over all objects allocated in the ODS and
+ * This function iterates over objects allocated in the ODS and
  * calls the specified 'iter_fn' for each object. See the
- * ods_iter_fn_t() for the function definition.
+ * ods_obj_iter_fn_t() for the function definition.
+ *
+ * If the the <tt>pos</tt> argument is not NULL, it should be
+ * initialized with the ods_obj_iter_pos_init() funuction. The
+ * <tt>pos</tt> argument will updated with the location of the next
+ * object in the store when ods_obj_iter() returns. This facilitates
+ * walking through a portion of the objects at a time, continuing
+ * later where the function left off.
+ *
+ * The ods_obj_iter_fn_t() function indicates that the iteration
+ * should stop by returning !0. Otherwise, the ods_obj_iter() function
+ * will continue until all objects in the ODS have been seen.
  *
  * \param ods		The ODS handle
+ * \param pos		The object iterator position
  * \param iter_fn	Pointer to the function to call
  * \param arg		A void* argument that the user wants passed to
  *			the callback function.
+ * \retval 0		All objects were iterated through
+ * \retval !0		A callback returned !0
  */
-void ods_iter(ods_t ods, ods_iter_fn_t iter_fn, void *arg);
+int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos, ods_obj_iter_fn_t iter_fn, void *arg);
 
 ods_atomic_t ods_obj_count(ods_t ods);
 
@@ -456,11 +483,6 @@ int ods_obj_valid(ods_t ods, ods_obj_t obj);
 typedef struct ods_spin_s {
 	ods_atomic_t *lock_p;
 } *ods_spin_t;
-#if 0
-#define ODS_SPIN_DECL(_name_, _lock_p_)					\
-	struct ods_spin_s ods_spin_s ## _name_ = { .lock_p = _lock_p_ }; \
-	ods_spin_t _name_ = &ods_spin_s ## _name_;
-#endif
 #define ods_spin_init(_name_, _lock_p_)	(_name_)->lock_p = (_lock_p_)
 
 int ods_spin_lock(ods_spin_t spin, int timeout);

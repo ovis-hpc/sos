@@ -377,6 +377,9 @@ struct sos_iter_s {
 sos_schema_t __sos_get_ischema(sos_type_t type);
 sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema,
 			 ods_obj_t ods_obj, sos_obj_ref_t obj_ref);
+sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
+				 sos_obj_ref_t obj_ref);
+void __sos_obj_put_no_lock(sos_obj_t obj);
 sos_value_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type);
 sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type);
 sos_value_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type);

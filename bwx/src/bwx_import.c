@@ -246,25 +246,14 @@ void *add_proc(void *arg)
 			cols++;
 		}
 		job_sample_t sample = sos_obj_ptr(work->obj);
-		struct comp_time_key_s the_key;
-		SOS_KEY(job_key);
-		the_key.comp_id = sample->CompId;
-		the_key.secs = sample->Time.secs;
-		sos_key_set(job_key, &the_key, sizeof(the_key));
-		sos_obj_t job_obj = sos_index_find_inf(comptime_idx, job_key);
-		if (job_obj) {
-			job_t job = sos_obj_ptr(job_obj);
-			sample->JobTime.job_id = job->job_id;
-			sample->JobTime.secs = sample->Time.secs;
-			sos_obj_put(job_obj);
-		}
-		sample->CompTime.comp_id = sample->CompId;
-		sample->CompTime.secs = sample->Time.secs;
+		sample->job_time.job_id = 0;
+		sample->job_time.secs = sample->timestamp.secs;
+		sample->comp_time.comp_id = sample->component_id;
+		sample->comp_time.secs = sample->timestamp.secs;
 		rc = sos_obj_index(work->obj);
 		sos_obj_put(work->obj);
-		if (rc) {
+		if (rc)
 			printf("Error %d adding object to indices.\n", rc);
-		}
 		ods_atomic_inc(&records);
 		free_work(work);
 	}
@@ -389,7 +378,7 @@ int main(int argc, char **argv)
 	int o, rc;
 	sos_t sos;
 	char *schema_name = NULL;
-	FILE *csv_file;
+	FILE *csv_file = NULL;
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (o) {
 		case 'C':
@@ -425,16 +414,6 @@ int main(int argc, char **argv)
 		printf("Error %d opening the container %s.\n",
 		       errno, path);
 		exit(1);
-	}
-	comptime_idx = sos_index_open(sos, "CompTime");
-	if (!comptime_idx) {
-		perror("sos_index_open: ");
-		exit(2);
-	}
-	jobcomp_idx = sos_index_open(sos, "JobComp");
-	if (!jobcomp_idx) {
-		perror("sos_index_open: ");
-		exit(2);
 	}
 	rc = import_csv(sos, csv_file, schema_name, col_map);
 	return rc;

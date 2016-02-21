@@ -60,10 +60,10 @@
  *      tom@css:/SOS/import$ sos_part /NVME/0/SOS_ROOT/Test
  *      Partition Name       RefCount Status           Size     Modified         Accessed         Path
  *      -------------------- -------- ---------------- -------- ---------------- ---------------- ----------------
- *      00000000                    3 ONLINE                 1M 2015/08/25 13:49 2015/08/25 13:51 /SOS_STAGING/Test
- *      00000001                    3 ONLINE                 2M 2015/08/25 11:54 2015/08/25 13:51 /NVME/0/SOS_ROOT/Test
- *      00000002                    3 ONLINE                 2M 2015/08/25 11:39 2015/08/25 13:51 /NVME/0/SOS_ROOT/Test
- *      00000003                    3 ONLINE PRIMARY         2M 2015/08/25 11:39 2015/08/25 13:51 /NVME/0/SOS_ROOT/Test
+ *      00000000                    3 ACTIVE                 1M 2015/08/25 13:49 2015/08/25 13:51 /SOS_STAGING/Test
+ *      00000001                    3 ACTIVE                 2M 2015/08/25 11:54 2015/08/25 13:51 /NVME/0/SOS_ROOT/Test
+ *      00000002                    3 ACTIVE                 2M 2015/08/25 11:39 2015/08/25 13:51 /NVME/0/SOS_ROOT/Test
+ *      00000003                    3 PRIMARY                2M 2015/08/25 11:39 2015/08/25 13:51 /NVME/0/SOS_ROOT/Test
  *
  * \b PATH
  *
@@ -82,9 +82,10 @@ int verbose;
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_part_query [-v] <path>\n");
-	printf("    -v       Print offline partition information.\n");
-	printf("    <path>   The path to the container.\n");
+	printf("sos_part_query [-ov] -C <path>\n");
+	printf("    -C <path> The path to the container. Required for all options.\n");
+	printf("    -o        Show all objects in the partition.\n");
+	printf("    -v        Print offline partition information.\n");
 	exit(1);
 }
 
@@ -105,7 +106,21 @@ const char *pretty_file_size(off_t size)
 	return NULL;		/* NB: can't happen */
 }
 
-void part_list(sos_t sos, FILE *fp)
+static int print_obj_cb(sos_part_t part, sos_obj_t obj, void *arg)
+{
+	sos_schema_t schema = sos_obj_schema(obj);
+	sos_obj_ref_t ref = sos_obj_ref(obj);
+	printf("%lu@%lx %-16s\n", ref.ref.ods, ref.ref.obj, sos_schema_name(schema));
+	sos_obj_put(obj);
+	return 0;
+}
+
+void print_objects(sos_part_t part)
+{
+	(void)sos_part_obj_iter(part, print_obj_cb, NULL);
+}
+
+void print_partitions(sos_t sos, FILE *fp, char *part_name, int show_objects)
 {
 	struct sos_part_stat_s sb;
 	sos_part_t part;
@@ -123,7 +138,10 @@ void part_list(sos_t sos, FILE *fp)
 	fprintf(fp, "-------------------- -------- ---------------- "
 		"-------- ---------------- ---------------- ----------------\n");
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
-
+		if (part_name) {
+			if (0 != strcmp(sos_part_name(part), part_name))
+				continue;
+		}
 		char *statestr;
 		sos_part_state_t state = sos_part_state(part);
 		if (state == SOS_PART_STATE_OFFLINE && !verbose)
@@ -164,15 +182,20 @@ void part_list(sos_t sos, FILE *fp)
 		} else
 			fprintf(fp, "%42s ", "");
 		fprintf(fp, "%s\n", sos_part_path(part));
+		if (show_objects) {
+			print_objects(part);
+		}
 		sos_part_put(part);
 	}
 	sos_part_iter_free(iter);
 }
 
-const char *short_options = "v";
+const char *short_options = "C:vo";
 
 struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},
+	{"container",   required_argument,  0,  'C'},
+	{"object",      required_argument,  0,  'o'},
 	{"verbose",     no_argument,        0,  'v'},
 	{0,             0,                  0,  0}
 };
@@ -181,8 +204,17 @@ int main(int argc, char **argv)
 {
 	sos_t sos;
 	int opt;
+	int show_objects = 0;
+	char *part_name = NULL;
+	char *path = NULL;
 	while (0 < (opt = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (opt) {
+		case 'C':
+			path = strdup(optarg);
+			break;
+		case 'o':
+			show_objects = 1;
+			break;
 		case 'v':
 			verbose = 1;
 			break;
@@ -192,15 +224,18 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (optind == argc)
+	if (!path)
 		usage(argc, argv);
 
-	sos = sos_container_open(argv[optind], SOS_PERM_RO);
+	if (optind < argc)
+		part_name = strdup(argv[optind]);
+
+	sos = sos_container_open(path, SOS_PERM_RO);
 	if (!sos) {
 		printf("Error %d opening the container %s.\n",
 		       errno, argv[1]);
 		exit(1);
 	}
-	part_list(sos, stdout);
+	print_partitions(sos, stdout, part_name, show_objects);
 	return 0;
 }

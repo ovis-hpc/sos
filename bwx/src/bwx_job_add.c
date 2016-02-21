@@ -62,6 +62,7 @@
 #include <sos/sos.h>
 #include <ods/ods_atomic.h>
 #include <ods/rbt.h>
+#include <bwx/bwx.h>
 
 const char *short_options = "C:j:s:e:c:n:u:";
 
@@ -78,20 +79,6 @@ void usage(int argc, char *argv[])
 	printf("       <job_file>   File containing job information\n");
 	exit(1);
 }
-
-struct Job {
-	uint32_t id;
-	struct sos_timestamp_s start_ts;
-	struct sos_timestamp_s end_ts;
-	uint64_t job_name_ref;
-	uint64_t user_name_ref;
-};
-
-struct JobComp {
-	uint64_t key;		/* CompId:StartTime */
-	struct sos_timestamp_s end_time;
-	uint32_t job_id;
-};
 
 sos_obj_t job_new(sos_t sos, char *id, char *start, char *end, char *uid, char *name)
 {
@@ -247,69 +234,59 @@ int main(int argc, char *argv[])
 		return errno;
 	}
 
+	sos_schema_t sample_s = sos_schema_by_name(sos, "Sample");
+	if (!sample_s) {
+		printf("The Sample schema is missing.\n");
+		return 2;
+	}
+	sos_attr_t comp_time_attr = sos_schema_attr_by_name(sample_s, "comp_time");
+	if (!comp_time_attr) {
+		printf("The comp_time attribute is missing from the Sample schema.\n");
+		return 2;
+	}
+	sos_iter_t comp_time_iter = sos_attr_iter_new(comp_time_attr);
+	if (!comp_time_iter) {
+		perror("sos_attr_iter_new");
+		return 2;
+	}
 	job_obj = job_new(sos, job_str, start_str, end_str, uid_str, name_str);
 	if (!job_obj)
 		usage(argc, argv);
-	uint32_t job_id = strtoul(job_str, NULL, 0);
 
-	sos_index_t comptime_idx = sos_index_open(sos, "CompTime");
-	if (!comptime_idx) {
-		rc = sos_index_new(sos, "CompTime", "BXTREE", "UINT64", "ORDER=5");
-		if (rc) {
-			perror("sos_index_new: ");
-			exit(3);
-		} else {
-			comptime_idx = sos_index_open(sos, "CompTime");
-		}
-		if (!comptime_idx) {
-			perror("sos_index_open: ");
-			exit(3);
-		}
-	}
-	sos_index_t jobcomp_idx = sos_index_open(sos, "JobComp");
-	if (!jobcomp_idx) {
-		rc = sos_index_new(sos, "JobComp", "BXTREE", "UINT64", "ORDER=5");
-		if (rc) {
-			perror("sos_index_new: ");
-			exit(3);
-		} else {
-			jobcomp_idx = sos_index_open(sos, "JobComp");
-		}
-		if (!jobcomp_idx) {
-			perror("sos_index_open: ");
-			exit(3);
-		}
-	}
-	struct Job *job = sos_obj_ptr(job_obj);
+	job_t job = sos_obj_ptr(job_obj);
 	while (NULL != (s = fgets(buf, sizeof(buf), comp_file))) {
-		struct kvs {
-			uint32_t secondary;
-			uint32_t primary;
-		} kv;
+		sos_obj_t obj;
+		job_sample_t sample;
 		uint32_t comp_id = strtoul(s, NULL, 0);
 		SOS_KEY(comp_key);
+		struct comp_time_key_s ct_val;
 
-		/* Add the Component:Time key */
-		kv.primary = comp_id;
-		kv.secondary = job->start_ts.secs;
-		sos_key_set(comp_key, &kv, sizeof(kv));
-		rc = sos_index_insert(comptime_idx, comp_key, job_obj);
-		if (rc) {
-			perror("sos_index_insert: ");
-			exit(4);
-		}
-		/* Add the Job:Component key */
-		kv.primary = job_id;
-		kv.secondary = comp_id;
-		sos_key_set(comp_key, &kv, sizeof(kv));
-		rc = sos_index_insert(jobcomp_idx, comp_key, job_obj);
-		if (rc) {
-			perror("sos_index_insert: ");
-			exit(4);
+		ct_val.comp_id = comp_id;
+		ct_val.secs = job->StartTime.secs;
+		sos_key_set(comp_key, &ct_val, sizeof(ct_val));
+		for (rc = sos_iter_sup(comp_time_iter, comp_key);
+		     !rc; rc = sos_iter_next(comp_time_iter)) {
+
+			obj = sos_iter_obj(comp_time_iter);
+			sample = sos_obj_ptr(obj);
+
+			if (sample->component_id == comp_id &&
+			    sample->timestamp.secs <= job->EndTime.secs) {
+
+				sample->job_id = job->job_id;
+				sample->job_time.secs = sample->timestamp.secs;
+				sample->job_time.job_id = job->job_id;
+				/* Remove the object from the current indices */
+				sos_obj_remove(obj);
+				/* Now re-index the object with the new values */
+				sos_obj_index(obj);
+				sos_obj_put(obj);
+			} else {
+				sos_obj_put(obj);
+				break;
+			}
 		}
 	}
-	sos_index_close(jobcomp_idx, SOS_COMMIT_SYNC);
-	sos_index_close(comptime_idx, SOS_COMMIT_SYNC);
 	return 0;
  fmt_err:
 	printf("The component file has an invalid format\n");

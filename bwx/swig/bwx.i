@@ -50,6 +50,8 @@
 #include <sos/sos.h>
 #include <bwx/bwx.h>
 
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+
 job_sample_t job_sample(sos_obj_t obj)
 {
 	return (job_sample_t)sos_obj_ptr(obj);
@@ -59,8 +61,9 @@ struct name_map_s {
 	const char *name;
 	int id;
 } name_map[] = {
-	{ "CompId", 					2 },
-	{ "JobTime", 					1 },
+	{ "component_id", 					2 },
+	{ "job_time", 					1 },
+	{ "comp_time", 					1 },
 	{ "RDMA_nrx", 18 },
 	{ "RDMA_ntx", 20 },
 	{ "RDMA_rx_bytes", 17 },
@@ -291,17 +294,23 @@ static int map(const char *name)
 
 static uint64_t getval(struct job_sample_s *sample, size_t i)
 {
+	uint64_t u64;
 	if (i < 0)
 		return -1L;
 	if (i >= sizeof(name_map) / sizeof(name_map[0]))
 		return -1L;
 	switch (i) {
 	case 0:
-		return *(uint64_t *)&sample->Time;
-	case 2:
-		return *(uint64_t *)&sample->JobTime;
+		return *(uint64_t *)&sample->timestamp;
 	case 1:
-		return (uint64_t)*(uint32_t *)&sample->CompId;
+		return *(uint64_t *)&sample->comp_time;
+	case 2:
+		return *(uint64_t *)&sample->job_time;
+	case 3:
+		u64 = (uint64_t)sample->component_id;
+		return u64;
+	case 4:
+		return *(uint64_t *)&sample->job_id;
 	default:
 		return ((uint64_t *)&sample->Tesla_K20X_gpu_util_rate)[i-3];
 	}
