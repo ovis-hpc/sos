@@ -187,6 +187,7 @@ typedef struct sos_attr_data_s {
 	uint32_t id;
 	uint32_t type:8;
 	uint32_t pad:23;
+	uint32_t size;
 	uint32_t indexed:1;
 	uint64_t offset;
 } *sos_attr_data_t;

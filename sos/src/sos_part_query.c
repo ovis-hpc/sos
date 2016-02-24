@@ -117,7 +117,7 @@ static int print_obj_cb(sos_part_t part, sos_obj_t obj, void *arg)
 
 void print_objects(sos_part_t part)
 {
-	(void)sos_part_obj_iter(part, print_obj_cb, NULL);
+	(void)sos_part_obj_iter(part, NULL, print_obj_cb, NULL);
 }
 
 void print_partitions(sos_t sos, FILE *fp, char *part_name, int show_objects)

@@ -194,6 +194,7 @@ int col_widths[] = {
 	[SOS_TYPE_LONG_DOUBLE] = 48,
 	[SOS_TYPE_TIMESTAMP] = 32,
 	[SOS_TYPE_OBJ] = 8,
+	[SOS_TYPE_STRUCT] = 32,
 	[SOS_TYPE_BYTE_ARRAY] = 32,
 	[SOS_TYPE_CHAR_ARRAY] = 32,
  	[SOS_TYPE_INT16_ARRAY] = 6,
@@ -554,7 +555,7 @@ int add_schema(sos_t sos, FILE *fp)
 	char *index_str = NULL;
 	int attr_indexed = 0;
 	sos_type_t attr_type = SOS_TYPE_FIRST;
-	int rc = 0;
+	int attr_size = 0, rc = 0;
 	do {
 		if (!yaml_parser_parse(&parser, &event)) {
 			printf("Error Line %zu Column %zu : %s.\n",
@@ -612,7 +613,7 @@ int add_schema(sos_t sos, FILE *fp)
 				break;
 			case ATTR_DEF:
 				rc = sos_schema_attr_add(schema, attr_name,
-							 attr_type);
+							 attr_type, attr_size);
 				if (rc) {
 					printf("Error %d adding attribute '%s'.\n",
 					       rc, attr_name);
@@ -672,6 +673,7 @@ int add_schema(sos_t sos, FILE *fp)
 					if (attr_name)
 						free(attr_name);
 					attr_name = NULL;
+					attr_size = 0;
 					attr_indexed = 0;
 					attr_type = -1;
 					break;
@@ -756,6 +758,22 @@ int add_schema(sos_t sos, FILE *fp)
 					break;
 				}
 				attr_type = kw->id;
+				if (attr_type == SOS_TYPE_STRUCT) {
+					/* decode the size */
+					char *size_str, *str;
+					str = strdup((char *)event.data.scalar.value);
+					size_str = strtok(str, ",");
+					if (!size_str)
+						return EINVAL;
+					size_str = strtok(NULL, ",");
+					if (!size_str)
+						return EINVAL;
+					attr_size = strtoul(size_str, NULL, 0);
+					if (errno)
+						return EINVAL;
+					free(str);
+				} else
+					attr_size = 0;
 				state = ATTR_DEF;
 				break;
 			default:
@@ -875,7 +893,10 @@ void *add_proc(void *arg)
 			break;
 		cols = 0;
 		char *pos = NULL;
-		for (tok = strtok_r(work->buf, ",", &pos); tok; tok = strtok_r(NULL, ",", &pos)) {
+		for (tok = strtok_r(work->buf, ",", &pos); tok;
+		     tok = strtok_r(NULL, ",", &pos)) {
+			if (pos && pos[-1] == '\n')
+				pos[-1] = '\0';
 			if (cols >= col_count) {
 				printf("Warning: line contains more columns "
 				       "than are in column map.\n\"%s\"",
@@ -914,6 +935,7 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 	char *inp, *tok;
 	ods_atomic_t prev_recs = 0;
 	int items_queued = 0;
+	void *retval;
 
 	/* Get the schema */
 	schema = sos_schema_by_name(sos, schema_name);
@@ -977,16 +999,18 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 			}
 		}
 		pthread_mutex_unlock(&drain_lock);
+
 		work = alloc_work();
+		do {
+			inp = fgets(work->buf, sizeof(work->buf), fp);
+			if (!inp)
+				goto out;
+		} while (inp[0] == '#' || inp[0] == '\0');
 		work->obj = sos_obj_new(schema);
 		if (!work->obj) {
 			printf("Memory allocation failure!\n");
 			break;
 		}
-		inp = fgets(work->buf, sizeof(work->buf), fp);
-		if (!inp)
-			break;
-
 		queue_work(work);
 		items_queued++;
 		if (records && (0 == (records % 10000))) {
@@ -1005,8 +1029,8 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 			tr = t1;
 		}
 	}
+ out:
 	import_done = 1;
-	void *retval;
 	printf("queued %d items...joining.\n", items_queued);
 	for (i = 0; i < thread_count; i++)
 		pthread_cond_signal(&work_queues[i].wait);
@@ -1268,7 +1292,7 @@ int main(int argc, char **argv)
 	char *path = NULL;
 	char *col_map = NULL;
 	int o, rc = 0;
-	int o_mode = 0660;
+	int o_mode = 0664;
 	int action = 0;
 	sos_t sos;
 	char *index_name = NULL;

@@ -43,6 +43,7 @@ struct keyword keyword_table[] = {
 	{ "OBJ_ARRAY", SOS_TYPE_OBJ_ARRAY },
 	{ "RANDOM()", RANDOM_FUNC_KW },
 	{ "SCHEMA", SCHEMA_KW },
+	{ "STRUCT", SOS_TYPE_STRUCT },
 	{ "TIME()", TIME_FUNC_KW },
 	{ "TIMESTAMP", SOS_TYPE_TIMESTAMP },
 	{ "TRUE", TRUE_KW },

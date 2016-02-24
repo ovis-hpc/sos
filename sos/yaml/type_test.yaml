@@ -19,6 +19,8 @@ schema:
     type: timestamp
   - attribute: type_obj
     type: obj
+  - attribute: type_struct
+    type: struct, 48
   - attribute: type_byte_array
     type: byte_array
   - attribute: type_char_array

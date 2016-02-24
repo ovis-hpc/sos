@@ -103,6 +103,11 @@ static size_t obj_size_fn(sos_value_t value)
 	return sizeof(ods_ref_t);
 }
 
+static size_t struct_size_fn(sos_value_t value)
+{
+	return value->attr->data->size;
+}
+
 /*
  * NB: Arrays are variable size. The size isn't known until the
  * application sets the size with the sos_value_array_size() function.
@@ -164,6 +169,7 @@ static sos_value_size_fn_t __attr_size_fn_for_type[] = {
 	[SOS_TYPE_LONG_DOUBLE] = long_double_size_fn,
 	[SOS_TYPE_TIMESTAMP] = timestamp_size_fn,
 	[SOS_TYPE_OBJ] = obj_size_fn,
+	[SOS_TYPE_STRUCT] = struct_size_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_size_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_size_fn,
 	[SOS_TYPE_INT16_ARRAY] = int16_array_size_fn,
@@ -252,6 +258,20 @@ static char *obj_to_str_fn(sos_value_t v, char *str, size_t len)
 	str[0] = '\0';
 	snprintf(str, len, "%lu@%lx",
 		 v->data->prim.ref_.ref.ods, v->data->prim.ref_.ref.obj);
+	return str;
+}
+
+static char *struct_to_str_fn(sos_value_t v, char *str, size_t len)
+{
+	int i, res_cnt;
+	char *p = str;
+	if (!v)
+		return "";
+	for (i = 0; i < v->attr->data->size; i++) {
+		res_cnt = snprintf(p, len, "%02X", v->data->struc.byte_[i]);
+		p += res_cnt;
+		len -= res_cnt;
+	}
 	return str;
 }
 
@@ -470,6 +490,7 @@ static sos_value_to_str_fn_t __attr_to_str_fn_for_type[] = {
 	[SOS_TYPE_LONG_DOUBLE] = long_double_to_str_fn,
 	[SOS_TYPE_TIMESTAMP] = timestamp_to_str_fn,
 	[SOS_TYPE_OBJ] = obj_to_str_fn,
+	[SOS_TYPE_STRUCT] = struct_to_str_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_to_str_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_to_str_fn,
 	[SOS_TYPE_INT16_ARRAY] = int16_array_to_str_fn,
@@ -587,6 +608,24 @@ static int obj_from_str_fn(sos_value_t v, const char *value, char **endptr)
 		*endptr = (char *)(value + cnt);
 	v->data->prim.ref_.ref.ods = part_ref;
 	v->data->prim.ref_.ref.obj = obj_ref;
+	return 0;
+}
+
+static int struct_from_str_fn(sos_value_t v, const char *value, char **endptr)
+{
+	int i, cnt, match;
+	const char *str;
+	char c;
+
+	for (i = 0, str = value; i < v->attr->data->size && *str != '\0';
+	     i++, str += cnt) {
+		match = sscanf(str, "%02hhx%n", &c, &cnt);
+		if (match < 1)
+			return EINVAL;
+		v->data->struc.byte_[i] = c;
+	}
+	if (endptr)
+		*endptr = (char *)str;
 	return 0;
 }
 
@@ -851,6 +890,7 @@ static sos_value_from_str_fn_t __str_fn_t[] = {
 	[SOS_TYPE_LONG_DOUBLE] = long_double_from_str_fn,
 	[SOS_TYPE_TIMESTAMP] = timestamp_from_str_fn,
 	[SOS_TYPE_OBJ] = obj_from_str_fn,
+	[SOS_TYPE_STRUCT] = struct_from_str_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_from_str_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_from_str_fn,
 	[SOS_TYPE_INT16_ARRAY] = int16_array_from_str_fn,
@@ -929,6 +969,11 @@ static void *obj_key_value_fn(sos_value_t val)
 	assert(0); return NULL;
 }
 
+static void *struct_key_value_fn(sos_value_t val)
+{
+	return val->data->struc.byte_;
+}
+
 static void *byte_array_key_value_fn(sos_value_t val)
 {
 	return val->data->array.data.byte_;
@@ -986,6 +1031,7 @@ static sos_value_key_value_fn_t __key_value_fn_t[] = {
 	[SOS_TYPE_LONG_DOUBLE] = long_double_key_value_fn,
 	[SOS_TYPE_TIMESTAMP] = timestamp_key_value_fn,
 	[SOS_TYPE_OBJ] = obj_key_value_fn,
+	[SOS_TYPE_STRUCT] = struct_key_value_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_key_value_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_key_value_fn,
 	[SOS_TYPE_INT16_ARRAY] = int16_array_key_value_fn,

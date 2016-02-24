@@ -56,6 +56,7 @@
 
 #include <sys/types.h>
 #include <ctype.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <errno.h>
@@ -246,6 +247,18 @@ sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 			rc = sos_schema_index_add(schema, t->attrs[i].name);
 			if (rc)
 				goto err;
+			if (t->attrs[i].key_type) {
+				const char *idx_type = t->attrs[i].idx_type;
+				if (!idx_type)
+					idx_type = "BXTREE";
+				rc = sos_schema_index_modify
+					(schema,
+					 t->attrs[i].name,
+					 idx_type,
+					 t->attrs[i].key_type);
+				if (rc)
+					goto err;
+			}
 		}
 	}
 	return schema;
@@ -316,6 +329,7 @@ static const char *key_types[] = {
 	[SOS_TYPE_LONG_DOUBLE] = "LONG_DOUBLE",
 	[SOS_TYPE_TIMESTAMP] = "UINT64",
 	[SOS_TYPE_OBJ] = "NONE",
+	[SOS_TYPE_STRUCT] = "NONE",
 	[SOS_TYPE_BYTE_ARRAY] = "STRING",
 	[SOS_TYPE_CHAR_ARRAY] = "STRING",
 	[SOS_TYPE_INT16_ARRAY] = "NONE",
@@ -330,12 +344,16 @@ static const char *key_types[] = {
 	[SOS_TYPE_OBJ_ARRAY] = "NONE",
 };
 
-static sos_attr_t attr_new(sos_schema_t schema, sos_type_t type)
+static sos_attr_t attr_new(sos_schema_t schema, sos_type_t type, int size)
 {
 	sos_attr_t attr = calloc(1, sizeof *attr);
 	if (!attr)
 		goto out;
 	attr->data = &attr->data_;
+	if (size)
+		attr->data->size = size;
+	else
+		attr->data->size = type_sizes[type];
 	attr->schema = schema;
 	attr->size_fn = __sos_attr_size_fn_for_type(type);
 	attr->to_str_fn = __sos_attr_to_str_fn_for_type(type);
@@ -380,16 +398,20 @@ static sos_attr_t _attr_by_idx(sos_schema_t schema, int attr_id)
  * \param schema	The schema
  * \param name		The attribute name
  * \param type		The attribute type
+ * \param size		If the type is SOS_TYPE_STRUCT, this is the size
+ *                      in bytes of the attribute.
  * \retval 0		Success
  * \retval ENOMEM	Insufficient resources
  * \retval EEXIST	An attribute with that name already exists
  * \retval EINUSE	The schema is already a member of a container
  * \retval EINVAL	A parameter was invalid
  */
-int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type)
+int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, ...)
 {
 	sos_attr_t attr;
 	sos_attr_t prev = NULL;
+	va_list ap;
+	size_t size;
 
 	if (schema->schema_obj)
 		return EBUSY;
@@ -405,21 +427,27 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type)
 	if (!TAILQ_EMPTY(&schema->attr_list))
 		prev = TAILQ_LAST(&schema->attr_list, sos_attr_list);
 
-	attr = attr_new(schema, type);
+	if (type == SOS_TYPE_STRUCT) {
+		va_start(ap, type);
+		size = va_arg(ap, int);
+		size = (size + 3) & ~3; /* round up to a multiple of 4B */
+	} else
+		size = 0;
+	attr = attr_new(schema, type, size);
 	if (!attr)
 		return ENOMEM;
 	strcpy(attr->data->name, name);
 	attr->data->type = type;
 	attr->data->id = schema->data->attr_cnt++;
 	if (prev)
-		attr->data->offset = prev->data->offset + type_sizes[prev->data->type];
+		attr->data->offset = prev->data->offset + prev->data->size;
 	else
 		attr->data->offset = sizeof(struct sos_obj_data_s);
 
 	uint32_t a_size = sos_attr_size(attr);
 	if (a_size > schema->data->key_sz)
 		schema->data->key_sz = a_size;
-	schema->data->obj_sz = attr->data->offset + type_sizes[attr->data->type];
+	schema->data->obj_sz = attr->data->offset + attr->data->size;
 
 	/* Append new attribute to tail of list */
 	TAILQ_INSERT_TAIL(&schema->attr_list, attr, entry);
@@ -754,7 +782,7 @@ int sos_attr_index(sos_attr_t attr)
  */
 size_t sos_attr_size(sos_attr_t attr)
 {
-	return type_sizes[attr->data->type];
+	return attr->data->size;
 }
 
 /**
@@ -892,7 +920,7 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 		goto err_0;
 	idx = 0;
 	TAILQ_FOREACH(src_attr, &schema->attr_list, entry) {
-		attr = attr_new(dup, src_attr->data->type);
+		attr = attr_new(dup, src_attr->data->type, src_attr->data->size);
 		if (!attr)
 			goto err_1;
 		schema->dict[idx++] = attr;
@@ -936,7 +964,8 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	if (!schema->dict)
 		goto err_0;
 	for (idx = 0; idx < schema->data->attr_cnt; idx++) {
-		attr = attr_new(schema, schema->data->attr_dict[idx].type);
+		attr = attr_new(schema, schema->data->attr_dict[idx].type,
+				schema->data->attr_dict[idx].size);
 		if (!attr)
 			goto err_1;
 		schema->dict[idx] = attr;
@@ -1225,6 +1254,7 @@ static const char *type_names[] = {
 	[SOS_TYPE_LONG_DOUBLE] = "LONG_DOUBLE",
 	[SOS_TYPE_TIMESTAMP] = "TIMESTAMP",
 	[SOS_TYPE_OBJ] = "OBJ",
+	[SOS_TYPE_STRUCT] = "STRUCT",
 	[SOS_TYPE_BYTE_ARRAY] = "BYTE_ARRAY",
 	[SOS_TYPE_CHAR_ARRAY] = "CHAR_ARRAY",
 	[SOS_TYPE_INT16_ARRAY] = "INT16_ARRAY",
@@ -1245,7 +1275,6 @@ static const char *type_name(sos_type_t t)
 		return type_names[t];
 	return "corrupted!";
 }
-
 
 /**
  * \brief Print the schema to a File pointer

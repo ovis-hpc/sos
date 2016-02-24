@@ -492,7 +492,6 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state)
 		case SOS_PART_STATE_PRIMARY:
 			__make_part_primary(sos, part);
 			__refresh_part_list(sos);
-			sos_part_put(part);
 			part = __sos_part_find_by_ref(sos, part_ref);
 			__reindex_part_objects(sos, part);
 			break;
@@ -568,6 +567,7 @@ static int __refresh_part_list(sos_t sos)
 	sos_part_t part;
 	ods_obj_t part_obj;
 
+	sos->primary_part = NULL;
 	while (!TAILQ_EMPTY(&sos->part_list)) {
 		part = TAILQ_FIRST(&sos->part_list);
 		sos_part_put(part);
@@ -1193,7 +1193,39 @@ static int __part_obj_iter_cb(ods_t ods, ods_obj_t obj, void *arg)
 	return oi_args->fn(oi_args->part, sos_obj, oi_args->arg);
 }
 
-int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_fn_t fn, void *arg)
+void sos_part_obj_iter_pos_init(sos_part_obj_iter_pos_t pos)
+{
+	ods_obj_iter_pos_init(&pos->pos);
+}
+
+/**
+ * \brief Iterate over objects in the partition
+ *
+ * This function iterates over objects allocated in the partition and
+ * calls the specified 'iter_fn' for each object. See the
+ * sos_part_obj_iter_fn_t() for the function definition.
+ *
+ * If the the <tt>pos</tt> argument is not NULL, it should be
+ * initialized with the sos_obj_iter_pos_init() funuction. The
+ * <tt>pos</tt> argument will updated with the location of the next
+ * object in the store when sos_part_obj_iter() returns. This facilitates
+ * walking through a portion of the objects at a time, continuing
+ * later where the function left off.
+ *
+ * The sos_part_obj_iter_fn_t() function indicates that the iteration
+ * should stop by returning !0. Otherwise, the sos_part_obj_iter() function
+ * will continue until all objects in the ODS have been seen.
+ *
+ * \param ods		The ODS handle
+ * \param pos		The object iterator position
+ * \param iter_fn	Pointer to the function to call
+ * \param arg		A void* argument that the user wants passed to
+ *			the callback function.
+ * \retval 0		All objects were iterated through
+ * \retval !0		A callback returned !0
+ */
+int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
+		      sos_part_obj_iter_fn_t fn, void *arg)
 {
 	struct part_obj_iter_args_s args;
 	args.part = part;

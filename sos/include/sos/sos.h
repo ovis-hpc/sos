@@ -154,6 +154,7 @@ typedef enum sos_type_e {
 	SOS_TYPE_LONG_DOUBLE,
 	SOS_TYPE_TIMESTAMP,
 	SOS_TYPE_OBJ,
+	SOS_TYPE_STRUCT,
 	SOS_TYPE_BYTE_ARRAY = 32,
 	SOS_TYPE_ARRAY = SOS_TYPE_BYTE_ARRAY,
 	SOS_TYPE_CHAR_ARRAY,
@@ -224,6 +225,7 @@ union sos_primary_u {
 
 typedef union sos_value_data_u {
 	union sos_primary_u prim;
+	union sos_array_element_u struc;
 	struct sos_array_s array;
 } *sos_value_data_t;
 
@@ -247,7 +249,11 @@ enum sos_cond_e {
 typedef struct sos_schema_template_attr {
 	const char *name;
 	sos_type_t type;
+	size_t size;		/*! must be specified if the type is SOS_TYPE_STRUCT */
 	int indexed;
+	const char *idx_type;
+	const char *key_type;
+	const char *modifiers;
 } *sos_schema_template_attr_t;
 
 typedef struct sos_schema_template {
@@ -276,7 +282,7 @@ sos_schema_t sos_schema_next(sos_schema_t schema);
 const char *sos_schema_name(sos_schema_t schema);
 int sos_schema_id(sos_schema_t schema);
 int sos_schema_attr_count(sos_schema_t schema);
-int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type);
+int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, ...);
 int sos_schema_index_add(sos_schema_t schema, const char *name);
 int sos_schema_index_modify(sos_schema_t schema, const char *name,
 			    const char *idx_type, const char *key_type, ...);
@@ -354,8 +360,27 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state);
 uint32_t sos_part_refcount(sos_part_t part);
 void sos_part_put(sos_part_t part);
 int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
+/**
+ * \brief The callback function called by the sos_part_obj_iter() function
+ *
+ * Called by the sos_part_obj_iter() function for each object in the partition. If
+ * the function wishes to cancel iteration, return !0, otherwise,
+ * return 0.
+ *
+ * \param sos	The container handle
+ * \param obj	The object handle
+ * \param sz	The size of the object
+ * \param arg	The 'arg' passed into sos_part_obj_iter()
+ * \retval 0	Continue iterating
+ * \retval !0	Stop iterating
+ */
 typedef int (*sos_part_obj_iter_fn_t)(sos_part_t part, sos_obj_t obj, void *arg);
-int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_fn_t fn, void *arg);
+typedef struct sos_part_obj_iter_pos_s {
+	struct ods_obj_iter_pos_s pos;
+} *sos_part_obj_iter_pos_t;
+void sos_part_obj_iter_pos_init(sos_part_obj_iter_pos_t pos);
+int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
+		      sos_part_obj_iter_fn_t fn, void *arg);
 /** @} */
 /** @} */
 
