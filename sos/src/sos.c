@@ -514,8 +514,10 @@ void sos_container_info(sos_t sos, FILE *fp)
 	ods_info(ods_idx_ods(sos->schema_idx), fp);
 	ods_info(sos->schema_ods, fp);
 	sos_part_t part;
-	TAILQ_FOREACH(part, &sos->part_list, entry)
-		ods_info(part->obj_ods, fp);
+	TAILQ_FOREACH(part, &sos->part_list, entry) {
+		if (part->obj_ods)
+			ods_info(part->obj_ods, fp);
+	}
 }
 
 static void free_sos(sos_t sos, sos_commit_t flags)
