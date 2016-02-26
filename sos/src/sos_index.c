@@ -297,16 +297,8 @@ int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
  */
 int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
-	sos_obj_ref_t idx_ref;
-	ods_obj_t ref_obj;
-	int rc = ods_idx_delete(index->idx, key, &idx_ref.idx_data);
-	if (rc)
-		return rc;
-	ref_obj = ods_ref_as_obj(ods_idx_ods(index->idx), idx_ref.ref.obj);
-	if (!ref_obj)
-		return EINVAL;
-	ods_ref_delete(ods_idx_ods(index->idx), idx_ref.ref.obj);
-	return 0;
+	ods_idx_data_t data;
+	return ods_idx_delete(index->idx, key, &data);
 }
 
 /**
