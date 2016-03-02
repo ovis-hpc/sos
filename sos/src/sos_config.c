@@ -196,6 +196,7 @@ int sos_container_config_set(const char *path, const char *opt_name, const char 
 	if (!rc) {
 		/* Delete the previous object */
 		ods_key_t k = ods_iter_key(iter);
+		sos_ref_reset(obj_ref);
 		ods_idx_delete(config_idx, k, &obj_ref.idx_data);
 		ods_ref_delete(config_ods, obj_ref.ref.obj);
 	}

@@ -237,6 +237,7 @@ int main(int argc, char *argv[])
 	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_begin(iter)) {
 		ods_key_t k = ods_iter_key(iter);
 		printf("delete %s\n", ods_key_to_str(idx, k, keystr));
+		ref = 0;
 		rc = ods_idx_delete(idx, k, &ref);
 		ods_obj_put(k);
 		if (rc) {
@@ -257,6 +258,7 @@ int main(int argc, char *argv[])
 	for (rc = ods_iter_end(iter); !rc; rc = ods_iter_end(iter)) {
 		ods_key_t k = ods_iter_key(iter);
 		printf("delete %s\n", ods_key_to_str(idx, k, keystr));
+		ref = 0;
 		rc = ods_idx_delete(idx, k, &ref);
 		ods_obj_put(k);
 		if (rc) {

@@ -278,7 +278,7 @@ struct iter_args {
 	sos_part_t part;
 	uint64_t count;
 };
-#define DUTY_CYCLE 500000
+#define DUTY_CYCLE 250000
 
 static int __unindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 {
@@ -293,10 +293,9 @@ static int __unindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 		return 0;
 	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
 	ref.ref.obj = ods_obj_ref(obj);
-	sos_obj = __sos_init_obj_no_lock(part->sos, schema, obj, ref);
-
+	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
 	sos_obj_remove(sos_obj);
-	__sos_obj_put_no_lock(sos_obj);
+	sos_obj_put(sos_obj);
 	struct timeval tv;
 	(void)gettimeofday(&tv, NULL);
 	double now = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
@@ -309,13 +308,12 @@ static int __unindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 	return 0;
 }
 
-void __make_part_offline(sos_t sos, sos_part_t part)
+
+void __unindex_part_objects(sos_t sos, sos_part_t part)
 {
 	int rc;
 	struct iter_args uargs;
 	struct ods_obj_iter_pos_s pos;
-	SOS_PART(part->part_obj)->state = SOS_PART_STATE_OFFLINE;
-	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
 
 	/*
 	 * Remove all objects in this partition from the indices
@@ -330,13 +328,21 @@ void __make_part_offline(sos_t sos, sos_part_t part)
 		uargs.count = 0;
 		rc = ods_obj_iter(part->obj_ods, &pos, __unindex_callback_fn, &uargs);
 		if (rc) {
-			ods_spin_unlock(&sos->part_lock);
-			pthread_mutex_unlock(&sos->lock);
-			usleep(DUTY_CYCLE);
-			pthread_mutex_lock(&sos->lock);
-			ods_spin_lock(&sos->part_lock, -1);
+			usleep(1000000 - DUTY_CYCLE);
 		}
 	} while (rc);
+}
+
+void __make_part_offline(sos_t sos, sos_part_t part)
+{
+	SOS_PART(part->part_obj)->state = SOS_PART_STATE_OFFLINE;
+	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
+}
+
+void __make_part_busy(sos_t sos, sos_part_t part)
+{
+	SOS_PART(part->part_obj)->state = SOS_PART_STATE_BUSY;
+	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
 }
 
 /*
@@ -359,12 +365,12 @@ static int __reindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 		return 0;
 	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
 	ref.ref.obj = ods_obj_ref(obj);
-	sos_obj = __sos_init_obj_no_lock(part->sos, schema, obj, ref);
+	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
 	rc = sos_obj_index(sos_obj);
 	if (rc) {
 		/* The object couldn't be indexed for some reason */
 	}
-	__sos_obj_put_no_lock(sos_obj);
+	sos_obj_put(sos_obj);
 	rc = gettimeofday(&tv, NULL);
 	double now = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
 	double dur = now - rarg->start;
@@ -391,11 +397,7 @@ static int __reindex_part_objects(sos_t sos, sos_part_t part)
 		rargs.count = 0;
 		rc = ods_obj_iter(part->obj_ods, &pos, __reindex_callback_fn, &rargs);
 		if (rc) {
-			ods_spin_unlock(&sos->part_lock);
-			pthread_mutex_unlock(&sos->lock);
-			usleep(DUTY_CYCLE);
-			pthread_mutex_lock(&sos->lock);
-			ods_spin_lock(&sos->part_lock, -1);
+			usleep(1000000 - DUTY_CYCLE);
 		}
 	} while (rc);
 	return 0;
@@ -462,41 +464,81 @@ sos_part_t __sos_part_find_by_ref(sos_t sos, ods_ref_t ref)
  * removed from all indices in the container.
  *
  * \param part The partition handle
- * \param state The desired state of the partition
+ * \param new_state The desired state of the partition
  * \retval 0 The state was successfully changed
  * \retval EINVAL The specified state is invalid given the current
  * state of the partition.
  */
-int sos_part_state_set(sos_part_t part, sos_part_state_t state)
+int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 {
 	sos_t sos = part->sos;
 	int rc = 0;
 	sos_part_state_t cur_state;
-	ods_ref_t part_ref = ods_obj_ref(part->part_obj);
 
 	pthread_mutex_lock(&sos->lock);
 	ods_spin_lock(&sos->part_lock, -1);
 	cur_state = SOS_PART(part->part_obj)->state;
+	if (cur_state == SOS_PART_STATE_BUSY
+	    || cur_state == SOS_PART_STATE_PRIMARY) {
+		rc = EBUSY;
+		goto out;
+	}
+	__make_part_busy(sos, part);
+	ods_spin_unlock(&sos->part_lock);
+	pthread_mutex_unlock(&sos->lock);
 
 	switch (cur_state) {
 	case SOS_PART_STATE_OFFLINE:
-		switch (state) {
+		switch (new_state) {
+		case SOS_PART_STATE_ACTIVE:
+		case SOS_PART_STATE_PRIMARY:
+			rc = __sos_open_partition(sos, part);
+			if (rc) {
+				pthread_mutex_lock(&sos->lock);
+				ods_spin_lock(&sos->part_lock, -1);
+				__make_part_offline(sos, part);
+				ods_spin_unlock(&sos->part_lock);
+				pthread_mutex_unlock(&sos->lock);
+				return EINVAL;
+			}
+			__reindex_part_objects(sos, part);
+			break;
+		default:
+			break;
+		}
+		break;
+	case SOS_PART_STATE_ACTIVE:
+		switch (new_state) {
+		case SOS_PART_STATE_OFFLINE:
+			__unindex_part_objects(sos, part);
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+
+	pthread_mutex_lock(&sos->lock);
+	ods_spin_lock(&sos->part_lock, -1);
+	assert(SOS_PART_STATE_BUSY == SOS_PART(part->part_obj)->state);
+
+	switch (cur_state) {
+	case SOS_PART_STATE_OFFLINE:
+		switch (new_state) {
+		case SOS_PART_STATE_BUSY:
+			rc = EINVAL;
+			break;
 		case SOS_PART_STATE_OFFLINE:
 			break;
 		case SOS_PART_STATE_ACTIVE:
 			__make_part_active(sos, part);
 			__refresh_part_list(sos);
-			part = __sos_part_find_by_ref(sos, part_ref);
-			__reindex_part_objects(sos, part);
 			break;
 		case SOS_PART_STATE_PRIMARY:
 			__make_part_primary(sos, part);
 			__refresh_part_list(sos);
-			part = __sos_part_find_by_ref(sos, part_ref);
-			__reindex_part_objects(sos, part);
-			break;
-		case SOS_PART_STATE_MOVING:
-			rc = EINVAL;
 			break;
 		default:
 			rc = EINVAL;
@@ -504,7 +546,10 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state)
 		}
 		break;
 	case SOS_PART_STATE_ACTIVE:
-		switch (state) {
+		switch (new_state) {
+		case SOS_PART_STATE_BUSY:
+			rc = EINVAL;
+			break;
 		case SOS_PART_STATE_OFFLINE:
 			__make_part_offline(sos, part);
 			__refresh_part_list(sos);
@@ -514,36 +559,15 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state)
 		case SOS_PART_STATE_PRIMARY:
 			__make_part_primary(sos, part);
 			break;
-		case SOS_PART_STATE_MOVING:
-			rc = EINVAL;
-			break;
 		default:
 			rc = EINVAL;
 			break;
 		}
 		break;
-	case SOS_PART_STATE_PRIMARY:
-		switch (state) {
-		case SOS_PART_STATE_OFFLINE:
-			rc = EBUSY;
-			break;
-		case SOS_PART_STATE_ACTIVE:
-			rc = EBUSY;
-			break;
-		case SOS_PART_STATE_PRIMARY:
-			break;
-		case SOS_PART_STATE_MOVING:
-			rc = EBUSY;
-			break;
-		default:
-			rc = EINVAL;
-			break;
-		}
-		break;
-	case SOS_PART_STATE_MOVING:
-		rc = EBUSY;
-		break;
+	default:
+		assert(0);
 	}
+ out:
 	ods_spin_unlock(&sos->part_lock);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
@@ -1227,6 +1251,8 @@ void sos_part_obj_iter_pos_init(sos_part_obj_iter_pos_t pos)
 int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
 		      sos_part_obj_iter_fn_t fn, void *arg)
 {
+	if (!part->obj_ods)
+		return 0;
 	struct part_obj_iter_args_s args;
 	args.part = part;
 	args.fn = fn;

@@ -157,8 +157,8 @@ void print_partitions(sos_t sos, FILE *fp, char *part_name, int show_objects)
 		case SOS_PART_STATE_PRIMARY:
 			statestr = "PRIMARY";
 			break;
-		case SOS_PART_STATE_MOVING:
-			statestr = "MOVING";
+		case SOS_PART_STATE_BUSY:
+			statestr = "BUSY";
 			break;
 		default:
 			statestr = "!UNKNOWN!";
@@ -237,5 +237,6 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 	print_partitions(sos, stdout, part_name, show_objects);
+	sos_container_close(sos, SOS_COMMIT_ASYNC);
 	return 0;
 }

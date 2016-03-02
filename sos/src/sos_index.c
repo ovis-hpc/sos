@@ -191,6 +191,7 @@ int sos_index_new(sos_t sos, const char *name,
 	ods_spin_unlock(&sos->idx_lock);
 	return rc;
  err_1:
+	sos_ref_reset(idx_ref);
 	ods_idx_delete(sos->idx_idx, idx_key, &idx_ref.idx_data);
  err_0:
 	ods_obj_delete(idx_obj);
@@ -298,6 +299,7 @@ int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
 	ods_idx_data_t data;
+	data = obj->obj_ref.idx_data;
 	return ods_idx_delete(index->idx, key, &data);
 }
 

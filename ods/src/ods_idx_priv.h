@@ -132,4 +132,13 @@ struct ods_iter {
 	struct ods_idx *idx;
 };
 
+static inline int ods_idx_data_null(ods_idx_data_t *data)
+{
+	return ((0 == data->uint64_[0]) && (0 == data->uint64_[1]));
+}
+static inline int ods_idx_data_equal(ods_idx_data_t *a, ods_idx_data_t *b)
+{
+	return ((a->uint64_[0] == b->uint64_[0])
+		&& (a->uint64_[1] == b->uint64_[1]));
+}
 #endif

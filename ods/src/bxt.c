@@ -19,8 +19,6 @@
 
 /* #define BXT_DEBUG */
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
-pthread_mutex_t client_list_lock;
-LIST_HEAD(active_clients, bxt_s) client_list;
 
 static struct bxt_obj_el *alloc_el(bxt_t t);
 ods_atomic_t el_count;
@@ -188,7 +186,6 @@ static int bxt_open(ods_idx_t idx)
 	t->comparator = idx->idx_class->cmp->compare_fn;
 	idx->priv = t;
 	ods_atomic_inc(&t->udata->client_count);
-	LIST_INSERT_HEAD(&client_list, t, entry);
 	return 0;
 }
 
@@ -248,15 +245,8 @@ static void bxt_close_(bxt_t t)
 static void bxt_close(ods_idx_t idx)
 {
 	bxt_t t = idx->priv;
-
 	assert(t);
-
-	/* Remove this client from the active client list */
-	pthread_mutex_lock(&client_list_lock);
-	LIST_REMOVE(t, entry);
 	idx->priv = NULL;
-	pthread_mutex_unlock(&client_list_lock);
-
 	bxt_close_(t);
 }
 
@@ -1564,8 +1554,9 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 	goto next_level;
 }
 
-static void delete_head(bxt_t t, ods_obj_t leaf, ods_obj_t rec, int ent)
+static void delete_head(bxt_t t, ods_obj_t leaf, int ent)
 {
+	ods_obj_t rec = ods_ref_as_obj(t->ods, L_ENT(leaf,ent).head_ref);
 	ods_obj_t next_rec = ods_ref_as_obj(t->ods, REC(rec)->next_ref);
 	ods_obj_t prev_rec = ods_ref_as_obj(t->ods, REC(rec)->prev_ref);
 	if (prev_rec)
@@ -1605,6 +1596,28 @@ static void delete_dup_rec(bxt_t t, ods_obj_t leaf, ods_obj_t rec, int ent)
 	ods_obj_put(rec);
 }
 
+static ods_obj_t find_matching_rec(bxt_t t, ods_obj_t leaf, int ent,
+				   ods_idx_data_t *data)
+{
+	ods_obj_t rec;
+	ods_ref_t rec_ref;
+
+	/* Find the duplicate that matches the input index data */
+	rec_ref = L_ENT(leaf, ent).head_ref;
+	do {
+		rec = ods_ref_as_obj(t->ods, rec_ref);
+		assert(rec);
+		if (ods_idx_data_equal(&REC(rec)->value, data))
+			return rec;
+		if (rec_ref == L_ENT(leaf, ent).tail_ref)
+			/* Didn't find a match */
+			break;
+		rec_ref = REC(rec)->next_ref;
+		ods_obj_put(rec);
+	} while (rec_ref);
+	return NULL;
+}
+
 static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	bxt_t t = idx->priv;
@@ -1621,22 +1634,34 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	ent = find_key_idx(t, leaf, key, &found);
 	if (!found)
 		goto noent;
-	rec = ods_ref_as_obj(t->ods, L_ENT(leaf, ent).head_ref);
-	assert(rec);
-	*data = REC(rec)->value;
-	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref)
-		ods_atomic_dec(&t->udata->dups);
 	ods_atomic_dec(&t->udata->card);
 	/*
 	 * Trivial case is that this is a dup key. In this case,
 	 * delete the first entry on the list and return
 	 */
 	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref) {
-		delete_head(t, leaf, rec, ent);
+		int rc = 0;
+		if (ods_idx_data_null(data)) {
+			delete_head(t, leaf, ent);
+		} else {
+			/* find the matching dup entry and delete it */
+			rec = find_matching_rec(t, leaf, ent, data);
+			if (rec) {
+				delete_dup_rec(t, leaf, rec, ent);
+				ods_obj_put(rec);
+			} else {
+				rc = ENOENT;
+			}
+		}
+		if (!rc)
+			ods_atomic_dec(&t->udata->dups);
 		ods_obj_put(leaf);
 		ods_spin_unlock(&t->lock);
-		return 0;
+		return rc;
 	}
+	rec = ods_ref_as_obj(t->ods, L_ENT(leaf, ent).head_ref);
+	assert(rec);
+	*data = REC(rec)->value;
 	t->udata->root_ref = entry_delete(t, leaf, rec, ent);
 	ods_obj_delete(key);
 	ods_obj_put(rec);
@@ -2192,15 +2217,8 @@ struct ods_idx_provider *get(void)
 
 static void __attribute__ ((constructor)) bxt_lib_init(void)
 {
-	pthread_mutex_init(&client_list_lock, 0);
 }
 
 static void __attribute__ ((destructor)) bxt_lib_term(void)
 {
-	bxt_t t;
-	while (!LIST_EMPTY(&client_list)) {
-		t = LIST_FIRST(&client_list);
-		LIST_REMOVE(t, entry);
-		bxt_close_(t);
-	}
 }

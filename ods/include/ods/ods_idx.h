@@ -70,7 +70,10 @@ extern int ods_debug;
 
 #define ODS_IDX_DATA_LEN 16
 typedef struct ods_idx_data_s {
-	unsigned char bytes[ODS_IDX_DATA_LEN];
+	union {
+		unsigned char bytes[ODS_IDX_DATA_LEN];
+		uint64_t uint64_[ODS_IDX_DATA_LEN/sizeof(uint64_t)];
+	};
 } ods_idx_data_t;
 
 /**

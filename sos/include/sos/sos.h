@@ -179,6 +179,10 @@ typedef union sos_obj_ref_s {
 		ods_ref_t obj;	/* The object reference */
 	} ref;
 } sos_obj_ref_t;
+static inline void sos_ref_reset(sos_obj_ref_t ref)
+{
+	ref.ref.ods = ref.ref.obj = 0;
+}
 
 union sos_array_element_u {
 	char char_[0];
@@ -221,6 +225,7 @@ union sos_primary_u {
 	long double long_double_;
 	union sos_timestamp_u timestamp_;
 	union sos_obj_ref_s ref_;
+	uint8_t struc_[0];
 };
 
 typedef union sos_value_data_u {
@@ -325,8 +330,8 @@ typedef enum sos_part_state_e {
 	SOS_PART_STATE_ACTIVE = 1,
 	/** New objects stored here */
 	SOS_PART_STATE_PRIMARY = 2,
-	/** Partition is being moved */
-	SOS_PART_STATE_MOVING = 3,
+	/** Partition is undergoing state change  */
+	SOS_PART_STATE_BUSY = 3,
 } sos_part_state_t;
 
 /** Describes a Partitions storage attributes */

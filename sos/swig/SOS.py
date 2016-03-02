@@ -173,6 +173,8 @@ class Value(object):
             return int(self.value.data.prim.long_double_)
         elif t == sos.SOS_TYPE_OBJ:
             return self.value.data.prim.ref_.obj_ref
+        elif t == sos.SOS_TYPE_STRUCT:
+            return self.value.data.prim.struc_
         else:
             raise ValueError()
 
@@ -582,6 +584,7 @@ col_widths = {
     sos.SOS_TYPE_LONG_DOUBLE : 48,
     sos.SOS_TYPE_TIMESTAMP : 18,
     sos.SOS_TYPE_OBJ : 8,
+    sos.SOS_TYPE_STRUCT : 32,
     sos.SOS_TYPE_CHAR_ARRAY : -1,
     sos.SOS_TYPE_BYTE_ARRAY : -1,
     sos.SOS_TYPE_INT16_ARRAY : 6,
@@ -608,6 +611,7 @@ sos_type_name = {
     sos.SOS_TYPE_LONG_DOUBLE : "LONG_DOUBLE",
     sos.SOS_TYPE_TIMESTAMP : "TIMESTAMP",
     sos.SOS_TYPE_OBJ : "OBJ",
+    sos.SOS_TYPE_STRUCT : "STRUCT",
     sos.SOS_TYPE_CHAR_ARRAY : "CHAR_ARRAY",
     sos.SOS_TYPE_BYTE_ARRAY : "BYTE_ARRAY",
     sos.SOS_TYPE_INT16_ARRAY : "INT16_ARRAY",
@@ -840,12 +844,12 @@ class Container(object):
         self.release()
 
     def release(self):
-        if self.container:
-            sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
-            self.container = None
         for index_name, index in self.indexes.iteritems():
             index.release()
         self.indexes.clear()
+        if self.container:
+            sos.sos_container_close(self.container, sos.SOS_COMMIT_ASYNC)
+            self.container = None
 
     def __del__(self):
         self.release()

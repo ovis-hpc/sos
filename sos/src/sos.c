@@ -1044,7 +1044,6 @@ int sos_obj_remove(sos_obj_t obj)
 	sos_attr_t attr;
 	size_t key_sz;
 	int rc;
-	ods_idx_data_t data;
 	sos_key_t key;
 
 	TAILQ_FOREACH(attr, &obj->schema->attr_list, entry) {
@@ -1060,7 +1059,7 @@ int sos_obj_remove(sos_obj_t obj)
 			return ENOMEM;
 		}
 		ods_key_set(key, sos_value_as_key(value), key_sz);
-		rc = ods_idx_delete(attr->index->idx, key, &data);
+		rc = ods_idx_delete(attr->index->idx, key, &obj->obj_ref.idx_data);
 		sos_key_put(key);
 		sos_value_put(value);
 		if (rc)
@@ -1088,6 +1087,7 @@ int sos_obj_index(sos_obj_t obj)
 	sos_value_t value;
 	sos_attr_t attr;
 	size_t key_sz;
+	sos_key_t the_key = NULL;
 	SOS_KEY(key);
 	int rc;
 
@@ -1096,8 +1096,15 @@ int sos_obj_index(sos_obj_t obj)
 			continue;
 		value = sos_value_init(&v_, obj, attr);
 		key_sz = sos_value_size(value);
-		sos_key_set(key, sos_value_as_key(value), key_sz);
-		rc = sos_index_insert(attr->index, key, obj);
+		if (key_sz < 254) {
+			the_key = key;
+		} else {
+			the_key = sos_key_new(key_sz);
+		}
+		sos_key_set(the_key, sos_value_as_key(value), key_sz);
+		rc = sos_index_insert(attr->index, the_key, obj);
+		if (the_key != key)
+			sos_key_put(the_key);
 		sos_value_put(value);
 		if (rc)
 			goto err;

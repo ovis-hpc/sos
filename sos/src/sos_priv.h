@@ -127,7 +127,7 @@ typedef struct sos_part_data_s {
 	char name[SOS_PART_NAME_LEN];
 	char path[SOS_PART_PATH_LEN];
 	uint64_t part_id;
-	uint32_t state;		/* PRIMARY (2), ACTIVE (1), INACTIVE (0) */
+	uint32_t state;		/* BUSY(3), PRIMARY (2), ACTIVE (1), OFFLINE (0) */
 	ods_atomic_t ref_count;
 	ods_ref_t next;		/* Next partition */
 	ods_ref_t prev;		/* Previous partition */

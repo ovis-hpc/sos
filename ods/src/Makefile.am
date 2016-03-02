@@ -20,6 +20,9 @@ lib_LTLIBRARIES += libkey_SHA256.la
 libkey_STRING_la_SOURCES = key_str.c
 lib_LTLIBRARIES += libkey_STRING.la
 
+libkey_MEMCMP_la_SOURCES = key_memcmp.c
+lib_LTLIBRARIES += libkey_MEMCMP.la
+
 libkey_UINT192_la_SOURCES = key_uint192.c
 lib_LTLIBRARIES += libkey_UINT192.la
 

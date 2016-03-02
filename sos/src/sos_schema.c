@@ -240,7 +240,9 @@ sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 		if (!t->attrs[i].name)
 			break;
 		rc = sos_schema_attr_add(schema,
-					 t->attrs[i].name, t->attrs[i].type);
+					 t->attrs[i].name,
+					 t->attrs[i].type,
+					 t->attrs[i].size);
 		if (rc)
 			goto err;
 		if (t->attrs[i].indexed) {
@@ -329,8 +331,8 @@ static const char *key_types[] = {
 	[SOS_TYPE_LONG_DOUBLE] = "LONG_DOUBLE",
 	[SOS_TYPE_TIMESTAMP] = "UINT64",
 	[SOS_TYPE_OBJ] = "NONE",
-	[SOS_TYPE_STRUCT] = "NONE",
-	[SOS_TYPE_BYTE_ARRAY] = "STRING",
+	[SOS_TYPE_STRUCT] = "MEMCMP",
+	[SOS_TYPE_BYTE_ARRAY] = "MEMCMP",
 	[SOS_TYPE_CHAR_ARRAY] = "STRING",
 	[SOS_TYPE_INT16_ARRAY] = "NONE",
 	[SOS_TYPE_INT32_ARRAY] = "NONE",
