@@ -1254,8 +1254,13 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
 	if (!part->obj_ods)
 		return 0;
 	struct part_obj_iter_args_s args;
+	ods_obj_iter_pos_t ods_pos;
+	if (pos)
+		ods_pos = &pos->pos;
+	else
+		ods_pos = NULL;
 	args.part = part;
 	args.fn = fn;
 	args.arg = arg;
-	return ods_obj_iter(part->obj_ods, NULL, __part_obj_iter_cb, &args);
+	return ods_obj_iter(part->obj_ods, ods_pos, __part_obj_iter_cb, &args);
 }
