@@ -280,6 +280,14 @@ extern void ods_ref_delete(ods_t ods, ods_ref_t ref);
 uint32_t ods_ref_status(ods_t ods, ods_ref_t ref);
 
 /**
+ * Return true if the reference is valid in the ODS
+ *
+ * \param ods The ODS handle
+ * \param ref The object reference
+ */
+int ods_ref_valid(ods_t ods, ods_ref_t ref);
+
+/**
  * \brief Drop a reference to the object
  *
  * Decrement the reference count on the object. If the reference count

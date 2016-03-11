@@ -264,6 +264,7 @@ static ods_map_t map_new(ods_t ods)
 		goto err_1;
 
 	map->pg_sz = sb.st_size;
+	ods->pg_sz = map->pg_sz;
 	map->pg_table = pg_map;
 	map->pg_gen = map->pg_table->gen; /* cache gen from mapped memory */
 
@@ -279,6 +280,7 @@ static ods_map_t map_new(ods_t ods)
 		goto err_2;
 
 	map->obj_sz = sb.st_size;
+	ods->obj_sz = map->obj_sz;
 	map->obj_data = obj_map;
 	map->obj_gen = map->obj_data->gen; /* cache gen from mapped memory */
 
@@ -652,6 +654,15 @@ ods_ref_t ods_obj_ref(ods_obj_t obj)
 	return (obj ? obj->ref : 0);
 }
 
+int ods_ref_valid(ods_t ods, ods_ref_t ref)
+{
+	int rc;
+	ods_map_t map = map_get(ods->map);
+	rc = (ref < map->obj_sz);
+	map_put(map);
+	return rc;
+}
+
 ods_t ods_obj_ods(ods_obj_t obj)
 {
 	return (obj ? obj->ods : NULL);
@@ -659,6 +670,7 @@ ods_t ods_obj_ods(ods_obj_t obj)
 
 int ods_extend(ods_t ods, size_t sz)
 {
+	struct stat sb;
 	ods_map_t map;
 	struct ods_pg_s *pg;
 	size_t n_pages;
@@ -670,6 +682,19 @@ int ods_extend(ods_t ods, size_t sz)
 		return EPERM;
 
 	pthread_spin_lock(&ods->lock);
+	/*
+	 * Update our cached sizes in case they have been changed
+	 * since our last map_new()
+	 */
+	rc = fstat(ods->pg_fd, &sb);
+	if (rc)
+		goto out;
+	ods->pg_sz = sb.st_size;
+	rc = fstat(ods->obj_fd, &sb);
+	if (rc)
+		goto out;
+	ods->obj_sz = sb.st_size;
+
 	/*
 	 * Extend the page table first, that way if we fail extending
 	 * the object file, we can simply adjust the page_count back

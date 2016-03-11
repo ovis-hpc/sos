@@ -131,7 +131,7 @@ typedef struct ods_dirty_s {
 struct ods_s {
 	pthread_spinlock_t lock;
 
-	/* That path to the file on disk */
+	/* The path to the file on disk */
 	char *path;
 
 	/* Open permissions */

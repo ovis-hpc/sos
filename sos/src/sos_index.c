@@ -280,6 +280,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
  */
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
+	assert(ods_ref_valid(obj->obj->ods, obj->obj_ref.ref.obj));
 	return ods_idx_insert(index->idx, key, obj->obj_ref.idx_data);
 }
 
