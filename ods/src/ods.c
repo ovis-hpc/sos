@@ -630,7 +630,6 @@ ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref)
 		goto err_0;
 	obj->ods = ods;
 	ods_map_t map = _ods_map_get(ods);
-	assert(map_is_ok(map));
 	if (obj_init(obj, map, ref))
 		goto err_1;
 
