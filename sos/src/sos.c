@@ -374,7 +374,7 @@ int sos_container_new(const char *path, int o_mode)
 		goto err_7;
 
 	/* Initialize the index dictionary */
-	udata = ods_get_user_data(schema_ods);
+	udata = ods_get_user_data(idx_ods);
 	if (!udata) {
 		rc = errno;
 		ods_close(idx_ods, ODS_COMMIT_ASYNC);
