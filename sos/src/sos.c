@@ -520,13 +520,48 @@ void sos_container_info(sos_t sos, FILE *fp)
 	}
 }
 
+void sos_inuse_obj_info(sos_t sos, FILE *outp)
+{
+	sos_obj_t obj;
+	if (!outp)
+		outp = stdout;
+	fprintf(outp, "Active Objects\n");
+	fprintf(outp, "%-10s %-12s %s\n", "Ref Count", "Obj Ref", "Schema");
+	fprintf(outp, "---------- ------------ ------------\n");
+	LIST_FOREACH(obj, &sos->obj_list, entry) {
+		char ref_str[32];
+		sprintf(ref_str, "%p@%p", obj->obj_ref.ref.ods, obj->obj_ref.ref.obj);
+		fprintf(outp, "%10d %-12s %s\n",
+			obj->ref_count, ref_str, obj->schema->data->name);
+	}
+	fprintf(outp, "---------- ------------ ------------\n");
+}
+
+void sos_free_obj_info(sos_t sos, FILE *outp)
+{
+	sos_obj_t obj;
+	if (!outp)
+		outp = stdout;
+	fprintf(outp, "Free Objects\n");
+	fprintf(outp, "%-10s %-12s %s\n", "Ref Count", "Obj Ref", "Schema");
+	fprintf(outp, "---------- ------------ ------------\n");
+	LIST_FOREACH(obj, &sos->obj_free_list, entry) {
+		char ref_str[32];
+		sprintf(ref_str, "%p@%p", obj->obj_ref.ref.ods, obj->obj_ref.ref.obj);
+		fprintf(outp, "%10d %-12s %s\n",
+			obj->ref_count, ref_str, obj->schema->data->name);
+	}
+	fprintf(outp, "---------- ------------ ------------\n");
+}
+
 static void free_sos(sos_t sos, sos_commit_t flags)
 {
 	struct rbn *rbn;
 	sos_obj_t obj;
 
 	/* There should be no objects on the active list */
-	assert(LIST_EMPTY(&sos->obj_list));
+	if (!LIST_EMPTY(&sos->obj_list))
+		sos_inuse_obj_info(sos, stderr);
 
 	/* Iterate through the object free list and free all the objects */
 	while (!LIST_EMPTY(&sos->obj_free_list)) {
@@ -766,6 +801,7 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 		sos_obj = malloc(sizeof *sos_obj);
 	if (!sos_obj)
 		return NULL;
+	LIST_INSERT_HEAD(&sos->obj_list, sos_obj, entry);
 	SOS_OBJ(ods_obj)->schema = schema->data->id;
 	sos_obj->sos = sos;
 	sos_obj->obj = ods_obj;
@@ -1017,6 +1053,7 @@ void sos_obj_put(sos_obj_t obj)
 		sos_t sos = obj->sos;
 		ods_obj_put(obj->obj);
 		pthread_mutex_lock(&sos->lock);
+		LIST_REMOVE(obj, entry);
 		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
 		pthread_mutex_unlock(&sos->lock);
 	}

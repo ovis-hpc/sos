@@ -262,6 +262,9 @@ class Object(object):
             v = self.values[n]
             v.release()
         self.values.clear()
+        if self.obj:
+            sos.sos_obj_put(self.obj)
+            self.obj = None
 
     def __del__(self):
         self.release()
@@ -839,6 +842,12 @@ class Container(object):
 
     def info(self):
         sos.container_info(self.container)
+
+    def inuse_info(self, fp=None):
+        sos.sos_inuse_obj_info(self.container, fp)
+
+    def free_info(self, fp=None):
+        sos.sos_free_obj_info(self.container, fp)
 
     def close(self):
         self.release()

@@ -5,9 +5,12 @@ AM_CFLAGS = -I$(srcdir)/../include/
 
 libods_la_SOURCES = ods_idx.c ods.c rbt.c ods_idx_priv.h ods_priv.h oidx_priv.h
 libods_la_LIBADD = -ldl -lpthread
+# libods_la_LDFLAGS = -pg
 lib_LTLIBRARIES += libods.la
 
 libidx_BXTREE_la_SOURCES = bxt.c bxt.h
+libidx_BXTREE_la_CFLAGS = $(AM_CFLAGS) -DBXT_THREAD_SAFE
+# libidx_BXTREE_la_LDFLAGS = -pg
 libidx_BXTREE_la_LIBADD = libods.la
 lib_LTLIBRARIES += libidx_BXTREE.la
 
@@ -25,6 +28,9 @@ lib_LTLIBRARIES += libkey_MEMCMP.la
 
 libkey_UINT192_la_SOURCES = key_uint192.c
 lib_LTLIBRARIES += libkey_UINT192.la
+
+libkey_UINT128_la_SOURCES = key_uint128.c
+lib_LTLIBRARIES += libkey_UINT128.la
 
 libkey_UINT96_la_SOURCES = key_uint96.c
 lib_LTLIBRARIES += libkey_UINT96.la

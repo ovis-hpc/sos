@@ -249,18 +249,17 @@ sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 			rc = sos_schema_index_add(schema, t->attrs[i].name);
 			if (rc)
 				goto err;
-			if (t->attrs[i].key_type) {
-				const char *idx_type = t->attrs[i].idx_type;
-				if (!idx_type)
-					idx_type = "BXTREE";
-				rc = sos_schema_index_modify
-					(schema,
-					 t->attrs[i].name,
-					 idx_type,
-					 t->attrs[i].key_type);
-				if (rc)
-					goto err;
-			}
+			const char *idx_type = t->attrs[i].idx_type;
+			if (!idx_type)
+				idx_type = "BXTREE";
+			rc = sos_schema_index_modify
+				(schema,
+				 t->attrs[i].name,
+				 idx_type,
+				 t->attrs[i].key_type,
+				 t->attrs[i].idx_args);
+			if (rc)
+				goto err;
 		}
 	}
 	return schema;
@@ -525,6 +524,8 @@ int sos_schema_index_modify(sos_schema_t schema, const char *name,
 			    const char *idx_type, const char *key_type, ...)
 {
 	sos_attr_t attr;
+	va_list ap;
+	va_start(ap, key_type);
 
 	if (schema->schema_obj)
 		return EBUSY;
@@ -534,10 +535,19 @@ int sos_schema_index_modify(sos_schema_t schema, const char *name,
 	if (!attr)
 		return ENOENT;
 
-	attr->idx_type = strdup(idx_type);
-	__toupper(attr->idx_type);
-	attr->key_type = strdup(key_type);
-	__toupper(attr->key_type);
+	if (idx_type) {
+		attr->idx_type = strdup(idx_type);
+		__toupper(attr->idx_type);
+	}
+	if (key_type) {
+		attr->key_type = strdup(key_type);
+		__toupper(attr->key_type);
+	}
+	char *args = va_arg(ap, char *);
+	if (args)
+		attr->idx_args = strdup(args);
+	else
+		attr->idx_args = NULL;
 	return 0;
 }
 
@@ -771,9 +781,9 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
  * \param attr	The sos_attr_t handle
  * \returns !0 if the attribute has an index
  */
-int sos_attr_index(sos_attr_t attr)
+sos_index_t sos_attr_index(sos_attr_t attr)
 {
-	return attr->data->indexed;
+	return attr->index;
 }
 
 /**
@@ -1008,7 +1018,8 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 		attr->index = sos_index_open(sos, idx_name);
 		if (!attr->index) {
 			rc = sos_index_new(sos, idx_name,
-					   attr->idx_type, attr->key_type, NULL);
+					   attr->idx_type, attr->key_type,
+					   attr->idx_args);
 			if (rc)
 				goto err;
 			goto retry;

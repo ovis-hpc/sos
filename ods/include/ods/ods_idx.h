@@ -368,9 +368,10 @@ int ods_key_from_str(ods_idx_t idx, ods_key_t key, const char *str);
  * \param idx	The index handle
  * \param key	The key
  * \param buf   The string buffer to contain the value
+ * \param len   The size of the buffer in bytes
  * \return A const char * representation of the key value.
  */
-const char *ods_key_to_str(ods_idx_t idx, ods_key_t key, char *buf);
+const char *ods_key_to_str(ods_idx_t idx, ods_key_t key, char *buf, size_t len);
 
 /**
  * \brief Compare two keys using the index's compare function
@@ -405,7 +406,7 @@ size_t ods_idx_key_size(ods_idx_t idx);
  * \param idx
  * \retval Buffer size
  */
-size_t ods_idx_key_str_size(ods_idx_t idx);
+size_t ods_idx_key_str_size(ods_idx_t idx, ods_key_t key);
 
 /**
  * \brief Return the max size of this key's value
@@ -464,6 +465,50 @@ typedef int (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
  *			specified is 0
  */
 int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data);
+
+typedef enum ods_idx_act_e {
+	ODS_IDX_ACT_IGN = 0,
+	ODS_IDX_ACT_INS = 1,
+} ods_idx_act_t;
+typedef int (*ods_idx_cb_fn_t)(ods_idx_t idx, ods_key_t key, int missing,
+			       ods_idx_data_t *pdata, void *user_ctxt);
+/**
+ * \brief Locate the key position and call the callback function
+ *
+ * Locate the position in the index corresponding to the specified
+ * key. If the key is present in the index, this is the first entry
+ * with this key. If the key is not present, this is the position in
+ * the index wwhere the key would be located. When the callback
+ * function is called, the index lock is held.
+ *
+ * The callback function is called with the user provided context and
+ * the reference associated with the key if the key was found. If the
+ * reference is NULL, they key was not found.
+ *
+ * This function provides an efficient means to implement functions
+ * like insert-if-not-found without traversing the index twice,
+ * i.e. once to determine if the key was found and a second time to
+ * insert the new key. It also avoids a second lock to lock around a
+ * find, and subsequent insert.
+ *
+ * \param idx	The index handle
+ * \param key	The key
+ * \param cb_fn	The callback function to call for each matching key
+ * \param ctxt	A user supplied context pointer that will be passed to
+ *              the callback function
+ *
+ * \retval 0		Success
+ * \retval ENOMEM	Insuffient resources
+ * \retval EINVAL	The idx specified is invalid or the obj
+ *			specified is 0
+ */
+int ods_idx_insert_missing(ods_idx_t idx, ods_key_t key,
+			ods_idx_cb_fn_t cb_fn, void *ctxt);
+
+ods_obj_t ods_idx_min(ods_idx_t idx);
+ods_obj_t ods_idx_max(ods_idx_t idx);
+int ods_idx_insert_min(ods_idx_t idx, ods_idx_cb_fn_t cb_fn, void *ctxt);
+int ods_idx_insert_max(ods_idx_t idx, ods_idx_cb_fn_t cb_fn, void *ctxt);
 
 /**
  * \brief Update the object associated with a key in the index

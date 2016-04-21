@@ -83,6 +83,7 @@
  *
  */
 
+#define ODS_MAP_LEN	(128*1024*1024)
 struct ods_map_s {
 	/*
 	 * Reference count for the map. One ref is held by ods_open
@@ -115,6 +116,11 @@ struct ods_map_s {
 	/* The page-file map size */
 	size_t pg_sz;
 
+#ifdef __notyet__
+	/* File offset */
+	loff_t loff;
+	size_t map_len;
+#endif
 	/* Pointer to the page-file data in memory */
 	struct ods_pgt_s *pg_table;
 
@@ -128,8 +134,23 @@ typedef struct ods_dirty_s {
 	struct rbn rbn;
 } *ods_dirty_t;
 
+typedef struct ods_obj_hent_s {
+	ods_obj_t obj;
+	TAILQ_ENTRY(ods_obj_hent_s) tentry;
+	LIST_ENTRY(ods_obj_hent_s) lentry;
+} *ods_obj_hent_t;
+
+typedef struct ods_obj_htbl_s {
+	size_t hcount;		/* table depth */
+	size_t tcount;		/* entry count */
+	TAILQ_HEAD(ods_obj_tailq_head_s, ods_obj_hent_s) lru;
+	LIST_HEAD(ods_obj_list_head_s, ods_obj_hent_s) htable[0];
+} *ods_obj_htbl_t;
+
 struct ods_s {
-	pthread_spinlock_t lock;
+	// pthread_spinlock_t lock;
+	struct ods_spin_s lock;
+	ods_atomic_t lock_word;
 
 	/* The path to the file on disk */
 	char *path;
@@ -154,12 +175,19 @@ struct ods_s {
 	LIST_HEAD(obj_free_list_head, ods_obj_s) obj_free_list;
 	LIST_HEAD(map_list_head, ods_map_s) map_list;
 
+	/* In-memory object hash table */
+	ods_obj_htbl_t obj_htbl;
+
 	/* The dirty tree */
 	struct rbt dirty_tree;
 
 	LIST_ENTRY(ods_s) entry;
 };
-
+// #define ODS_OBJ_HTBL_DEPTH 32653
+// #define ODS_OBJ_HTBL_DEPTH 65537
+#define ODS_OBJ_HTBL_DEPTH 131071
+// #define ODS_OBJ_HTBL_DEPTH 262147
+// #define ODS_OBJ_HTBL_DEPTH 524287
 #define ODS_OBJ_SIGNATURE "OBJSTORE"
 #define ODS_PGT_SIGNATURE "PGTSTORE"
 #define ODS_OBJ_VERSION   "04012014"

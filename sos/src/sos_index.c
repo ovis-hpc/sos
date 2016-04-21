@@ -184,7 +184,7 @@ int sos_index_new(sos_t sos, const char *name,
 		goto err_0;
 
 	sprintf(tmp_path, "%s/%s_idx", sos->path, name);
-	rc = ods_idx_create(tmp_path, sos->o_mode, idx_type, key_type, NULL);
+	rc = ods_idx_create(tmp_path, sos->o_mode, idx_type, key_type, idx_args);
 	if (rc)
 		goto err_1;
  out:
@@ -269,6 +269,30 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 	return NULL;
 }
 
+struct sos_ins_cb_ctxt_s {
+	sos_index_t index;
+	sos_ins_cb_fn_t cb_fn;
+	void *arg;
+};
+
+static int __insert_missing_cb(ods_idx_t idx, ods_key_t key, int missing, ods_idx_data_t *data, void *arg)
+{
+	struct sos_ins_cb_ctxt_s *sos_arg = arg;
+	return sos_arg->cb_fn(sos_arg->index, key, missing, (sos_obj_ref_t *)data, sos_arg->arg);
+}
+
+int sos_index_insert_missing(sos_index_t index, sos_key_t key, sos_ins_cb_fn_t cb, void *arg)
+{
+	int rc;
+	struct sos_ins_cb_ctxt_s ctxt = {
+		.index = index,
+		.cb_fn = cb,
+		.arg = arg
+	};
+	rc = ods_idx_insert_missing(index->idx, key, __insert_missing_cb, &ctxt);
+	return rc;
+}
+
 /**
  * \brief Add an object to an index
  *
@@ -325,6 +349,13 @@ sos_obj_t sos_index_find(sos_index_t index, sos_key_t key)
 	if (!obj)
 		errno = EINVAL;
 	return obj;
+}
+
+sos_obj_t sos_obj_find(sos_attr_t attr, sos_key_t key)
+{
+	if (attr->index)
+		return sos_index_find(attr->index, key);
+	return NULL;
 }
 
 /**
@@ -446,8 +477,9 @@ int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str)
  */
 const char *sos_index_key_to_str(sos_index_t index, sos_key_t key)
 {
-	char *keystr = malloc(ods_idx_key_str_size(index->idx));
-	return ods_key_to_str(index->idx, key, keystr);
+	size_t keylen = ods_idx_key_str_size(index->idx, key);
+	char *keystr = malloc(keylen);
+	return ods_key_to_str(index->idx, key, keystr, keylen);
 }
 
 /**

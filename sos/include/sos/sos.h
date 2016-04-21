@@ -111,6 +111,8 @@ int sos_container_stat(sos_t sos, struct stat *sb);
 void sos_container_close(sos_t c, sos_commit_t flags);
 int sos_container_commit(sos_t c, sos_commit_t flags);
 void sos_container_info(sos_t sos, FILE* fp);
+void sos_inuse_obj_info(sos_t sos, FILE *fp);
+void sos_free_obj_info(sos_t sos, FILE *fp);
 int sos_container_config_set(const char *path, const char *option, const char *value);
 char *sos_container_config_get(const char *path, const char *option);
 sos_config_iter_t sos_config_iter_new(const char *path);
@@ -258,7 +260,7 @@ typedef struct sos_schema_template_attr {
 	int indexed;
 	const char *idx_type;
 	const char *key_type;
-	const char *modifiers;
+	const char *idx_args;
 } *sos_schema_template_attr_t;
 
 typedef struct sos_schema_template {
@@ -301,7 +303,7 @@ sos_attr_t sos_schema_attr_prev(sos_attr_t attr);
 int sos_attr_id(sos_attr_t attr);
 const char *sos_attr_name(sos_attr_t attr);
 sos_type_t sos_attr_type(sos_attr_t attr);
-int sos_attr_index(sos_attr_t attr);
+sos_index_t sos_attr_index(sos_attr_t attr);
 size_t sos_attr_size(sos_attr_t attr);
 sos_schema_t sos_attr_schema(sos_attr_t attr);
 
@@ -407,6 +409,8 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
  * - sos_obj_index()	 Add an object to it's indices
  * - sos_obj_remove()	 Remove an object from it's indices
  * - sos_obj_ptr()       Returns a pointer to the object's data
+ * - sos_obj_find()	 Find an object based on an attribute value
+ * - sos_obj_find_and_add()	 Find an object based on an attribute value, if not present, add a new object.
  * - sos_value()	 Return a value given object and attribute handles.
  * - sos_value_by_name() Get the value handle by name
  * - sos_value_by_id()   Get the value handle by id
@@ -481,12 +485,15 @@ typedef struct sos_index_stat_s {
 /** \defgroup index_funcs Index Functions
  * @{
  */
+typedef int (*sos_ins_cb_fn_t)(sos_index_t index, sos_key_t key, int missing, sos_obj_ref_t *ref, void *arg);
+sos_obj_t sos_obj_find(sos_attr_t attr, sos_key_t key);
 int sos_index_new(sos_t sos, const char *name,
 		  const char *idx_type, const char *key_type,
 		  const char *args);
 sos_index_t sos_index_open(sos_t sos, const char *name);
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
+int sos_index_insert_missing(sos_index_t index, sos_key_t key, sos_ins_cb_fn_t cb, void *arg);
 sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);

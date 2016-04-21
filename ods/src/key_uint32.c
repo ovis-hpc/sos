@@ -73,11 +73,10 @@ static int uint32_comparator(ods_key_t a, ods_key_t b)
 	return (*(uint32_t*)av->value) - (*(uint32_t*)bv->value);
 }
 
-static const char *to_str(ods_key_t key, char *sbuf)
+static const char *to_str(ods_key_t key, char *sbuf, size_t len)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	assert(kv->len == 4);
-	sprintf(sbuf, "0x%08x", *(uint32_t *)kv->value);
+	snprintf(sbuf, len, "%d", *(int32_t *)kv->value);
 	return sbuf;
 }
 
@@ -101,7 +100,7 @@ static size_t size(void)
 	return sizeof(uint32_t);
 }
 
-static size_t str_size(void)
+static size_t str_size(ods_key_t key)
 {
 	return 16;
 }

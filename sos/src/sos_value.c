@@ -211,7 +211,7 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 	}
 	ref_obj = sos_ref_as_obj(obj->sos, ref_val->prim.ref_);
 	if (ref_obj) {
-		val->obj = sos_obj_get(ref_obj);
+		val->obj = ref_obj; /* ref from sos_ref_as_obj */
 		val->data = (sos_value_data_t)&SOS_OBJ(ref_obj->obj)->data[0];
 	} else {
 		val = NULL;

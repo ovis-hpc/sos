@@ -56,12 +56,15 @@ struct ods_idx_provider {
 	void (*close)(ods_idx_t idx);
 	void (*commit)(ods_idx_t idx);
 	int (*insert)(ods_idx_t idx, ods_key_t uk, ods_idx_data_t data);
+	int (*insert_missing)(ods_idx_t idx, ods_key_t key, ods_idx_cb_fn_t cb_fn, void *ctxt);
 	int (*update)(ods_idx_t idx, ods_key_t uk, ods_idx_data_t data);
 	int (*delete)(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 	int (*find)(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 	int (*find_lub)(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 	int (*find_glb)(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 	int (*stat)(ods_idx_t idx, ods_idx_stat_t sb);
+	ods_obj_t (*max)(ods_idx_t idx);
+	ods_obj_t (*min)(ods_idx_t idx);
 	ods_iter_t (*iter_new)(ods_idx_t idx);
 	void (*iter_delete)(ods_iter_t i);
 	int (*iter_find)(ods_iter_t iter, ods_key_t key);
@@ -88,13 +91,13 @@ struct ods_idx_comparator {
 	/** Return a description of how the key works  */
 	const char *(*get_doc)(void);
 	/** Return a string representation of the key value */
-	const char *(*to_str)(ods_key_t, char *buf);
+	const char *(*to_str)(ods_key_t, char *buf, size_t len);
 	/** Set the key value from a string */
 	int (*from_str)(ods_key_t, const char *);
 	/* Return the size of the key data or -1 if variable */
 	size_t (*size)(void);
 	/* Return the size of the key if formatted as a string */
-	size_t (*str_size)(void);
+	size_t (*str_size)(ods_key_t);
 	/** Compare two keys */
 	ods_idx_compare_fn_t compare_fn;
 };

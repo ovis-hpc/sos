@@ -75,17 +75,32 @@ static int cmp(ods_key_t a, ods_key_t b)
 	return res;
 }
 
-static const char *to_str(ods_key_t key, char *ignore)
+static const char *to_str(ods_key_t key, char *str, size_t len)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	return (const char *)strdup((char *)kv->value);
+	int i, cnt;
+	char *s = str;
+	for (i = 0; i < kv->len; i++) {
+		cnt = snprintf(s, len, "%02hhX", kv->value[i]);
+		s += cnt; len -= cnt;
+	}
+	return str;
 }
 
 static int from_str(ods_key_t key, const char *str)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	strcpy((char *)&kv->value[0], str);
-	kv->len = strlen(str)+1;
+	size_t cnt;
+	kv->len = 0;
+	do {
+		uint8_t b;
+		cnt = sscanf(str, "%02hhX", &b);
+		if (cnt > 0) {
+			kv->value[kv->len] = b;
+			kv->len++;
+		}
+		str += 2;
+	} while (cnt > 0);
 	return 0;
 }
 
@@ -94,9 +109,10 @@ static size_t size(void)
 	return -1; /* means variable length */
 }
 
-static size_t str_size(void)
+static size_t str_size(ods_key_t key)
 {
-	return 0; /* means to_str ignores input value */
+	ods_key_value_t kv = key->as.ptr;
+	return kv->len + 1;
 }
 
 static struct ods_idx_comparator key_comparator = {

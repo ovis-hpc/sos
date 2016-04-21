@@ -76,10 +76,10 @@ static int long double_comparator(ods_key_t a, ods_key_t b)
 	return 0;
 }
 
-static const char *to_str(ods_key_t key, char *sbuf)
+static const char *to_str(ods_key_t key, char *sbuf, size_t len)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	sprintf(sbuf, "%Lf", *(long double *)kv->value);
+	snprintf(sbuf, len, "%Lf", *(long double *)kv->value);
 	return sbuf;
 }
 
@@ -101,7 +101,7 @@ static size_t size(void)
 	return sizeof(long double);
 }
 
-static size_t str_size(void)
+static size_t str_size(ods_key_t key)
 {
 	return 128;
 }

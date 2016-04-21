@@ -488,15 +488,52 @@ int ods_obj_valid(ods_t ods, ods_obj_t obj);
 
 #define ODS_PTR(_typ_, _obj_) ((_typ_)_obj_->as.ptr)
 
+#define ODS_MUTEX_LOCK
+
+#ifdef ODS_SPIN_LOCK
 typedef struct ods_spin_s {
 	ods_atomic_t *lock_p;
+	ods_atomic_t contested;
+	pthread_t owner;
 } *ods_spin_t;
-#define ods_spin_init(_name_, _lock_p_)	(_name_)->lock_p = (_lock_p_)
+static inline void ods_spin_init(ods_spin_t lock, ods_atomic_t *word) {
+	*word = 0;
+	lock->lock_p = word;
+	lock->contested = 0;
+	lock->owner = 0;
+}
 
-int ods_spin_lock(ods_spin_t spin, int timeout);
+static inline int ods_spin_lock(ods_spin_t spin, int timeout) {
+	while (__sync_lock_test_and_set(spin->lock_p, 1)) {
+		spin->owner = pthread_self();
+		ods_atomic_inc(&spin->contested);
+	};
+	return 0;
+}
 
-void ods_spin_unlock(ods_spin_t s);
-void ods_spin_put(ods_spin_t spin);
+static inline void ods_spin_unlock(ods_spin_t spin) {
+	spin->owner = -1;
+	__sync_lock_release(spin->lock_p);
+}
+#endif
+
+#ifdef ODS_MUTEX_LOCK
+typedef struct ods_spin_s {
+	pthread_mutex_t lock;
+} *ods_spin_t;
+static inline void ods_spin_init(ods_spin_t spin, void *word) {
+	pthread_mutex_init(&spin->lock, NULL);
+}
+
+static inline int ods_spin_lock(ods_spin_t spin, int timeout) {
+	return pthread_mutex_lock(&spin->lock);
+}
+
+static inline void ods_spin_unlock(ods_spin_t spin) {
+	pthread_mutex_unlock(&spin->lock);
+}
+#endif
+
 void ods_info(ods_t ods, FILE *fp);
 
 

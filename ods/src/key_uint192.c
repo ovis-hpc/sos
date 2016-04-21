@@ -69,12 +69,12 @@ static int key_cmp(ods_key_t a, ods_key_t b)
 	return memcmp(av->value, bv->value, av->len);
 }
 
-static const char *to_str(ods_key_t key, char *buf)
+static const char *to_str(ods_key_t key, char *buf, size_t len)
 {
 	ods_key_value_t kv = ods_key_value(key);
 	uint64_t *v = (uint64_t *)kv->value;
 
-	sprintf(buf, "%016lX:%016lX:%016lX", v[0], v[1], v[2]);
+	snprintf(buf, len, "%016lX:%016lX:%016lX", v[0], v[1], v[2]);
 	return buf;
 }
 
@@ -92,9 +92,9 @@ static size_t size(void)
 	return 24;
 }
 
-static size_t str_size(void)
+static size_t str_size(ods_key_t key)
 {
-	return 48;
+	return 49;
 }
 
 static struct ods_idx_comparator key_comparator = {

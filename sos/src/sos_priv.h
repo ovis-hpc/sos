@@ -211,6 +211,7 @@ struct sos_attr_s {
 	sos_index_t index;
 	char *idx_type;
 	char *key_type;
+	char *idx_args;
 	sos_value_size_fn_t size_fn;
 	sos_value_from_str_fn_t from_str_fn;
 	sos_value_to_str_fn_t to_str_fn;

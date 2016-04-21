@@ -267,6 +267,12 @@ void ods_idx_commit(ods_idx_t idx, int flags)
 	ods_commit(idx->ods, flags);
 }
 
+int ods_idx_insert_missing(ods_idx_t idx, ods_key_t key,
+			ods_idx_cb_fn_t cb_fn, void *ctxt)
+{
+	return idx->idx_class->prv->insert_missing(idx, key, cb_fn, ctxt);
+}
+
 int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 {
 	if (!idx->o_perm)
@@ -288,6 +294,26 @@ int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	return idx->idx_class->prv->delete(idx, key, data);
 }
 
+ods_obj_t ods_idx_min(ods_idx_t idx)
+{
+	return idx->idx_class->prv->min(idx);
+}
+
+ods_obj_t ods_idx_max(ods_idx_t idx)
+{
+	return idx->idx_class->prv->max(idx);
+}
+#if 0
+int ods_idx_insert_min(ods_idx_t idx, ods_idx_cb_fn_t cb_fn, void *ctxt)
+{
+	return idx->idx_class->prv->insert_min(idx, cb_fn, ctxt);
+}
+
+int ods_idx_insert_max(ods_idx_t idx, ods_idx_cb_fn_t cb_fn, void *ctxt)
+{
+	return idx->idx_class->prv->insert_max(idx, cb_fn, ctxt);
+}
+#endif
 int ods_idx_find(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	return idx->idx_class->prv->find(idx, key, data);
@@ -436,9 +462,9 @@ size_t ods_key_set(ods_key_t key, const void *value, size_t sz)
 	return count;
 }
 
-const char *ods_key_to_str(ods_idx_t idx, ods_key_t key, char *buf)
+const char *ods_key_to_str(ods_idx_t idx, ods_key_t key, char *buf, size_t len)
 {
-	return idx->idx_class->cmp->to_str(key, buf);
+	return idx->idx_class->cmp->to_str(key, buf, len);
 }
 
 int ods_key_from_str(ods_idx_t idx, ods_key_t key, const char *str)
@@ -456,9 +482,9 @@ size_t ods_idx_key_size(ods_idx_t idx)
 	return idx->idx_class->cmp->size();
 }
 
-size_t ods_idx_key_str_size(ods_idx_t idx)
+size_t ods_idx_key_str_size(ods_idx_t idx, ods_key_t key)
 {
-	return idx->idx_class->cmp->str_size();
+	return idx->idx_class->cmp->str_size(key);
 }
 
 size_t ods_key_size(ods_key_t key)

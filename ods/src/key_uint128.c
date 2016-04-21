@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2016 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -43,61 +43,58 @@
 /*
  * Author: Tom Tucker tom at ogc dot us
  */
+#include <assert.h>
+#include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <ods/ods_idx.h>
 #include "ods_idx_priv.h"
 
 static const char *get_type(void)
 {
-	return "STRING";
+	return "UINT128";
 }
 
 static const char *get_doc(void)
 {
-	return  "ODS_KEY_STRING: The key is a string. The strncmp function is used\n"
-		"                to compare the two keys. If the lengths of the two keys\n"
-		"                is not equal, but they are lexically equal, the function\n"
-		"                returns the difference in length between the two keys.\n";
+	return  "ODS_KEY_UINT128: The key is an unsigned 128b quantity.\n"
+		"    The comparator returns -1,1,0 if a <,>,= b respectively.\n";
 }
 
-static int string_comparator(ods_key_t a, ods_key_t b)
+static int key_cmp(ods_key_t a, ods_key_t b)
 {
 	ods_key_value_t av = ods_key_value(a);
 	ods_key_value_t bv = ods_key_value(b);
-	int res;
-	int cmp_len = av->len;
-	if (cmp_len > bv->len)
-		cmp_len = bv->len;
-	res = strncmp((const char *)av->value, (const char *)bv->value, cmp_len);
-	if (res == 0)
-		return av->len - bv->len;
-	return res;
+	return memcmp(av->value, bv->value, av->len);
 }
 
-static const char *to_str(ods_key_t key, char *str, size_t len)
+static const char *to_str(ods_key_t key, char *buf, size_t len)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	strncpy(str, (char *)kv->value, len);
-	return str;
+	uint64_t *v = (uint64_t *)kv->value;
+
+	snprintf(buf, len, "016lX:%016lX", v[0], v[1]);
+	return buf;
 }
 
 static int from_str(ods_key_t key, const char *str)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	strcpy((char *)&kv->value[0], str);
-	kv->len = strlen(str)+1;
+	uint64_t *v = (uint64_t *)kv->value;
+	sscanf(str, "%016lX:%016lX", &v[0], &v[1]);
+	kv->len = 2 * sizeof(uint64_t);
 	return 0;
 }
 
 static size_t size(void)
 {
-	return -1; /* means variable length */
+	return 16;
 }
 
 static size_t str_size(ods_key_t key)
 {
-	ods_key_value_t kv = key->as.ptr;
-	return kv->len + 1;
+	return 33;
 }
 
 static struct ods_idx_comparator key_comparator = {
@@ -107,7 +104,7 @@ static struct ods_idx_comparator key_comparator = {
 	from_str,
 	size,
 	str_size,
-	string_comparator
+	key_cmp
 };
 
 struct ods_idx_comparator *get(void)

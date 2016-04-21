@@ -72,14 +72,14 @@ static int sha256_comparator(ods_key_t a, ods_key_t b)
 	return memcmp(av->value, bv->value, 32);
 }
 
-static const char *to_str(ods_key_t key, char *sbuf)
+static const char *to_str(ods_key_t key, char *sbuf, size_t len)
 {
 	ods_key_value_t kv = ods_key_value(key);
 	int i;
 	char *s = sbuf;
 	for (i = 0; i < 32; i++) {
-		sprintf(s, "%02X", kv->value[i]);
-		s += 2;
+		int cnt = snprintf(s, len, "%02X", kv->value[i]);
+		s += cnt; len -= cnt;
 	}
 	return sbuf;
 }
@@ -110,7 +110,7 @@ static size_t size(void)
 	return 32;
 }
 
-static size_t str_size(void)
+static size_t str_size(ods_key_t key)
 {
 	return 128;
 }
