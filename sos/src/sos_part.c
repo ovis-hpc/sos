@@ -291,11 +291,6 @@ static int __unindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 	if (!schema)
 		/* This is a garbage object that should not be here */
 		return 0;
-	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
-	ref.ref.obj = ods_obj_ref(obj);
-	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
-	sos_obj_remove(sos_obj);
-	sos_obj_put(sos_obj);
 	struct timeval tv;
 	(void)gettimeofday(&tv, NULL);
 	double now = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
@@ -305,6 +300,11 @@ static int __unindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 		printf("Processed %ld objects in %f microseconds\n", uarg->count, dur);
 		return 1;
 	}
+	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
+	ref.ref.obj = ods_obj_ref(obj);
+	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
+	sos_obj_remove(sos_obj);
+	sos_obj_put(sos_obj);
 	return 0;
 }
 
@@ -363,14 +363,6 @@ static int __reindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 	if (!schema)
 		/* This is a garbage object that should not be here */
 		return 0;
-	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
-	ref.ref.obj = ods_obj_ref(obj);
-	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
-	rc = sos_obj_index(sos_obj);
-	if (rc) {
-		/* The object couldn't be indexed for some reason */
-	}
-	sos_obj_put(sos_obj);
 	rc = gettimeofday(&tv, NULL);
 	double now = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
 	double dur = now - rarg->start;
@@ -379,6 +371,14 @@ static int __reindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 		printf("Processed %ld objects in %f microseconds\n", rarg->count, dur);
 		return 1;
 	}
+	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
+	ref.ref.obj = ods_obj_ref(obj);
+	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
+	rc = sos_obj_index(sos_obj);
+	if (rc) {
+		/* The object couldn't be indexed for some reason */
+	}
+	sos_obj_put(sos_obj);
 	return 0;
 }
 
