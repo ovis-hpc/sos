@@ -8,11 +8,26 @@ libods_la_LIBADD = -ldl -lpthread
 # libods_la_LDFLAGS = -pg
 lib_LTLIBRARIES += libods.la
 
+libidx_HTBL_la_SOURCES = ht.c ht.h
+# libidx_HTBL_la_CFLAGS = $(AM_CFLAGS)
+libidx_HTBL_la_CFLAGS = $(AM_CFLAGS) -DHT_THREAD_SAFE
+# libidx_BXTREE_la_LDFLAGS = -pg
+libidx_HTBL_la_LIBADD = libods.la
+lib_LTLIBRARIES += libidx_HTBL.la
+
 libidx_BXTREE_la_SOURCES = bxt.c bxt.h
+# libidx_BXTREE_la_CFLAGS = $(AM_CFLAGS)
 libidx_BXTREE_la_CFLAGS = $(AM_CFLAGS) -DBXT_THREAD_SAFE
 # libidx_BXTREE_la_LDFLAGS = -pg
 libidx_BXTREE_la_LIBADD = libods.la
 lib_LTLIBRARIES += libidx_BXTREE.la
+
+libidx_H2BXT_la_SOURCES = h2bxt.c h2bxt.h
+#libidx_H2BXT_la_CFLAGS = $(AM_CFLAGS)
+libidx_H2BXT_la_CFLAGS = $(AM_CFLAGS) -DH2BXT_THREAD_SAFE
+# libidx_H2BXT_la_LDFLAGS = -pg
+libidx_H2BXT_la_LIBADD = libods.la
+lib_LTLIBRARIES += libidx_H2BXT.la
 
 libkey_BLKMAP_la_SOURCES = key_blkmap.c
 lib_LTLIBRARIES += libkey_BLKMAP.la

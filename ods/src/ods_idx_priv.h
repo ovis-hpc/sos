@@ -51,20 +51,20 @@
 
 struct ods_idx_provider {
 	const char *(*get_type)(void);
-	int (*init)(ods_t ods, const char *args);
+	int (*init)(ods_t ods, const char *idx_type, const char *key_type, const char *args);
 	int (*open)(ods_idx_t idx);
 	void (*close)(ods_idx_t idx);
 	void (*commit)(ods_idx_t idx);
 	int (*insert)(ods_idx_t idx, ods_key_t uk, ods_idx_data_t data);
-	int (*insert_missing)(ods_idx_t idx, ods_key_t key, ods_idx_cb_fn_t cb_fn, void *ctxt);
+	int (*visit)(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *ctxt);
 	int (*update)(ods_idx_t idx, ods_key_t uk, ods_idx_data_t data);
 	int (*delete)(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 	int (*find)(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 	int (*find_lub)(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 	int (*find_glb)(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 	int (*stat)(ods_idx_t idx, ods_idx_stat_t sb);
-	ods_obj_t (*max)(ods_idx_t idx);
-	ods_obj_t (*min)(ods_idx_t idx);
+	int (*max)(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data);
+	int (*min)(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data);
 	ods_iter_t (*iter_new)(ods_idx_t idx);
 	void (*iter_delete)(ods_iter_t i);
 	int (*iter_find)(ods_iter_t iter, ods_key_t key);

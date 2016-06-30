@@ -186,7 +186,7 @@ int ods_idx_create(const char *path, int mode,
 	strcpy(udata->signature, ODS_IDX_SIGNATURE);
 	strcpy(udata->type_name, type);
 	strcpy(udata->key_name, key);
-	errno = idx_class->prv->init(ods, args);
+	errno = idx_class->prv->init(ods, type, key, args);
 	ods_obj_put(obj);
 	ods_close(ods, ODS_COMMIT_ASYNC);
 	errno = 0;
@@ -267,10 +267,9 @@ void ods_idx_commit(ods_idx_t idx, int flags)
 	ods_commit(idx->ods, flags);
 }
 
-int ods_idx_insert_missing(ods_idx_t idx, ods_key_t key,
-			ods_idx_cb_fn_t cb_fn, void *ctxt)
+int ods_idx_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *arg)
 {
-	return idx->idx_class->prv->insert_missing(idx, key, cb_fn, ctxt);
+	return idx->idx_class->prv->visit(idx, key, cb_fn, arg);
 }
 
 int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
@@ -294,26 +293,16 @@ int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	return idx->idx_class->prv->delete(idx, key, data);
 }
 
-ods_obj_t ods_idx_min(ods_idx_t idx)
+int ods_idx_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 {
-	return idx->idx_class->prv->min(idx);
+	return idx->idx_class->prv->min(idx, key, data);
 }
 
-ods_obj_t ods_idx_max(ods_idx_t idx)
+int ods_idx_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 {
-	return idx->idx_class->prv->max(idx);
-}
-#if 0
-int ods_idx_insert_min(ods_idx_t idx, ods_idx_cb_fn_t cb_fn, void *ctxt)
-{
-	return idx->idx_class->prv->insert_min(idx, cb_fn, ctxt);
+	return idx->idx_class->prv->max(idx, key, data);
 }
 
-int ods_idx_insert_max(ods_idx_t idx, ods_idx_cb_fn_t cb_fn, void *ctxt)
-{
-	return idx->idx_class->prv->insert_max(idx, cb_fn, ctxt);
-}
-#endif
 int ods_idx_find(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	return idx->idx_class->prv->find(idx, key, data);

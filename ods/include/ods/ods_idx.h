@@ -63,10 +63,6 @@ typedef struct ods_pos_s {
 extern int ods_debug;
 
 #define ODS_IDX_SIGNATURE	"ODSIDX00"
-#define ODS_IDX_BXTREE		"BXTREE"
-#define ODS_IDX_BPTREE		"BPTREE"
-#define ODS_IDX_RADIXTREE	"RADIXTREE"
-#define ODS_IDX_RBTREE		"RBTREE"
 
 #define ODS_IDX_DATA_LEN 16
 typedef struct ods_idx_data_s {
@@ -77,13 +73,13 @@ typedef struct ods_idx_data_s {
 } ods_idx_data_t;
 
 /**
- * \brief Create an object index
+ * \brief Create an index
  *
  * An index implements a persistent key/value store in an ODS data
  * store. The key is a generic ods_key_t and the value is 16B of
  * arbitrary data represented by the ods_idx_data_t type. In order to
  * support a common usage model in which the value data is used to
- * refer to an ODS object in an ODS Object STore, the union includes
+ * refer to an ODS object in an ODS Object Store, the union includes
  * an ods_idx_ref_s structure that contains <tt>user_data</tt> and
  * an <tt>obj_ref</tt> fields. The <tt>obj_ref</tt> field is an
  * ods_ref_t which can be transformed back and forth between
@@ -134,7 +130,7 @@ int ods_idx_create(const char *path, int mode,
 		   const char *args);
 
 /**
- * \brief Open an object index
+ * \brief Open an index
  *
  * An index implements a persistent key/value store in an ODS data
  * store.
@@ -148,7 +144,7 @@ int ods_idx_create(const char *path, int mode,
 ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm);
 
 /**
- * \brief Close an object index
+ * \brief Close an index
  *
  * Close the ODS index store. If flags includes ODS_COMMIT_SYNC,
  * the function will not return until the index contents are commited
@@ -192,9 +188,9 @@ ods_t ods_idx_ods(ods_idx_t idx);
 void ods_idx_commit(ods_idx_t idx, int flags);
 
 /**
- * \brief Implements the structure of an object key
+ * \brief Implements the structure of a key
  *
- * An object key is a counted array of bytes with the following format:
+ * An key is a counted array of bytes with the following format:
  * <code>
  * struct ods_key_value {
  *     uint16_t len;
@@ -298,9 +294,9 @@ void ods_key_copy(ods_key_t dst, ods_key_t src);
  * help with getting and setting it's value based on the key type used
  * on an index.
  *
- * A memory key is used to look up objects in the ODS. The storage for
- * these keys comes from memory. See the ods_key_alloc() function for
- * keys that are stored in the ODS.
+ * A memory key is used to look up an object key in the ODS. The
+ * storage for these keys comes from non-persistent memory. See the
+ * ods_key_alloc() function for keys that are stored in the ODS.
  *
  * If the size of the key is known to be less than 254 bytes, the
  * ODS_KEY() macro is useful for defining an ODS key that is allocated
@@ -312,11 +308,9 @@ void ods_key_copy(ods_key_t dst, ods_key_t src);
  * \retval 0	Insufficient resources
  */
 #define ods_key_malloc(sz) ({			\
-	ods_key_t k = _ods_obj_malloc(sz + sizeof(struct ods_key_value_s)); \
+	ods_key_t k = ods_obj_malloc(sz + sizeof(struct ods_key_value_s)); \
 	if (ods_debug && k) {				\
 		*k->as.uint16 = sz;		\
-		k->alloc_line = __LINE__;	\
-		k->alloc_func = __func__;	\
 	}					\
 	k;					\
 })
@@ -445,9 +439,9 @@ size_t ods_key_len(ods_key_t key);
 typedef int (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
 
 /**
- * \brief Insert an object and associated key into the index
+ * \brief Insert a key and associated value into the index
  *
- * Insert an object and it's associated key into the index. The 'obj'
+ * Insert an key and it's associated value into the index. The 'data'
  * is the value associated with the key and there is no special
  * processing or consideration given to its value other than the value
  * cannot 0. The 'key' parameter is duplicated on entry and stored in
@@ -457,7 +451,7 @@ typedef int (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
  *
  * \param idx	The index handle
  * \param key	The key
- * \param obj	The object reference
+ * \param data	The key value
  *
  * \retval 0		Success
  * \retval ENOMEM	Insuffient resources
@@ -466,6 +460,7 @@ typedef int (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
  */
 int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data);
 
+#if 0
 typedef enum ods_idx_act_e {
 	ODS_IDX_ACT_IGN = 0,
 	ODS_IDX_ACT_INS = 1,
@@ -502,18 +497,61 @@ typedef int (*ods_idx_cb_fn_t)(ods_idx_t idx, ods_key_t key, int missing,
  * \retval EINVAL	The idx specified is invalid or the obj
  *			specified is 0
  */
-int ods_idx_insert_missing(ods_idx_t idx, ods_key_t key,
+int ods_idx_insert_unique(ods_idx_t idx, ods_key_t key,
 			ods_idx_cb_fn_t cb_fn, void *ctxt);
-
-ods_obj_t ods_idx_min(ods_idx_t idx);
-ods_obj_t ods_idx_max(ods_idx_t idx);
-int ods_idx_insert_min(ods_idx_t idx, ods_idx_cb_fn_t cb_fn, void *ctxt);
-int ods_idx_insert_max(ods_idx_t idx, ods_idx_cb_fn_t cb_fn, void *ctxt);
+#endif
+typedef enum ods_visit_action {
+	ODS_VISIT_ADD = 1,	/*! Add the key and set it's data to idx_data */
+	ODS_VISIT_DEL,		/*! Delete the key */
+	ODS_VISIT_UPD,		/*! Update the index data for key */
+	ODS_VISIT_NOP		/*! Do nothing */
+} ods_visit_action_t;
+typedef ods_visit_action_t (*ods_visit_cb_fn_t)(ods_idx_t idx,
+						ods_key_t key, ods_idx_data_t *idx_data,
+						int found,
+						void *arg);
+int ods_index_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *arg);
 
 /**
- * \brief Update the object associated with a key in the index
+ * \brief Return the index data and key value for the minimum key
  *
- * Update an object and it's associated key into the index. The 'obj'
+ * If the <tt>key</tt> parameter is not NULL, it will be set to point
+ * to the ods_key_t corresponding to the minimum key value in the
+ * index.
+ *
+ * If the <tt>idx_data</tt> parameter is not NULL, the contents of the
+ * structure pointed to by ods_idx_data_t will be set to the data
+ * associated with the key. If there are duplicates in the index,
+ * which data value duplicate returned is undefined.
+ *
+ * \retval ENOENT The index is empty
+ * \retval 0 The key and idx_data parameters contain the min key and data
+ *
+ */
+int ods_idx_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *idx_data);
+
+/**
+ * \brief Return the index data and key value for the maximum key
+ *
+ * If the <tt>key</tt> parameter is not NULL, it will be set to point
+ * to the ods_key_t corresponding to the maximum key value in the
+ * index.
+ *
+ * If the <tt>idx_data</tt> parameter is not NULL, the contents of the
+ * structure pointed to by ods_idx_data_t will be set to the data
+ * associated with the key. If there are duplicates in the index,
+ * which data value duplicate returned is undefined.
+ *
+ * \retval ENOENT The index is empty
+ * \retval 0 The key and idx_data parameters contain the min key and data
+ *
+ */
+int ods_idx_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *idx_data);
+
+/**
+ * \brief Update the data value associated with a key in the index
+ *
+ * Update a key and it's associated value into the index. The 'data'
  * is the value associated with the key and there is no special
  * processing or consideration given to its value other than the value
  * cannot 0. The 'key' parameter is duplicated on entry and stored in
@@ -523,20 +561,20 @@ int ods_idx_insert_max(ods_idx_t idx, ods_idx_cb_fn_t cb_fn, void *ctxt);
  *
  * \param idx	The index handle
  * \param key	The key
- * \param obj	The object reference
+ * \param data	The object reference
  *
  * \retval 0		Success
  * \retval ENOMEM	Insuffient resources
  * \retval EINVAL	The idx specified is invalid or the obj
  *			specified is 0
  */
-int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t obj);
+int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data);
 
 /**
- * \brief Delete an object and associated key from the index
+ * \brief Delete a key and associated value from the index
  *
- * Delete an object and it's associated key from the index. The
- * resources associated with the 'key' are released. The 'obj' is
+ * Delete a key and it's associated value from the index. The
+ * resources associated with the 'key' are released. The 'data' is
  * the return value.
  *
  * \param idx	The index handle
@@ -549,12 +587,12 @@ int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t obj);
 int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
 
 /**
- * \brief Find the object associated with the specified key
+ * \brief Find the specified key
  *
  * Search the index for the specified key and return the associated
- * ods_idx_data_t. If there are duplicate objects in the index with the
- * same key, the first object with the matching key is returned. See
- * the ods_iter_find_first() and ods_iter_find_last() functions for
+ * ods_idx_data_t. If there are duplicate keys in the index, the first
+ * object value the matching key is returned. See the
+ * ods_iter_find_first() and ods_iter_find_last() functions for
  * information on managing duplicates.
  *
  * \param idx	The index handle
@@ -617,7 +655,7 @@ int ods_idx_stat(ods_idx_t idx, ods_idx_stat_t sb);
  * \brief Create an iterator
  *
  * An iterator logically represents a series over an index. It
- * maintains a current position that refers to an object or 0 if the
+ * maintains a current position that refers to a key/value or 0 if the
  * index is empty.
  *
  * Iterators are associated with a single index and cannot be moved
@@ -662,14 +700,11 @@ void ods_iter_delete(ods_iter_t iter);
 /**
  * \brief Position an iterator at the specified key.
  *
- * Positions the iterator's cursor to the object with the specified
- * key. If there are duplicates in the index, the cursor will be
- * positioned at the first object with the specified key. See the
- * ods_iter_find_last() function for position the iterator at the last
- * instance of the specified key.
- *
- * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
- * the object reference and associated key.
+ * Positions the iterator's cursor to the specified key. If there are
+ * duplicates in the index, the cursor will be positioned at the first
+ * value with the specified key. See the ods_iter_find_last()
+ * function for position the iterator at the last instance of the
+ * specified key.
  *
  * \param iter	The iterator handle
  * \param key	The key for the search
@@ -681,12 +716,9 @@ int ods_iter_find(ods_iter_t iter, ods_key_t key);
 /**
  * \brief Position an iterator at the first instance of the specified key.
  *
- * Positions the iterator's cursor at the first object object with the specified
+ * Positions the iterator's cursor at the first value with the specified
  * key. If there are duplicate keys, this function ensures that the
  * cursor is positioned at the first instance.
- *
- * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
- * the object reference and associated key.
  *
  * \param iter	The iterator handle
  * \param key	The key for the search
@@ -698,12 +730,12 @@ int ods_iter_find_first(ods_iter_t iter, ods_key_t key);
 /**
  * \brief Position an iterator at the last instance of the specified key.
  *
- * Positions the iterator's cursor at the last object with the specified
+ * Positions the iterator's cursor at the last value for the specified
  * key. This function is useful when there are duplicate keys in the
  * index and the application wishes to iterate backwards.
  *
- * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
- * the object reference and associated key.
+ * Use the \c ods_iter_key() an \c ods_iter_data() functions to retrieve
+ * the key and associated value.
  *
  * \param iter	The iterator handle
  * \param key	The key for the search
@@ -735,8 +767,8 @@ int ods_iter_pos(ods_iter_t iter, ods_pos_t pos);
 /**
  * \brief Position an iterator at the least-upper-bound of the \c key.
  *
- * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
- * the object reference and associated key.
+ * Use the \c ods_iter_key() an \c ods_iter_data() functions to retrieve
+ * the key and associated value.
  *
  * \retval 0 Success
  * \retval ENOENT There is no least-upper-bound
@@ -746,8 +778,8 @@ int ods_iter_find_lub(ods_iter_t iter, ods_key_t key);
 /**
  * \brief Position an iterator at the greatest-lower-bound of the \c key.
  *
- * Use the \c ods_iter_key() an \c ods_iter_ref() functions to retrieve
- * the object reference and associated key.
+ * Use the \c ods_iter_key() an \c ods_iter_data() functions to retrieve
+ * the key and associated value.
  *
  * \retval 0 Success
  * \retval ENOENT There is no greatest-lower-bound
@@ -780,13 +812,10 @@ int ods_iter_flags_set(ods_iter_t i, ods_iter_flags_t flags);
 ods_iter_flags_t ods_iter_flags_get(ods_iter_t i);
 
 /**
- * \brief Position the iterator cursor at the first object in the index
+ * \brief Position the iterator cursor at the first key in the index
  *
- * Positions the cursor at the first object in the index. Calling
+ * Positions the cursor at the first key in the index. Calling
  * ods_iter_prev() will return ENOENT.
- *
- * Use the ods_iter_key() an ods_iter_ref() functions to retrieve
- * the object reference and associated key.
  *
  * \param iter	The iterator handle.
  * \retval 0 Success
@@ -795,12 +824,12 @@ ods_iter_flags_t ods_iter_flags_get(ods_iter_t i);
 int ods_iter_begin(ods_iter_t iter);
 
 /**
- * \brief Position the iterator at the last object in the index
+ * \brief Position the iterator at the last key in the index
  *
- * Positions the cursor at the last object in the index. Calling
+ * Positions the cursor at the last key in the index. Calling
  * ods_iter_next() will return ENOENT.
  *
- * Use the ods_iter_key() an ods_iter_ref() functions to retrieve
+ * Use the ods_iter_key() an ods_iter_data() functions to retrieve
  * the object reference and associated key.
  *
  * \param iter	The iterator handle.
@@ -810,9 +839,9 @@ int ods_iter_begin(ods_iter_t iter);
 int ods_iter_end(ods_iter_t iter);
 
 /**
- * \brief Move the iterator cursor to the next object in the index
+ * \brief Move the iterator cursor to the next key in the index
  *
- * Use the ods_iter_key() an ods_iter_ref() functions to retrieve
+ * Use the ods_iter_key() an ods_iter_data() functions to retrieve
  * the object reference and associated key.
  *
  * \param iter	The iterator handle
@@ -822,10 +851,10 @@ int ods_iter_end(ods_iter_t iter);
 int ods_iter_next(ods_iter_t iter);
 
 /**
- * \brief Move the iterator cursor to the previous object in the index
+ * \brief Move the iterator cursor to the previous key in the index
  *
- * Use the ods_iter_key() an ods_iter_ref() functions to retrieve
- * the object reference and associated key.
+ * Use the ods_iter_key() an ods_iter_data() functions to retrieve
+ * the key and associated data.
  *
  * \param iter	The iterator handle
  * \retval 0 Success

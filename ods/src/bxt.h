@@ -56,7 +56,6 @@ typedef struct bxt_udata {
 	struct ods_idx_meta_data idx_udata;
 	uint32_t order;		/* The order or each internal node */
 	ods_ref_t root_ref;	/* The root of the tree */
-	ods_atomic_t client_count;	/* Active clients */
 	ods_atomic_t lock;	/* Cross-memory spin lock */
 	ods_atomic_t depth;	/* The current tree depth */
 	ods_atomic_t card;	/* Cardinatliy */

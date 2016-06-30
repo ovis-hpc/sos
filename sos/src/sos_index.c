@@ -90,6 +90,7 @@
  * - sos_index_key_to_str() Return a formated string representation of a key
  * - sos_index_key_cmp() Compare two keys
  * - sos_index_print() Print an internal representation of the index
+ * - sos_index_update() Update a key and associated data
  * - sos_container_index_list() Print a list of indices defined on the container
  * - sos_container_index_iter_new() Create a container index iterator
  * - sos_container_index_iter_free() Destroy a container index iterator
@@ -269,28 +270,53 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 	return NULL;
 }
 
-struct sos_ins_cb_ctxt_s {
+struct sos_visit_cb_ctxt_s {
 	sos_index_t index;
-	sos_ins_cb_fn_t cb_fn;
+	sos_visit_cb_fn_t cb_fn;
 	void *arg;
 };
 
-static int __insert_missing_cb(ods_idx_t idx, ods_key_t key, int missing, ods_idx_data_t *data, void *arg)
+static int visit_cb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data, int found, void *arg)
 {
-	struct sos_ins_cb_ctxt_s *sos_arg = arg;
-	return sos_arg->cb_fn(sos_arg->index, key, missing, (sos_obj_ref_t *)data, sos_arg->arg);
+	struct sos_visit_cb_ctxt_s *visit_arg = arg;
+	return visit_arg->cb_fn(visit_arg->index,
+				key, (sos_idx_data_t *)data,
+				found, visit_arg->arg);
 }
-
-int sos_index_insert_missing(sos_index_t index, sos_key_t key, sos_ins_cb_fn_t cb, void *arg)
+/**
+ * \brief Visit the key entry in the index
+ *
+ * Find the key in the index and call the visit callback function with
+ * the index, the key, a 1 or 0 to indicate if the key was found, a
+ * pointer to a sos_idx_data_t structure, and the ctxt passed to
+ * sos_index_update(). If the found parameter to the cb_fn() is 1,
+ * the the idx_data structure contains the index data for the key. If
+ * the found parameter is 0, the contents of this structure are
+ * undefined.
+ *
+ * The cb_fn() must return one of the following value:
+ *
+ * - SOS_VISIT_ADD - Add the key and set the key data to the contents
+ *                   of the idx_data structure. This return value is
+ *                   ignored if found is true and sos_index_visit()
+ *                   will return EINVAL.
+ * - SOS_VISIT_DEL - Delete the key from the index. If found is false,
+ *                   this value is ignored and sos_index_visit()
+ *                   will return EINVAL.
+ * - SOS_VISIT_UPD - Update the index data at this key with the
+ *                   contents of the idx_data structure. If found
+ *                   is false, this value is ignored and
+ *                   sos_index_visit() will return EINVAL.
+ * - SOS_VISIT_NOP - Do nothing
+ */
+int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, void *arg)
 {
-	int rc;
-	struct sos_ins_cb_ctxt_s ctxt = {
+	struct sos_visit_cb_ctxt_s ctxt = {
 		.index = index,
-		.cb_fn = cb,
+		.cb_fn = cb_fn,
 		.arg = arg
 	};
-	rc = ods_idx_insert_missing(index->idx, key, __insert_missing_cb, &ctxt);
-	return rc;
+	return ods_idx_visit(index->idx, key, visit_cb, &ctxt);
 }
 
 /**

@@ -28,6 +28,9 @@ static ods_obj_t node_new(ods_idx_t idx, bxt_t t, bxt_udata_t udata, int cache);
 static int find_key_idx(bxt_t t, ods_obj_t leaf, ods_key_t key, int *found);
 static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data,
 				ods_obj_t leaf, int ent, int is_dup);
+static int bxt_delete_with_leaf(ods_idx_t idx,
+				ods_key_t key, ods_idx_data_t *data,
+				ods_obj_t leaf, int ent);
 
 void dump_node(bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *fp)
 {
@@ -139,7 +142,6 @@ static void print_info(ods_idx_t idx, FILE *fp)
 	bxt_t t = idx->priv;
 	fprintf(fp, "%*s : %d\n", 12, "Order", t->udata->order);
 	fprintf(fp, "%*s : %lx\n", 12, "Root Ref", t->udata->root_ref);
-	fprintf(fp, "%*s : %d\n", 12, "Client Count", t->udata->client_count);
 	fprintf(fp, "%*s : %d\n", 12, "Lock", t->udata->lock);
 	fprintf(fp, "%*s : %d\n", 12, "Depth", t->udata->depth);
 	fprintf(fp, "%*s : %d\n", 12, "Cardinality", t->udata->card);
@@ -179,8 +181,12 @@ static void verify_node(bxt_t t, ods_obj_t node)
 
 static int bxt_open(ods_idx_t idx)
 {
-	ods_obj_t udata = ods_get_user_data(idx->ods);
-	bxt_t t = calloc(1, sizeof *t);
+	ods_obj_t udata;
+	bxt_t t;
+	udata = ods_get_user_data(idx->ods);
+	if (!udata)
+		return EINVAL;
+	t = calloc(1, sizeof *t);
 	if (!t) {
 		ods_obj_put(udata);
 		return ENOMEM;
@@ -191,16 +197,19 @@ static int bxt_open(ods_idx_t idx)
 	t->ods = idx->ods;
 	t->comparator = idx->idx_class->cmp->compare_fn;
 	idx->priv = t;
-	ods_atomic_inc(&t->udata->client_count);
 	return 0;
 }
 
-static int bxt_init(ods_t ods, const char *argp)
+static int bxt_init(ods_t ods, const char *idx_type, const char *key_type, const char *argp)
 {
 	char order_arg[ODS_IDX_ARGS_LEN];
-	ods_obj_t udata = ods_get_user_data(ods);
+	ods_obj_t udata;
 	char *name;
 	int order = 0;
+
+	udata = ods_get_user_data(ods);
+	if (!udata)
+		return EINVAL;
 
 	if (argp) {
 		strcpy(order_arg, argp);
@@ -213,10 +222,10 @@ static int bxt_init(ods_t ods, const char *argp)
 
 	UDATA(udata)->order = order;
 	UDATA(udata)->root_ref = 0;
-	UDATA(udata)->client_count = 0;
 	UDATA(udata)->lock = 0;
 	UDATA(udata)->depth = 0;
 	UDATA(udata)->card = 0;
+	UDATA(udata)->dups = 0;
 	ods_obj_put(udata);
 	return 0;
 }
@@ -226,7 +235,6 @@ static void bxt_close_(bxt_t t)
 	struct bxt_obj_el *el;
 	ods_obj_t node;
 
-	ods_atomic_dec(&t->udata->client_count);
 	ods_obj_put(t->udata_obj);
 
 	/* Clean up any cached node allocations */
@@ -258,7 +266,7 @@ static void bxt_close(ods_idx_t idx)
 
 ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 {
-	ods_ref_t ref = t->udata->root_ref;
+	ods_ref_t ref;
 	ods_obj_t n;
 	int i;
 
@@ -338,44 +346,69 @@ static int bxt_find(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	return rc;
 }
 
-static int bxt_insert_missing(ods_idx_t idx, ods_key_t key, ods_idx_cb_fn_t cb_fn, void *ctxt)
+static int bxt_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *ctxt)
 {
 	bxt_t t = idx->priv;
+	ods_visit_action_t act;
 	ods_obj_t leaf;
 	int found, ent;
 	ods_idx_data_t data;
-	ods_obj_t rec = NULL;
+	ods_obj_t rec;
 	int rc = ENOMEM;
 
 #ifdef BXT_THREAD_SAFE
 	if (ods_spin_lock(&t->lock, -1))
 		return EBUSY;
 #endif
-	if (!t->udata->root_ref) {
-		leaf = node_new(idx, t, NULL, 0);
-		if (!leaf)
-			goto err_0;
-		NODE(leaf)->is_leaf = 1;
-		t->udata->root_ref = ods_obj_ref(leaf);
-		ent = 0;
-		found = 0;
-		memset(&data, 0, sizeof(data));
-	} else {
-		leaf = leaf_find(t, key);
+	leaf = leaf_find(t, key);
+	if (leaf) {
 		ent = find_key_idx(t, leaf, key, &found);
-		if (L_ENT(leaf,ent).head_ref) {
+		if (found) {
 			rec = ods_ref_as_obj(t->ods, L_ENT(leaf,ent).head_ref);
-			if (rec) {
-				data = REC(rec)->value;
-				ods_obj_put(rec);
-			}
+			assert(rec);
+			data = REC(rec)->value;
 		} else {
+			rec = NULL;
 			memset(&data, 0, sizeof(data));
 		}
+	} else {
+		leaf = rec = NULL;
+		ent = found = 0;
+		memset(&data, 0, sizeof(data));
 	}
-	rc = cb_fn(idx, key, !found, &data, ctxt);
-	if (!rc)
+	act = cb_fn(idx, key, &data, found, ctxt);
+	switch(act) {
+	case ODS_VISIT_ADD:
+		if (leaf)
+			leaf = ods_obj_get(leaf);
 		rc = bxt_insert_with_leaf(idx, key, data, leaf, ent, found);
+		break;
+	case ODS_VISIT_DEL:
+		if (!found) {
+			rc = ENOENT;
+			break;
+		}
+		assert(leaf);
+		rc = bxt_delete_with_leaf(idx, key, &data, ods_obj_get(leaf), ent);
+		break;
+	case ODS_VISIT_UPD:
+		if (!found) {
+			rc = ENOENT;
+			break;
+		}
+		assert(rec);
+		REC(rec)->value = data;
+		break;
+	case ODS_VISIT_NOP:
+		rc = 0;
+		break;
+	default:
+		rc = EINVAL;
+	}
+	if (leaf)
+		ods_obj_put(leaf);
+	if (rec)
+		ods_obj_put(rec);
  err_0:
 #ifdef BXT_THREAD_SAFE
 	ods_spin_unlock(&t->lock);
@@ -388,6 +421,9 @@ static int bxt_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 	bxt_t t = idx->priv;
 	int rc = 0;
 	ods_obj_t rec;
+#ifdef BXT_THREAD_SAFE
+	ods_spin_lock(&t->lock, -1);
+#endif
 	rec = rec_find(t, key, 1);
 	if (!rec) {
 		rc = ENOENT;
@@ -396,6 +432,9 @@ static int bxt_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 	REC(rec)->value = data;
 	ods_obj_put(rec);
  out:
+#ifdef BXT_THREAD_SAFE
+	ods_spin_unlock(&t->lock);
+#endif
 	return rc;
 }
 
@@ -520,12 +559,6 @@ static ods_key_t key_new(ods_idx_t idx, ods_key_t key)
 		ods_key_copy(akey, key);
 	return akey;
 }
-
-struct bxt_context {
-	ods_obj_t key;
-	ods_obj_t rec;
-	LIST_HEAD(bxt_node_list, bxt_obj_el) nodes;
-};
 
 static struct bxt_obj_el *alloc_el(bxt_t t)
 {
@@ -1048,11 +1081,18 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 #ifdef BXT_DEBUG
 	verify_node(t, leaf);
 #endif
+	if (!t->udata->root_ref) {
+		assert(leaf == NULL);
+		leaf = node_new(idx, t, NULL, 0);
+		if (!leaf)
+			goto err_1;
+		NODE(leaf)->is_leaf = 1;
+		t->udata->root_ref = ods_obj_ref(leaf);
+	}
 	/* Allocate a record object */
 	new_rec = rec_new(idx, new_key, data, is_dup);
 	if (!new_rec)
 		goto err_1;
-
 	/*
 	 * If this is a dup or the new record will fit in the leaf,
 	 * then this is a simple insert with no new nodes required.
@@ -1147,18 +1187,11 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 	if (ods_spin_lock(&t->lock, -1))
 		return EBUSY;
 #endif
-	if (!t->udata->root_ref) {
-		leaf = node_new(idx, t, NULL, 0);
-		if (!leaf)
-			goto err_0;
-		NODE(leaf)->is_leaf = 1;
-		t->udata->root_ref = ods_obj_ref(leaf);
-		ent = 0;
-		is_dup = 0;
-	} else {
-		leaf = leaf_find(t, new_key);
+	leaf = leaf_find(t, new_key);
+	if (leaf)
 		ent = find_key_idx(t, leaf, new_key, &is_dup);
-	}
+	else
+		ent = is_dup = 0;
 	rc = bxt_insert_with_leaf(idx, new_key, data, leaf, ent, is_dup);
  err_0:
 #ifdef BXT_THREAD_SAFE
@@ -1210,7 +1243,7 @@ static ods_obj_t bxt_max_node(bxt_t t)
 	if (!t->udata->root_ref)
 		return 0;
 
-	/* Walk to the left most leaf and return the 0-th entry  */
+	/* Walk to the right most leaf */
 	n = ods_ref_as_obj(t->ods, t->udata->root_ref);
 	while (!NODE(n)->is_leaf) {
 		ods_ref_t ref = N_ENT(n,NODE(n)->count-1).node_ref;
@@ -1220,32 +1253,62 @@ static ods_obj_t bxt_max_node(bxt_t t)
 	return n;
 }
 
-static ods_obj_t bxt_max(ods_idx_t idx)
+static int bxt_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 {
-	ods_obj_t obj;
+	int rc = ENOENT;
+	ods_obj_t rec;
+	ods_obj_t node;
 	bxt_t t = idx->priv;
 #ifdef BXT_THREAD_SAFE
 	ods_spin_lock(&t->lock, -1);
 #endif
-	obj = bxt_max_node(t);
+	node = bxt_max_node(t);
+	if (node) {
+		rec = ods_ref_as_obj(t->ods, L_ENT(node, NODE(node)->count-1).tail_ref);
+		if (rec) {
+			if (data)
+				*data = REC(rec)->value;
+			if (key)
+				*key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
+		} else
+			rc = ENOMEM;
+		ods_obj_put(node);
+	} else
+		rc = ENOMEM;
+
 #ifdef BXT_THREAD_SAFE
 	ods_spin_unlock(&t->lock);
 #endif
-	return obj;
+	return rc;
 }
 
-static ods_obj_t bxt_min(ods_idx_t idx)
+static int bxt_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 {
-	ods_obj_t obj;
+	int rc = ENOENT;
+	ods_obj_t rec;
+	ods_obj_t node;
 	bxt_t t = idx->priv;
 #ifdef BXT_THREAD_SAFE
 	ods_spin_lock(&t->lock, -1);
 #endif
-	obj = bxt_min_node(t);
+	node = bxt_min_node(t);
+	if (node) {
+		rec = ods_ref_as_obj(t->ods, L_ENT(node, 0).head_ref);
+		if (rec) {
+			if (data)
+				*data = REC(rec)->value;
+			if (key)
+				*key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
+		} else
+			rc = ENOMEM;
+		ods_obj_put(node);
+	} else
+		rc = ENOMEM;
+
 #ifdef BXT_THREAD_SAFE
 	ods_spin_unlock(&t->lock);
 #endif
-	return obj;
+	return rc;
 }
 
 static ods_obj_t left_sibling(bxt_t t, ods_obj_t node)
@@ -1733,25 +1796,12 @@ static ods_obj_t find_matching_rec(bxt_t t, ods_obj_t leaf, int ent,
 	return NULL;
 }
 
-static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
+static int bxt_delete_with_leaf(ods_idx_t idx,
+				ods_key_t key, ods_idx_data_t *data,
+				ods_obj_t leaf, int ent)
 {
 	bxt_t t = idx->priv;
-	int ent;
-	ods_obj_t leaf, rec;
-	int found;
-
-#ifdef BXT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
-		return EBUSY;
-#endif
-	leaf = leaf_find(t, key);
-	if (!leaf)
-		goto noent;
-	ent = find_key_idx(t, leaf, key, &found);
-	if (!found)
-		goto noent;
-	ods_atomic_dec(&t->udata->card);
-
+	ods_obj_t rec;
 	/*
 	 * Trivial case is that this is a dup key. In this case,
 	 * delete the first entry on the list and return
@@ -1770,12 +1820,11 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 				rc = ENOENT;
 			}
 		}
-		if (!rc)
+		if (!rc) {
 			ods_atomic_dec(&t->udata->dups);
+			ods_atomic_dec(&t->udata->card);
+		}
 		ods_obj_put(leaf);
-#ifdef BXT_THREAD_SAFE
-		ods_spin_unlock(&t->lock);
-#endif
 		return rc;
 	}
 	rec = ods_ref_as_obj(t->ods, L_ENT(leaf, ent).head_ref);
@@ -1784,13 +1833,38 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	t->udata->root_ref = entry_delete(t, leaf, rec, ent);
 	ods_obj_delete(key);
 	ods_obj_put(rec);
+	ods_atomic_dec(&t->udata->card);
+	return 0;
+}
+
+static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
+{
+	bxt_t t = idx->priv;
+	int ent;
+	ods_obj_t leaf;
+	int found;
+	int rc;
+
+#ifdef BXT_THREAD_SAFE
+	if (ods_spin_lock(&t->lock, -1))
+		return EBUSY;
+#endif
+	leaf = leaf_find(t, key);
+	if (!leaf)
+		goto noent;
+	ent = find_key_idx(t, leaf, key, &found);
+	if (!found)
+		goto noent;
+
+	rc = bxt_delete_with_leaf(idx, key, data, leaf, ent);
+
 #ifdef BXT_THREAD_SAFE
 	ods_spin_unlock(&t->lock);
 #endif
 #ifdef BXT_DEBUG
 	print_idx(idx, NULL);
 #endif
-	return 0;
+	return rc;
  noent:
 	ods_obj_put(leaf);
 #ifdef BXT_THREAD_SAFE
@@ -2315,16 +2389,11 @@ static struct ods_idx_provider bxt_provider = {
 	.close = bxt_close,
 	.commit = bxt_commit,
 	.insert = bxt_insert,
-	.insert_missing = bxt_insert_missing,
+	.visit = bxt_visit,
 	.update = bxt_update,
 	.delete = bxt_delete,
 	.max = bxt_max,
 	.min = bxt_min,
-#if 0
-	.insert_max = bxt_insert_max,
-	.insert_min = bxt_insert_min,
-	.for_each = bxt_for_each,
-#endif
 	.find = bxt_find,
 	.find_lub = bxt_find_lub,
 	.find_glb = bxt_find_glb,

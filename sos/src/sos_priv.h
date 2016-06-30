@@ -254,13 +254,13 @@ typedef struct sos_idx_data_s {
 	char key_type[SOS_INDEX_KEY_TYPE_LEN];
 	char idx_type[SOS_INDEX_TYPE_LEN];
 	char args[SOS_INDEX_ARGS_LEN];
-} *sos_idx_data_t;
+} *sos_idx__data_t;
 
 #define SOS_SCHEMA(_o_) ODS_PTR(sos_schema_data_t, _o_)
 #define SOS_CONFIG(_o_) ODS_PTR(sos_config_t, _o_)
 #define SOS_PART(_o_) ODS_PTR(sos_part_data_t, _o_)
 #define SOS_ARRAY(_o_) ODS_PTR(sos_array_t, _o_)
-#define SOS_IDX(_o_) ODS_PTR(sos_idx_data_t, _o_)
+#define SOS_IDX(_o_) ODS_PTR(sos_idx__data_t, _o_)
 
 #define SOS_OPTIONS_PARTITION_ENABLE	1
 struct sos_container_config {

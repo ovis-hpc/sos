@@ -165,8 +165,8 @@ sos_schema_t sos_schema_new(const char *name)
 		schema->data = &schema->data_;
 		strcpy(schema->data->name, name);
 		TAILQ_INIT(&schema->attr_list);
+		schema->ref_count = 1;
 	}
-	schema->ref_count = 1;
 	return schema;
 }
 

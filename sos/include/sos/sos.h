@@ -174,6 +174,7 @@ typedef enum sos_type_e {
 } sos_type_t;
 
 #pragma pack(1)
+typedef ods_idx_data_t sos_idx_data_t;
 typedef union sos_obj_ref_s {
 	ods_idx_data_t idx_data;
 	struct sos_idx_ref_s {
@@ -485,7 +486,18 @@ typedef struct sos_index_stat_s {
 /** \defgroup index_funcs Index Functions
  * @{
  */
-typedef int (*sos_ins_cb_fn_t)(sos_index_t index, sos_key_t key, int missing, sos_obj_ref_t *ref, void *arg);
+typedef int (*sos_ins_cb_fn_t)(sos_index_t index, sos_key_t key,
+			       int missing, sos_obj_ref_t *ref, void *arg);
+typedef enum sos_visit_action {
+	SOS_VISIT_ADD = ODS_VISIT_ADD,	/*! Add the key and set it's data to idx_data */
+	SOS_VISIT_DEL = ODS_VISIT_DEL,	/*! Delete the key */
+	SOS_VISIT_UPD = ODS_VISIT_UPD,	/*! Update the index data for key */
+	SOS_VISIT_NOP = ODS_VISIT_NOP	/*! Do nothing */
+} sos_visit_action_t;
+typedef sos_visit_action_t (*sos_visit_cb_fn_t)(sos_index_t index,
+						sos_key_t key, sos_idx_data_t *idx_data,
+						int found,
+						void *arg);
 sos_obj_t sos_obj_find(sos_attr_t attr, sos_key_t key);
 int sos_index_new(sos_t sos, const char *name,
 		  const char *idx_type, const char *key_type,
@@ -493,7 +505,7 @@ int sos_index_new(sos_t sos, const char *name,
 sos_index_t sos_index_open(sos_t sos, const char *name);
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
-int sos_index_insert_missing(sos_index_t index, sos_key_t key, sos_ins_cb_fn_t cb, void *arg);
+int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, void *arg);
 sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);

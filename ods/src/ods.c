@@ -434,7 +434,7 @@ void ods_info(ods_t ods, FILE *fp)
 	fprintf(fp, "Object        Count Size     Reference      Pointer        Map            Thread         Line  Func\n");
 	fprintf(fp, "-------------- ---- -------- -------------- -------------- -------------- -------------- ----- ------------\n");
 	LIST_FOREACH(obj, &ods->obj_list, entry) {
-		fprintf(fp, "%14p %4d %8zu 0x%012lx %14p %14p %14p %5d %s\n",
+		fprintf(fp, "%14p %4d %8zu 0x%012lx %14p %14p %14p %5d %p\n",
 			obj,
 			obj->refcount,
 			obj->size, obj->ref, obj->as.ptr, obj->map,
@@ -448,7 +448,7 @@ void ods_info(ods_t ods, FILE *fp)
 	fprintf(fp, "Object         Size     Reference      Thread         Line  Func\n");
 	fprintf(fp, "-------------- -------- -------------- -------------- ----- ------------\n");
 	LIST_FOREACH(obj, &ods->obj_free_list, entry) {
-		fprintf(fp, "%14p %8zu 0x%012lx %14p %5d %s\n",
+		fprintf(fp, "%14p %8zu 0x%012lx %14p %5d %p\n",
 			obj,
 			obj->size, obj->ref,
 			(void *)obj->thread,
@@ -517,7 +517,7 @@ void __ods_obj_put(ods_obj_t obj, int lock)
 	}
 }
 
-void _ods_obj_put(ods_obj_t obj)
+void ods_obj_put(ods_obj_t obj)
 {
 	__ods_obj_put(obj, 1);
 }
@@ -549,10 +549,16 @@ static ods_obj_t obj_new(ods_t ods)
 		LIST_REMOVE(obj, entry);
 	} else {
 		ods_atomic_inc(&ods->obj_count);
+#if 1
+		obj = calloc(1, sizeof *obj);
+#else
 		obj = malloc(sizeof *obj);
+#endif
 	}
-	obj->alloc_func = __func__;
-	obj->alloc_line = __LINE__;
+#if 0
+	obj->alloc_func = __builtin_return_address(2);
+	obj->alloc_line = 0;
+#endif
 	return obj;
 }
 
@@ -698,7 +704,7 @@ ods_obj_t _ods_ref_as_obj_with_lock(ods_t ods, ods_ref_t ref, ods_map_t map)
 }
 
 // #define ODS_CACHE_OBJECTS
-ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref)
+ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref)
 {
 #ifdef ODS_CACHE_OBJECTS
 	ods_obj_hent_t hent;
@@ -794,8 +800,11 @@ int ods_extend(ods_t ods, size_t sz)
 	 * down and leave the object store in a consistent state
 	 */
 	new_pg_off = ods->obj_sz;
+	/* Must be multiple of page size */
+	new_pg_off = (new_pg_off + (ODS_PAGE_SIZE-1)) & ODS_PAGE_MASK;
 	n_sz = ods->obj_sz + sz;
-	n_pages = n_sz >> ODS_PAGE_SHIFT;
+	n_pages = (n_sz + ODS_PAGE_SIZE - 1) >> ODS_PAGE_SHIFT;
+	n_sz = n_pages << ODS_PAGE_SHIFT;
 	if (n_pages > (ods->pg_sz - sizeof(struct ods_pgt_s))) {
 		rc = ftruncate(ods->pg_fd, n_pages + sizeof(struct ods_pgt_s));
 		if (rc)
@@ -922,6 +931,11 @@ static int dirty_cmp(void *akey, void *bkey)
 	return (*(ods_ref_t*)akey - *(ods_ref_t*)bkey);
 }
 
+const char *ods_path(ods_t ods)
+{
+	return ods->path;
+}
+
 ods_t ods_open(const char *path, ods_perm_t o_perm)
 {
 	char tmp_path[PATH_MAX];
@@ -1005,7 +1019,7 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	return NULL;
 }
 
-ods_obj_t _ods_get_user_data(ods_t ods)
+ods_obj_t ods_get_user_data(ods_t ods)
 {
 	/* User data starts immediately after the object data header */
 	ods_ref_t user_ref = sizeof(struct ods_obj_data_s);
@@ -1049,7 +1063,7 @@ static void update_page_table(ods_map_t map, ods_pg_t pg, size_t count, int bkt)
 	 */
 	flags = ODS_F_ALLOCATED;
 	if (bkt >= 0)
-		flags |= bkt | ODS_F_IDX_VALID;;
+		flags |= bkt | ODS_F_IDX_VALID;
 	if (count > 1)
 		flags |= ODS_F_NEXT;
 	for (page = ods_ptr_to_page(map, pg);
@@ -1079,7 +1093,7 @@ static void *alloc_pages(ods_map_t map, size_t sz, int bkt)
 		errno = ENOMEM;
 		goto out;
 	}
-
+	assert(0 == ((uint64_t)pg & (ODS_PAGE_SIZE-1)));
 	if (pg->count > pg_needed) {
 		page = ods_ptr_to_page(map, pg);
 		page += pg_needed;
@@ -1095,6 +1109,7 @@ static void *alloc_pages(ods_map_t map, size_t sz, int bkt)
 		/* pg gets removed altogether */
 		pg_off = pg->next;
 	}
+	assert(0 == (pg_off & (ODS_PAGE_SIZE-1)));
 	update_page_table(map, pg, pg_needed, bkt);
 
 	/* p_pg is either NULL or pointing to a previous list member */
@@ -1156,7 +1171,7 @@ static void *alloc_blk(ods_map_t map, size_t sz)
 	return alloc_bkt(map, bkt);
 }
 
-ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
+ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
 {
 	ods_map_t map;
 	ods_obj_t obj = NULL;
@@ -1187,7 +1202,7 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
 	return obj;
 }
 
-ods_obj_t _ods_obj_malloc(size_t sz)
+ods_obj_t ods_obj_malloc(size_t sz)
 {
 	ods_obj_t obj;
 	obj = malloc(sz + sizeof(struct ods_obj_s));
@@ -1420,13 +1435,13 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
 		if (0 == (flags & ODS_F_ALLOCATED))
 			status |= ODS_REF_STATUS_FREE;
 		if (bkt < 0 || bkt > (ODS_PAGE_SHIFT - ODS_GRAIN_SHIFT))
-			flags |= ODS_REF_STATUS_CORRUPT;
+			status |= ODS_REF_STATUS_CORRUPT;
 		status |= ods_bkt_to_size(bkt);
 	} else {
 		if (0 == (flags & ODS_F_ALLOCATED))
-			flags |= ODS_REF_STATUS_FREE;
+			status |= ODS_REF_STATUS_FREE;
 		if (flags & ODS_F_PREV)
-			flags |= ODS_REF_STATUS_INTERIOR;
+			status |= ODS_REF_STATUS_INTERIOR;
 	}
  out:
 	ods_spin_unlock(&ods->lock);

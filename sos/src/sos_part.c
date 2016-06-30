@@ -855,6 +855,7 @@ sos_part_t sos_part_find(sos_t sos, const char *name)
 			goto out;
 		sos_part_put(part);
 	}
+	part = NULL;
  out:
 	sos_part_iter_free(iter);
 	return part;
@@ -1052,8 +1053,10 @@ int sos_part_move(sos_part_t part, const char *new_part_path)
 	old_part_path = strdup(sos_part_path(part));
 	if (!old_part_path)
 		return ENOMEM;
-	if (0 == strcmp(new_part_path, old_part_path))
+	if (0 == strcmp(new_part_path, old_part_path)) {
+		free(old_part_path);
 		return EINVAL;
+	}
 
 	sprintf(tmp_path, "%s/%s", new_part_path, sos_part_name(part));
 	pthread_mutex_unlock(&sos->lock);
@@ -1083,9 +1086,11 @@ int sos_part_move(sos_part_t part, const char *new_part_path)
 	in_fd = open(tmp_path, O_RDONLY);
 	if (in_fd < 0) {
 		rc = errno;
-		goto out;
+		goto out_1;
 	}
 	rc = fstat(in_fd, &sb);
+	if (rc)
+		goto out_1;
 	sprintf(tmp_path, "%s/%s/objects.PG", new_part_path, sos_part_name(part));
 	out_fd = open(tmp_path, O_RDWR | O_CREAT, sos->o_mode);
 	if (out_fd < 0) {
@@ -1110,6 +1115,8 @@ int sos_part_move(sos_part_t part, const char *new_part_path)
 		goto out_2;
 	}
 	rc = fstat(in_fd, &sb);
+	if (rc)
+		goto out_2;
 	sprintf(tmp_path, "%s/%s/objects.OBJ", new_part_path, sos_part_name(part));
 	out_fd = open(tmp_path, O_RDWR | O_CREAT, sos->o_mode);
 	if (out_fd < 0) {

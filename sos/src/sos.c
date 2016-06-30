@@ -621,29 +621,30 @@ static int schema_id_cmp(void *a, void *b)
  * \retval EPERM	The user has insufficient privilege to open the container.
  * \retval ENOENT	The container does not exist
  */
-sos_t sos_container_open(const char *path, sos_perm_t o_perm)
+sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 {
 	char tmp_path[PATH_MAX];
+	char *path = NULL;
 	sos_t sos;
 	struct stat sb;
 	int rc;
 
-	if (strlen(path) >= SOS_PART_PATH_LEN) {
+	if (strlen(path_arg) >= SOS_PART_PATH_LEN) {
 		errno = E2BIG;
 		return NULL;
 	}
-	if (path[0] != '/') {
+	if (path_arg[0] != '/') {
 		if (!getcwd(tmp_path, sizeof(tmp_path)))
 			return NULL;
-		if (strlen(tmp_path) + strlen(path) > SOS_PART_PATH_LEN) {
+		if (strlen(tmp_path) + strlen(path_arg) > SOS_PART_PATH_LEN) {
 			errno = E2BIG;
 			return NULL;
 		}
 		strcat(tmp_path, "/");
-		strcat(tmp_path, path);
+		strcat(tmp_path, path_arg);
 		path = strdup(tmp_path);
 	} else
-		path = strdup(path);
+		path = strdup(path_arg);
 	if (!path) {
 		errno = ENOMEM;
 		return NULL;
@@ -651,6 +652,7 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 	sos = calloc(1, sizeof(*sos));
 	if (!sos) {
 		errno = ENOMEM;
+		free(path);
 		return NULL;
 	}
 	pthread_mutex_init(&sos->lock, NULL);
@@ -659,7 +661,7 @@ sos_t sos_container_open(const char *path, sos_perm_t o_perm)
 	TAILQ_INIT(&sos->part_list);
 
 	/* Stat the container path to get the file mode bits */
-	sos->path = (char *)path;
+	sos->path = path;
 	rc = stat(sos->path, &sb);
 	if (rc)
 		goto err;

@@ -97,6 +97,13 @@ typedef enum ods_perm_e {
 	ODS_PERM_RO = 0,
 	ODS_PERM_RW
 } ods_perm_t;
+
+/**
+ * \brief Return the path used to open/create the ods
+ * \retval The path;
+ */
+extern const char *ods_path(ods_t ods);
+
 /**
  * \brief Open and optionally create an ODS object store
  *
@@ -139,16 +146,7 @@ int ods_pack(ods_t ods);
  * \param ods	The ODS ods handle
  * \return A pointer to the user data.
  */
-extern ods_obj_t _ods_get_user_data(ods_t ods);
-#define ods_get_user_data(ods) ({		\
-	ods_obj_t o = _ods_get_user_data(ods);	\
-	if (ods_debug && o) {				\
-		o->thread = pthread_self();	\
-		o->alloc_line = __LINE__;	\
-		o->alloc_func = __func__;	\
-	}					\
-	o;					\
-})
+extern ods_obj_t ods_get_user_data(ods_t ods);
 
 #define ODS_COMMIT_ASYNC	0
 #define ODS_COMMIT_SYNC		1
@@ -199,16 +197,7 @@ extern void ods_close(ods_t ods, int flags);
  * \return	Pointer to an object of the requested size or NULL if there
  *		is an error.
  */
-extern ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz);
-#define ods_obj_alloc(ods, sz) ({		\
-	ods_obj_t o = _ods_obj_alloc(ods, sz);	\
-	if (ods_debug && o) {				\
-		o->thread = pthread_self();	\
-		o->alloc_line = __LINE__;	\
-		o->alloc_func = __func__;	\
-	}					\
-	o;					\
-})
+extern ods_obj_t ods_obj_alloc(ods_t ods, size_t sz);
 
 /**
  * \brief Allocate a memory object of the requested size
@@ -223,16 +212,7 @@ extern ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz);
  * \return	Pointer to an object of the requested size or NULL if there
  *		is an error.
  */
-extern ods_obj_t _ods_obj_malloc(size_t sz);
-#define ods_obj_malloc(sz) ({		\
-	ods_obj_t o = _ods_obj_malloc(sz);	\
-	if (ods_debug && o) {			\
-		o->thread = pthread_self();	\
-		o->alloc_line = __LINE__;	\
-		o->alloc_func = __func__;	\
-	}					\
-	o;					\
-})
+extern ods_obj_t ods_obj_malloc(size_t sz);
 
 #define ODS_OBJ(_name_, _data_, _sz_)		\
 	struct ods_obj_s _name_ = {		\
@@ -242,11 +222,6 @@ extern ods_obj_t _ods_obj_malloc(size_t sz);
 		.ref = 0,			\
 		.as.ptr = _data_,		\
 		.map = NULL,			\
-		.thread = pthread_self(),	\
-		.alloc_func = __func__ ,	\
-		.alloc_line = __LINE__,		\
-		.put_line = 0,			\
-		.put_func = NULL		\
 	}
 
 /**
@@ -399,29 +374,12 @@ ods_obj_t ods_obj_get(ods_obj_t obj);
 /*
  * Put a reference on an object
  */
-void _ods_obj_put(ods_obj_t obj);
-#define ods_obj_put(o)				\
-	_ods_obj_put(o);			\
-	if (ods_debug && o) {			\
-		o->thread = pthread_self();	\
-		o->put_line = __LINE__;		\
-		o->put_func = __func__;		\
-	}					\
+void ods_obj_put(ods_obj_t obj);
 
 /*
  * Create a memory object from a persistent reference
  */
-ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref);
-#define ods_ref_as_obj(ods, ref) ({			\
-	ods_obj_t o = _ods_ref_as_obj(ods, ref);	\
-	if (ods_debug && o) {					\
-		o->thread = pthread_self();		\
-		o->alloc_line = __LINE__;		\
-		o->alloc_func = __func__;		\
-	}						\
-	o;						\
-})
-
+ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref);
 
 /*
  * Return an object's reference

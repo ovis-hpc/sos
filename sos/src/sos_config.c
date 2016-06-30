@@ -74,14 +74,14 @@ static struct config_opt {
 	{ SOS_CONTAINER_PARTITION_EXTEND, handle_partition_extend }
 };
 
-int compare_opt(const void *a, const void *b)
+static int compare_opt(const void *a, const void *b)
 {
 	const struct config_opt *oa = a;
 	const struct config_opt *ob = b;
 	return strcmp(oa->opt_name, ob->opt_name);
 }
 
-void option_handler(sos_t sos, sos_config_t config)
+static void option_handler(sos_t sos, sos_config_t config)
 {
 	struct config_opt *opt;
 	struct config_opt config_opt;
@@ -162,8 +162,10 @@ int sos_container_config_set(const char *path, const char *opt_name, const char 
 		return ENOMEM;
 
 	key_len = strlen(option_name) + 1;
-	if (key_len > SOS_CONFIG_NAME_LEN)
+	if (key_len > SOS_CONFIG_NAME_LEN) {
+		free(option_name);
 		return EINVAL;
+	}
 	normalize_option_name(option_name);
 
 	/* Open the configuration ODS */
@@ -400,6 +402,7 @@ sos_config_iter_t sos_config_iter_new(const char *path)
  err_1:
 	ods_close(iter->config_ods, ODS_COMMIT_ASYNC);
  err_0:
+	free(iter);
 	return NULL;
 }
 
@@ -457,4 +460,5 @@ void sos_config_print(const char *path, FILE *fp)
 		return;
 	for (cfg = sos_config_first(iter); cfg; cfg = sos_config_next(iter))
 		fprintf(fp, "%s=%s\n", cfg->name, cfg->value);
+	sos_config_iter_free(iter);
 }
