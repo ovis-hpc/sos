@@ -1876,7 +1876,6 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 static ods_iter_t bxt_iter_new(ods_idx_t idx)
 {
 	bxt_iter_t iter = calloc(1, sizeof *iter);
-	iter->iter.idx = idx;
 	return (struct ods_iter *)iter;
 }
 

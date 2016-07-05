@@ -43,6 +43,10 @@ typedef struct h2bxt_s {
 typedef struct h2bxt_iter {
 	struct ods_iter iter;
 	uint64_t hash;
+	enum {
+		H2BXT_ITER_FWD,
+		H2BXT_ITER_REV
+	} dir;
 	struct rbt next_tree;
 	ods_iter_t iter_table[0];
 } *h2bxt_iter_t;

@@ -96,7 +96,6 @@ void dump_leaf(h2bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE 
 	if (fp) fprintf(fp, "\n");
 }
 
-
 static void print_node(ods_idx_t idx, int ent, ods_obj_t n, int indent, FILE *fp)
 {
 	h2bxt_t t = idx->priv;
@@ -139,7 +138,6 @@ static void print_idx(ods_idx_t idx, FILE *fp)
 	}
 #endif
 }
-
 
 static void print_info(ods_idx_t idx, FILE *fp)
 {
@@ -434,9 +432,10 @@ static int h2bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 }
 
 typedef struct iter_entry_s {
-	ods_iter_t iter;
+	h2bxt_iter_t iter;
 	ods_key_t key;
 	ods_idx_data_t data;
+	int bkt;
 	struct rbn rbn;
 } *iter_entry_t;
 
@@ -444,7 +443,8 @@ static int entry_cmp(void *tree_key, void *key)
 {
 	iter_entry_t a = tree_key;
 	iter_entry_t b = key;
-	return ods_key_cmp(a->iter->idx, a->key, b->key);
+	ods_iter_t oi = (ods_iter_t)a->iter;
+	return ods_key_cmp(oi->idx, a->key, b->key);
 }
 
 static void iter_cleanup(h2bxt_t t, h2bxt_iter_t iter)
@@ -494,14 +494,16 @@ static ods_iter_t h2bxt_iter_new(ods_idx_t idx)
 	return (ods_iter_t)iter;
 }
 
-static iter_entry_t alloc_ent(ods_iter_t iter)
+static iter_entry_t alloc_ent(h2bxt_iter_t iter, int bkt)
 {
 	iter_entry_t ent = malloc(sizeof *ent);
 	if (!ent)
 		goto out;
 	ent->iter = iter;
-	ent->key = ods_iter_key(iter);
-	ent->data = ods_iter_data(iter);
+	ent->key = ods_iter_key(iter->iter_table[bkt]);
+	ent->data = ods_iter_data(iter->iter_table[bkt]);
+	ent->bkt = bkt;
+	assert(ent->key);
 	rbn_init(&ent->rbn, ent);
  out:
 	return ent;
@@ -515,6 +517,8 @@ static int h2bxt_iter_begin(ods_iter_t oi)
 	h2bxt_t t = oi->idx->priv;
 
 	iter_cleanup(t, iter);
+	iter->dir = H2BXT_ITER_FWD;
+
 	/*
 	 * Run through every iterator in the hash table and insert the
 	 * key into the tree.
@@ -524,7 +528,7 @@ static int h2bxt_iter_begin(ods_iter_t oi)
 		if (rc)
 			continue;
 		rv = 0;
-		ent = alloc_ent(iter->iter_table[bkt]);
+		ent = alloc_ent(iter, bkt);
 		if (!ent)
 			return ENOMEM;
 		rbt_ins(&iter->next_tree, &ent->rbn);
@@ -538,6 +542,10 @@ static int h2bxt_iter_end(ods_iter_t oi)
 	iter_entry_t ent;
 	h2bxt_iter_t iter = (typeof(iter))oi;
 	h2bxt_t t = oi->idx->priv;
+
+	iter_cleanup(t, iter);
+	iter->dir = H2BXT_ITER_REV;
+
 	/*
 	 * Run through every iterator in the hash table and insert the
 	 * key into the tree.
@@ -547,7 +555,7 @@ static int h2bxt_iter_end(ods_iter_t oi)
 		if (rc)
 			continue;
 		rv = 0;
-		ent = alloc_ent(iter->iter_table[bkt]);
+		ent = alloc_ent(iter, bkt);
 		if (!ent)
 			return ENOMEM;
 		rbt_ins(&iter->next_tree, &ent->rbn);
@@ -555,25 +563,50 @@ static int h2bxt_iter_end(ods_iter_t oi)
 	return rv;
 }
 
+static ods_idx_data_t NULL_DATA = {
+	.bytes = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+};
+
 /*
  * Return the min valued key in the rbt of the iterator
  */
-static ods_key_t h2bxt_iter_key(ods_iter_t oi)
+static ods_key_t h2bxt_iter_key_fwd(ods_iter_t oi)
 {
 	iter_entry_t ent;
 	h2bxt_iter_t iter = (typeof(iter))oi;
-	struct rbn *rbn = rbt_min(&iter->next_tree);
+	struct rbn *rbn;
+	rbn = rbt_min(&iter->next_tree);
 	if (!rbn)
 		return NULL;
 	ent = container_of(rbn, struct iter_entry_s, rbn);
 	return ent->key;
 }
+static ods_key_t h2bxt_iter_key_rev(ods_iter_t oi)
+{
+	iter_entry_t ent;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	struct rbn *rbn;
+	rbn = rbt_max(&iter->next_tree);
+	if (!rbn)
+		return NULL;
+	ent = container_of(rbn, struct iter_entry_s, rbn);
+	return ent->key;
+}
+static ods_key_t h2bxt_iter_key(ods_iter_t oi)
+{
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	switch (iter->dir) {
+	case H2BXT_ITER_FWD:
+		return h2bxt_iter_key_fwd(oi);
+	case H2BXT_ITER_REV:
+		return h2bxt_iter_key_rev(oi);
+	default:
+		assert(0 == "Invalid dir field in iter");
+	}
+	return NULL;
+}
 
-static ods_idx_data_t NULL_DATA = {
-	.bytes = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-};
-
-static ods_idx_data_t h2bxt_iter_data(ods_iter_t oi)
+static ods_idx_data_t h2bxt_iter_data_fwd(ods_iter_t oi)
 {
 	iter_entry_t ent;
 	h2bxt_iter_t iter = (typeof(iter))oi;
@@ -583,18 +616,31 @@ static ods_idx_data_t h2bxt_iter_data(ods_iter_t oi)
 	ent = container_of(rbn, struct iter_entry_s, rbn);
 	return ent->data;
 }
+static ods_idx_data_t h2bxt_iter_data_rev(ods_iter_t oi)
+{
+	iter_entry_t ent;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	struct rbn *rbn = rbt_max(&iter->next_tree);
+	if (!rbn)
+		return NULL_DATA;
+	ent = container_of(rbn, struct iter_entry_s, rbn);
+	return ent->data;
+}
+static ods_idx_data_t h2bxt_iter_data(ods_iter_t oi)
+{
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	switch (iter->dir) {
+	case H2BXT_ITER_FWD:
+		return h2bxt_iter_data_fwd(oi);
+	case H2BXT_ITER_REV:
+		return h2bxt_iter_data_rev(oi);
+	default:
+		assert(0 == "Invalid dir field in iter");
+	}
+	return NULL_DATA;
+}
 
 static int h2bxt_iter_find_first(ods_iter_t oi, ods_key_t key)
-{
-	return ENOENT;
-}
-
-static int h2bxt_iter_find_last(ods_iter_t oi, ods_key_t key)
-{
-	return ENOENT;
-}
-
-static int h2bxt_iter_find(ods_iter_t oi, ods_key_t key)
 {
 	int rc, rv = ENOENT;
 	iter_entry_t ent;
@@ -603,29 +649,189 @@ static int h2bxt_iter_find(ods_iter_t oi, ods_key_t key)
 	uint64_t bkt = hash_key(t, key);
 
 	iter_cleanup(t, iter);
-	rc = ods_iter_find(iter->iter_table[bkt], key);
+	iter->dir = H2BXT_ITER_FWD;
+
+	rc = ods_iter_find_first(iter->iter_table[bkt], key);
 	if (rc)
 		return ENOENT;
-	ent = alloc_ent(iter->iter_table[bkt]);
+	ent = alloc_ent(iter, bkt);
 	if (!ent)
 		return ENOMEM;
 	rbt_ins(&iter->next_tree, &ent->rbn);
 	return rv;
 }
 
+static int h2bxt_iter_find_last(ods_iter_t oi, ods_key_t key)
+{
+	int rc;
+	iter_entry_t ent;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	h2bxt_t t = oi->idx->priv;
+	uint64_t bkt = hash_key(t, key);
+
+	iter_cleanup(t, iter);
+	iter->dir = H2BXT_ITER_REV;
+
+	rc = ods_iter_find_last(iter->iter_table[bkt], key);
+	if (rc)
+		return ENOENT;
+	ent = alloc_ent(iter, bkt);
+	if (!ent)
+		return ENOMEM;
+	rbt_ins(&iter->next_tree, &ent->rbn);
+	return 0;
+}
+
+static int h2bxt_iter_find(ods_iter_t oi, ods_key_t key)
+{
+	int rc;
+	iter_entry_t ent;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	h2bxt_t t = oi->idx->priv;
+	uint64_t bkt = hash_key(t, key);
+
+	iter_cleanup(t, iter);
+	iter->dir = H2BXT_ITER_FWD;
+
+	rc = ods_iter_find(iter->iter_table[bkt], key);
+	if (rc)
+		return ENOENT;
+	ent = alloc_ent(iter, bkt);
+	if (!ent)
+		return ENOMEM;
+	rbt_ins(&iter->next_tree, &ent->rbn);
+	return 0;
+}
+
+/*
+ * Get the LUB from each iterator, and return the maximum. The tree
+ * will either contain a single entry, which is the max of all the
+ * iterators, or it will be empty.
+ *
+ * Note that since the tree only contains a single entry, the setting
+ * of the iterator direction does not affect the value returned by
+ * thee _iter_key() or _iter_data() functions.
+ *
+ * If the tree is not empty, 0 is returned, otherwise, ENOENT/ENOMEM
+ * is returned.
+ *
+ */
 static int h2bxt_iter_find_lub(ods_iter_t oi, ods_key_t key)
 {
-	return ENOENT;
+	h2bxt_t t = oi->idx->priv;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	iter_entry_t ent;
+	int rc, bkt, cur_max_bkt;
+	ods_key_t cur_key;
+	ods_key_t cur_max = NULL;
+
+	iter_cleanup(t, iter);
+	iter->dir = H2BXT_ITER_REV;
+
+	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+		if (ods_iter_find_lub(iter->iter_table[bkt], key))
+			continue;
+		cur_key = ods_iter_key(iter->iter_table[bkt]);
+		if (!cur_max) {
+			cur_max = cur_key;
+			cur_max_bkt = bkt;
+			continue;
+		}
+		rc = ods_key_cmp(ods_iter_idx(iter->iter_table[bkt]), cur_max, cur_key);
+		assert(rc);	/* NB: hash of key implies different indexes cannot have the same key */
+		if (rc < 0) {
+			ods_obj_put(cur_max);
+			cur_max = cur_key;
+			cur_max_bkt = bkt;
+			continue;
+		}
+		ods_obj_put(cur_key);
+	}
+	if (!cur_max)
+		return ENOENT;
+	ods_obj_put(cur_max);	/* drop our reference */
+	ent = alloc_ent(iter, cur_max_bkt);
+	if (!ent) {
+		iter_cleanup(t, iter);
+		return ENOMEM;
+	}
+	rbt_ins(&iter->next_tree, &ent->rbn);
+	return 0;
 }
 
 static int h2bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
 {
-	return ENOENT;
+	h2bxt_t t = oi->idx->priv;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	iter_entry_t ent;
+	int rc, bkt, cur_max_bkt;
+	ods_key_t cur_key;
+	ods_key_t cur_max = NULL;
+
+	iter_cleanup(t, iter);
+	iter->dir = H2BXT_ITER_FWD;
+
+	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+		if (ods_iter_find_lub(iter->iter_table[bkt], key))
+			continue;
+		cur_key = ods_iter_key(iter->iter_table[bkt]);
+		if (!cur_max) {
+			cur_max = cur_key;
+			cur_max_bkt = bkt;
+			continue;
+		}
+		rc = ods_key_cmp(ods_iter_idx(iter->iter_table[bkt]), cur_max, cur_key);
+		assert(rc);	/* NB: hash of key implies different indexes cannot have the same key */
+		if (rc > 0) {
+			ods_obj_put(cur_max);
+			cur_max = cur_key;
+			cur_max_bkt = bkt;
+			continue;
+		}
+		ods_obj_put(cur_key);
+	}
+	if (!cur_max)
+		return ENOENT;
+	ods_obj_put(cur_max);	/* drop our reference */
+	ent = alloc_ent(iter, cur_max_bkt);
+	if (!ent) {
+		iter_cleanup(t, iter);
+		return ENOMEM;
+	}
+	rbt_ins(&iter->next_tree, &ent->rbn);
+	return 0;
 }
 
 static int h2bxt_iter_next(ods_iter_t oi)
 {
-	return ENOENT;
+	h2bxt_t t = oi->idx->priv;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	struct rbn *rbn;
+	iter_entry_t ent;
+	int bkt;
+
+	iter->dir = H2BXT_ITER_FWD; /* force direction to forward */
+
+	/* Delete the min from the tree. */
+	rbn = rbt_min(&iter->next_tree);
+	if (!rbn)
+		return ENOENT;
+	ent = container_of(rbn, struct iter_entry_s, rbn);
+	rbt_del(&iter->next_tree, rbn);
+	ods_obj_put(ent->key);
+	bkt = ent->bkt;
+	free(ent);
+
+	/* Get the next entry for this bucket and insert into the tree */
+	if (0 == ods_iter_next(iter->iter_table[bkt])) {
+		ent = alloc_ent(iter, bkt);
+		if (!ent)
+			return ENOMEM;
+		rbt_ins(&iter->next_tree, &ent->rbn);
+	}
+	if (rbt_empty(&iter->next_tree))
+		return ENOENT;
+	return 0;
 }
 
 static int h2bxt_iter_prev(ods_iter_t oi)
@@ -672,8 +878,17 @@ static void h2bxt_commit(ods_idx_t idx)
 
 int h2bxt_stat(ods_idx_t idx, ods_idx_stat_t idx_sb)
 {
+	struct ods_idx_stat_s bkt_sb;
 	h2bxt_t t = idx->priv;
-	return ods_idx_stat(t->ods_idx, idx_sb);
+	int bkt;
+	memset(idx_sb, 0, sizeof(*idx_sb));
+	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+		ods_idx_stat(t->idx_table[bkt], &bkt_sb);
+		idx_sb->cardinality += bkt_sb.cardinality;
+		idx_sb->duplicates += bkt_sb.duplicates;
+		idx_sb->size += bkt_sb.size;
+	}
+	return 0;
 }
 
 static struct ods_idx_provider h2bxt_provider = {

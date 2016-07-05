@@ -321,8 +321,10 @@ int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 ods_iter_t ods_iter_new(ods_idx_t idx)
 {
 	ods_iter_t iter = idx->idx_class->prv->iter_new(idx);
-	if (iter)
+	if (iter) {
 		ods_atomic_inc(&idx->ref_count);
+		iter->idx = idx;
+	}
 	return iter;
 }
 

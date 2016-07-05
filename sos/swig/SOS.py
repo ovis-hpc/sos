@@ -78,10 +78,25 @@ class Timestamp:
     def __int__(self):
         return float(self.secs)
 
+class IndexEntry(object):
+    def __init__(self, index):
+        self.index = index
+
+    def key(self):
+        k = sos.sos_iter_key(self.index.iter_)
+        return sos.sos_key_to_str(k, "%08X", ":", 4)
+
+    def ref(self):
+        return sos.sos_iter_ref(self.index.iter_)
+
+    def obj(self):
+        return sos.sos_iter_obj(self.index.iter_)
+
 class Index(object):
     def __init__(self):
         self.index = None
         self.stats = None
+        self.iter_ = None
 
     def init(self, index):
         self.release()          # support re-init
@@ -90,8 +105,8 @@ class Index(object):
             raise ValueError("Invalid container or index name")
         self.stats = sos.sos_index_stat_s()
         sos.sos_index_stat(self.index, self.stats)
-        self.iter = sos.sos_index_iter_new(self.index)
-        rc = sos.sos_iter_begin(self.iter)
+        self.iter_ = sos.sos_index_iter_new(self.index)
+        rc = sos.sos_iter_begin(self.iter_)
         if rc != 0:
             self.done = True
         else:
@@ -105,16 +120,19 @@ class Index(object):
     def __iter__(self):
         return self
 
+    def next(self):
+        return self.__next__()
+
     def __next__(self):
         if self.done:
             return None
-        obj = sos.sos_iter_obj(self.iter)
-        rc = sos.sos_iter_next(self.iter)
+        ent = IndexEntry(self)
+        rc = sos.sos_iter_next(self.iter_)
         if rc != 0:
             self.done = True
         else:
             self.done = False
-        return obj
+        return ent
 
     def release(self):
         if self.index:

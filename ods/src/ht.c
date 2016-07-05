@@ -580,7 +580,6 @@ static int ht_delete(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t *data)
 static ods_iter_t ht_iter_new(ods_idx_t idx)
 {
 	ht_iter_t hi = calloc(1, sizeof *hi);
-	hi->iter.idx = idx;
 	return (ods_iter_t)hi;
 }
 
@@ -722,6 +721,16 @@ static int ht_iter_next(ods_iter_t oi)
 	hi->ent = next_obj;
 	hi->bkt = bkt;
 	return 0;
+}
+
+static int64_t prev_bucket(ht_t t, int64_t bkt)
+{
+	ht_tbl_t ht = t->htable;
+	for (bkt--; bkt >= ht->first_bkt; bkt--) {
+		if (ht->table[bkt].tail_ref)
+			return bkt;
+	}
+	return -1;
 }
 
 static int ht_iter_prev(ods_iter_t oi)

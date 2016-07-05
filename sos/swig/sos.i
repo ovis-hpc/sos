@@ -94,8 +94,19 @@ typedef unsigned long long uint64_t;
 %include <sys/queue.h>
 %include "sos_priv.h"
 %include <sos/sos.h>
+
 const char *py_value_as_str(sos_value_t value);
 int py_pos_from_str(sos_pos_t pos, const char *str);
 const char *py_pos_to_str(sos_pos_t pos);
+
+%extend sos_obj_ref_s {
+	inline uint64_t ods() {
+		return self->ref.ods;
+	}
+	inline uint64_t obj() {
+		return self->ref.obj;
+	}
+}
+
 %pythoncode %{
 %}
