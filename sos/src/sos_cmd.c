@@ -910,8 +910,8 @@ void *add_proc(void *arg)
 				pos[-1] = '\0';
 			if (cols >= col_count) {
 				printf("Warning: line contains more columns "
-				       "than are in column map.\n\"%s\"",
-				       work->buf);
+				       "%d than are in column map.\n\"%s\"\n",
+				       cols, work->buf);
 				break;
 			}
 			int id = col_map[cols];
@@ -1331,6 +1331,7 @@ int main(int argc, char **argv)
 			action |= SCHEMA;
 			schema_file = fopen(optarg, "r");
 			if (!schema_file) {
+				fprintf(stderr, "Bad -s %s\n", optarg);
 				perror("Error opening the schema file: ");
 				exit(9);
 			}
@@ -1339,7 +1340,8 @@ int main(int argc, char **argv)
 			action |= OBJECT;
 			obj_file = fopen(optarg, "r");
 			if (!obj_file) {
-				perror("Error opening the schema file: ");
+				fprintf(stderr, "Bad -o %s\n", optarg);
+				perror("Error opening the object file: ");
 				exit(9);
 			}
 			break;
@@ -1394,6 +1396,7 @@ int main(int argc, char **argv)
 			action |= CSV;
 			csv_file = fopen(optarg, "r");
 			if (!csv_file) {
+				fprintf(stderr, "Bad -I %s\n", optarg);
 				perror("Error opening CSV file: ");
 				exit(9);
 			}
