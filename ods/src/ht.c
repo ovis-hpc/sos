@@ -444,9 +444,9 @@ static int ht_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void 
 		if (rc) {
 			ods_obj_delete(new_key);
 			ods_obj_delete(ent);
-			ods_obj_put(new_key);
-			ods_obj_put(ent);
 		}
+		ods_obj_put(new_key);
+		ods_obj_put(ent);
 		break;
 	case ODS_VISIT_UPD:
 		if (!found) {

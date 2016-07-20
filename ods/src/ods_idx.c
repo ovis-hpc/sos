@@ -348,11 +348,10 @@ ods_iter_flags_t ods_iter_flags_get(ods_iter_t i)
 
 void ods_iter_delete(ods_iter_t iter)
 {
+	ods_idx_t idx = iter->idx;
 	iter->idx->idx_class->prv->iter_delete(iter);
-	if (0 == ods_atomic_dec(&iter->idx->ref_count)) {
-		iter->idx->idx_class->prv->close(iter->idx);
-		ods_close(iter->idx->ods, ODS_COMMIT_SYNC);
-	}
+	if (0 == ods_atomic_dec(&idx->ref_count))
+		ods_idx_close(idx, ODS_COMMIT_ASYNC);
 }
 
 int ods_iter_find(ods_iter_t iter, ods_key_t key)

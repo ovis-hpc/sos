@@ -306,6 +306,8 @@ static void h2bxt_close(ods_idx_t idx)
 	for (bkt = 0; bkt < t->udata->table_size; bkt++)
 		ods_idx_close(t->idx_table[bkt], ODS_COMMIT_ASYNC);
 	ods_obj_put(t->udata_obj);
+	ods_idx_close(t->ods_idx, ODS_COMMIT_ASYNC);
+	free(t);
 }
 
 static uint64_t hash_key(h2bxt_t t, ods_key_t key)
@@ -721,9 +723,9 @@ static int h2bxt_iter_find_lub(ods_iter_t oi, ods_key_t key)
 	h2bxt_t t = oi->idx->priv;
 	h2bxt_iter_t iter = (typeof(iter))oi;
 	iter_entry_t ent;
-	int rc, bkt, cur_max_bkt;
+	int rc, bkt, cur_min_bkt;
 	ods_key_t cur_key;
-	ods_key_t cur_max = NULL;
+	ods_key_t cur_min = NULL;
 
 	iter_cleanup(t, iter);
 	iter->dir = H2BXT_ITER_REV;
@@ -732,25 +734,25 @@ static int h2bxt_iter_find_lub(ods_iter_t oi, ods_key_t key)
 		if (ods_iter_find_lub(iter->iter_table[bkt], key))
 			continue;
 		cur_key = ods_iter_key(iter->iter_table[bkt]);
-		if (!cur_max) {
-			cur_max = cur_key;
-			cur_max_bkt = bkt;
+		if (!cur_min) {
+			cur_min = cur_key;
+			cur_min_bkt = bkt;
 			continue;
 		}
-		rc = ods_key_cmp(ods_iter_idx(iter->iter_table[bkt]), cur_max, cur_key);
+		rc = ods_key_cmp(ods_iter_idx(iter->iter_table[bkt]), cur_min, cur_key);
 		assert(rc);	/* NB: hash of key implies different indexes cannot have the same key */
-		if (rc < 0) {
-			ods_obj_put(cur_max);
-			cur_max = cur_key;
-			cur_max_bkt = bkt;
+		if (rc > 0) {
+			ods_obj_put(cur_min);
+			cur_min = cur_key;
+			cur_min_bkt = bkt;
 			continue;
 		}
 		ods_obj_put(cur_key);
 	}
-	if (!cur_max)
+	if (!cur_min)
 		return ENOENT;
-	ods_obj_put(cur_max);	/* drop our reference */
-	ent = alloc_ent(iter, cur_max_bkt);
+	ods_obj_put(cur_min);	/* drop our reference */
+	ent = alloc_ent(iter, cur_min_bkt);
 	if (!ent) {
 		iter_cleanup(t, iter);
 		return ENOMEM;
