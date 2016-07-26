@@ -723,52 +723,8 @@ static int h2bxt_iter_find_lub(ods_iter_t oi, ods_key_t key)
 	h2bxt_t t = oi->idx->priv;
 	h2bxt_iter_t iter = (typeof(iter))oi;
 	iter_entry_t ent;
-	int rc, bkt, cur_min_bkt;
-	ods_key_t cur_key;
-	ods_key_t cur_min = NULL;
-
-	iter_cleanup(t, iter);
-	iter->dir = H2BXT_ITER_REV;
-
-	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
-		if (ods_iter_find_lub(iter->iter_table[bkt], key))
-			continue;
-		cur_key = ods_iter_key(iter->iter_table[bkt]);
-		if (!cur_min) {
-			cur_min = cur_key;
-			cur_min_bkt = bkt;
-			continue;
-		}
-		rc = ods_key_cmp(ods_iter_idx(iter->iter_table[bkt]), cur_min, cur_key);
-		assert(rc);	/* NB: hash of key implies different indexes cannot have the same key */
-		if (rc > 0) {
-			ods_obj_put(cur_min);
-			cur_min = cur_key;
-			cur_min_bkt = bkt;
-			continue;
-		}
-		ods_obj_put(cur_key);
-	}
-	if (!cur_min)
-		return ENOENT;
-	ods_obj_put(cur_min);	/* drop our reference */
-	ent = alloc_ent(iter, cur_min_bkt);
-	if (!ent) {
-		iter_cleanup(t, iter);
-		return ENOMEM;
-	}
-	rbt_ins(&iter->next_tree, &ent->rbn);
-	return 0;
-}
-
-static int h2bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
-{
-	h2bxt_t t = oi->idx->priv;
-	h2bxt_iter_t iter = (typeof(iter))oi;
-	iter_entry_t ent;
-	int rc, bkt, cur_max_bkt;
-	ods_key_t cur_key;
-	ods_key_t cur_max = NULL;
+	int rv = ENOENT;
+	int bkt;
 
 	iter_cleanup(t, iter);
 	iter->dir = H2BXT_ITER_FWD;
@@ -776,32 +732,36 @@ static int h2bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
 		if (ods_iter_find_lub(iter->iter_table[bkt], key))
 			continue;
-		cur_key = ods_iter_key(iter->iter_table[bkt]);
-		if (!cur_max) {
-			cur_max = cur_key;
-			cur_max_bkt = bkt;
-			continue;
-		}
-		rc = ods_key_cmp(ods_iter_idx(iter->iter_table[bkt]), cur_max, cur_key);
-		assert(rc);	/* NB: hash of key implies different indexes cannot have the same key */
-		if (rc > 0) {
-			ods_obj_put(cur_max);
-			cur_max = cur_key;
-			cur_max_bkt = bkt;
-			continue;
-		}
-		ods_obj_put(cur_key);
+		rv = 0;
+		ent = alloc_ent(iter, bkt);
+		if (!ent)
+			return ENOMEM;
+		rbt_ins(&iter->next_tree, &ent->rbn);
 	}
-	if (!cur_max)
-		return ENOENT;
-	ods_obj_put(cur_max);	/* drop our reference */
-	ent = alloc_ent(iter, cur_max_bkt);
-	if (!ent) {
-		iter_cleanup(t, iter);
-		return ENOMEM;
+	return rv;
+}
+
+static int h2bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
+{
+	h2bxt_t t = oi->idx->priv;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	iter_entry_t ent;
+	int rv = ENOENT;
+	int bkt;
+
+	iter_cleanup(t, iter);
+	iter->dir = H2BXT_ITER_FWD;
+
+	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+		if (ods_iter_find_glb(iter->iter_table[bkt], key))
+			continue;
+		rv = 0;
+		ent = alloc_ent(iter, bkt);
+		if (!ent)
+			return ENOMEM;
+		rbt_ins(&iter->next_tree, &ent->rbn);
 	}
-	rbt_ins(&iter->next_tree, &ent->rbn);
-	return 0;
+	return rv;
 }
 
 static int h2bxt_iter_next(ods_iter_t oi)
