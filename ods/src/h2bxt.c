@@ -474,6 +474,7 @@ static void h2bxt_iter_delete(ods_iter_t i)
 		if (iter->iter_table[bkt])
 			ods_iter_delete(iter->iter_table[bkt]);
 	}
+	free(iter);
 }
 
 static ods_iter_t h2bxt_iter_new(ods_idx_t idx)
