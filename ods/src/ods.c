@@ -90,7 +90,7 @@ struct ods_pg_s mem_pg_table;
 struct ods_obj_data_s mem_obj_table;
 struct ods_map_s mem_map;
 /* #define ODS_DEBUG */
-#ifdef ODS_DEBUG
+#if defined(ODS_DEBUG) || defined(ODS_OBJ_DEBUG)
 int ods_debug = 1;
 #else
 int ods_debug = 0;
@@ -434,7 +434,7 @@ void ods_info(ods_t ods, FILE *fp)
 	fprintf(fp, "Object        Count Size     Reference      Pointer        Map            Thread         Line  Func\n");
 	fprintf(fp, "-------------- ---- -------- -------------- -------------- -------------- -------------- ----- ------------\n");
 	LIST_FOREACH(obj, &ods->obj_list, entry) {
-		fprintf(fp, "%14p %4d %8zu 0x%012lx %14p %14p %14p %5d %p\n",
+		fprintf(fp, "%14p %4d %8zu 0x%012lx %14p %14p %14p %5d %s\n",
 			obj,
 			obj->refcount,
 			obj->size, obj->ref, obj->as.ptr, obj->map,
@@ -448,7 +448,7 @@ void ods_info(ods_t ods, FILE *fp)
 	fprintf(fp, "Object         Size     Reference      Thread         Line  Func\n");
 	fprintf(fp, "-------------- -------- -------------- -------------- ----- ------------\n");
 	LIST_FOREACH(obj, &ods->obj_free_list, entry) {
-		fprintf(fp, "%14p %8zu 0x%012lx %14p %5d %p\n",
+		fprintf(fp, "%14p %8zu 0x%012lx %14p %5d %s\n",
 			obj,
 			obj->size, obj->ref,
 			(void *)obj->thread,
@@ -520,7 +520,11 @@ void __ods_obj_put(ods_obj_t obj, int lock)
 	}
 }
 
+#ifdef ODS_OBJ_DEBUG
+void _ods_obj_put(ods_obj_t obj)
+#else
 void ods_obj_put(ods_obj_t obj)
+#endif
 {
 	__ods_obj_put(obj, 1);
 }
@@ -707,7 +711,11 @@ ods_obj_t _ods_ref_as_obj_with_lock(ods_t ods, ods_ref_t ref, ods_map_t map)
 }
 
 // #define ODS_CACHE_OBJECTS
+#ifdef ODS_OBJ_DEBUG
+ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref)
+#else
 ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref)
+#endif
 {
 #ifdef ODS_CACHE_OBJECTS
 	ods_obj_hent_t hent;
@@ -1022,7 +1030,11 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	return NULL;
 }
 
+#ifdef ODS_OBJ_DEBUG
+ods_obj_t _ods_get_user_data(ods_t ods)
+#else
 ods_obj_t ods_get_user_data(ods_t ods)
+#endif
 {
 	/* User data starts immediately after the object data header */
 	ods_ref_t user_ref = sizeof(struct ods_obj_data_s);
@@ -1174,7 +1186,11 @@ static void *alloc_blk(ods_map_t map, size_t sz)
 	return alloc_bkt(map, bkt);
 }
 
+#ifdef ODS_OBJ_DEBUG
+ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
+#else
 ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
+#endif
 {
 	ods_map_t map;
 	ods_obj_t obj = NULL;
@@ -1205,7 +1221,11 @@ ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
 	return obj;
 }
 
+#ifdef ODS_OBJ_DEBUG
+ods_obj_t _ods_obj_malloc(size_t sz)
+#else
 ods_obj_t ods_obj_malloc(size_t sz)
+#endif
 {
 	ods_obj_t obj;
 	obj = malloc(sz + sizeof(struct ods_obj_s));

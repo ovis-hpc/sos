@@ -146,8 +146,20 @@ int ods_pack(ods_t ods);
  * \param ods	The ODS ods handle
  * \return A pointer to the user data.
  */
+#ifdef ODS_OBJ_DEBUG
+extern ods_obj_t _ods_get_user_data(ods_t ods);
+#define ods_get_user_data(ods) ({		\
+	ods_obj_t o = _ods_get_user_data(ods);	\
+	if (ods_debug && o) {				\
+		o->thread = pthread_self();	\
+		o->alloc_line = __LINE__;	\
+		o->alloc_func = __func__;	\
+	}					\
+	o;					\
+})
+#else
 extern ods_obj_t ods_get_user_data(ods_t ods);
-
+#endif
 #define ODS_COMMIT_ASYNC	0
 #define ODS_COMMIT_SYNC		1
 /**
@@ -197,8 +209,20 @@ extern void ods_close(ods_t ods, int flags);
  * \return	Pointer to an object of the requested size or NULL if there
  *		is an error.
  */
+#ifdef ODS_OBJ_DEBUG
+extern ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz);
+#define ods_obj_alloc(ods, sz) ({		\
+	ods_obj_t o = _ods_obj_alloc(ods, sz);	\
+	if (ods_debug && o) {				\
+		o->thread = pthread_self();	\
+		o->alloc_line = __LINE__;	\
+		o->alloc_func = __func__;	\
+	}					\
+	o;					\
+})
+#else
 extern ods_obj_t ods_obj_alloc(ods_t ods, size_t sz);
-
+#endif
 /**
  * \brief Allocate a memory object of the requested size
  *
@@ -212,8 +236,36 @@ extern ods_obj_t ods_obj_alloc(ods_t ods, size_t sz);
  * \return	Pointer to an object of the requested size or NULL if there
  *		is an error.
  */
+#ifdef ODS_OBJ_DEBUG
+extern ods_obj_t _ods_obj_malloc(size_t sz);
+#define ods_obj_malloc(sz) ({		\
+	ods_obj_t o = _ods_obj_malloc(sz);	\
+	if (ods_debug && o) {			\
+		o->thread = pthread_self();	\
+		o->alloc_line = __LINE__;	\
+		o->alloc_func = __func__;	\
+	}					\
+	o;					\
+})
+#else
 extern ods_obj_t ods_obj_malloc(size_t sz);
-
+#endif
+#ifdef ODS_OBJ_DEBUG
+#define ODS_OBJ(_name_, _data_, _sz_)		\
+	struct ods_obj_s _name_ = {		\
+		.refcount = 0,			\
+		.ods = NULL,			\
+		.size = _sz_,			\
+		.ref = 0,			\
+		.as.ptr = _data_,		\
+		.map = NULL,			\
+		.thread = pthread_self(),	\
+		.alloc_func = __func__ ,	\
+		.alloc_line = __LINE__,		\
+		.put_line = 0,			\
+		.put_func = NULL		\
+	}
+#else
 #define ODS_OBJ(_name_, _data_, _sz_)		\
 	struct ods_obj_s _name_ = {		\
 		.refcount = 0,			\
@@ -223,7 +275,7 @@ extern ods_obj_t ods_obj_malloc(size_t sz);
 		.as.ptr = _data_,		\
 		.map = NULL,			\
 	}
-
+#endif
 /**
  * \brief Free the storage for this object in the ODS
  *
@@ -271,8 +323,18 @@ int ods_ref_valid(ods_t ods, ods_ref_t ref);
  *
  * \param obj	Pointer to the object
  */
+#ifdef ODS_OBJ_DEBUG
+void _ods_obj_put(ods_obj_t obj);
+#define ods_obj_put(o)				\
+	_ods_obj_put(o);			\
+	if (ods_debug && o) {			\
+		o->thread = pthread_self();	\
+		o->put_line = __LINE__;		\
+		o->put_func = __func__;		\
+	}
+#else
 extern void ods_obj_put(ods_obj_t obj);
-
+#endif
 /**
  * \brief Return the ODS in which an object resides
  *
@@ -372,15 +434,22 @@ ods_atomic_t ods_obj_count(ods_t ods);
 ods_obj_t ods_obj_get(ods_obj_t obj);
 
 /*
- * Put a reference on an object
- */
-void ods_obj_put(ods_obj_t obj);
-
-/*
  * Create a memory object from a persistent reference
  */
+#ifdef ODS_OBJ_DEBUG
+ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref);
+#define ods_ref_as_obj(ods, ref) ({			\
+	ods_obj_t o = _ods_ref_as_obj(ods, ref);	\
+	if (ods_debug && o) {					\
+		o->thread = pthread_self();		\
+		o->alloc_line = __LINE__;		\
+		o->alloc_func = __func__;		\
+	}						\
+	o;						\
+})
+#else
 ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref);
-
+#endif
 /*
  * Return an object's reference
  */
