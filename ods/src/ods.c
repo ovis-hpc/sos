@@ -479,10 +479,13 @@ static int obj_init(ods_obj_t obj, ods_map_t map, ods_ref_t ref)
 	 * managed by allocation/deallocation, instead it is
 	 * essentially an address constant.
 	 */
-	if (ref != sizeof(struct ods_obj_data_s))
+	if (ref != sizeof(struct ods_obj_data_s)) {
 		obj->size = ods_ref_size(map, ref);
-	else
+		assert((obj->size < ODS_PAGE_SIZE)
+		       || 0 == (obj->ref & ~ODS_PAGE_MASK));
+	} else {
 		obj->size = ODS_UDATA_SIZE;
+	}
 	return 0;
 }
 
