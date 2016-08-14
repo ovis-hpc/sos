@@ -582,8 +582,9 @@ static ods_key_t h2bxt_iter_key_fwd(ods_iter_t oi)
 	if (!rbn)
 		return NULL;
 	ent = container_of(rbn, struct iter_entry_s, rbn);
-	return ent->key;
+	return ods_obj_get(ent->key);
 }
+
 static ods_key_t h2bxt_iter_key_rev(ods_iter_t oi)
 {
 	iter_entry_t ent;
@@ -593,7 +594,7 @@ static ods_key_t h2bxt_iter_key_rev(ods_iter_t oi)
 	if (!rbn)
 		return NULL;
 	ent = container_of(rbn, struct iter_entry_s, rbn);
-	return ent->key;
+	return ods_obj_get(ent->key);
 }
 static ods_key_t h2bxt_iter_key(ods_iter_t oi)
 {
