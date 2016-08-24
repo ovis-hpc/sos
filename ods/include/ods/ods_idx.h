@@ -510,7 +510,7 @@ typedef ods_visit_action_t (*ods_visit_cb_fn_t)(ods_idx_t idx,
 						ods_key_t key, ods_idx_data_t *idx_data,
 						int found,
 						void *arg);
-int ods_index_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *arg);
+int ods_idx_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *arg);
 
 /**
  * \brief Return the index data and key value for the minimum key

@@ -530,7 +530,7 @@ void sos_inuse_obj_info(sos_t sos, FILE *outp)
 	fprintf(outp, "---------- ------------ ------------\n");
 	LIST_FOREACH(obj, &sos->obj_list, entry) {
 		char ref_str[32];
-		sprintf(ref_str, "%p@%p", obj->obj_ref.ref.ods, obj->obj_ref.ref.obj);
+		sprintf(ref_str, "%p@%p", (void*)obj->obj_ref.ref.ods, (void*)obj->obj_ref.ref.obj);
 		fprintf(outp, "%10d %-12s %s\n",
 			obj->ref_count, ref_str, obj->schema->data->name);
 	}
@@ -547,7 +547,7 @@ void sos_free_obj_info(sos_t sos, FILE *outp)
 	fprintf(outp, "---------- ------------ ------------\n");
 	LIST_FOREACH(obj, &sos->obj_free_list, entry) {
 		char ref_str[32];
-		sprintf(ref_str, "%p@%p", obj->obj_ref.ref.ods, obj->obj_ref.ref.obj);
+		sprintf(ref_str, "%p@%p", (void*)obj->obj_ref.ref.ods, (void*)obj->obj_ref.ref.obj);
 		fprintf(outp, "%10d %-12s %s\n",
 			obj->ref_count, ref_str, obj->schema->data->name);
 	}

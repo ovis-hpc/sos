@@ -65,13 +65,13 @@ static void print_info(ods_idx_t idx, FILE *fp)
 {
 	ht_t t = idx->priv;
 	fprintf(fp, "%*s : %lx\n", 12, "Hash Table Ref", t->udata->htable_ref);
-	fprintf(fp, "%*s : %d\n", 12, "Table Size", t->udata->htable_size);
+	fprintf(fp, "%*s : %lu\n", 12, "Table Size", t->udata->htable_size);
 	fprintf(fp, "%*s : %d\n", 12, "Hash Seed", t->udata->hash_seed);
-	fprintf(fp, "%*s : %d\n", 12, "Hash Type", t->udata->hash_type);
+	fprintf(fp, "%*s : %lu\n", 12, "Hash Type", t->udata->hash_type);
 	fprintf(fp, "%*s : %d\n", 12, "Client Count", t->udata->client_count);
 	fprintf(fp, "%*s : %d\n", 12, "Lock", t->udata->lock);
-	fprintf(fp, "%*s : %d\n", 12, "Max Bucket", t->udata->max_bkt);
-	fprintf(fp, "%*s : %d\n", 12, "Max Bucket Len", t->udata->max_bkt_len);
+	fprintf(fp, "%*s : %lu\n", 12, "Max Bucket", t->udata->max_bkt);
+	fprintf(fp, "%*s : %lu\n", 12, "Max Bucket Len", t->udata->max_bkt_len);
 	fprintf(fp, "%*s : %d\n", 12, "Cardinality", t->udata->card);
 	fprintf(fp, "%*s : %d\n", 12, "Duplicates", t->udata->dups);
 	fflush(fp);
@@ -232,7 +232,7 @@ static ods_obj_t find_entry(ht_t t, ods_key_t key, int64_t *p_bkt)
 	ods_ref_t ref;
 	ht_tbl_t ht = t->htable;
 	ods_key_value_t kv = HKEY(key);
-	int64_t bkt = hash_bkt(t, kv->value, kv->len);
+	int64_t bkt = hash_bkt(t, (const char *)kv->value, kv->len);
 	if (p_bkt)
 		/* Return bkt regardless of whether key matches */
 		*p_bkt = bkt;
@@ -394,7 +394,7 @@ static int ht_insert(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 		goto out_1;
 	}
 	kv = HKEY(new_key);
-	bkt = hash_bkt(t, kv->value, kv->len);
+	bkt = hash_bkt(t, (const char *)kv->value, kv->len);
 	rc = insert_in_bucket(o_idx, new_key, data, ent, bkt);
 	ods_obj_put(new_key);
  out_1:
