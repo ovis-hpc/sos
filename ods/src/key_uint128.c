@@ -74,7 +74,7 @@ static const char *to_str(ods_key_t key, char *buf, size_t len)
 	ods_key_value_t kv = ods_key_value(key);
 	uint64_t *v = (uint64_t *)kv->value;
 
-	snprintf(buf, len, "016lX:%016lX", v[0], v[1]);
+	snprintf(buf, len, "%016lX:%016lX", v[0], v[1]);
 	return buf;
 }
 

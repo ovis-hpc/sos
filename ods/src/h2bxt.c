@@ -313,7 +313,7 @@ static void h2bxt_close(ods_idx_t idx)
 static uint64_t hash_key(h2bxt_t t, ods_key_t key)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	return t->hash_fn(kv->value, kv->len, t->udata->hash_seed) % t->udata->table_size;
+	return t->hash_fn((const char *)kv->value, kv->len, t->udata->hash_seed) % t->udata->table_size;
 }
 
 static int h2bxt_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *ctxt)
@@ -452,7 +452,7 @@ static int entry_cmp(void *tree_key, void *key)
 static void iter_cleanup(h2bxt_t t, h2bxt_iter_t iter)
 {
 	struct rbn *rbn;
-	while (rbn = rbt_min(&iter->next_tree)) {
+	while ((rbn = rbt_min(&iter->next_tree))) {
 		iter_entry_t ent = container_of(rbn, struct iter_entry_s, rbn);
 		rbt_del(&iter->next_tree, rbn);
 		ods_obj_put(ent->key);

@@ -276,10 +276,10 @@ struct sos_visit_cb_ctxt_s {
 	void *arg;
 };
 
-static int visit_cb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data, int found, void *arg)
+static ods_visit_action_t visit_cb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data, int found, void *arg)
 {
 	struct sos_visit_cb_ctxt_s *visit_arg = arg;
-	return visit_arg->cb_fn(visit_arg->index,
+	return (ods_visit_action_t)visit_arg->cb_fn(visit_arg->index,
 				key, (sos_idx_data_t *)data,
 				found, visit_arg->arg);
 }

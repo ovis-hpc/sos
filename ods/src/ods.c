@@ -154,7 +154,7 @@ static int init_pgtbl(int pg_fd)
 
 	count = ODS_OBJ_MIN_SZ >> ODS_PAGE_SHIFT;
 	min_sz = count + sizeof(struct ods_pgt_s);
-	ftruncate(pg_fd, min_sz);
+	rc = ftruncate(pg_fd, min_sz); /* ignore return value */
 
 	memset(&pgt, 0, sizeof pgt);
 	memcpy(pgt.signature, ODS_PGT_SIGNATURE, sizeof ODS_PGT_SIGNATURE);
@@ -835,8 +835,8 @@ int ods_extend(ods_t ods, size_t sz)
 		 * updated. Truncate the files back down to the
 		 * original sizes.
 		 */
-		(void)ftruncate(ods->obj_fd, ods->obj_sz);
-		(void)ftruncate(ods->pg_fd, ods->pg_sz);
+		rc = ftruncate(ods->obj_fd, ods->obj_sz); /* ignore return value */
+		rc = ftruncate(ods->pg_fd, ods->pg_sz); /* ignore return value */
 		rc = ENOMEM;
 		goto out;
 	}
