@@ -154,7 +154,7 @@ static int h2bxt_open(ods_idx_t idx)
 {
 	char path_buf[PATH_MAX];
 	const char *path;
-	const char *base;
+	const char *base = NULL;
 	ods_obj_t udata_obj;
 	h2bxt_t t;
 	int i, rc;
@@ -192,9 +192,11 @@ static int h2bxt_open(ods_idx_t idx)
 			goto out;
 		}
 	}
-
+	free((void *)base);
 	return 0;
  out:
+	if (base)
+		free((void *)base);
 	return rc;
  err_1:
 	free(t);
@@ -294,6 +296,7 @@ static int h2bxt_init(ods_t ods, const char *type, const char *key, const char *
 	}
  out:
 	ods_obj_put(udata);
+	free((void *)base);
 	return rc;
 }
 
@@ -307,6 +310,7 @@ static void h2bxt_close(ods_idx_t idx)
 		ods_idx_close(t->idx_table[bkt], ODS_COMMIT_ASYNC);
 	ods_obj_put(t->udata_obj);
 	ods_idx_close(t->ods_idx, ODS_COMMIT_ASYNC);
+	free(t->idx_table);
 	free(t);
 }
 

@@ -393,7 +393,7 @@ typedef int (*ods_obj_iter_fn_t)(ods_t ods, ods_obj_t obj, void *arg);
 
 typedef struct ods_obj_iter_pos_s {
 	int page_no;
-	void *blk;
+	int blk;
 } *ods_obj_iter_pos_t;
 
 void ods_obj_iter_pos_init(ods_obj_iter_pos_t pos);

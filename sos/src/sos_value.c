@@ -220,6 +220,25 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 	return val;
 }
 
+sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *arr_obj)
+{
+	sos_obj_t ref_obj;
+	sos_value_data_t ref_val = NULL;
+	*arr_obj = NULL;
+
+	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
+	if (!sos_attr_is_array(attr))
+		return ref_val;
+
+	ref_obj = sos_ref_as_obj(obj->sos, ref_val->prim.ref_);
+	if (ref_obj) {
+		*arr_obj = ref_obj; /* ref from sos_ref_as_obj */
+		ref_val = (sos_value_data_t)&SOS_OBJ(ref_obj->obj)->data[0];
+	}
+
+	return ref_val;
+}
+
 /**
  * \brief Set an object value from a buffer
  *

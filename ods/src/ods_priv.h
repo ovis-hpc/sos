@@ -84,47 +84,34 @@
  */
 
 #define ODS_MAP_LEN	(128*1024*1024)
+
+/*
+ * The ODS obj map is a partial map of the ODS object file.
+ */
 struct ods_map_s {
 	/*
-	 * Reference count for the map. One ref is held by ods_open
-	 * and another reference is held by any caller to
-	 * ods_begin. When ods_end is called, the ods_begin reference
-	 * is dropped. The ods_open reference is dropped when
-	 * ods_extend re-maps the backing file and when ods_close is
-	 * called.
+	 * Reference count for the map. Every ods_obj has a
+	 * reference. When the last reference is dropped, the map is a
+	 * candidate to be cleaned up by the garbage collection thread
+	 * and the extent munmap'd.
 	 */
 	ods_atomic_t refcount;
 
 	/* The ODS for this map */
 	ods_t ods;
 
-	/*
-	 * The mapping generation number. Used to detect if another
-	 * process extended the map and we need to remap.
-	 */
-	uint64_t obj_gen;
+	/* Pointer to the data in memory */
+	unsigned char *data;
 
-	/* Equivalent of obj_gen for pg_table mapping */
-	uint64_t pg_gen;
+	/* time() last used */
+	time_t last_used;
 
-	/* The object map size */
-	size_t obj_sz;
-
-	/* Pointer to the object data in memory */
-	struct ods_obj_data_s *obj_data;
-
-	/* The page-file map size */
-	size_t pg_sz;
-
-#ifdef __notyet__
-	/* File offset */
-	loff_t loff;
-	size_t map_len;
-#endif
-	/* Pointer to the page-file data in memory */
-	struct ods_pgt_s *pg_table;
-
-	LIST_ENTRY(ods_map_s) entry;
+	struct map_key_s {
+		loff_t off;		/* Map offset */
+		size_t len;		/* This length of this map in Bytes */
+	} map;
+	struct rbn rbn;		/* Active map tree */
+	LIST_ENTRY(ods_map_s) entry; /* Queued for deletion */
 };
 
 typedef struct ods_dirty_s {
@@ -147,6 +134,7 @@ typedef struct ods_obj_htbl_s {
 	LIST_HEAD(ods_obj_list_head_s, ods_obj_hent_s) htable[0];
 } *ods_obj_htbl_t;
 
+#define ODS_MAP_DEF_SZ	(ODS_PAGE_SIZE * 1024 * 64) /* 256M */
 struct ods_s {
 	// pthread_spinlock_t lock;
 	struct ods_spin_s lock;
@@ -166,14 +154,25 @@ struct ods_s {
 	int pg_fd;
 	size_t pg_sz;
 
-	/* The current map */
-	ods_map_t map;
+	/*
+	 * The mapping generation number. Used to detect if another
+	 * process extended the page file and we need to remap it.
+	 */
+	uint64_t pg_gen;
+
+	/* Pointer to the page-file data in memory */
+	struct ods_pgt_s *pg_table;
+
+	/* Current ODS map size for new maps in 4096B pages */
+	size_t obj_map_sz;
+
+	/* Tree of object maps. Key is file offset. */
+	struct rbt map_tree;
 
 	/* The object list */
 	ods_atomic_t obj_count;
 	LIST_HEAD(obj_list_head, ods_obj_s) obj_list;
 	LIST_HEAD(obj_free_list_head, ods_obj_s) obj_free_list;
-	LIST_HEAD(map_list_head, ods_map_s) map_list;
 
 	/* In-memory object hash table */
 	ods_obj_htbl_t obj_htbl;
@@ -190,78 +189,93 @@ struct ods_s {
 // #define ODS_OBJ_HTBL_DEPTH 524287
 #define ODS_OBJ_SIGNATURE "OBJSTORE"
 #define ODS_PGT_SIGNATURE "PGTSTORE"
-#define ODS_OBJ_VERSION   "04012014"
+#define ODS_OBJ_VERSION   "09082016"
 
-typedef struct ods_pg_s {
-	uint64_t next;	/* Next free page range */
-	uint64_t count;	/* number of pages in this page range */
-} *ods_pg_t;
+typedef struct ods_bkt_s {
+	uint64_t bkt_next;	/* next bucket */
+} *ods_bkt_t;
 
-typedef struct ods_blk_s {
-	uint64_t next;		/* next block */
-} *ods_blk_t;
+#define ODS_PAGE_SIZE	 4096
+#define ODS_PAGE_SHIFT	 12
+#define ODS_PAGE_MASK	 ~(ODS_PAGE_SIZE-1)
+#define ODS_GRAIN_SIZE	 32
+#define ODS_GRAIN_SHIFT	 5
+#define ODS_BKT_TABLE_SZ 64
 
-#define ODS_PAGE_SIZE	4096
-#define ODS_PAGE_SHIFT	12
-#define ODS_PAGE_MASK	~(ODS_PAGE_SIZE-1)
-#define ODS_GRAIN_SIZE	32
-#define ODS_GRAIN_SHIFT	5
-
-#define ODS_M_IDX	0x0F /* Mask for block index */
 #define ODS_F_IDX_VALID	0x10 /* Bucket index is valid */
 #define ODS_F_NEXT	0x20 /* Next page is part of this allocation */
 #define ODS_F_PREV	0x40 /* Previous page is part of this allocation */
 #define ODS_F_ALLOCATED	0x80 /* Page is allocated */
 
-struct ods_pgt_s {
-	char signature[8];	 /* pgt signature 'PGTSTORE' */
-	uint64_t gen;		 /* generation number */
-	uint64_t count;		 /* count of pages */
-	unsigned char pages[0];	 /* array of page control information */
-};
+/*
+ *              Page Table
+ *              +----------+
+ *   pg_free -->| pg_next  o----+
+ *              +----------+    |
+ *     +------->| blk_next o----^--+
+ *     |        +----------+	|  |
+ *     |   +----o pg_next  |<---+  |
+ *     |   |    +----------+	   |
+ *     |   | +--o blk_next |<------+
+ *     |   | |  +----------+
+ *     |   | +->| blk_next |
+ *     |   |    +----------+
+ *     |   +--->| pg_next  |
+ *     |        +----------+
+ *     |        S          S
+ *     |        +----------+
+ *     |        |          |
+ *     |        +----------+
+ *     |
+ *     |        Bucket Table
+ *     |   ---- +----------+
+ *     |    ^   |          |
+ *     |    |   +----------+
+ *     +----^---o blk_next |
+ *          |   +----------+
+ *         64   S          S
+ *          |   +----------+
+ *          v   |          |
+ *         ---- +----------+
+ *
+ * Buckets are arrays of blocks of the same size. All block sizes are
+ * restricted to 32B ... 2048B in 32B increments; which is 63 size
+ * classes 0 == 32B, 62 == 2048B. Objects > 2048B consume an integral
+ * number of pages.
+ *
+ * The 128b pg_bits field in the page table has a bit for each block in
+ * the page which is a maximum of 128 blocks per page.
+ */
+typedef struct ods_pg_s {
+	uint64_t pg_flags:8;	/* Indicates if the page is allocated and whether or not it is bucket list member */
+	uint64_t pg_bkt_idx:8;	/* If page contains blocks, this is the index in the bucket table */
+	union {
+		uint64_t pg_next;	/* Page no of next free range */
+		uint64_t bkt_next;	/* Next free bkt of allocated and part of sub-alloc blk */
+	};
+	union {
+		uint64_t pg_bits[2];	/* 1 if blk allocated, 0 if block is free */
+		uint64_t pg_count;	/* number of pages in this page range */
+	};
+} *ods_pg_t;
+
+typedef struct ods_pgt_s {
+	char pg_signature[8];	 /* pgt signature 'PGTSTORE' */
+	uint64_t pg_gen;	 /* generation number */
+	uint64_t pg_free;	 /* first free page offset */
+	uint64_t pg_count;	 /* count of pages */
+	struct ods_bkt_s bkt_table[ODS_BKT_TABLE_SZ];
+	struct ods_pg_s pg_pages[0];/* array of page control information */
+} *ods_pgt_t;
 
 struct ods_obj_data_s {
-	char signature[8];	 /* obj signature 'OBJSTORE' */
-	uint64_t version;	 /* The file format version number */
-	uint64_t gen;		 /* generation number */
-	uint64_t pg_free;	 /* first free page offset */
-	uint64_t blk_free[ODS_PAGE_SHIFT - ODS_GRAIN_SHIFT];
+	char obj_signature[8];	 /* obj signature 'OBJSTORE' */
+	uint64_t obj_version;	 /* The file format version number */
 };
 #define ODS_UDATA_SIZE (ODS_PAGE_SIZE - sizeof(struct ods_obj_data_s))
-
-static inline int ods_page_is_allocated(ods_map_t map, uint64_t page) {
-	unsigned char b = map->pg_table->pages[page];
-	return (0 != (b & ODS_F_ALLOCATED));
-}
-
-static inline int ods_page_is_free(ods_map_t map, uint64_t page) {
-	unsigned char b = map->pg_table->pages[page];
-	return (0 == (b & ODS_F_ALLOCATED));
-}
-
-static inline uint64_t ods_page_next(ods_map_t map, uint64_t page) {
-	unsigned char b = map->pg_table->pages[page];
-	if (0 == (b & ODS_F_NEXT))
-		return 0;
-	return page+1;
-}
-
-static inline uint64_t ods_page_prev(ods_map_t map, uint64_t page) {
-	unsigned char b = map->pg_table->pages[page];
-	if (0 == (b & ODS_F_PREV))
-		return 0;
-	return page-1;
-}
-
-static inline struct ods_pg_s *ods_page_to_ptr(ods_map_t map, uint64_t page) {
-	uint64_t off;
-	if (!page)
-		return NULL;
-	off = (uint64_t)map->obj_data;
-	return (struct ods_pg_s *)(off + (page << ODS_PAGE_SHIFT));
-}
 
 #define ODS_PGTBL_MIN_SZ	(4096)
 #define ODS_PGTBL_MIN_SZ	(4096)
 #define ODS_OBJ_MIN_SZ		(16 * 4096)
+
 #endif

@@ -250,6 +250,7 @@ static void bxt_close_(bxt_t t)
 	while (!LIST_EMPTY(&t->el_q)) {
 		el = LIST_FIRST(&t->el_q);
 		LIST_REMOVE(el, entry);
+		ods_atomic_dec(&el_count);
 		free(el);
 	}
 

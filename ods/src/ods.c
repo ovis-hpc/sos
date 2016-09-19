@@ -81,14 +81,12 @@
 
 static ods_atomic_t ods_lock_word;
 static struct ods_spin_s ods_lock;
-static LIST_HEAD(ods_list_head, ods_s) ods_list;
+static LIST_HEAD(ods_list_head, ods_s) ods_list = LIST_HEAD_INITIALIZER(ods_list);
 
-static size_t ods_ref_size(ods_map_t map, ods_ref_t ref);
+static size_t ref_size(ods_t ods, ods_ref_t ref);
 static void free_ref(ods_t ods, ods_ref_t ref);
+static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz);
 
-struct ods_pg_s mem_pg_table;
-struct ods_obj_data_s mem_obj_table;
-struct ods_map_s mem_map;
 /* #define ODS_DEBUG */
 #if defined(ODS_DEBUG) || defined(ODS_OBJ_DEBUG)
 int ods_debug = 1;
@@ -96,89 +94,183 @@ int ods_debug = 1;
 int ods_debug = 0;
 #endif
 
-static inline size_t ods_page_count(ods_map_t map, size_t sz)
+/*
+ * Bit vectors are 0-based
+ */
+static inline int test_bit(uint64_t *bits, int bit)
 {
-	return ((sz + (ODS_PAGE_SIZE - 1)) & ODS_PAGE_MASK) >> ODS_PAGE_SHIFT;
+	int word = bit >> 6;
+	bit %= 64;
+	return (bits[word] & (1L << bit) ? 1 : 0);
 }
 
-static void *ods_ref_to_ptr(ods_map_t map, uint64_t off)
+static inline int alloc_bit(uint64_t *bits, size_t bit_count, int *is_empty)
 {
-	if (!off)
+	int i, bit, words = bit_count >> 6;
+	if (!words)
+		words = 1;
+	*is_empty = 1;
+	for (bit = -1, i = 0; i < words; i++) {
+		int wit = ffsl(bits[i]);
+		if (wit) {
+			wit -= 1;	      /* ffsl returns 1 based bit #s */
+			bits[i] &= ~(1L << wit);
+			bit = (i << 6) + wit;
+			if (bits[i])
+				*is_empty = 0;
+			break;
+		}
+	}
+	return bit;
+}
+
+static inline void set_bit(uint64_t *bits, int bit)
+{
+	int word;
+	bit -= 1;
+	word = bit >> 6;
+	bit %= 64;
+	bits[word] |= (1L << bit);
+}
+
+static inline void reset_bit(uint64_t *bits, int bit)
+{
+	int word = bit >> 6;
+	bit %= 64;
+	bits[word] &= ~(1L << bit);
+}
+
+static char *bit_str(uint64_t *bits, size_t bitlen)
+{
+	int i;
+	char *p, *s = malloc(bitlen + 1);
+	if (!s)
+		return s;
+	p = s;
+	for (i = 0; i < bitlen; i++) {
+		if (test_bit(bits, i))
+			*s = '1';
+		else
+			*s = '0';
+		s++;
+	}
+	*s = '\0';
+	return p;
+}
+
+static inline uint64_t page_count(size_t sz)
+{
+	return (sz + (ODS_PAGE_SIZE-1)) >> ODS_PAGE_SHIFT;
+}
+
+static inline ods_map_t map_get(ods_map_t map)
+{
+	assert(map->refcount >= 1);
+	ods_atomic_inc(&map->refcount);
+	return map;
+}
+
+static void *ref_to_ptr(ods_t ods, uint64_t ref, uint64_t *ref_sz, ods_map_t *map)
+{
+	ods_map_t obj_map;
+	struct rbn *rbn;
+	if (!ref)
 		return NULL;
-	assert(off < map->obj_sz);
-	return (void *)((uint64_t)off + (uint64_t)map->obj_data);
+
+	*ref_sz = ref_size(ods, ref);
+	*map = map_new(ods, ref, *ref_sz);
+	if (!*map)
+		return NULL;
+
+	assert(ref >= (*map)->map.off);
+	return &(*map)->data[ref - (*map)->map.off];
 }
 
-static ods_ref_t ods_ptr_to_ref(ods_map_t map, void *p)
+static ods_ref_t ptr_to_ref(ods_map_t map, void *p)
 {
 	ods_ref_t ref;
 	if (!p)
 		return 0;
-	ref = (uint64_t)p - (uint64_t)map->obj_data;
-	assert(ref < map->obj_sz);
+	ref = (uint64_t)p - (uint64_t)map->data;
+	assert(ref < map->map.len);
 	return ref;
 }
 
-static inline uint64_t ods_ref_to_page(ods_map_t map, ods_ref_t ref)
+static inline uint64_t ref_to_page_no(ods_ref_t ref)
 {
-	assert(ref < map->obj_sz);
 	return ref >> ODS_PAGE_SHIFT;
 }
 
-static inline uint64_t ods_ptr_to_page(ods_map_t map, void *p)
+static inline int size_to_bkt(size_t sz)
 {
-	return ods_ref_to_page(map, ods_ptr_to_ref(map, p));
+	sz = (sz + (ODS_GRAIN_SIZE - 1)) & ~(ODS_GRAIN_SIZE-1);
+	return (sz >> ODS_GRAIN_SHIFT) - 1;
 }
 
-static inline int ods_bkt(ods_map_t map, size_t sz)
+static inline size_t bkt_to_size(int bkt)
 {
-	size_t bkt_sz;
-	int bkt = 0;
-	for (bkt_sz = ODS_GRAIN_SIZE; sz > bkt_sz; bkt_sz <<= 1, bkt++);
-	assert(bkt < (ODS_PAGE_SHIFT - ODS_GRAIN_SHIFT));
-	return bkt;
-}
-
-static inline size_t ods_bkt_to_size(int bkt)
-{
-	return ODS_GRAIN_SIZE << bkt;
+	return (bkt + 1) << ODS_GRAIN_SHIFT;
 }
 
 static int init_pgtbl(int pg_fd)
 {
 	static struct ods_pgt_s pgt;
 	size_t min_sz;
-	int rc;
-	unsigned char pge;
+	int rc, i;
+	struct ods_pg_s pge;
 	int count;
 
 	count = ODS_OBJ_MIN_SZ >> ODS_PAGE_SHIFT;
-	min_sz = count + sizeof(struct ods_pgt_s);
-	rc = ftruncate(pg_fd, min_sz); /* ignore return value */
+	min_sz = (count * sizeof(struct ods_pg_s)) + sizeof(struct ods_pgt_s);
+	rc = ftruncate(pg_fd, min_sz);
+	if (rc)
+		return -1;
 
 	memset(&pgt, 0, sizeof pgt);
-	memcpy(pgt.signature, ODS_PGT_SIGNATURE, sizeof ODS_PGT_SIGNATURE);
-	pgt.gen = 1;
-	pgt.count = count;
+	memcpy(pgt.pg_signature, ODS_PGT_SIGNATURE, sizeof ODS_PGT_SIGNATURE);
+	pgt.pg_gen = 1;
+	pgt.pg_count = count;
+	pgt.pg_free = 1;
+
+	/* Initialize the bucket table */
+	for (i = 0; i < ODS_BKT_TABLE_SZ; i++) {
+		pgt.bkt_table[i].bkt_next = 0;
+	}
+
 
 	rc = lseek(pg_fd, 0, SEEK_SET);
 	if (rc < 0)
 		return -1;
+
 	rc = write(pg_fd, &pgt, sizeof pgt);
 	if (rc != sizeof pgt)
 		return -1;
 
-	/* Page 0 is OBJ file header */
-	pge = ODS_F_ALLOCATED;
-	rc = write(pg_fd, &pge, 1);
-	if (rc != 1)
+	/* Initialize the page entry for the OBJ header */
+	memset(&pge, 0, sizeof(pge));
+	pge.pg_flags = ODS_F_ALLOCATED;
+	pge.pg_next = 1;
+	pge.pg_count = 1;
+	rc = write(pg_fd, &pge, sizeof(pge));
+	if (rc != sizeof(pge))
 		return errno;
-	pge = 0;
-	while (count--) {
-		rc = write(pg_fd, &pge, 1);
-		if (rc != 1)
+
+	/* Initialize the free entry */
+	pge.pg_flags = 0;
+	pge.pg_next = 0;
+	pge.pg_count = --count;
+	rc = write(pg_fd, &pge, sizeof(pge));
+	if (rc != sizeof(pge))
+		return errno;
+
+	/* Initialize the remainder of the page table */
+	memset(&pge, 0, sizeof(pge));
+	while (--count) {
+		rc = write(pg_fd, &pge, sizeof(pge));
+		if (rc != sizeof(pge))
 			return errno;
 	}
+
 	return 0;
 }
 
@@ -187,26 +279,17 @@ static int init_obj(int obj_fd)
 	static struct obj_hdr {
 		struct ods_obj_data_s obj;
 		unsigned char pad[ODS_PAGE_SIZE - sizeof(struct ods_obj_data_s)];
-		struct ods_pg_s pg;
 	} hdr;
 	int rc;
 
 	memset(&hdr, 0, sizeof(hdr));
-	memcpy(hdr.obj.signature, ODS_OBJ_SIGNATURE, sizeof ODS_OBJ_SIGNATURE);
-	memcpy(&hdr.obj.version, ODS_OBJ_VERSION, sizeof hdr.obj.version);
-	hdr.obj.gen = 1;
-
-	/* Page 0 is the header page */
-	hdr.obj.pg_free = 1 << ODS_PAGE_SHIFT;
-
-	memset(hdr.obj.blk_free, 0, sizeof hdr.obj.blk_free);
-
-	hdr.pg.next = 0;
-	hdr.pg.count = (ODS_OBJ_MIN_SZ >> ODS_PAGE_SHIFT) - 1;
+	memcpy(hdr.obj.obj_signature, ODS_OBJ_SIGNATURE, sizeof ODS_OBJ_SIGNATURE);
+	memcpy(&hdr.obj.obj_version, ODS_OBJ_VERSION, sizeof hdr.obj.obj_version);
 
 	rc = lseek(obj_fd, 0, SEEK_SET);
 	if (rc < 0)
 		return -1;
+
 	rc = write(obj_fd, &hdr, sizeof hdr);
 	if (rc != sizeof(hdr))
 		return -1;
@@ -252,14 +335,34 @@ void ods_spin_unlock(ods_spin_t spin)
 }
 #endif
 
-/* Must be called with the ODS lock held */
-static ods_map_t map_new(ods_t ods)
+/*
+ * Must be called with the ODS lock held. The loff parameter specifies
+ * the offset in the file the map must include.
+ *
+ * If the sz parameter is non-zero and > the ods->obj_map_sz, it will
+ * be used for the map size rounded up to the next ODS_PAGE_SZ boudary.
+ */
+static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 {
 	int rc;
-	void *pg_map;
 	void *obj_map;
 	struct stat sb;
+	struct rbn *rbn;
 	ods_map_t map;
+	uint64_t map_off;
+	uint64_t map_len;
+
+	assert(loff + sz <= ods->obj_sz);
+
+	/* Search the tree to see if we've got a suitable map already */
+	rbn = rbt_find_glb(&ods->map_tree, &loff);
+	if (rbn) {
+		map = container_of(rbn, struct ods_map_s, rbn);
+		if ((map->map.off + map->map.len) >= (loff + sz)) {
+			map->last_used = time(NULL);
+			return map_get(map);
+		}
+	}
 
 	map = calloc(1, sizeof *map);
 	if (!map)
@@ -267,62 +370,77 @@ static ods_map_t map_new(ods_t ods)
 	map->ods = ods;
 	map->refcount = 1;
 
-	rc = fstat(ods->pg_fd, &sb);
-	if (rc)
-		goto err_1;
-	pg_map = mmap(NULL, sb.st_size,
-		      PROT_READ | PROT_WRITE,
-		      MAP_FILE | MAP_SHARED, /* | MAP_POPULATE, */
-		      ods->pg_fd, 0);
-	if (pg_map == MAP_FAILED)
-		goto err_1;
 
-	map->pg_sz = sb.st_size;
-	ods->pg_sz = map->pg_sz;
-	map->pg_table = pg_map;
-	map->pg_gen = map->pg_table->gen; /* cache gen from mapped memory */
+	map_off = loff & ~(ods->obj_map_sz - 1);
+	map_len = ods->obj_map_sz;
+	if ((map_off + map_len) < (loff + sz))
+		/* after rounding the offset down, the default map len is too small */
+		map_len = (loff + sz + (map_len - 1)) & ~(map_len - 1);
 
-	rc = fstat(ods->obj_fd, &sb);
-	if (rc)
-		goto err_2;
+	if (map_off + map_len > ods->obj_sz)
+		/* Truncate map to file size */
+		map_len = ods->obj_sz - map_off;
 
-	obj_map = mmap(0, sb.st_size,
+	obj_map = mmap(0, map_len,
 		       PROT_READ | PROT_WRITE,
 		       MAP_FILE | MAP_SHARED, /* | MAP_POPULATE, */
-		       ods->obj_fd, 0);
+		       ods->obj_fd, map_off);
 	if (obj_map == MAP_FAILED)
-		goto err_2;
+		goto err_1;
 
-	map->obj_sz = sb.st_size;
-	ods->obj_sz = map->obj_sz;
-	map->obj_data = obj_map;
-	map->obj_gen = map->obj_data->gen; /* cache gen from mapped memory */
+	map->map.len = map_len;
+	map->map.off = map_off;
+	map->data = obj_map;
+	map->last_used = time(NULL);
 
-	LIST_INSERT_HEAD(&ods->map_list, map, entry);
-	return map;
+	rbn_init(&map->rbn, &map->map);
+	rbt_ins(&ods->map_tree, &map->rbn);
+	return map_get(map);	/* The map_tree consumes a reference */
 
- err_2:
-	munmap(pg_map, map->pg_sz);
  err_1:
 	free(map);
  err_0:
 	return NULL;
 }
 
-static inline int map_is_ok(ods_map_t map)
+static void pgt_unmap(ods_t ods)
 {
-	/* Make certain the generation number is still good */
-	if ((map->pg_gen != map->pg_table->gen) ||
-	    (map->obj_gen != map->obj_data->gen))
-		return 0;
-	return 1;
+	munmap(ods->pg_table, ods->pg_sz);
+	ods->pg_table = NULL;
 }
 
-static inline ods_map_t map_get(ods_map_t map)
+static ods_pgt_t pgt_map(ods_t ods)
 {
-	ods_atomic_inc(&map->refcount);
-	assert(map->refcount > 1);
-	return map;
+	int rc;
+	void *pgt_map;
+	struct stat sb;
+
+	rc = fstat(ods->pg_fd, &sb);
+	if (rc)
+		goto err_0;
+
+	pgt_map = mmap(NULL, sb.st_size,
+		       PROT_READ | PROT_WRITE,
+		       MAP_FILE | MAP_SHARED, /* | MAP_POPULATE, */
+		       ods->pg_fd, 0);
+	if (pgt_map == MAP_FAILED)
+		goto err_0;
+
+	ods->pg_sz = sb.st_size;
+	ods->pg_table = pgt_map;
+	ods->pg_gen = ods->pg_table->pg_gen; /* cache gen from mapped memory */
+
+	return pgt_map;
+ err_0:
+	return NULL;
+}
+
+static inline int pgt_is_ok(ods_t ods)
+{
+	/* Make certain the generation number is still good */
+	if (ods->pg_gen != ods->pg_table->pg_gen)
+		return 0;
+	return 1;
 }
 
 void show_stackframe()
@@ -344,12 +462,20 @@ static inline void map_put(ods_map_t map)
 {
 	if (!map)
 		return;
-	if (map->refcount <= 0)
+
+	if ((int)map->refcount <= 0) {
 		show_stackframe();
+		assert(0 == "Putting a map with a zero refcount");
+	}
+
 	if (!ods_atomic_dec(&map->refcount)) {
-		if (ods_debug) {
-			/* DEBUG: run through the object list and ensure no
-			   object has this as a reference */
+		rbt_del(&map->ods->map_tree, &map->rbn);
+		munmap(map->data, map->map.len);
+		if (1 || ods_debug) {
+			/*
+			 * DEBUG: run through the object list and ensure no
+			 * object has this as a reference
+			 */
 			ods_obj_t obj;
 			LIST_FOREACH(obj, &map->ods->obj_list, entry) {
 				if (obj->map == map) {
@@ -360,44 +486,25 @@ static inline void map_put(ods_map_t map)
 				}
 			}
 		}
-		munmap(map->pg_table, map->pg_sz);
-		munmap(map->obj_data, map->obj_sz);
-		LIST_REMOVE(map, entry);
-		if (map->ods->map == map)
-			map->ods->map = NULL;
 		free(map);
 	}
 }
 
-static ods_map_t _ods_map_get(ods_t ods)
-{
-	if (ods->map) {
-		if (!map_is_ok(ods->map)) {
-			map_put(ods->map);
-			ods->map = map_new(ods);
-		}
-	} else
-		ods->map = map_new(ods);
-	return ods->map;
-}
-
-static ods_map_t ods_map_get(ods_t ods)
+static ods_map_t ods_map_find(ods_t ods, ods_ref_t ref)
 {
 	ods_map_t map;
+	struct rbn *rbn;
 	ods_spin_lock(&ods->lock, -1);
-	map = _ods_map_get(ods);
+	rbn = rbt_find_glb(&ods->map_tree, &ref);
+	if (rbn)
+		map = container_of(rbn, struct ods_map_s, rbn);
+	else
+		map = NULL;
 	ods_spin_unlock(&ods->lock);
 	return map;
 }
 
-static void ods_map_put(ods_map_t map)
-{
-	ods_spin_lock(&map->ods->lock, -1);
-	map_put(map);
-	ods_spin_unlock(&map->ods->lock);
-}
-
-int dirty_print_fn(struct rbn *rbn, void *udata, int level)
+static int dirty_print_fn(struct rbn *rbn, void *udata, int level)
 {
 	FILE *fp = udata;
 	ods_dirty_t dirt = container_of(rbn, struct ods_dirty_s, rbn);
@@ -407,26 +514,27 @@ int dirty_print_fn(struct rbn *rbn, void *udata, int level)
 	return 0;
 }
 
+static int print_map(struct rbn *rbn, void *arg, int l)
+{
+	FILE *fp = arg;
+	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
+
+	fprintf(fp, "%14p %5d %14p %14zu %14zu\n",
+		map, map->refcount, map->map.off, map->map.len, map->data);
+}
+
 void ods_info(ods_t ods, FILE *fp)
 {
 	ods_obj_t obj;
-	ods_map_t map;
-
 	fprintf(fp, "\nODS: %p path: %s "
 		"obj_fd: %d obj_size: %lu "
 		"pg_fd: %d pg_size: %lu\n\n",
 		ods, ods->path, ods->obj_fd, ods->obj_sz, ods->pg_fd, ods->pg_sz);
 	fprintf(fp, "Active Maps\n");
-	fprintf(fp, "               Ref   Obj     Obj            Obj            Page    Page           Page\n");
-	fprintf(fp, "Map            Count GN      Size           Data           GN      Size           Data\n");
-	fprintf(fp, "-------------- ----- ------- -------------- -------------- ------- -------------- --------------\n");
-	LIST_FOREACH(map, &ods->map_list, entry) {
-		fprintf(fp, "%14p %5d %3d/%3d %14zu %14p %3d/%3d %14zu %14p\n",
-		       map,
-		       map->refcount,
-		       (int)map->obj_gen, (int)map->obj_data->gen, map->obj_sz, map->obj_data,
-		       (int)map->pg_gen, (int)map->pg_table->gen, map->pg_sz, map->pg_table);
-	}
+	fprintf(fp, "               Ref   Obj     Map            Map            Obj\n");
+	fprintf(fp, "Map            Count GN      Offset         Len            Data\n");
+	fprintf(fp, "-------------- ----- ------- -------------- -------------- --------------\n");
+	rbt_traverse(&ods->map_tree, print_map, fp);
 	fprintf(fp, "\n");
 
 	fprintf(fp, "Active Objects\n");
@@ -463,29 +571,19 @@ void ods_info(ods_t ods, FILE *fp)
 	fflush(fp);
 }
 
-static int obj_init(ods_obj_t obj, ods_map_t map, ods_ref_t ref)
+static int obj_init(ods_t ods, ods_obj_t obj, ods_ref_t ref)
 {
-	assert(ref);
-	obj->as.ptr = ods_ref_to_ptr(map, ref);
+	uint64_t ref_sz;
+	ods_map_t map;
+	obj->as.ptr = ref_to_ptr(ods, ref, &ref_sz, &map);
 	if (!obj->as.ptr)
 		return 1;
+
+	obj->ods = ods;
 	obj->ref = ref;
 	obj->refcount = 1;
-	obj->map = map_get(map);
-	/*
-	 * NB: This check is handling a special case where the
-	 * reference refers to the udata section in the header of the
-	 * object store. In that case, the ref is not in the section
-	 * managed by allocation/deallocation, instead it is
-	 * essentially an address constant.
-	 */
-	if (ref != sizeof(struct ods_obj_data_s)) {
-		obj->size = ods_ref_size(map, ref);
-		assert((obj->size < ODS_PAGE_SIZE)
-		       || 0 == (obj->ref & ~ODS_PAGE_MASK));
-	} else {
-		obj->size = ODS_UDATA_SIZE;
-	}
+	obj->map = map;
+	obj->size = ref_sz;
 	return 0;
 }
 
@@ -687,7 +785,7 @@ static void ods_obj_htbl_del(ods_obj_htbl_t htbl, ods_obj_hent_t hent)
 	LIST_REMOVE(hent, lentry);
 }
 
-ods_obj_t _ods_ref_as_obj_with_lock(ods_t ods, ods_ref_t ref, ods_map_t map)
+static ods_obj_t _ref_as_obj_with_lock(ods_t ods, ods_ref_t ref)
 {
 	ods_obj_t obj;
 	if (!ref)
@@ -696,8 +794,7 @@ ods_obj_t _ods_ref_as_obj_with_lock(ods_t ods, ods_ref_t ref, ods_map_t map)
 	obj = obj_new(ods);
 	if (!obj)
 		goto err_0;
-	obj->ods = ods;
-	if (obj_init(obj, map, ref))
+	if (obj_init(ods, obj, ref))
 		goto err_1;
 
 	update_dirty(ods, obj->ref, ods_obj_size(obj));
@@ -735,9 +832,7 @@ ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref)
 	obj = obj_new(ods);
 	if (!obj)
 		goto err_0;
-	obj->ods = ods;
-	ods_map_t map = _ods_map_get(ods);
-	if (obj_init(obj, map, ref))
+	if (obj_init(ods, obj, ref))
 		goto err_1;
 
 	update_dirty(ods, obj->ref, ods_obj_size(obj));
@@ -764,15 +859,6 @@ ods_ref_t ods_obj_ref(ods_obj_t obj)
 	return (obj ? obj->ref : 0);
 }
 
-int ods_ref_valid(ods_t ods, ods_ref_t ref)
-{
-	int rc;
-	ods_map_t map = map_get(ods->map);
-	rc = (ref < map->obj_sz);
-	map_put(map);
-	return rc;
-}
-
 ods_t ods_obj_ods(ods_obj_t obj)
 {
 	return (obj ? obj->ods : NULL);
@@ -780,8 +866,7 @@ ods_t ods_obj_ods(ods_obj_t obj)
 
 int ods_extend(ods_t ods, size_t sz)
 {
-	struct stat sb;
-	ods_map_t map;
+	struct stat pg_sb, obj_sb;
 	struct ods_pg_s *pg;
 	size_t n_pages;
 	size_t n_sz;
@@ -796,64 +881,60 @@ int ods_extend(ods_t ods, size_t sz)
 	 * Update our cached sizes in case they have been changed
 	 * since our last map_new()
 	 */
-	rc = fstat(ods->pg_fd, &sb);
+	rc = fstat(ods->pg_fd, &pg_sb);
 	if (rc)
 		goto out;
-	ods->pg_sz = sb.st_size;
-	rc = fstat(ods->obj_fd, &sb);
+	rc = fstat(ods->obj_fd, &obj_sb);
 	if (rc)
 		goto out;
-	ods->obj_sz = sb.st_size;
 
 	/*
 	 * Extend the page table first, that way if we fail extending
 	 * the object file, we can simply adjust the page_count back
 	 * down and leave the object store in a consistent state
 	 */
-	new_pg_off = ods->obj_sz;
-	/* Must be multiple of page size */
-	new_pg_off = (new_pg_off + (ODS_PAGE_SIZE-1)) & ODS_PAGE_MASK;
-	n_sz = ods->obj_sz + sz;
-	n_pages = (n_sz + ODS_PAGE_SIZE - 1) >> ODS_PAGE_SHIFT;
+	n_pages = (sz + ODS_PAGE_SIZE - 1) >> ODS_PAGE_SHIFT;
 	n_sz = n_pages << ODS_PAGE_SHIFT;
-	if (n_pages > (ods->pg_sz - sizeof(struct ods_pgt_s))) {
-		rc = ftruncate(ods->pg_fd, n_pages + sizeof(struct ods_pgt_s));
-		if (rc)
-			goto out;
-	}
-	/* Now extend the obj file */
-	rc = ftruncate(ods->obj_fd, n_sz);
+	rc = ftruncate(ods->pg_fd, pg_sb.st_size + (n_pages * sizeof(struct ods_pg_s)));
 	if (rc)
 		goto out;
 
-	/* Drop the old map and acquire a new one */
-	map_put(ods->map);
-	map = ods->map = map_new(ods);
-	if (!map) {
+	/* Now extend the obj file */
+	rc = ftruncate(ods->obj_fd, n_sz + obj_sb.st_size);
+	if (rc) {
+		/* Restore page file to it's original size */
+		n_sz = ftruncate(ods->pg_fd, pg_sb.st_size);
+		goto out;
+	}
+
+	/* Drop the old page map and acquire a new one */
+	pgt_unmap(ods);
+	ods->pg_table = pgt_map(ods);
+	if (!ods->pg_table) {
 		/*
 		 * Without the map, the meta-data cannot be
 		 * updated. Truncate the files back down to the
 		 * original sizes.
 		 */
-		rc = ftruncate(ods->obj_fd, ods->obj_sz); /* ignore return value */
-		rc = ftruncate(ods->pg_fd, ods->pg_sz); /* ignore return value */
+		n_sz = ftruncate(ods->obj_fd, obj_sb.st_size);
+		n_sz = ftruncate(ods->pg_fd, pg_sb.st_size);
 		rc = ENOMEM;
 		goto out;
 	}
-	pg = ods_ref_to_ptr(map, new_pg_off);
-	pg->count = n_pages - map->pg_table->count;
-	assert(map->obj_data->pg_free < map->obj_sz);
-	pg->next = map->obj_data->pg_free; /* prepend the page free list */
-	map->obj_data->pg_free = new_pg_off; /* new page free head */
-	map->pg_table->count = n_pages;
+	/* Update the page map to include the new pages */
+	pg = &ods->pg_table->pg_pages[ods->pg_table->pg_count];
+	pg->pg_count = n_pages;
+	pg->pg_next = ods->pg_table->pg_free;
+	ods->pg_table->pg_free = ods->pg_table->pg_count;
+	ods->pg_table->pg_count += n_pages;
 
 	/* Update the cached file sizes. */
-	ods->obj_sz = n_sz;
-	ods->pg_sz = n_pages + sizeof(struct ods_pgt_s);
+	ods->obj_sz = obj_sb.st_size + n_sz;
+	ods->pg_sz = pg_sb.st_size + (n_pages * sizeof(struct ods_pg_s));
 
-	/* Update the generation numbers so older maps will see the change */
-	map->pg_gen = ++map->pg_table->gen;
-	map->obj_gen = ++map->obj_data->gen;
+	/* Update the generation number so older maps will see the change */
+	ods->pg_table->pg_gen += 1;
+	ods->pg_gen = ods->pg_table->pg_gen;
 	rc = 0;
  out:
 	ods_spin_unlock(&ods->lock);
@@ -937,7 +1018,23 @@ int ods_destroy(const char *path)
 	return 0;
 }
 
-static int dirty_cmp(void *akey, void *bkey)
+static int map_cmp(void *akey, void *bkey)
+{
+	struct map_key_s *amap = akey;
+	struct map_key_s *bmap = bkey;
+
+	if (amap->off < bmap->off)
+		return -1;
+	if (amap->off > bmap->off)
+		return 1;
+	if (amap->len < bmap->len)
+		return -1;
+	if (amap->len > bmap->len)
+		return 1;
+	return 0;
+}
+
+static int ref_cmp(void *akey, void *bkey)
 {
 	return (*(ods_ref_t*)akey - *(ods_ref_t*)bkey);
 }
@@ -1000,12 +1097,15 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	if (rc)
 		goto err;
 	ods->pg_sz = sb.st_size;
+	if (!pgt_map(ods))
+		goto err;
 
 	ods->obj_count = 0;
 	LIST_INIT(&ods->obj_list);
 	LIST_INIT(&ods->obj_free_list);
-	LIST_INIT(&ods->map_list);
-	rbt_init(&ods->dirty_tree, dirty_cmp);
+	ods->obj_map_sz = ODS_MAP_DEF_SZ;
+	rbt_init(&ods->map_tree, map_cmp);
+	rbt_init(&ods->dirty_tree, ref_cmp);
 
 #ifdef ODS_CACHE_OBJECTS
 	ods->obj_htbl = ods_obj_htbl_new(0);
@@ -1044,147 +1144,169 @@ ods_obj_t ods_get_user_data(ods_t ods)
 	obj = obj_new(ods);
 	if (!obj)
 		goto err_0;
-	obj->ods = ods;
+
+	/* If the map is present and is still current, use it */
+	if (obj_init(ods, obj, user_ref))
+		goto err_1;
 
 	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
-	/* If the map is present and is still current, use it */
-	if (ods->map) {
-		if (obj_init(obj, ods->map, user_ref))
-			goto err_1;
-	} else {
-		ods->map = map_new(ods);
-		if (!ods->map)
-			goto err_1;
-		if (obj_init(obj, ods->map, user_ref))
-		    goto err_1;
-	}
 	ods_spin_unlock(&ods->lock);
 	return obj;
+
  err_1:
-	LIST_REMOVE(obj, entry);
 	free(obj);
  err_0:
 	ods_spin_unlock(&ods->lock);
 	return NULL;
 }
 
-static void update_page_table(ods_map_t map, ods_pg_t pg, size_t count, int bkt)
+static uint64_t alloc_pages(ods_t ods, size_t pg_needed)
 {
-	unsigned char flags;
-	uint64_t page;
-	/*
-	 * Update page table so that all pages in pg are now
-	 * allocated.
-	 */
-	flags = ODS_F_ALLOCATED;
-	if (bkt >= 0)
-		flags |= bkt | ODS_F_IDX_VALID;
-	if (count > 1)
-		flags |= ODS_F_NEXT;
-	for (page = ods_ptr_to_page(map, pg);
-	     count; count--,page++) {
-		if (count == 1)
-			flags &= ~ODS_F_NEXT;
-		map->pg_table->pages[page] = flags;
-		flags |= ODS_F_PREV;
-	}
-}
-
-static void *alloc_pages(ods_map_t map, size_t sz, int bkt)
-{
-	int pg_needed = ods_page_count(map, sz);
-	ods_pg_t pg, p_pg, n_pg;
+	uint64_t pg_no, p_pg_no, n_pg_no;
 	uint64_t pg_off;
-	uint64_t page;
+	ods_pgt_t pgt = ods->pg_table;
 
-	p_pg = NULL;
-	for (pg = ods_ref_to_ptr(map, map->obj_data->pg_free);
-	     pg;
-	     p_pg = pg, pg = ods_ref_to_ptr(map, pg->next)) {
-		if (pg_needed <= pg->count)
+	p_pg_no = 0;
+	for (pg_no = pgt->pg_free; pg_no; pg_no = pgt->pg_pages[pg_no].pg_next) {
+		if (pg_needed <= pgt->pg_pages[pg_no].pg_count) {
 			break;
+		}
 	}
-	if (!pg) {
+	if (!pg_no) {
 		errno = ENOMEM;
 		goto out;
 	}
-	assert(0 == ((uint64_t)pg & (ODS_PAGE_SIZE-1)));
-	if (pg->count > pg_needed) {
-		page = ods_ptr_to_page(map, pg);
-		page += pg_needed;
-
-		/* Fix-up the new page */
-		n_pg = ods_page_to_ptr(map, page);
-		n_pg->count = pg->count - pg_needed;
-		assert(pg->next < map->obj_sz);
-		n_pg->next = pg->next;
-
-		pg_off = page << ODS_PAGE_SHIFT;
-	} else {
-		/* pg gets removed altogether */
-		pg_off = pg->next;
+	n_pg_no = pg_no + pg_needed;
+	if (pg_needed < pgt->pg_pages[pg_no].pg_count) {
+		/* Return the remainder to the table */
+		pgt->pg_pages[n_pg_no].pg_count = pgt->pg_pages[pg_no].pg_count - pg_needed;
+		pgt->pg_pages[n_pg_no].pg_flags = 0;
 	}
-	assert(0 == (pg_off & (ODS_PAGE_SIZE-1)));
-	update_page_table(map, pg, pg_needed, bkt);
-
-	/* p_pg is either NULL or pointing to a previous list member */
-	assert(pg_off < map->obj_sz);
-	if (p_pg)
-		p_pg->next = pg_off;
+	pgt->pg_pages[pg_no].pg_count = pg_needed;
+	if (p_pg_no)
+		/* Link the previous extent to the tail of this allocation */
+		pgt->pg_pages[p_pg_no].pg_next = n_pg_no;
 	else
-		map->obj_data->pg_free = pg_off;
+		/* We used the first extent, update pg_free */
+		pgt->pg_free = n_pg_no;
+
+	pgt->pg_pages[pg_no].pg_flags = ODS_F_ALLOCATED;
  out:
-	return pg;
+	return pg_no;
 }
 
-static void replenish_bkt(ods_map_t map, int bkt)
-{
-	size_t count;
-	uint64_t sz;
-	ods_blk_t blk;
-	uint64_t off;
-	void *p = alloc_pages(map, 1, bkt);
-	if (!p)
-		/* Errors are caught in alloc_bkt */
-		return;
+struct bkt_bits {
+	int blk_idx;
+	size_t blk_sz;
+	size_t blk_cnt;
+	uint64_t mask_0;
+	uint64_t mask_1;
+} bkt_bits[] = {
+	/* Blk, Size,  Cnt,            Mask[0],            Mask[1] */
+	{    0,   32,  128, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF},
+	{    1,   64,   64, 0xFFFFFFFFFFFFFFFF, 0x0000000000000000},
+	{    2,   96,   42, 0x000003FFFFFFFFFF, 0x0000000000000000},
+	{    3,  128,   32, 0x00000000FFFFFFFF, 0x0000000000000000},
+	{    4,  160,   25, 0x0000000001FFFFFF, 0x0000000000000000},
+	{    5,  192,   21, 0x00000000001FFFFF, 0x0000000000000000},
+	{    6,  224,   18, 0x000000000003FFFF, 0x0000000000000000},
+	{    7,  256,   16, 0x000000000000FFFF, 0x0000000000000000},
+	{    8,  288,   14, 0x0000000000003FFF, 0x0000000000000000},
+	{    9,  320,   12, 0x0000000000000FFF, 0x0000000000000000},
+	{   10,  352,   11, 0x00000000000007FF, 0x0000000000000000},
+	{   11,  384,   10, 0x00000000000003FF, 0x0000000000000000},
+	{   12,  416,    9, 0x00000000000001FF, 0x0000000000000000},
+	{   13,  448,    9, 0x00000000000001FF, 0x0000000000000000},
+	{   14,  480,    8, 0x00000000000000FF, 0x0000000000000000},
+	{   15,  512,    8, 0x00000000000000FF, 0x0000000000000000},
+	{   16,  544,    7, 0x000000000000007F, 0x0000000000000000},
+	{   17,  576,    7, 0x000000000000007F, 0x0000000000000000},
+	{   18,  608,    6, 0x000000000000003F, 0x0000000000000000},
+	{   19,  640,    6, 0x000000000000003F, 0x0000000000000000},
+	{   20,  672,    6, 0x000000000000003F, 0x0000000000000000},
+	{   21,  704,    5, 0x000000000000001F, 0x0000000000000000},
+	{   22,  736,    5, 0x000000000000001F, 0x0000000000000000},
+	{   23,  768,    5, 0x000000000000001F, 0x0000000000000000},
+	{   24,  800,    5, 0x000000000000001F, 0x0000000000000000},
+	{   25,  832,    4, 0x000000000000000F, 0x0000000000000000},
+	{   26,  864,    4, 0x000000000000000F, 0x0000000000000000},
+	{   27,  896,    4, 0x000000000000000F, 0x0000000000000000},
+	{   28,  928,    4, 0x000000000000000F, 0x0000000000000000},
+	{   29,  960,    4, 0x000000000000000F, 0x0000000000000000},
+	{   30,  992,    4, 0x000000000000000F, 0x0000000000000000},
+	{   31, 1024,    4, 0x000000000000000F, 0x0000000000000000},
+	{   32, 1056,    3, 0x0000000000000007, 0x0000000000000000},
+	{   33, 1088,    3, 0x0000000000000007, 0x0000000000000000},
+	{   34, 1120,    3, 0x0000000000000007, 0x0000000000000000},
+	{   35, 1152,    3, 0x0000000000000007, 0x0000000000000000},
+	{   36, 1184,    3, 0x0000000000000007, 0x0000000000000000},
+	{   37, 1216,    3, 0x0000000000000007, 0x0000000000000000},
+	{   38, 1248,    3, 0x0000000000000007, 0x0000000000000000},
+	{   39, 1280,    3, 0x0000000000000007, 0x0000000000000000},
+	{   40, 1312,    3, 0x0000000000000007, 0x0000000000000000},
+	{   41, 1344,    3, 0x0000000000000007, 0x0000000000000000},
+	{   42, 1376,    2, 0x0000000000000003, 0x0000000000000000},
+	{   43, 1408,    2, 0x0000000000000003, 0x0000000000000000},
+	{   44, 1440,    2, 0x0000000000000003, 0x0000000000000000},
+	{   45, 1472,    2, 0x0000000000000003, 0x0000000000000000},
+	{   46, 1504,    2, 0x0000000000000003, 0x0000000000000000},
+	{   47, 1536,    2, 0x0000000000000003, 0x0000000000000000},
+	{   48, 1568,    2, 0x0000000000000003, 0x0000000000000000},
+	{   49, 1600,    2, 0x0000000000000003, 0x0000000000000000},
+	{   50, 1632,    2, 0x0000000000000003, 0x0000000000000000},
+	{   51, 1664,    2, 0x0000000000000003, 0x0000000000000000},
+	{   52, 1696,    2, 0x0000000000000003, 0x0000000000000000},
+	{   53, 1728,    2, 0x0000000000000003, 0x0000000000000000},
+	{   54, 1760,    2, 0x0000000000000003, 0x0000000000000000},
+	{   55, 1792,    2, 0x0000000000000003, 0x0000000000000000},
+	{   56, 1824,    2, 0x0000000000000003, 0x0000000000000000},
+	{   57, 1856,    2, 0x0000000000000003, 0x0000000000000000},
+	{   58, 1888,    2, 0x0000000000000003, 0x0000000000000000},
+	{   59, 1920,    2, 0x0000000000000003, 0x0000000000000000},
+	{   60, 1952,    2, 0x0000000000000003, 0x0000000000000000},
+	{   61, 1984,    2, 0x0000000000000003, 0x0000000000000000},
+	{   62, 2016,    2, 0x0000000000000003, 0x0000000000000000},
+	{   63, 2048,    2, 0x0000000000000003, 0x0000000000000000},
+};
 
-	sz = ods_bkt_to_size(bkt);
-	off = ods_ptr_to_ref(map, p);
-	for (count = ODS_PAGE_SIZE / sz; count; count--, off += sz) {
-		blk = ods_ref_to_ptr(map, off);
-		blk->next = map->obj_data->blk_free[bkt];
-		assert(0 == (off & (sz-1)));
-		map->obj_data->blk_free[bkt] = off;
+static uint64_t replenish_bkt(ods_t ods, ods_pgt_t pgt, int bkt)
+{
+	uint64_t pg_no = alloc_pages(ods, 1);
+	if (!pg_no)
+		return 0;
+	ods_pg_t pg = &pgt->pg_pages[pg_no];
+	assert(0 == pgt->bkt_table[bkt].bkt_next);
+	pgt->bkt_table[bkt].bkt_next = pg_no;
+	pg->bkt_next = 0;
+	pg->pg_flags |= ODS_F_IDX_VALID;
+	pg->pg_bkt_idx = bkt;
+	pg->pg_bits[0] = bkt_bits[bkt].mask_0;
+	pg->pg_bits[1] = bkt_bits[bkt].mask_1;
+	return pg_no;
+}
+
+static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
+{
+	int is_empty, blk, bkt = size_to_bkt(sz);
+	ods_pg_t pg;
+	uint64_t pg_no = pgt->bkt_table[bkt].bkt_next;
+	if (!pg_no) {
+		pg_no = replenish_bkt(ods, pgt, bkt);
+		if (!pg_no)
+			return 0;
 	}
-}
-
-static void *alloc_bkt(ods_map_t map, int bkt)
-{
-	ods_ref_t off = map->obj_data->blk_free[bkt];
-	ods_blk_t blk = ods_ref_to_ptr(map, off);
-	uint64_t sz = ods_bkt_to_size(bkt);
-	assert(0 == (off & (sz - 1)));
-	if (!blk) {
-		errno = ENOMEM;
-		goto out;
+	pg = &pgt->pg_pages[pg_no];
+	blk = alloc_bit(pg->pg_bits, bkt_bits[bkt].blk_cnt, &is_empty);
+	assert(blk >= 0);	/* if < 0, an empty page was left on the blk list */
+	if (is_empty) {
+		/* Remove the now fully allocated (i.e. 'empty') page from the bucket list */
+		pgt->bkt_table[bkt].bkt_next = pg->bkt_next;
 	}
-	assert(0 == (blk->next & (sz -1)));
-	map->obj_data->blk_free[bkt] = blk->next;
-#ifdef ODS_DEBUG
-	sz -= sizeof(struct ods_blk_s);
-	memset(blk+1, 0xAA, sz);
-#endif
- out:
-	return blk;
+	ods_ref_t ref = pg_no << ODS_PAGE_SHIFT | (bkt_to_size(bkt) * blk);
+	assert(ref_valid(ods, ref));
+	return ref;
 }
 
-static void *alloc_blk(ods_map_t map, size_t sz)
-{
-	int bkt = ods_bkt(map, sz);
-	if (!map->obj_data->blk_free[bkt])
-		replenish_bkt(map, bkt);
-	return alloc_bkt(map, bkt);
-}
 
 #ifdef ODS_OBJ_DEBUG
 ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
@@ -1192,9 +1314,11 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
 ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
 #endif
 {
-	ods_map_t map;
 	ods_obj_t obj = NULL;
+	uint64_t pg_no;
 	ods_ref_t ref = 0;
+	ods_pgt_t pgt;
+	ods_map_t map;
 
 	if (!ods->o_perm) {
 		errno = EPERM;
@@ -1202,22 +1326,35 @@ ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
 	}
 
 	ods_spin_lock(&ods->lock, -1);
-	map = _ods_map_get(ods);
-	if (!map)
-		goto out;
-	if (sz < (ODS_PAGE_SIZE >> 1))
-		ref = ods_ptr_to_ref(map, alloc_blk(map, sz));
-	else
-		ref = ods_ptr_to_ref(map, alloc_pages(map, sz, -1));
-	if (ref) {
-		obj = _ods_ref_as_obj_with_lock(ods, ref, map);
-		if (!obj)
-			free_ref(ods, ref);
+
+	/* Get and/or refresh the page table */
+	pgt = ods->pg_table;
+	if (pgt->pg_gen != ods->pg_gen) {
+		pgt_unmap(ods);
+		pgt = pgt_map(ods);
+		if (!pgt)
+			goto out;
 	}
+
+	if (sz < (ODS_PAGE_SIZE >> 1)) {
+		ref = alloc_blk(ods, pgt, sz);
+		if (!ref)
+			goto out;
+	} else {
+		pg_no = alloc_pages(ods, page_count(sz));
+		if (!pg_no) {
+			ref = 0;
+			goto out;
+		}
+		ref = pg_no << ODS_PAGE_SHIFT;
+	}
+	obj = _ref_as_obj_with_lock(ods, ref);
+	if (!obj)
+		free_ref(ods, ref);
  out:
-	ods_spin_unlock(&ods->lock);
 	if (obj)
-		assert(0 == (obj->ref & 0x1f));
+		assert(ref_valid(ods, obj->ref));
+	ods_spin_unlock(&ods->lock);
 	return obj;
 }
 
@@ -1240,29 +1377,80 @@ ods_obj_t ods_obj_malloc(size_t sz)
 	return obj;
 }
 
-static size_t ods_ref_size(ods_map_t map, ods_ref_t ref)
+static size_t ref_size(ods_t ods, ods_ref_t ref)
 {
-	uint64_t page = ods_ref_to_page(map, ref);
-	unsigned char flags = map->pg_table->pages[page];
-	uint64_t count;
-
-	if (flags & ODS_F_IDX_VALID)
-		return ods_bkt_to_size(flags & ODS_M_IDX);
+	uint64_t pg_no;
+	ods_pg_t pg;
 
 	/*
-	 * If the first page has the prev bit set, obj is in the
-	 * middle of an allocation
+	 * NB: This check is handling a special case where the
+	 * reference refers to the udata section in the header of the
+	 * object store. In that case, the ref is not in the section
+	 * managed by allocation/deallocation, instead it is
+	 * essentially an address constant.
 	 */
-	if (flags & ODS_F_PREV)
-		return -1;
+	if (ref == sizeof(struct ods_obj_data_s))
+		return ODS_UDATA_SIZE;
 
-	count = 1;
-	while (flags & ODS_F_NEXT) {
-		page++;
-		count++;
-		flags = map->pg_table->pages[page];
+	pg_no = ref_to_page_no(ref);
+	assert(pg_no < ods->pg_table->pg_count);
+	pg = &ods->pg_table->pg_pages[pg_no];
+
+	if (pg->pg_flags & ODS_F_IDX_VALID)
+		return bkt_to_size(pg->pg_bkt_idx);
+
+	return pg->pg_count << ODS_PAGE_SHIFT;
+}
+
+static inline int ref_to_blk_no(ods_t ods, ods_ref_t ref)
+{
+	uint64_t sz = ref_size(ods, ref);
+	return (ref & ~ODS_PAGE_MASK) / sz;
+}
+
+/*
+ * Return True(!0) if the ref points to the start of an allocation. If
+ * unallocated or inside an allocation (i.e. not the start), return
+ * False (0)
+ */
+int ref_valid(ods_t ods, ods_ref_t ref)
+{
+	uint64_t pg_no = ref_to_page_no(ref);
+	ods_pgt_t pgt = ods->pg_table;
+
+	if (0 == (pgt->pg_pages[pg_no].pg_flags & ODS_F_ALLOCATED))
+		return 0;
+
+	if (pgt->pg_pages[pg_no].pg_flags & ODS_F_IDX_VALID) {
+		int blk_no = ref_to_blk_no(ods, ref);
+		int ref_sz = bkt_to_size(pgt->pg_pages[pg_no].pg_bkt_idx);
+		if (blk_no >= ODS_PAGE_SIZE / bkt_to_size(pgt->pg_pages[pg_no].pg_bkt_idx))
+			/* Doesn't fit in page */
+			return 0;
+		if (0 != ((ref & ~ODS_PAGE_MASK) % ref_sz))
+			/* Must be aligned on size boundary */
+			return 0;
+		/* Must not be free */
+		return 0 == test_bit(pgt->pg_pages[pg_no].pg_bits, blk_no);
 	}
-	return count << ODS_PAGE_SHIFT;
+	/* This is a page allocation, the page offset should be zero */
+	if (ref & ~ODS_PAGE_MASK)
+		return 0;
+
+	/*
+	 * For allocated pages, only the first page has the count set,
+	 * all internal pages have a count of zero.
+	 */
+	return pgt->pg_pages[pg_no].pg_count;
+}
+
+int ods_ref_valid(ods_t ods, ods_ref_t ref)
+{
+	int rc;
+	ods_spin_lock(&ods->lock, -1);
+	rc = ref_valid(ods, ref);
+	ods_spin_unlock(&ods->lock);
+	return rc;
 }
 
 size_t ods_size(ods_t ods)
@@ -1273,71 +1461,76 @@ size_t ods_size(ods_t ods)
 uint64_t ods_get_alloc_size(ods_map_t map, uint64_t size)
 {
 	if (size < ODS_PAGE_SIZE)
-		return ods_bkt_to_size(ods_bkt(map, size));
+		return bkt_to_size(size_to_bkt(size));
 	/* allocated size is in pages. */
-	return ods_page_count(map, size) * ODS_PAGE_SIZE;
+	return page_count(size) << ODS_PAGE_SHIFT;
 }
 
-static void free_blk(ods_map_t map, ods_ref_t ref)
+static void free_blk(ods_t ods, ods_ref_t ref)
 {
-	uint64_t page;
-	int bkt;
-	unsigned char flags;
-	ods_blk_t blk;
-
-	page = ods_ref_to_page(map, ref);
-	flags = map->pg_table->pages[page];
-	bkt = flags & ODS_M_IDX;
-	if (0 == (flags & ODS_F_ALLOCATED) ||
-	    0 == (flags & ODS_F_IDX_VALID) ||
-	    bkt < 0 ||
-	    bkt > (ODS_PAGE_SHIFT - ODS_GRAIN_SHIFT)) {
-		ODS_PANIC("Pointer specified to free is invalid.\n");
-		return;
-	}
-	blk = ods_ref_to_ptr(map, ref);
-	blk->next = map->obj_data->blk_free[bkt];
-	map->obj_data->blk_free[bkt] = ref;
-#ifdef ODS_DEBUG
-	uint64_t sz = ods_bkt_to_size(bkt);
-	assert(0 == (ref & (sz - 1)));
-	sz -= sizeof(struct ods_blk_s);
-	blk++;
-	memset(blk, 0xFF, sz);
-#endif
-}
-
-static void free_pages(ods_map_t map, ods_ref_t ref)
-{
+	ods_pgt_t pgt = ods->pg_table;
 	ods_pg_t pg;
-	uint64_t count;
-	uint64_t page;
-	unsigned char flags;
+	int bkt, blk_no;
 
-	page = ods_ref_to_page(map, ref);
-	flags = map->pg_table->pages[page];
+	pg = &pgt->pg_pages[ref_to_page_no(ref)];
+	bkt = pg->pg_bkt_idx;
+	blk_no = ref_to_blk_no(ods, ref);
 
-	/*
-	 * If the first page has the prev bit set, ptr is in the
-	 * middle of a previous allocation
-	 */
-	if (flags & ODS_F_PREV) {
-		ODS_PANIC("Freeing in middle of page allocation\n");
+	if (test_bit(pg->pg_bits, blk_no)) {
+		/* ref is already free */
+		ODS_PANIC("Ref specified to free is already free");
 		return;
 	}
-	count = 1;
-	for (; page; page++, count++) {
-		flags = map->pg_table->pages[page];
-		map->pg_table->pages[page] = 0; /* free */
-
-		if (0 == (flags & ODS_F_NEXT))
-			break;
+	if (0 == (pg->pg_flags & ODS_F_ALLOCATED) || /* ref page not allocated */
+	    0 == (pg->pg_flags & ODS_F_IDX_VALID) || /* ref is not in bucket page */
+	    ref % bkt_to_size(bkt)                || /* ref not aligned to size */
+	    bkt < 0 || bkt >= ODS_BKT_TABLE_SZ       /* bkt index is invalid */
+	    ) {
+		ODS_PANIC("Ref specified to free is invalid.\n");
+		return;
 	}
-	pg = ods_ref_to_ptr(map, ref);
-	pg->count = count;
-	pg->next = map->obj_data->pg_free;
-	assert(pg->next < map->obj_sz);
-	map->obj_data->pg_free = ref;
+	set_bit(pg->pg_bits, blk_no);
+}
+
+static void free_pages(ods_t ods, ods_ref_t ref)
+{
+	ods_pgt_t pgt = ods->pg_table;
+	ods_pg_t pg, prev_pg, last_pg;
+	uint64_t pg_no;
+	uint64_t count;
+	unsigned char flags;
+
+	pg_no = ref_to_page_no(ref);
+	assert(pg_no < pgt->pg_count);
+	pg = &pgt->pg_pages[pg_no];
+	last_pg = &pgt->pg_pages[pgt->pg_count];
+	/*
+	 * If the page count is 0 ref is an interior page in an allocation
+	 */
+	if (0 == pg->pg_count) {
+		ODS_PANIC("Freeing in interior of page allocation\n");
+		return;
+	}
+	for (count = pg->pg_count; count; count--) {
+		pg->pg_flags = 0;
+		pg++;
+		assert(pg < last_pg);
+	}
+	for (prev_pg = pg; pg < last_pg && pg->pg_flags == 0;) {
+		/* Coelesce any adjacent free pages */
+		if (pg->pg_flags == 0) {
+			prev_pg->pg_count += pg->pg_count;
+			pg->pg_count = 0;     /* interior pages have 0 pg_count */
+			pg += pg->pg_count;
+		}
+	}
+}
+
+static int commit_map_fn(struct rbn *rbn, void *arg, int l)
+{
+	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
+	msync(map->data, map->map.len, (int)(unsigned long)arg);
+	return 0;
 }
 
 /*
@@ -1347,36 +1540,14 @@ void ods_commit(ods_t ods, int flags)
 {
 	int mflag = (flags ? MS_SYNC : MS_ASYNC);
 	ods_map_t map = NULL;
-
 	ods_spin_lock(&ods->lock, -1);
-	if (ods->map)
-		map = map_get(ods->map);
-	ods_spin_unlock(&ods->lock);
-
-	if (!map)
-		return;
-
-#ifndef __notyet__
-	struct rbn *rbn;
-	while (NULL != (rbn = rbt_min(&ods->dirty_tree))) {
-		ods_dirty_t dirt = container_of(rbn, struct ods_dirty_s, rbn);
-		size_t size = dirt->end - dirt->start;
-		msync(ods_ref_to_ptr(map, dirt->start), size, mflag);
-		msync(map->pg_table, map->pg_sz, mflag);
-		rbt_del(&ods->dirty_tree, rbn);
-	}
-#else
-	msync(map->obj_data, map->obj_sz, mflag);
-	msync(map->pg_table, map->pg_sz, mflag);
-#endif
-	ods_spin_lock(&ods->lock, -1);
-	map_put(map);
+	rbt_traverse(&ods->map_tree, commit_map_fn, (void *)(unsigned long)mflag);
 	ods_spin_unlock(&ods->lock);
 }
 
 /*
- * This function is not thread-safe. The caller must know that there
- * are no other users of the ODS.
+ * This function is racing with the garbage cleanup thread and is
+ * thread-safe, but is otherwise, not thread-safe.
  */
 void ods_close(ods_t ods, int flags)
 {
@@ -1388,9 +1559,9 @@ void ods_close(ods_t ods, int flags)
 	/* Remove the ODS from the open list */
 	ods_spin_lock(&ods_lock, -1);
 	LIST_REMOVE(ods, entry);
-	ods_spin_unlock(&ods_lock);
 
 	ods_commit(ods, flags);
+	ods_spin_lock(&ods->lock, -1);
 	close(ods->pg_fd);
 	close(ods->obj_fd);
 	free(ods->path);
@@ -1411,60 +1582,60 @@ void ods_close(ods_t ods, int flags)
 	}
 
 	/* Clean up any maps */
-	while (!LIST_EMPTY(&ods->map_list)) {
-		map = LIST_FIRST(&ods->map_list);
-		LIST_REMOVE(map, entry);
-		munmap(map->pg_table, map->pg_sz);
-		munmap(map->obj_data, map->obj_sz);
+	struct rbn *rbn;
+	while (rbn = rbt_min(&ods->map_tree)) {
+		map = container_of(rbn, struct ods_map_s, rbn);
+		rbt_del(&ods->map_tree, rbn);
+		munmap(map->data, map->map.len);
 		free(map);
 	}
+	ods_spin_unlock(&ods_lock);
 
 	free(ods);
 }
 
 static void free_ref(ods_t ods, ods_ref_t ref)
 {
-	uint64_t page;
-	ods_map_t map = _ods_map_get(ods);
-	assert(ref < map->obj_sz);
-	/* Get the page this ptr is in */
-	page = ods_ref_to_page(map, ref);
-	if (map->pg_table->pages[page] & ODS_F_IDX_VALID)
-		free_blk(map, ref);
+	uint64_t pg_no = ref_to_page_no(ref);
+	ods_pgt_t pgt = ods->pg_table;
+
+	assert(ref < ods->obj_sz);
+	if (pgt->pg_pages[pg_no].pg_flags & ODS_F_IDX_VALID)
+		free_blk(ods, ref);
 	else
-		free_pages(map, ref);
+		free_pages(ods, ref);
 }
 
 uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
 {
-	uint64_t page;
+	uint64_t pg_no;
+	ods_pgt_t pgt;
+	ods_pg_t pg;
 	ods_map_t map;
 	int bkt;
 	unsigned char flags;
 	uint32_t status = 0;
 
 	ods_spin_lock(&ods->lock, -1);
-	map = _ods_map_get(ods);
-	if (ref >= map->obj_sz) {
+
+	if (!ref_valid(ods, ref)) {
 		status |= ODS_REF_STATUS_INVALID;
 		goto out;
 	}
 
-	/* Get the page this ptr is in */
-	page = ods_ref_to_page(map, ref);
-	flags = map->pg_table->pages[page];
-	if (flags & ODS_F_IDX_VALID) {
-		bkt = flags & ODS_M_IDX;
-		if (0 == (flags & ODS_F_ALLOCATED))
+	pgt = ods->pg_table;
+	pg_no = ref_to_page_no(ref);
+	pg = &pgt->pg_pages[pg_no];
+
+	if (pg->pg_flags & ODS_F_IDX_VALID) {
+		if (0 == (pg->pg_flags & ODS_F_ALLOCATED))
 			status |= ODS_REF_STATUS_FREE;
-		if (bkt < 0 || bkt > (ODS_PAGE_SHIFT - ODS_GRAIN_SHIFT))
+		if (pg->pg_bkt_idx < 0 || pg->pg_bkt_idx >= ODS_BKT_TABLE_SZ)
 			status |= ODS_REF_STATUS_CORRUPT;
-		status |= ods_bkt_to_size(bkt);
+		status |= bkt_to_size(pg->pg_bkt_idx);
 	} else {
-		if (0 == (flags & ODS_F_ALLOCATED))
+		if (0 == (pg->pg_flags & ODS_F_ALLOCATED))
 			status |= ODS_REF_STATUS_FREE;
-		if (flags & ODS_F_PREV)
-			status |= ODS_REF_STATUS_INTERIOR;
 	}
  out:
 	ods_spin_unlock(&ods->lock);
@@ -1503,38 +1674,8 @@ void ods_obj_delete(ods_obj_t obj)
 	ods_spin_unlock(&obj->ods->lock);
 }
 
-char *bits(ods_t ods, unsigned char mask)
-{
-	static char mask_str[80];
-	mask_str[0] = '\0';
-	if (mask & ODS_F_IDX_VALID) {
-		int bkt = mask & ODS_M_IDX;
-		sprintf(mask_str, "IDX[%zu] ", ods_bkt_to_size(bkt));
-	}
-	if (mask & ODS_F_PREV)
-		strcat(mask_str, "PREV ");
-	if (mask & ODS_F_NEXT)
-		strcat(mask_str, "NEXT ");
-	return mask_str;
-}
-
-int blk_is_free(ods_map_t map, int bkt, void *ptr)
-{
-	ods_blk_t blk;
-	if (!map->obj_data->blk_free[bkt])
-		return 0;
-	for (blk = ods_ref_to_ptr(map, map->obj_data->blk_free[bkt]);
-	     blk; blk = ods_ref_to_ptr(map, blk->next)) {
-		if (blk == ptr)
-			return 1;
-	}
-	return 0;
-}
-
 void ods_dump(ods_t ods, FILE *fp)
 {
-	ods_map_t map;
-	map = ods_map_get(ods);
 	fprintf(fp, "------------------------------- ODS Dump --------------------------------\n");
 	fprintf(fp, "%-32s : \"%s\"\n", "Path", ods->path);
 	fprintf(fp, "%-32s : %d\n", "Object File Fd", ods->obj_fd);
@@ -1542,134 +1683,79 @@ void ods_dump(ods_t ods, FILE *fp)
 	fprintf(fp, "%-32s : %d\n", "Page File Fd", ods->pg_fd);
 	fprintf(fp, "%-32s : %zu\n", "Page File Size", ods->pg_sz);
 
+	ods_pgt_t pgt = ods->pg_table;
 	ods_pg_t pg;
+	uint64_t pg_no;
 
 	fprintf(fp, "--------------------------- Allocated Pages ----------------------------\n");
-	uint64_t i;
+	uint64_t i, j;
 	uint64_t count = 0;
-	for(i = 0; i < map->pg_table->count; i++) {
+	for(i = 0; i < pgt->pg_count; i++) {
 		uint64_t start;
-		if (!(map->pg_table->pages[i] & ODS_F_ALLOCATED))
+		if (!(pgt->pg_pages[i].pg_flags & ODS_F_ALLOCATED))
 			continue;
-		start = i;
-		while (map->pg_table->pages[i] & ODS_F_NEXT) i++;
-		if (start == i)
-			fprintf(fp, "%ld %s\n", start, bits(ods, map->pg_table->pages[i]));
-		else
-			fprintf(fp, "%ld..%ld\n", start, i);
-		count += (i - start + 1);
+		start = i; i += pgt->pg_pages[i].pg_count;
+		count += pgt->pg_pages[i].pg_count;
+		fprintf(fp, "%ld..%ld\n", start, i - 1);
 	}
 	fprintf(fp, "Total Allocated Pages: %ld\n", count);
+
 	fprintf(fp, "--------------------------- Allocated Blocks ----------------------------\n");
-	for(i = 0; i < map->pg_table->count; i++) {
-		if (!(map->pg_table->pages[i] & ODS_F_ALLOCATED))
+	for(i = 0; i < pgt->pg_count; i++) {
+		pg = &pgt->pg_pages[i];
+		if (!(pg->pg_flags & ODS_F_ALLOCATED) || !(pg->pg_flags & ODS_F_IDX_VALID))
 			continue;
-		if (map->pg_table->pages[i] & ODS_F_IDX_VALID) {
-			int bkt = map->pg_table->pages[i] & ODS_M_IDX;
-			size_t sz = ods_bkt_to_size(bkt);
-			char *blk = (char *)ods_page_to_ptr(map, i);
-			char *next = (char *)ods_page_to_ptr(map, i+1);
-			printf("======== Size %zu ========\n", sz);
-			for (count = 0; blk < next; blk += sz, count++) {
-				if (blk_is_free(map, bkt, blk))
-					continue;
-				fprintf(fp, "%p\n", blk);
-			}
-			printf("Count %ld\n", count);
+		int bkt = pg->pg_bkt_idx;
+		size_t sz = bkt_to_size(bkt);
+		printf("======== Size %zu ========\n", sz);
+		for (count = 0, j = 0; j < ODS_PAGE_SIZE / sz; j++) {
+			if (test_bit(pg->pg_bits, j))
+				continue;
+			count ++;
+			fprintf(fp, "%d\n", j);
 		}
+		printf("Count %ld\n", count);
 	}
+
 	fprintf(fp, "------------------------------ Free Pages ------------------------------\n");
 	count = 0;
-	for (pg = ods_ref_to_ptr(map, map->obj_data->pg_free);
-	     pg;
-	     pg = ods_ref_to_ptr(map, pg->next)) {
-		fprintf(fp, "%-32s : 0x%016lx\n", "Page Offset",
-			ods_ptr_to_ref(map, pg));
-		fprintf(fp, "%-32s : %zu\n", "Page Count",
-			pg->count);
-		count += pg->count;
+	for (pg_no = pgt->pg_free; pg_no && pg_no < pgt->pg_count; ) {
+		pg = &pgt->pg_pages[pg_no];
+		fprintf(fp, "%-32s : 0x%016lx\n", "Page Offset", pg_no << ODS_PAGE_SHIFT);
+		fprintf(fp, "%-32s : %zu\n", "Page Count", pg->pg_count);
+		count += pg->pg_count;
+		pg_no += pg->pg_count;
 	}
 	fprintf(fp, "Total Free Pages: %ld\n", count);
-	fprintf(fp, "------------------------------ Free Blocks -----------------------------\n");
-	int bkt;
-	ods_blk_t blk;
-	for (bkt = 0; bkt < (ODS_PAGE_SHIFT - ODS_GRAIN_SHIFT); bkt++) {
-		if (!map->obj_data->blk_free[bkt])
-			continue;
-		count = 0;
-		fprintf(fp, "%-32s : %zu\n", "Block Size",
-			ods_bkt_to_size(bkt));
-		for (blk = ods_ref_to_ptr(map, map->obj_data->blk_free[bkt]);
-		     blk;
-		     blk = ods_ref_to_ptr(map, blk->next)) {
 
-			fprintf(fp, "    %-32s : 0x%016lx\n", "Block Offset",
-				ods_ptr_to_ref(map, blk));
+	fprintf(fp, "------------------------------ Free Blocks -----------------------------\n");
+	int bkt, blk;
+	for (bkt = 0; bkt < ODS_BKT_TABLE_SZ; bkt++) {
+		if (0 == pgt->bkt_table[bkt].bkt_next)
+			continue;
+		pg = &pgt->pg_pages[pgt->bkt_table[bkt].bkt_next];
+		count = 0;
+		fprintf(fp, "%-32s : %zu\n", "Block Size", bkt_to_size(bkt));
+		for (blk = 0; blk < ODS_PAGE_SIZE / bkt_to_size(bkt); blk++) {
+			if (0 == test_bit(pg->pg_bits, blk))
+				continue;
+			fprintf(fp, "    %-32s : 0x%016lx\n", "Block Offset", blk * bkt_to_size(bkt));
 			count++;
 		}
-		fprintf(fp, "Total Free %zu blocks: %ld\n",
-					ods_bkt_to_size(bkt), count);
+		fprintf(fp, "Total Free %zu blocks: %ld\n", bkt_to_size(bkt), count);
 	}
 	fprintf(fp, "==============================- ODS End =================================\n");
-	ods_map_put(map);
 }
 
 int ods_pack(ods_t ods)
 {
-	int i;
-	ods_pg_t pg;
-	ods_pg_t pg_prev;
-	ods_pg_t pg_cur;
-	size_t obj_sz, pg_sz;
-	int rc;
-	ods_map_t map = ods_map_get(ods);
-	if (!map)
-		return 0;
-	errno = 0;
-	for (i = map->pg_table->count-1; i > -1; i--) {
-		if (map->pg_table->pages[i])
-			break;
-	}
-	i++;
-	if (i < 0 || map->pg_table->count <= i)
-		goto out;
-
-	pg_sz = sizeof(*map->pg_table) + i;
-	pg = ods_ref_to_ptr(map, i);
-	pg_prev = 0;
-	pg_cur = ods_ref_to_ptr(map, map->obj_data->pg_free);
-	while (pg_cur && pg_cur != pg) {
-		pg_prev = pg_cur;
-		pg_cur = ods_ref_to_ptr(map, pg_cur->next);
-	}
-	if (!pg_cur) {
-		errno = ENOENT;
-		goto out;
-	}
-	assert(pg->next < map->obj_sz);
-	if (!pg_prev)
-		map->obj_data->pg_free = pg->next;
-	else
-		pg_prev->next = pg->next;
-	map->pg_table->count = i;
-	ods_commit(ods, ODS_COMMIT_SYNC);
-	/* offset of the trailing page is the new file size */
-	obj_sz = (size_t)ods_ptr_to_ref(map, pg);
-	rc = ftruncate(ods->pg_fd, pg_sz);
-	if (rc)
-		goto out;
-	rc = ftruncate(ods->obj_fd, obj_sz);
-	if (rc)
-		goto out;
- out:
-	ods_map_put(map);
-	return errno;
+	return 0;
 }
 
 void ods_obj_iter_pos_init(ods_obj_iter_pos_t pos)
 {
-	pos->page_no = 1;
-	pos->blk = NULL;
+	pos->page_no = 1;		      /* first page is udata */
+	pos->blk = 0;
 }
 
 /*
@@ -1678,68 +1764,146 @@ void ods_obj_iter_pos_init(ods_obj_iter_pos_t pos)
 int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
 		 ods_obj_iter_fn_t iter_fn, void *arg)
 {
+	ods_pgt_t pgt = ods->pg_table;
 	ods_pg_t pg;
-	uint64_t i, start, end;
+	uint64_t pg_no, blk;
 	int bkt, rc = 0;
-	char *blk = NULL;
-	char *next;
 	size_t sz;
-	ods_map_t map;
 	ods_obj_t obj;
 
-	map = ods_map_get(ods);
 	if (pos) {
-		i = pos->page_no;
-		if (!i)
-			i = 1;
+		pg_no = pos->page_no;
+		if (!pg_no)
+			pg_no = 1;
 		blk = pos->blk;
-	} else
-		i = 1;
+	} else {
+		pg_no = 1;
+		blk = 0;
+	}
 
-	for(; i < map->pg_table->count; i++) {
-		if (!(map->pg_table->pages[i] & ODS_F_ALLOCATED))
+	for(; pg_no < pgt->pg_count; pg_no++) {
+		pg = &pgt->pg_pages[pg_no];
+		if (0 == pg->pg_flags)
 			continue;
-		if (map->pg_table->pages[i] & ODS_F_IDX_VALID) {
-			bkt = map->pg_table->pages[i] & ODS_M_IDX;
-			sz = ods_bkt_to_size(bkt);
-			if (!blk)
-				blk = (char *)ods_page_to_ptr(map, i);
-			next = (char *)ods_page_to_ptr(map, i+1);
-			for (; blk < next; blk += sz) {
-				if (blk_is_free(map, bkt, blk))
+		if (pg->pg_flags & ODS_F_IDX_VALID) {
+			bkt = pg->pg_bkt_idx;
+			sz = bkt_to_size(bkt);
+			for (; blk < ODS_PAGE_SIZE / sz; blk ++) {
+				if (test_bit(pg->pg_bits, blk))
+					/* block is free */
 					continue;
-				obj = ods_ref_as_obj(ods, ods_ptr_to_ref(map, blk));
+				obj = ods_ref_as_obj(ods, (pg_no << ODS_PAGE_SHIFT) | (blk * sz));
 				rc = iter_fn(ods, obj, arg);
 				ods_obj_put(obj);
 				if (rc)
 					goto out;
 			}
 		} else {
-			blk = NULL;
-			for (start = end = i;
-			     (end < map->pg_table->count) &&
-				     (0 != (map->pg_table->pages[end] & ODS_F_NEXT));
-			     end++);
-			pg = ods_page_to_ptr(map, start);
-			obj = ods_ref_as_obj(ods, ods_ptr_to_ref(map, pg));
+			blk = 0;
+			obj = ods_ref_as_obj(ods, pg_no << ODS_PAGE_SHIFT);
 			rc = iter_fn(ods, obj, arg);
 			ods_obj_put(obj);
-			i = end;
+			pg_no += pg->pg_count;
 			if (rc)
 				goto out;
 		}
-		blk = NULL;
+		blk = 0;
 	}
  out:
 	if (pos) {
-		pos->page_no = i;
+		pos->page_no = pg_no;
 		pos->blk = blk;
 	}
 	return rc;
 }
 
+struct del_fn_arg {
+	int timeout;
+	struct map_list_head *del_q;
+	uint64_t mapped;
+};
+
+LIST_HEAD(map_list_head, ods_map_s);
+static int q4_del_fn(struct rbn *rbn, void *arg, int l)
+{
+	struct del_fn_arg *darg = arg;
+
+	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
+	darg->mapped += map->map.len;
+	if (map->refcount > 1)
+		map->last_used = time(NULL);
+	if (map->last_used + darg->timeout < time(NULL)) {
+		/*
+		 * It hasn't been used since the last collection
+		 * cycle, delete the map
+		 */
+		LIST_INSERT_HEAD(darg->del_q, map, entry);
+		msync(map->data, map->map.len, MS_ASYNC | MS_INVALIDATE);
+	}
+	return 0;
+}
+
+static pthread_t gc_thread;
+static void *gc_thread_fn(void *arg)
+{
+	ods_t ods;
+	ods_map_t map;
+	struct ods_list_head dumpster;
+	struct map_list_head del_list;
+	struct del_fn_arg fn_arg;
+	time_t timeout = 10;
+	uint64_t mapped;
+ gc:
+	LIST_INIT(&dumpster);
+	ods_spin_lock(&ods_lock, -1);
+	while (!LIST_EMPTY(&ods_list)) {
+		ods = LIST_FIRST(&ods_list);
+		// ods_info(ods, stdout);
+		LIST_REMOVE(ods, entry);
+		LIST_INSERT_HEAD(&dumpster, ods, entry);
+	}
+	ods_spin_unlock(&ods_lock);
+
+	mapped = 0;
+	while (!LIST_EMPTY(&dumpster)) {
+
+		/* Remove the ODS from the dumpster */
+		ods = LIST_FIRST(&dumpster);
+		LIST_REMOVE(ods, entry);
+
+		/*
+		 * Traverse the map_tree and add the maps that can be
+		 * deleted to the del_list
+		 */
+		LIST_INIT(&del_list);
+		ods_spin_lock(&ods->lock, -1);
+		fn_arg.timeout = timeout;
+		fn_arg.del_q = &del_list;
+		fn_arg.mapped = 0;
+		rbt_traverse(&ods->map_tree, q4_del_fn, &fn_arg);
+		mapped += fn_arg.mapped;
+
+		/* Run through the delete queue and destroy all maps */
+		while (!LIST_EMPTY(&del_list)) {
+			map = LIST_FIRST(&del_list);
+			LIST_REMOVE(map, entry);
+			printf("Unmapping %p len %ld MB\n", map->data, map->map.len/1024/1024);
+			map_put(map);
+		}
+		ods_spin_unlock(&ods->lock);
+
+		ods_spin_lock(&ods_lock, -1);
+		LIST_INSERT_HEAD(&ods_list, ods, entry);
+		ods_spin_unlock(&ods_lock);
+	}
+	printf("Total mapped memory = %ld MB\n", mapped / 1024 / 1024);
+	sleep(timeout);
+	goto gc;
+	return NULL;
+}
+
 static void __attribute__ ((constructor)) ods_lib_init(void)
 {
-	// pthread_spin_init(&ods_lock, 1);
 	ods_spin_init(&ods_lock, &ods_lock_word);
+	pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
 }

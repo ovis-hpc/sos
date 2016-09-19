@@ -194,6 +194,8 @@ void __sos_schema_free(sos_schema_t schema)
 			sos_index_close(attr->index, ODS_COMMIT_ASYNC);
 		free(attr->key_type);
 		free(attr->idx_type);
+		if (attr->idx_args)
+			free(attr->idx_args);
 		free(attr);
 	}
 	free(schema);
@@ -535,17 +537,25 @@ int sos_schema_index_modify(sos_schema_t schema, const char *name,
 		return ENOENT;
 
 	if (idx_type) {
+		if (attr->idx_type)
+			free(attr->idx_type);
 		attr->idx_type = strdup(idx_type);
 		__toupper(attr->idx_type);
 	}
 	if (key_type) {
+		if (attr->key_type)
+			free(attr->key_type);
 		attr->key_type = strdup(key_type);
 		__toupper(attr->key_type);
 	}
-	if (idx_args)
+	if (idx_args) {
+		if (attr->idx_args) {
+			free(attr->idx_args);
+		}
 		attr->idx_args = strdup(idx_args);
-	else
+	} else {
 		attr->idx_args = NULL;
+	}
 	return 0;
 }
 

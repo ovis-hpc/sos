@@ -431,6 +431,10 @@ static int ht_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void 
 	act = cb_fn(idx, key, &data, found, ctxt);
 	switch (act) {
 	case ODS_VISIT_ADD:
+		if (ent) {
+			/* App adding a dup */
+			ods_obj_put(ent);
+		}
 		rc = ENOMEM;
 		ent = entry_new(idx);
 		if (!ent)
@@ -454,6 +458,7 @@ static int ht_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void 
 		} else {
 			rc = 0;
 			HENT(ent)->value = data;
+			ods_obj_put(ent);
 		}
 		break;
 	case ODS_VISIT_DEL:
@@ -465,6 +470,8 @@ static int ht_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void 
 		}
 		break;
 	case ODS_VISIT_NOP:
+		if (ent)
+			ods_obj_put(ent);
 		break;
 	}
  out_0:

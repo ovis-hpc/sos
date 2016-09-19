@@ -456,6 +456,7 @@ sos_value_t sos_value_init(sos_value_t value, sos_obj_t obj, sos_attr_t attr);
 	struct sos_value_s  _name_ ## __, *_name_ = &_name_ ## __;
 sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr);
 void sos_value_put(sos_value_t value);
+sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *arr_obj);
 int sos_value_cmp(sos_value_t a, sos_value_t b);
 size_t sos_value_size(sos_value_t value);
 size_t sos_value_memcpy(sos_value_t value, void *buf, size_t buflen);
@@ -553,7 +554,15 @@ sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter);
 		uint16_t len;				\
 		unsigned char value[SOS_STACK_KEY_SIZE];\
 	} _name_ ## _ ## data;				\
-	ODS_OBJ(_name_ ## _ ## key_s, &_name_ ## _ ## data, 256);	\
+	ODS_OBJ(_name_ ## _ ## key_s, &_name_ ## _ ## data, SOS_STACK_KEY_SIZE);	\
+	sos_key_t _name_ = &_name_ ## _ ## key_s;
+
+#define SOS_KEY_SZ(_name_, _sz_)				\
+	struct sos_key_value_s  ## _name_ {		\
+		uint16_t len;				\
+		unsigned char value[_sz_];\
+	} _name_ ## _ ## data;				\
+	ODS_OBJ(_name_ ## _ ## key_s, &_name_ ## _ ## data, _sz_);	\
 	sos_key_t _name_ = &_name_ ## _ ## key_s;
 
 sos_key_t sos_key_new(size_t sz);
