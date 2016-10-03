@@ -150,10 +150,6 @@ int sos_value_cmp(sos_value_t a, sos_value_t b)
 static sos_value_t mem_value_init(sos_value_t val, sos_attr_t attr)
 {
 	val->attr = attr;
-	if (sos_attr_is_ref(attr)) {
-		errno = EINVAL;
-		return NULL;
-	}
 	val->data = &val->data_;
 	return val;
 }
