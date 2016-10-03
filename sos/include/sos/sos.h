@@ -253,6 +253,7 @@ enum sos_cond_e {
 	SOS_COND_GT,
 	SOS_COND_NE,
 };
+typedef enum sos_cond_e sos_cond_t;
 
 typedef struct sos_schema_template_attr {
 	const char *name;
