@@ -49,7 +49,7 @@
 
 static const char *get_type(void)
 {
-	return "STRING";
+	return "MEMCMP";
 }
 
 static const char *get_doc(void)
