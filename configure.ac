@@ -60,6 +60,7 @@ AC_CONFIG_FILES([
 		sos/include/Makefile
 		sos/src/Makefile
 		sos/swig/Makefile
+		sos/python/Makefile
 		bwx/Makefile
 		bwx/include/Makefile
 		bwx/src/Makefile
