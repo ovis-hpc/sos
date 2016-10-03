@@ -332,6 +332,7 @@ struct sos_container_s {
 typedef int (*sos_filter_fn_t)(sos_value_t a, sos_value_t b);
 struct sos_filter_cond_s {
 	sos_attr_t attr;
+	struct sos_value_s value_;
 	sos_value_t value;
 	sos_iter_t iter;
 	sos_filter_fn_t cmp_fn;

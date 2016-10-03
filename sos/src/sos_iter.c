@@ -519,7 +519,7 @@ int sos_filter_cond_add(sos_filter_t f,
 		return ENOMEM;
 	cond->attr = attr;
 	cond->cmp_fn = fn_table[cond_e];
-	cond->value = value;
+	cond->value = sos_value_init(&cond->value_, value->obj, value->attr);;
 	cond->cond = cond_e;
 	TAILQ_INSERT_TAIL(&f->cond_list, cond, entry);
 	return 0;
