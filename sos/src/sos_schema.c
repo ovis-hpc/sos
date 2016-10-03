@@ -434,6 +434,8 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, 
 		va_start(ap, type);
 		size = va_arg(ap, int);
 		size = (size + 3) & ~3; /* round up to a multiple of 4B */
+		if (!size)
+			return EINVAL;
 	} else
 		size = 0;
 	attr = attr_new(schema, type, size);
@@ -738,6 +740,11 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 	struct sos_array_s *array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
 	array->count = count;
 
+	/* Free the old array contents if present */
+	if (val->data->prim.ref_.ref.obj) {
+		ods_t ods = __sos_ods_from_ref(obj->sos, val->data->prim.ref_.ref.ods);
+		ods_ref_delete(ods, val->data->prim.ref_.ref.obj);
+	}
 	/* Update the array reference in the containing object */
 	val->data->prim.ref_.ref.ods = obj->obj_ref.ref.ods;
 	val->data->prim.ref_.ref.obj = ods_obj_ref(array_obj);
