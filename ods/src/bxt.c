@@ -1994,9 +1994,7 @@ static ods_key_t bxt_iter_key(ods_iter_t oi)
 	return _iter_key_unique(i);
 }
 
-static ods_idx_data_t NULL_DATA = {
-	.bytes = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-};
+static ods_idx_data_t NULL_DATA;
 
 static ods_idx_data_t _iter_data_unique(bxt_iter_t i)
 {
