@@ -76,7 +76,7 @@
 { \
 	fprintf(stderr, "Fatal Error: %s[%d]\n  " #__msg, \
 		__FUNCTION__, __LINE__); \
-	exit(1); \
+	assert(0);			 \
 }
 
 static ods_atomic_t ods_lock_word;
@@ -86,9 +86,16 @@ static LIST_HEAD(ods_list_head, ods_s) ods_list = LIST_HEAD_INITIALIZER(ods_list
 static size_t ref_size(ods_t ods, ods_ref_t ref);
 static void free_ref(ods_t ods, ods_ref_t ref);
 static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz);
+static ods_pgt_t pgt_map(ods_t ods);
+static void pgt_unmap(ods_t ods);
 
-/* #define ODS_DEBUG */
-#if defined(ODS_DEBUG) || defined(ODS_OBJ_DEBUG)
+#if defined(ODS_OBJ_DEBUG)
+int ods_obj_track = 1;
+#else
+int ods_obj_track = 0;
+#endif
+
+#if defined(ODS_DEBUG)
 int ods_debug = 1;
 #else
 int ods_debug = 0;
@@ -335,6 +342,13 @@ void ods_spin_unlock(ods_spin_t spin)
 }
 #endif
 
+static void dump_maps()
+{
+	ods_t ods;
+	LIST_FOREACH(ods, &ods_list, entry) {
+		ods_info(ods, stdout);
+	}
+}
 /*
  * Must be called with the ODS lock held. The loff parameter specifies
  * the offset in the file the map must include.
@@ -348,14 +362,25 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	void *obj_map;
 	struct stat sb;
 	struct rbn *rbn;
+	struct map_key_s key;
 	ods_map_t map;
 	uint64_t map_off;
 	uint64_t map_len;
+	ods_pgt_t pgt;
+
+	pgt = ods->pg_table;
+	if (pgt->pg_gen != ods->pg_gen) {
+		pgt_unmap(ods);
+		pgt = pgt_map(ods);
+		if (!pgt)
+			goto err_0;
+	}
 
 	assert(loff + sz <= ods->obj_sz);
-
-	/* Search the tree to see if we've got a suitable map already */
-	rbn = rbt_find_glb(&ods->map_tree, &loff);
+	/* Find the largest map that will support loff */
+	key.off = loff;
+	key.len = 0xffffffff;
+	rbn = rbt_find_glb(&ods->map_tree, &key);
 	if (rbn) {
 		map = container_of(rbn, struct ods_map_s, rbn);
 		if ((map->map.off + map->map.len) >= (loff + sz)) {
@@ -385,8 +410,10 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 		       PROT_READ | PROT_WRITE,
 		       MAP_FILE | MAP_SHARED, /* | MAP_POPULATE, */
 		       ods->obj_fd, map_off);
-	if (obj_map == MAP_FAILED)
+	if (obj_map == MAP_FAILED) {
+		dump_maps();
 		goto err_1;
+	}
 
 	map->map.len = map_len;
 	map->map.off = map_off;
@@ -394,6 +421,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	map->last_used = time(NULL);
 
 	rbn_init(&map->rbn, &map->map);
+	assert(NULL == rbt_find(&ods->map_tree, &map->map));
 	rbt_ins(&ods->map_tree, &map->rbn);
 	return map_get(map);	/* The map_tree consumes a reference */
 
@@ -405,7 +433,8 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 
 static void pgt_unmap(ods_t ods)
 {
-	munmap(ods->pg_table, ods->pg_sz);
+	int rc = munmap(ods->pg_table, ods->pg_sz);
+	assert(rc == 0);
 	ods->pg_table = NULL;
 }
 
@@ -429,6 +458,12 @@ static ods_pgt_t pgt_map(ods_t ods)
 	ods->pg_sz = sb.st_size;
 	ods->pg_table = pgt_map;
 	ods->pg_gen = ods->pg_table->pg_gen; /* cache gen from mapped memory */
+
+	/* Update the object file size */
+	rc = fstat(ods->obj_fd, &sb);
+	if (rc)
+		goto err_0;
+	ods->obj_sz = sb.st_size;
 
 	return pgt_map;
  err_0:
@@ -469,9 +504,9 @@ static inline void map_put(ods_map_t map)
 	}
 
 	if (!ods_atomic_dec(&map->refcount)) {
-		rbt_del(&map->ods->map_tree, &map->rbn);
-		munmap(map->data, map->map.len);
-		if (1 || ods_debug) {
+		int rc = munmap(map->data, map->map.len);
+		assert(0 == rc);
+		if (ods_debug) {
 			/*
 			 * DEBUG: run through the object list and ensure no
 			 * object has this as a reference
@@ -488,20 +523,6 @@ static inline void map_put(ods_map_t map)
 		}
 		free(map);
 	}
-}
-
-static ods_map_t ods_map_find(ods_t ods, ods_ref_t ref)
-{
-	ods_map_t map;
-	struct rbn *rbn;
-	ods_spin_lock(&ods->lock, -1);
-	rbn = rbt_find_glb(&ods->map_tree, &ref);
-	if (rbn)
-		map = container_of(rbn, struct ods_map_s, rbn);
-	else
-		map = NULL;
-	ods_spin_unlock(&ods->lock);
-	return map;
 }
 
 static int dirty_print_fn(struct rbn *rbn, void *udata, int level)
@@ -521,6 +542,8 @@ static int print_map(struct rbn *rbn, void *arg, int l)
 
 	fprintf(fp, "%14p %5d %14p %14zu %14zu\n",
 		map, map->refcount, map->map.off, map->map.len, map->data);
+
+	return 0;
 }
 
 void ods_info(ods_t ods, FILE *fp)
@@ -864,8 +887,42 @@ ods_t ods_obj_ods(ods_obj_t obj)
 	return (obj ? obj->ods : NULL);
 }
 
+LIST_HEAD(map_list_head, ods_map_s);
+struct del_fn_arg {
+	int timeout;
+	struct map_list_head *del_q;
+	uint64_t mapped;
+};
+
+static void empty_del_list(struct map_list_head *del_q)
+{
+	ods_map_t map;
+	/* Run through the delete queue and destroy all maps */
+	while (!LIST_EMPTY(del_q)) {
+		map = LIST_FIRST(del_q);
+		LIST_REMOVE(map, entry);
+#ifdef ODS_DEBUG
+		printf("Unmapping %p len %ld MB\n", map->data, map->map.len/1024/1024);
+#endif
+		/* Drop the tree reference and remove it from the tree */
+		rbt_del(&map->ods->map_tree, &map->rbn);
+		map_put(map);
+	}
+}
+
+static int del_map_fn(struct rbn *rbn, void *arg, int l)
+{
+	struct del_fn_arg *darg = arg;
+	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
+	LIST_INSERT_HEAD(darg->del_q, map, entry);
+	msync(map->data, map->map.len, MS_ASYNC | MS_INVALIDATE);
+	return 0;
+}
+
 int ods_extend(ods_t ods, size_t sz)
 {
+	struct map_list_head del_list;
+	struct del_fn_arg fn_arg;
 	struct stat pg_sb, obj_sb;
 	struct ods_pg_s *pg;
 	size_t n_pages;
@@ -935,6 +992,12 @@ int ods_extend(ods_t ods, size_t sz)
 	/* Update the generation number so older maps will see the change */
 	ods->pg_table->pg_gen += 1;
 	ods->pg_gen = ods->pg_table->pg_gen;
+
+	/* Opportunistically discard maps in the rbt that are unused */
+	LIST_INIT(&del_list);
+	fn_arg.del_q = &del_list;
+	rbt_traverse(&ods->map_tree, del_map_fn, &fn_arg);
+	empty_del_list(&del_list);
 	rc = 0;
  out:
 	ods_spin_unlock(&ods->lock);
@@ -1586,7 +1649,8 @@ void ods_close(ods_t ods, int flags)
 	while (rbn = rbt_min(&ods->map_tree)) {
 		map = container_of(rbn, struct ods_map_s, rbn);
 		rbt_del(&ods->map_tree, rbn);
-		munmap(map->data, map->map.len);
+		int rc = munmap(map->data, map->map.len);
+		assert(0 == rc);
 		free(map);
 	}
 	ods_spin_unlock(&ods_lock);
@@ -1817,13 +1881,6 @@ int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
 	return rc;
 }
 
-struct del_fn_arg {
-	int timeout;
-	struct map_list_head *del_q;
-	uint64_t mapped;
-};
-
-LIST_HEAD(map_list_head, ods_map_s);
 static int q4_del_fn(struct rbn *rbn, void *arg, int l)
 {
 	struct del_fn_arg *darg = arg;
@@ -1858,7 +1915,6 @@ static void *gc_thread_fn(void *arg)
 	ods_spin_lock(&ods_lock, -1);
 	while (!LIST_EMPTY(&ods_list)) {
 		ods = LIST_FIRST(&ods_list);
-		// ods_info(ods, stdout);
 		LIST_REMOVE(ods, entry);
 		LIST_INSERT_HEAD(&dumpster, ods, entry);
 	}
@@ -1882,21 +1938,16 @@ static void *gc_thread_fn(void *arg)
 		fn_arg.mapped = 0;
 		rbt_traverse(&ods->map_tree, q4_del_fn, &fn_arg);
 		mapped += fn_arg.mapped;
-
-		/* Run through the delete queue and destroy all maps */
-		while (!LIST_EMPTY(&del_list)) {
-			map = LIST_FIRST(&del_list);
-			LIST_REMOVE(map, entry);
-			printf("Unmapping %p len %ld MB\n", map->data, map->map.len/1024/1024);
-			map_put(map);
-		}
+		empty_del_list(&del_list);
 		ods_spin_unlock(&ods->lock);
 
 		ods_spin_lock(&ods_lock, -1);
 		LIST_INSERT_HEAD(&ods_list, ods, entry);
 		ods_spin_unlock(&ods_lock);
 	}
+#ifdef ODS_DEBUG
 	printf("Total mapped memory = %ld MB\n", mapped / 1024 / 1024);
+#endif
 	sleep(timeout);
 	goto gc;
 	return NULL;
