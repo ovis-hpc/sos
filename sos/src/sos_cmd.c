@@ -551,6 +551,7 @@ int add_schema(sos_t sos, FILE *fp)
 	char *schema_name = NULL;
 	char *attr_name = NULL;
 	char *key_type = NULL;
+	char *idx_args = NULL;
 	char *index_type = NULL;
 	char *index_str = NULL;
 	int attr_indexed = 0;
@@ -633,7 +634,8 @@ int add_schema(sos_t sos, FILE *fp)
 						rc = sos_schema_index_modify
 							(
 							 schema, attr_name,
-							 index_type, key_type
+							 index_type, key_type,
+							 idx_args
 							 );
 						if (rc)
 							printf("Warning: The key '%s' or index type '%s' "
@@ -746,8 +748,12 @@ int add_schema(sos_t sos, FILE *fp)
 				if (key_type) {
 					while (isspace(*key_type)) key_type++;
 					index_type = strtok(NULL, ",");
-					if (index_type)
+					if (index_type) {
 						while (isspace(*index_type)) index_type++;
+						idx_args = strtok(NULL, ",");
+						if (idx_args)
+							while (isspace(*idx_args)) idx_args++;
+					}
 				}
 				state = ATTR_DEF;
 				break;

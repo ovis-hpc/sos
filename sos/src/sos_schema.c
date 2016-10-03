@@ -521,11 +521,10 @@ static void __toupper(char *s)
  * \retval EINVAL	One or more parameters was invalid.
  */
 int sos_schema_index_modify(sos_schema_t schema, const char *name,
-			    const char *idx_type, const char *key_type, ...)
+			    const char *idx_type, const char *key_type,
+			    const char *idx_args)
 {
 	sos_attr_t attr;
-	va_list ap;
-	va_start(ap, key_type);
 
 	if (schema->schema_obj)
 		return EBUSY;
@@ -543,9 +542,8 @@ int sos_schema_index_modify(sos_schema_t schema, const char *name,
 		attr->key_type = strdup(key_type);
 		__toupper(attr->key_type);
 	}
-	char *args = va_arg(ap, char *);
-	if (args)
-		attr->idx_args = strdup(args);
+	if (idx_args)
+		attr->idx_args = strdup(idx_args);
 	else
 		attr->idx_args = NULL;
 	return 0;
