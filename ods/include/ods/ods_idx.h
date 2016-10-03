@@ -61,6 +61,7 @@ typedef struct ods_pos_s {
 } *ods_pos_t;
 
 extern int ods_debug;
+extern int ods_obj_track;
 
 #define ODS_IDX_SIGNATURE	"ODSIDX00"
 
@@ -250,7 +251,7 @@ typedef ods_obj_t ods_key_t;
 ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz);
 #define ods_key_alloc(idx, sz) ({		\
 	ods_key_t k = _ods_key_alloc(idx, sz);	\
-	if (ods_debug && k) {				\
+	if (ods_obj_track && k) {				\
 		k->alloc_line = __LINE__;	\
 		k->alloc_func = __func__;	\
 	}					\
@@ -309,7 +310,7 @@ void ods_key_copy(ods_key_t dst, ods_key_t src);
  */
 #define ods_key_malloc(sz) ({			\
 	ods_key_t k = ods_obj_malloc(sz + sizeof(struct ods_key_value_s)); \
-	if (ods_debug && k) {				\
+	if (k) {				\
 		*k->as.uint16 = sz;		\
 	}					\
 	k;					\

@@ -71,6 +71,7 @@ typedef uint64_t ods_ref_t;
 typedef struct ods_map_s *ods_map_t;
 typedef struct ods_obj_s *ods_obj_t;
 extern int ods_debug;
+extern int ods_obj_track;
 
 /**
  * \brief Create an object store
@@ -150,7 +151,7 @@ int ods_pack(ods_t ods);
 extern ods_obj_t _ods_get_user_data(ods_t ods);
 #define ods_get_user_data(ods) ({		\
 	ods_obj_t o = _ods_get_user_data(ods);	\
-	if (ods_debug && o) {				\
+	if (ods_obj_track && o) {		\
 		o->thread = pthread_self();	\
 		o->alloc_line = __LINE__;	\
 		o->alloc_func = __func__;	\
@@ -213,7 +214,7 @@ extern void ods_close(ods_t ods, int flags);
 extern ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz);
 #define ods_obj_alloc(ods, sz) ({		\
 	ods_obj_t o = _ods_obj_alloc(ods, sz);	\
-	if (ods_debug && o) {				\
+	if (ods_obj_track && o) {				\
 		o->thread = pthread_self();	\
 		o->alloc_line = __LINE__;	\
 		o->alloc_func = __func__;	\
@@ -240,7 +241,7 @@ extern ods_obj_t ods_obj_alloc(ods_t ods, size_t sz);
 extern ods_obj_t _ods_obj_malloc(size_t sz);
 #define ods_obj_malloc(sz) ({		\
 	ods_obj_t o = _ods_obj_malloc(sz);	\
-	if (ods_debug && o) {			\
+	if (ods_obj_track && o) {			\
 		o->thread = pthread_self();	\
 		o->alloc_line = __LINE__;	\
 		o->alloc_func = __func__;	\
@@ -327,7 +328,7 @@ int ods_ref_valid(ods_t ods, ods_ref_t ref);
 void _ods_obj_put(ods_obj_t obj);
 #define ods_obj_put(o)				\
 	_ods_obj_put(o);			\
-	if (ods_debug && o) {			\
+	if (ods_obj_track && o) {			\
 		o->thread = pthread_self();	\
 		o->put_line = __LINE__;		\
 		o->put_func = __func__;		\
@@ -440,7 +441,7 @@ ods_obj_t ods_obj_get(ods_obj_t obj);
 ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref);
 #define ods_ref_as_obj(ods, ref) ({			\
 	ods_obj_t o = _ods_ref_as_obj(ods, ref);	\
-	if (ods_debug && o) {					\
+	if (ods_obj_track && o) {					\
 		o->thread = pthread_self();		\
 		o->alloc_line = __LINE__;		\
 		o->alloc_func = __func__;		\
