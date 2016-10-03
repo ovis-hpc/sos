@@ -298,7 +298,8 @@ static char *char_array_to_str_fn(sos_value_t v, char *str, size_t len)
 {
 	if (!v)
 		return "";
-	strncpy(str, (char *)v->data->array.data.byte_, v->data->array.count);
+	strncpy(str, (char *)v->data->array.data.char_, v->data->array.count);
+	str[v->data->array.count] = '\0';
 	return str;
 }
 
