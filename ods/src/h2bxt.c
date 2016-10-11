@@ -804,7 +804,34 @@ static int h2bxt_iter_next(ods_iter_t oi)
 
 static int h2bxt_iter_prev(ods_iter_t oi)
 {
-	return ENOENT;
+	h2bxt_t t = oi->idx->priv;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	struct rbn *rbn;
+	iter_entry_t ent;
+	int bkt;
+
+	iter->dir = H2BXT_ITER_REV; /* force direction to reverse */
+
+	/* Delete the max from the tree. */
+	rbn = rbt_max(&iter->next_tree);
+	if (!rbn)
+		return ENOENT;
+	ent = container_of(rbn, struct iter_entry_s, rbn);
+	rbt_del(&iter->next_tree, rbn);
+	ods_obj_put(ent->key);
+	bkt = ent->bkt;
+	free(ent);
+
+	/* Get the previous entry for this bucket and insert into the tree */
+	if (0 == ods_iter_prev(iter->iter_table[bkt])) {
+		ent = alloc_ent(iter, bkt);
+		if (!ent)
+			return ENOMEM;
+		rbt_ins(&iter->next_tree, &ent->rbn);
+	}
+	if (rbt_empty(&iter->next_tree))
+		return ENOENT;
+	return 0;
 }
 
 #define POS_PAD 0x48324258 /* 'H2BX' */
