@@ -413,7 +413,6 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
  * - sos_obj_remove()	 Remove an object from it's indices
  * - sos_obj_ptr()       Returns a pointer to the object's data
  * - sos_obj_find()	 Find an object based on an attribute value
- * - sos_obj_find_and_add()	 Find an object based on an attribute value, if not present, add a new object.
  * - sos_value()	 Return a value given object and attribute handles.
  * - sos_value_by_name() Get the value handle by name
  * - sos_value_by_id()   Get the value handle by id
@@ -510,6 +509,7 @@ int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, void *arg);
 sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
+int sos_index_find_ref(sos_index_t index, sos_key_t key, sos_obj_ref_t *ref);
 sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
 int sos_index_commit(sos_index_t index, sos_commit_t flags);

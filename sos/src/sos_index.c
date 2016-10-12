@@ -355,7 +355,7 @@ int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
 }
 
 /**
- * \brief Find a key in the indesx
+ * \brief Find an object in the index by it's key
  *
  * \param index The index handle
  * \param key The key
@@ -375,6 +375,20 @@ sos_obj_t sos_index_find(sos_index_t index, sos_key_t key)
 	if (!obj)
 		errno = EINVAL;
 	return obj;
+}
+
+/**
+ * \brief Find a key in the index and return the ref
+ *
+ * \param index The index handle
+ * \param key The key
+ * \param ref Pointer to sos_obj_ref_t
+ * \retval 0 The key was found and ref contains the data
+ * \retval ENOENT The key was not found
+ */
+int sos_index_find_ref(sos_index_t index, sos_key_t key, sos_obj_ref_t *ref)
+{
+	return ods_idx_find(index->idx, key, &ref->idx_data);
 }
 
 sos_obj_t sos_obj_find(sos_attr_t attr, sos_key_t key)
