@@ -452,6 +452,7 @@ sos_value_t sos_value_new();
 void sos_value_free(sos_value_t v);
 void *sos_obj_ptr(sos_obj_t obj);
 sos_value_t sos_value_init(sos_value_t value, sos_obj_t obj, sos_attr_t attr);
+sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src);
 #define SOS_VALUE(_name_)				\
 	struct sos_value_s  _name_ ## __, *_name_ = &_name_ ## __;
 sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr);
