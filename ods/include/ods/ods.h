@@ -516,54 +516,59 @@ int ods_obj_valid(ods_t ods, ods_obj_t obj);
 
 #define ODS_PTR(_typ_, _obj_) ((_typ_)_obj_->as.ptr)
 
-#define ODS_MUTEX_LOCK
+/**
+ * \brief Lock the specified \em lock_id
+ *
+ * Attempt to lock the specified lock. If the lock is available, the
+ * lock is taken and the function returns immediately. If the lock is
+ * not available, the function will block and wait until the lock
+ * becomes available. The duration of the wait is the current time() +
+ * \em wait. If the \em wait parameter is NULL, the function waits
+ * forever. The \em wait parameter is a timespec structure as defined
+ * in <time.h> as follows:
+ *
+ *    struct timespec {
+ *        time_t tv_sec;
+ *        int tv_nsec;
+ *    };
+ *
+ * \param ods The ODS handle
+ * \param lock_id The lock idenfifier
+ * \param wait The timeout wait period or NULL
+ */
+extern int ods_lock(ods_t ods, int lock_id, struct timespec *wait);
 
-#ifdef ODS_SPIN_LOCK
-typedef struct ods_spin_s {
-	ods_atomic_t *lock_p;
-	ods_atomic_t contested;
-	pthread_t owner;
-} *ods_spin_t;
-static inline void ods_spin_init(ods_spin_t lock, ods_atomic_t *word) {
-	*word = 0;
-	lock->lock_p = word;
-	lock->contested = 0;
-	lock->owner = 0;
-}
+/**
+ * \brief Unlock the specified \em lock_id
+ *
+ * \param ods The ODS handle
+ * \param lock_id The lock identifier
+ */
+extern void ods_unlock(ods_t ods, int lock_id);
 
-static inline int ods_spin_lock(ods_spin_t spin, int timeout) {
-	while (__sync_lock_test_and_set(spin->lock_p, 1)) {
-		spin->owner = pthread_self();
-		ods_atomic_inc(&spin->contested);
-	};
-	return 0;
-}
+/**
+ * \brief Returns the number of available locks
+ *
+ * Each ODS object repository has a number of shared memory locks that
+ * can be used to coordinate access among multiple threads and
+ * processes.
+ *
+ * Each lock is identified by it's \em lock_id which is an integer
+ * between zero and the number reported by this function - 1. The
+ * association of a \em lock_id with a particular lock domain is
+ * application specific.
+ *
+ * \param ods The ODS handle
+ * \retval The number of user spin locks
+ */
+extern size_t ods_lock_count(ods_t);
 
-static inline void ods_spin_unlock(ods_spin_t spin) {
-	spin->owner = -1;
-	__sync_lock_release(spin->lock_p);
-}
-#endif
-
-#ifdef ODS_MUTEX_LOCK
-typedef struct ods_spin_s {
-	pthread_mutex_t lock;
-} *ods_spin_t;
-static inline void ods_spin_init(ods_spin_t spin, void *word) {
-	pthread_mutex_init(&spin->lock, NULL);
-}
-
-static inline int ods_spin_lock(ods_spin_t spin, int timeout) {
-	return pthread_mutex_lock(&spin->lock);
-}
-
-static inline void ods_spin_unlock(ods_spin_t spin) {
-	pthread_mutex_unlock(&spin->lock);
-}
-#endif
-
+/**
+ * \brief Print debug information about the repository
+ * \param ods The ODS handle
+ * \param fp A FILE* pointer to receive the output
+ */
 void ods_info(ods_t ods, FILE *fp);
-
 
 #ifdef __cplusplus
 }

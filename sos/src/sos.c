@@ -707,7 +707,6 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 		ods_obj_put(sos->idx_udata);
 		goto err;
 	}
-	ods_spin_init(&sos->idx_lock, &SOS_IDXDIR_UDATA(sos->idx_udata)->lock);
 
 	/* Open the index on the schema objects */
 	sprintf(tmp_path, "%s/.__index_idx", path);

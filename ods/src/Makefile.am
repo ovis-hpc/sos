@@ -3,6 +3,10 @@ lib_LTLIBRARIES =
 # If xxx_CFLAGS is not specified, AM_CFLAGS will be used.
 AM_CFLAGS = -I$(srcdir)/../include/
 
+if ENABLE_OBJ_DEBUG
+AM_CFLAGS += -DODS_OBJ_DEBUG
+endif
+
 libods_la_SOURCES = ods_idx.c ods.c rbt.c ods_idx_priv.h ods_priv.h oidx_priv.h fnv_hash.h
 libods_la_LIBADD = -ldl -lpthread
 # libods_la_LDFLAGS = -pg

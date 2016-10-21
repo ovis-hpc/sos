@@ -34,7 +34,6 @@ typedef struct h2bxt_udata {
 typedef struct h2bxt_s {
 	ods_idx_t ods_idx;
 	ods_obj_t udata_obj;
-	struct ods_spin_s lock;	/* H2BXT global lock */
 	h2bxt_udata_t udata;
 	fnv_hash_fn_t hash_fn;
 	ods_idx_t *idx_table;

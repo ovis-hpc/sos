@@ -82,7 +82,7 @@ typedef enum sos_internal_schema_e {
 	SOS_SCHEMA_FIRST_USER = 128,
 } sos_ischema_t;
 
-#define SOS_LATEST_VERSION 0x03010000
+#define SOS_LATEST_VERSION 0x03020000
 #define SOS_SCHEMA_SIGNATURE 0x534f535348434D41 /* 'SOSSCHMA' */
 typedef struct sos_schema_udata_s {
 	uint64_t signature;
@@ -176,7 +176,6 @@ struct sos_obj_s {
 	LIST_ENTRY(sos_obj_s) entry;
 };
 #define SOS_OBJ(_o_) ODS_PTR(sos_obj_data_t, _o_)
-// #define SOS_OBJ_REF(_o_) ODS_PTR(sos_obj_ref_t, _o_)
 
 #define SOS_SIGNATURE "SOS_OBJ_STORE"
 #define SOS_OBJ_BE	1
@@ -292,8 +291,6 @@ struct sos_container_s {
 	ods_idx_t idx_idx;
 	ods_t idx_ods;
 	ods_obj_t idx_udata;
-	// sos_idxdir_udata_t idx_dir;
-	struct ods_spin_s idx_lock;
 
 	/*
 	 * The schema dictionary - Keeps track of all Object schema
@@ -319,7 +316,6 @@ struct sos_container_s {
 	ods_obj_t part_udata;
 	sos_part_t primary_part;
 	ods_t part_ods;
-	struct ods_spin_s part_lock;
 	TAILQ_HEAD(sos_part_list, sos_part_s) part_list;
 
 	LIST_HEAD(obj_list_head, sos_obj_s) obj_list;

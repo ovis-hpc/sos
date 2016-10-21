@@ -172,7 +172,6 @@ static int h2bxt_open(ods_idx_t idx)
 	t->idx_table = calloc(t->udata->table_size, sizeof *t->idx_table);
 	if (!t->idx_table)
 		goto err_1;
-	ods_spin_init(&t->lock, &t->udata->lock);
 	t->ods_idx = idx;
 	idx->priv = t;
 	path = ods_path(idx->ods);

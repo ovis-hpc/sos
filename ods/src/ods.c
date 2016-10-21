@@ -79,8 +79,7 @@
 	assert(0);			 \
 }
 
-static ods_atomic_t ods_lock_word;
-static struct ods_spin_s ods_lock;
+static pthread_mutex_t ods_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static LIST_HEAD(ods_list_head, ods_s) ods_list = LIST_HEAD_INITIALIZER(ods_list);
 
 static size_t ref_size(ods_t ods, ods_ref_t ref);
@@ -165,6 +164,18 @@ static char *bit_str(uint64_t *bits, size_t bitlen)
 	return p;
 }
 
+static ods_pgt_t pgt_get(ods_t ods)
+{
+	ods_pgt_t pgt;
+	/* Get and/or refresh the page table */
+	pgt = ods->pg_table;
+	if (pgt->pg_gen != ods->pg_gen) {
+		pgt_unmap(ods);
+		pgt = pgt_map(ods);
+	}
+	return pgt;
+}
+
 static inline uint64_t page_count(size_t sz)
 {
 	return (sz + (ODS_PAGE_SIZE-1)) >> ODS_PAGE_SHIFT;
@@ -244,6 +255,13 @@ static int init_pgtbl(int pg_fd)
 		pgt.bkt_table[i].bkt_next = 0;
 	}
 
+	/* Initialize all the lock entries */
+	pthread_mutexattr_t attr;
+	pthread_mutexattr_init(&attr);
+	pthread_mutexattr_setpshared(&attr, 1);
+	pthread_mutex_init(&pgt.ods_lock.mutex, &attr);
+	for (i = 0; i < ODS_LOCK_CNT; i++)
+		pthread_mutex_init(&pgt.lck_tbl[i].mutex, &attr);
 
 	rc = lseek(pg_fd, 0, SEEK_SET);
 	if (rc < 0)
@@ -261,6 +279,7 @@ static int init_pgtbl(int pg_fd)
 	rc = write(pg_fd, &pge, sizeof(pge));
 	if (rc != sizeof(pge))
 		return errno;
+
 
 	/* Initialize the free entry */
 	pge.pg_flags = 0;
@@ -306,41 +325,99 @@ static int init_obj(int obj_fd)
 	return 0;
 }
 
-#if 0
-int ods_spin_lock(ods_spin_t spin, int timeout)
+#ifdef __not_yet__
+static void __lock_init(ods_lock_t *lock)
 {
-	return 0;
-#if 0
-	time_t start, now;
-	if (__builtin_expect(!!(timeout >= 0), 0)) {
-		start = time(NULL);
-		now = time(NULL);
-	}
-	while (timeout < 0 || ((now - start) < timeout)) {
-		int rc;
-#ifdef ODS_DEBUG
-		assert(*spin->lock_p >= 0);
-		assert(*spin->lock_p < 100);
-#endif
-		rc = ods_atomic_inc(spin->lock_p);
-		if (__builtin_expect(!!(rc == 1),1))
-			return 0;
-		ods_atomic_dec(spin->lock_p);
-		if (__builtin_expect(!!(timeout >= 0), 0))
-			now = time(NULL);
-		sleep(0);
-	}
-	return -1;
-#endif
+	lock->lock_word = 0;
+	lock->contested = 0;
+	lock->owner = 0;
 }
 
-void ods_spin_unlock(ods_spin_t spin)
+static int __take_lock(ods_lock_t *lock, struct timespec *wait)
 {
-#if 0
-	ods_atomic_dec(spin->lock_p);
-#endif
+	while (__sync_lock_test_and_set(&lock->lock_word, 1)) {
+		usleep(500);
+		continue;
+		ods_atomic_inc(&lock->contested);
+	};
+	lock->owner = (uint64_t)pthread_self();
+	return 0;
 }
+
+static void __release_lock(ods_lock_t *lock) {
+	lock->owner = 0;
+	__sync_lock_release(&lock->lock_word);
+}
+
+#else
+
+static void __lock_init(ods_lock_t *lock)
+{
+	pthread_mutexattr_t attr;
+	pthread_mutexattr_init(&attr);
+	pthread_mutexattr_setpshared(&attr, 1);
+	pthread_mutex_init(&lock->mutex, &attr);
+}
+
+static int __take_lock(ods_lock_t *lock, struct timespec *wait)
+{
+	if (!wait)
+		return pthread_mutex_lock(&lock->mutex);
+	return pthread_mutex_timedlock(&lock->mutex, wait);
+}
+
+static void __release_lock(ods_lock_t *lock)
+{
+	pthread_mutex_unlock(&lock->mutex);
+}
+
 #endif
+
+size_t ods_lock_count(ods_t ods)
+{
+	return ODS_LOCK_CNT;
+}
+
+int ods_lock(ods_t ods, int lock_id, struct timespec *wait)
+{
+	ods_lock_t *lock;
+	ods_pgt_t pgt = ods->lck_table;
+	assert(pgt);
+
+	if (lock_id < 0 || lock_id >= ODS_LOCK_CNT)
+		return -1;
+
+	lock = &pgt->lck_tbl[lock_id];
+	return __take_lock(lock, wait);
+}
+
+void ods_unlock(ods_t ods, int lock_id)
+{
+	ods_lock_t *lock;
+	ods_pgt_t pgt = ods->lck_table;
+	assert(pgt);
+
+	if (lock_id < 0 || lock_id >= ODS_LOCK_CNT)
+		return;
+
+	lock = &pgt->lck_tbl[lock_id];
+	return __release_lock(lock);
+}
+
+static int __ods_lock(ods_t ods)
+{
+	ods_pgt_t pgt = ods->lck_table;
+	assert(pgt);
+	return __take_lock(&pgt->ods_lock, NULL);
+}
+
+static void __ods_unlock(ods_t ods)
+{
+	ods_lock_t *lock;
+	ods_pgt_t pgt = ods->lck_table;
+	assert(pgt);
+	return __release_lock(&pgt->ods_lock);
+}
 
 static void dump_maps()
 {
@@ -368,13 +445,9 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	uint64_t map_len;
 	ods_pgt_t pgt;
 
-	pgt = ods->pg_table;
-	if (pgt->pg_gen != ods->pg_gen) {
-		pgt_unmap(ods);
-		pgt = pgt_map(ods);
-		if (!pgt)
-			goto err_0;
-	}
+	pgt = pgt_get(ods);
+	if (!pgt)
+		goto err_0;
 
 	assert(loff + sz <= ods->obj_sz);
 	/* Find the largest map that will support loff */
@@ -464,8 +537,26 @@ static ods_pgt_t pgt_map(ods_t ods)
 	if (rc)
 		goto err_0;
 	ods->obj_sz = sb.st_size;
-
 	return pgt_map;
+ err_0:
+	return NULL;
+}
+
+static ods_pgt_t lck_map(ods_t ods)
+{
+	int rc;
+	void *lck_map;
+	struct stat sb;
+
+	lck_map = mmap(NULL, ODS_PAGE_SIZE,
+		       PROT_READ | PROT_WRITE,
+		       MAP_FILE | MAP_SHARED, /* | MAP_POPULATE, */
+		       ods->pg_fd, 0);
+	if (lck_map == MAP_FAILED)
+		goto err_0;
+
+	ods->lck_table = lck_map;
+	return ods->lck_table;
  err_0:
 	return NULL;
 }
@@ -631,13 +722,13 @@ void __ods_obj_put(ods_obj_t obj, int lock)
 			return;
 		}
 		if (lock)
-			ods_spin_lock(&obj->ods->lock, -1);
+			__ods_lock(obj->ods);
 		assert(obj->refcount == 0);
 		LIST_REMOVE(obj, entry);
 		LIST_INSERT_HEAD(&obj->ods->obj_free_list, obj, entry);
 		map_put(obj->map);
 		if (lock)
-			ods_spin_unlock(&obj->ods->lock);
+			__ods_unlock(obj->ods);
 	}
 }
 
@@ -844,7 +935,7 @@ ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref)
 	if (!ref)
 		return NULL;
 
-	ods_spin_lock(&ods->lock, -1);
+	__ods_lock(ods);
 #ifdef ODS_CACHE_OBJECTS
 	hent = ods_obj_htbl_find(ods->obj_htbl, ref);
 	if (hent) {
@@ -864,13 +955,13 @@ ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref)
 	ods_obj_htbl_add(ods->obj_htbl, obj);
  out:
 #endif
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 	return obj;
  err_1:
 	assert(0);
 	LIST_INSERT_HEAD(&obj->ods->obj_free_list, obj, entry);
  err_0:
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 	return NULL;
 }
 
@@ -933,7 +1024,7 @@ int ods_extend(ods_t ods, size_t sz)
 	if (!ods->o_perm)
 		return EPERM;
 
-	ods_spin_lock(&ods->lock, -1);
+	__ods_lock(ods);
 	/*
 	 * Update our cached sizes in case they have been changed
 	 * since our last map_new()
@@ -1000,7 +1091,7 @@ int ods_extend(ods_t ods, size_t sz)
 	empty_del_list(&del_list);
 	rc = 0;
  out:
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 	return rc;
 }
 
@@ -1122,7 +1213,6 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 		return NULL;
 	}
 	ods->o_perm = o_perm;
-	ods_spin_init(&ods->lock, &ods->lock_word);
 
 	/* Open the obj file */
 	sprintf(tmp_path, "%s%s", path, ODS_OBJ_SUFFIX);
@@ -1162,6 +1252,8 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	ods->pg_sz = sb.st_size;
 	if (!pgt_map(ods))
 		goto err;
+	if (!lck_map(ods))
+		goto err;
 
 	ods->obj_count = 0;
 	LIST_INIT(&ods->obj_list);
@@ -1175,9 +1267,9 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	assert(ods->obj_htbl);
 #endif
 
-	ods_spin_lock(&ods_lock, -1);
+	pthread_mutex_lock(&ods_list_lock);
 	LIST_INSERT_HEAD(&ods_list, ods, entry);
-	ods_spin_unlock(&ods_lock);
+	pthread_mutex_unlock(&ods_list_lock);
 	return ods;
 
  err:
@@ -1203,7 +1295,7 @@ ods_obj_t ods_get_user_data(ods_t ods)
 	ods_ref_t user_ref = sizeof(struct ods_obj_data_s);
 	ods_obj_t obj;
 
-	ods_spin_lock(&ods->lock, -1);
+	__ods_lock(ods);
 	obj = obj_new(ods);
 	if (!obj)
 		goto err_0;
@@ -1213,13 +1305,13 @@ ods_obj_t ods_get_user_data(ods_t ods)
 		goto err_1;
 
 	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 	return obj;
 
  err_1:
 	free(obj);
  err_0:
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 	return NULL;
 }
 
@@ -1388,16 +1480,12 @@ ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
 		return NULL;
 	}
 
-	ods_spin_lock(&ods->lock, -1);
+	__ods_lock(ods);
 
 	/* Get and/or refresh the page table */
-	pgt = ods->pg_table;
-	if (pgt->pg_gen != ods->pg_gen) {
-		pgt_unmap(ods);
-		pgt = pgt_map(ods);
-		if (!pgt)
-			goto out;
-	}
+	pgt = pgt_get(ods);
+	if (!pgt)
+		goto out;
 
 	if (sz < (ODS_PAGE_SIZE >> 1)) {
 		ref = alloc_blk(ods, pgt, sz);
@@ -1417,7 +1505,7 @@ ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
  out:
 	if (obj)
 		assert(ref_valid(ods, obj->ref));
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 	return obj;
 }
 
@@ -1510,9 +1598,9 @@ int ref_valid(ods_t ods, ods_ref_t ref)
 int ods_ref_valid(ods_t ods, ods_ref_t ref)
 {
 	int rc;
-	ods_spin_lock(&ods->lock, -1);
+	__ods_lock(ods);
 	rc = ref_valid(ods, ref);
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 	return rc;
 }
 
@@ -1603,14 +1691,16 @@ void ods_commit(ods_t ods, int flags)
 {
 	int mflag = (flags ? MS_SYNC : MS_ASYNC);
 	ods_map_t map = NULL;
-	ods_spin_lock(&ods->lock, -1);
+	__ods_lock(ods);
 	rbt_traverse(&ods->map_tree, commit_map_fn, (void *)(unsigned long)mflag);
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 }
 
 /*
  * This function is racing with the garbage cleanup thread and is
- * thread-safe, but is otherwise, not thread-safe.
+ * thread-safe, but is otherwise, not thread-safe. IOW, if there are
+ * references to the ODS handle and the application tries to use it
+ * after this function returns, it will crash.
  */
 void ods_close(ods_t ods, int flags)
 {
@@ -1620,11 +1710,10 @@ void ods_close(ods_t ods, int flags)
 		return;
 
 	/* Remove the ODS from the open list */
-	ods_spin_lock(&ods_lock, -1);
+	pthread_mutex_lock(&ods_list_lock);
 	LIST_REMOVE(ods, entry);
 
 	ods_commit(ods, flags);
-	ods_spin_lock(&ods->lock, -1);
 	close(ods->pg_fd);
 	close(ods->obj_fd);
 	free(ods->path);
@@ -1653,7 +1742,7 @@ void ods_close(ods_t ods, int flags)
 		assert(0 == rc);
 		free(map);
 	}
-	ods_spin_unlock(&ods_lock);
+	pthread_mutex_unlock(&ods_list_lock);
 
 	free(ods);
 }
@@ -1680,7 +1769,7 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
 	unsigned char flags;
 	uint32_t status = 0;
 
-	ods_spin_lock(&ods->lock, -1);
+	__ods_lock(ods);
 
 	if (!ref_valid(ods, ref)) {
 		status |= ODS_REF_STATUS_INVALID;
@@ -1702,7 +1791,7 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
 			status |= ODS_REF_STATUS_FREE;
 	}
  out:
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 	return status;
 }
 
@@ -1711,9 +1800,9 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
  */
 void ods_ref_delete(ods_t ods, ods_ref_t ref)
 {
-	ods_spin_lock(&ods->lock, -1);
+	__ods_lock(ods);
 	free_ref(ods, ref);
-	ods_spin_unlock(&ods->lock);
+	__ods_unlock(ods);
 }
 
 /*
@@ -1728,14 +1817,14 @@ void ods_obj_delete(ods_obj_t obj)
 		errno = EPERM;
 		return;
 	}
-	ods_spin_lock(&obj->ods->lock, -1);
+	__ods_lock(obj->ods);
 	ref = ods_obj_ref(obj);
 	if (ref)
 		free_ref(obj->ods, ref);
 	obj->ref = 0;
 	obj->as.ptr = NULL;
 	obj->size = 0;
-	ods_spin_unlock(&obj->ods->lock);
+	__ods_unlock(obj->ods);
 }
 
 void ods_dump(ods_t ods, FILE *fp)
@@ -1912,13 +2001,13 @@ static void *gc_thread_fn(void *arg)
 	uint64_t mapped;
  gc:
 	LIST_INIT(&dumpster);
-	ods_spin_lock(&ods_lock, -1);
+	pthread_mutex_lock(&ods_list_lock);
 	while (!LIST_EMPTY(&ods_list)) {
 		ods = LIST_FIRST(&ods_list);
 		LIST_REMOVE(ods, entry);
 		LIST_INSERT_HEAD(&dumpster, ods, entry);
 	}
-	ods_spin_unlock(&ods_lock);
+	pthread_mutex_unlock(&ods_list_lock);
 
 	mapped = 0;
 	while (!LIST_EMPTY(&dumpster)) {
@@ -1932,18 +2021,18 @@ static void *gc_thread_fn(void *arg)
 		 * deleted to the del_list
 		 */
 		LIST_INIT(&del_list);
-		ods_spin_lock(&ods->lock, -1);
+		__ods_lock(ods);
 		fn_arg.timeout = timeout;
 		fn_arg.del_q = &del_list;
 		fn_arg.mapped = 0;
 		rbt_traverse(&ods->map_tree, q4_del_fn, &fn_arg);
 		mapped += fn_arg.mapped;
 		empty_del_list(&del_list);
-		ods_spin_unlock(&ods->lock);
+		__ods_unlock(ods);
 
-		ods_spin_lock(&ods_lock, -1);
+		pthread_mutex_lock(&ods_list_lock);
 		LIST_INSERT_HEAD(&ods_list, ods, entry);
-		ods_spin_unlock(&ods_lock);
+		pthread_mutex_unlock(&ods_list_lock);
 	}
 #ifdef ODS_DEBUG
 	printf("Total mapped memory = %ld MB\n", mapped / 1024 / 1024);
@@ -1955,6 +2044,5 @@ static void *gc_thread_fn(void *arg)
 
 static void __attribute__ ((constructor)) ods_lib_init(void)
 {
-	ods_spin_init(&ods_lock, &ods_lock_word);
 	pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
 }

@@ -193,7 +193,6 @@ static int bxt_open(ods_idx_t idx)
 	}
 	t->udata_obj = udata;
 	t->udata = UDATA(udata);
-	ods_spin_init(&t->lock, &t->udata->lock);
 	t->ods = idx->ods;
 	t->comparator = idx->idx_class->cmp->compare_fn;
 	idx->priv = t;
@@ -331,7 +330,7 @@ static int bxt_find(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	bxt_t t = idx->priv;
 	ods_obj_t rec;
 #ifdef BXT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	rec = rec_find(t, key, 1);
@@ -342,7 +341,7 @@ static int bxt_find(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	rc = 0;
  out:
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return rc;
 }
@@ -358,7 +357,7 @@ static int bxt_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void
 	int rc = ENOMEM;
 
 #ifdef BXT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	leaf = leaf_find(t, key);
@@ -412,7 +411,7 @@ static int bxt_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void
 		ods_obj_put(rec);
  err_0:
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return rc;
 }
@@ -423,7 +422,7 @@ static int bxt_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 	int rc = 0;
 	ods_obj_t rec;
 #ifdef BXT_THREAD_SAFE
-	ods_spin_lock(&t->lock, -1);
+	ods_lock(idx->ods, 0, NULL);
 #endif
 	rec = rec_find(t, key, 1);
 	if (!rec) {
@@ -434,7 +433,7 @@ static int bxt_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 	ods_obj_put(rec);
  out:
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return rc;
 }
@@ -1185,7 +1184,7 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 	int is_dup, ent;
 	int rc = ENOMEM;
 #ifdef BXT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	leaf = leaf_find(t, new_key);
@@ -1196,7 +1195,7 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 	rc = bxt_insert_with_leaf(idx, new_key, data, leaf, ent, is_dup);
  err_0:
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return rc;
 }
@@ -1261,7 +1260,7 @@ static int bxt_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 	ods_obj_t node;
 	bxt_t t = idx->priv;
 #ifdef BXT_THREAD_SAFE
-	ods_spin_lock(&t->lock, -1);
+	ods_lock(idx->ods, 0, NULL);
 #endif
 	node = bxt_max_node(t);
 	if (node) {
@@ -1278,7 +1277,7 @@ static int bxt_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 		rc = ENOMEM;
 
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return rc;
 }
@@ -1290,7 +1289,7 @@ static int bxt_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 	ods_obj_t node;
 	bxt_t t = idx->priv;
 #ifdef BXT_THREAD_SAFE
-	ods_spin_lock(&t->lock, -1);
+	ods_lock(idx->ods, 0, NULL);
 #endif
 	node = bxt_min_node(t);
 	if (node) {
@@ -1307,7 +1306,7 @@ static int bxt_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 		rc = ENOMEM;
 
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return rc;
 }
@@ -1847,7 +1846,7 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	int rc;
 
 #ifdef BXT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	leaf = leaf_find(t, key);
@@ -1860,7 +1859,7 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	rc = bxt_delete_with_leaf(idx, key, data, leaf, ent);
 
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 #ifdef BXT_DEBUG
 	print_idx(idx, NULL);
@@ -1869,7 +1868,7 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
  noent:
 	ods_obj_put(leaf);
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return ENOENT;
 }
@@ -2289,7 +2288,7 @@ static int bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
 	uint32_t status;
 
 #ifdef BXT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(oi->idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	status = ods_ref_status(t->ods, pos->rec_ref);
@@ -2337,7 +2336,7 @@ static int bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
 		delete_dup_rec(t, leaf, rec, ent);
 		ods_obj_put(leaf);
 #ifdef BXT_THREAD_SAFE
-		ods_spin_unlock(&t->lock);
+		ods_unlock(oi->idx->ods, 0);
 #endif
 		return 0;
 	}
@@ -2346,7 +2345,7 @@ static int bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
 	ods_obj_delete(key);
 	ods_obj_put(rec);
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(oi->idx->ods, 0);
 #endif
 	return 0;
  noent:
@@ -2354,7 +2353,7 @@ static int bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
 	ods_obj_put(leaf);
  norec:
 #ifdef BXT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(oi->idx->ods, 0);
 #endif
 	return ENOENT;
 }

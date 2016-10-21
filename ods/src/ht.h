@@ -72,7 +72,6 @@ typedef struct ht_s {
 	ht_tbl_t htable;
 	ht_hash_fn_t hash_fn;
 	ods_idx_compare_fn_t comparator;
-	struct ods_spin_s lock;
 } *ht_t;
 
 typedef struct ht_iter {

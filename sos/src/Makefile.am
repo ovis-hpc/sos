@@ -2,6 +2,9 @@ lib_LTLIBRARIES =
 bin_PROGRAMS =
 
 AM_CFLAGS = -I$(srcdir)/../include -I$(top_srcdir)/ods/include
+if ENABLE_OBJ_DEBUG
+AM_CFLAGS += -DODS_OBJ_DEBUG
+endif
 
 libsos_la_SOURCES = sos_fn.c \
 		    sos.c \

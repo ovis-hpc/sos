@@ -159,7 +159,7 @@ int sos_index_new(sos_t sos, const char *name,
 	if (len >= SOS_INDEX_ARGS_LEN)
 		return EINVAL;
 
-	ods_spin_lock(&sos->idx_lock, -1);
+	ods_lock(sos->idx_ods, 0, NULL);
 	ods_key_set(idx_key, name, strlen(name)+1);
 	rc = ods_idx_find(sos->idx_idx, idx_key, &idx_ref.idx_data);
 	if (!rc) {
@@ -189,7 +189,7 @@ int sos_index_new(sos_t sos, const char *name,
 	if (rc)
 		goto err_1;
  out:
-	ods_spin_unlock(&sos->idx_lock);
+	ods_unlock(sos->idx_ods, 0);
 	return rc;
  err_1:
 	sos_ref_reset(idx_ref);
@@ -197,7 +197,7 @@ int sos_index_new(sos_t sos, const char *name,
  err_0:
 	ods_obj_delete(idx_obj);
 	ods_obj_put(idx_obj);
-	ods_spin_unlock(&sos->idx_lock);
+	ods_unlock(sos->idx_ods, 0);
 	return rc;
 }
 
@@ -230,7 +230,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		goto err_1;
 
 	ods_key_set(idx_key, name, strlen(name)+1);
-	ods_spin_lock(&sos->idx_lock, -1);
+	ods_lock(sos->idx_ods, 0, NULL);
 	rc = ods_idx_find(sos->idx_idx, idx_key, &idx_ref.idx_data);
 	if (rc)
 		goto err_2;
@@ -258,12 +258,12 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		goto err_3;
 	}
 	ods_obj_put(idx_obj);
-	ods_spin_unlock(&sos->idx_lock);
+	ods_unlock(sos->idx_ods, 0);
 	return index;
  err_3:
 	ods_obj_put(idx_obj);
  err_2:
-	ods_spin_unlock(&sos->idx_lock);
+	ods_unlock(sos->idx_ods, 0);
  err_1:
 	free(index);
  err_0:

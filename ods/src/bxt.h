@@ -75,7 +75,6 @@ struct bxt_obj_el {
 typedef struct bxt_s {
 	ods_t ods;		/* The ods that contains the tree */
 	ods_obj_t udata_obj;
-	struct ods_spin_s lock;
 	bxt_udata_t udata;
 	ods_idx_compare_fn_t comparator;
 	/*

@@ -124,7 +124,6 @@ static int ht_open(ods_idx_t idx)
 	t->udata = UDATA(udata);
 	t->htable_obj = ods_ref_as_obj(t->ods, UDATA(udata)->htable_ref);
 	t->htable = HTBL(t->htable_obj);
-	ods_spin_init(&t->lock, &t->udata->lock);
 	t->ods = idx->ods;
 	t->comparator = idx->idx_class->cmp->compare_fn;
 	switch (t->udata->hash_type) {
@@ -261,7 +260,7 @@ static int ht_find(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t *data)
 	ods_obj_t ent;
 
 #ifdef HT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(o_idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	ent = find_entry(t, key, NULL);
@@ -273,7 +272,7 @@ static int ht_find(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t *data)
 		rc = ENOENT;
 	}
 #ifdef HT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(o_idx->ods, 0);
 #endif
 	return rc;
 }
@@ -285,7 +284,7 @@ static int ht_update(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 	ods_obj_t ent;
 
 #ifdef HT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(o_idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	ent = find_entry(t, key, NULL);
@@ -298,7 +297,7 @@ static int ht_update(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 	}
  out:
 #ifdef HT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(o_idx->ods, 0);
 #endif
 	return rc;
 }
@@ -382,7 +381,7 @@ static int ht_insert(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 	int64_t bkt;
 	ods_key_value_t kv;
 #ifdef HT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(o_idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	ent = entry_new(o_idx);
@@ -401,7 +400,7 @@ static int ht_insert(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 	ods_obj_put(ent);
  out_0:
 #ifdef HT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(o_idx->ods, 0);
 #endif
 	return rc;
 }
@@ -417,7 +416,7 @@ static int ht_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void 
 	int found;
 	ods_visit_action_t act;
 #ifdef HT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	ent = find_entry(t, key, &bkt);
@@ -476,7 +475,7 @@ static int ht_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void 
 	}
  out_0:
 #ifdef HT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return rc;
 }
@@ -488,7 +487,7 @@ static int ht_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 	ht_tbl_t ht = t->htable;
 	ods_obj_t ent;
 #ifdef HT_THREAD_SAFE
-	ods_spin_lock(&t->lock, -1);
+	ods_lock(idx->ods, 0, NULL);
 #endif
 	if (ht->last_bkt >= 0) {
 		ent = ods_ref_as_obj(t->ods, ht->table[ht->first_bkt].tail_ref);
@@ -503,7 +502,7 @@ static int ht_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 			rc = ENOMEM;
 	}
 #ifdef HT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return rc;
 }
@@ -515,7 +514,7 @@ static int ht_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 	ht_tbl_t ht = t->htable;
 	ods_obj_t ent;
 #ifdef HT_THREAD_SAFE
-	ods_spin_lock(&t->lock, -1);
+	ods_lock(idx->ods, 0, NULL);
 #endif
 	if (ht->first_bkt >= 0) {
 		ent = ods_ref_as_obj(t->ods, ht->table[ht->first_bkt].head_ref);
@@ -530,7 +529,7 @@ static int ht_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 			rc = ENOMEM;
 	}
 #ifdef HT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(idx->ods, 0);
 #endif
 	return rc;
 }
@@ -562,7 +561,7 @@ static int ht_delete(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t *data)
 	int64_t bkt;
 
 #ifdef HT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(o_idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	ent = find_entry(t, key, &bkt);
@@ -571,7 +570,7 @@ static int ht_delete(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t *data)
 	*data = HENT(ent)->value;
 	delete_entry(t, ent, bkt);
 #ifdef HT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(o_idx->ods, 0);
 #endif
 #ifdef HT_DEBUG
 	print_idx(idx, NULL);
@@ -579,7 +578,7 @@ static int ht_delete(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t *data)
 	return 0;
  noent:
 #ifdef HT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(o_idx->ods, 0);
 #endif
 	return ENOENT;
 }
@@ -817,7 +816,7 @@ static int ht_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
 	uint32_t status;
 
 #ifdef HT_THREAD_SAFE
-	if (ods_spin_lock(&t->lock, -1))
+	if (ods_lock(oi->idx->ods, 0, NULL))
 		return EBUSY;
 #endif
 	status = ods_ref_status(t->ods, pos->ent_ref);
@@ -830,7 +829,7 @@ static int ht_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
 		rc = ENOENT;
 	}
 #ifdef HT_THREAD_SAFE
-	ods_spin_unlock(&t->lock);
+	ods_unlock(oi->idx->ods, 0);
 #endif
 	return rc;
 }

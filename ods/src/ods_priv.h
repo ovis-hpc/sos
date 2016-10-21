@@ -136,10 +136,6 @@ typedef struct ods_obj_htbl_s {
 
 #define ODS_MAP_DEF_SZ	(ODS_PAGE_SIZE * 1024 * 64) /* 256M */
 struct ods_s {
-	// pthread_spinlock_t lock;
-	struct ods_spin_s lock;
-	ods_atomic_t lock_word;
-
 	/* The path to the file on disk */
 	char *path;
 
@@ -161,7 +157,8 @@ struct ods_s {
 	uint64_t pg_gen;
 
 	/* Pointer to the page-file data in memory */
-	struct ods_pgt_s *pg_table;
+	struct ods_pgt_s *lck_table; /* never grows, persistent until close */
+	struct ods_pgt_s *pg_table; /* grows on ods_extend */
 
 	/* Current ODS map size for new maps in 4096B pages */
 	size_t obj_map_sz;
@@ -182,6 +179,7 @@ struct ods_s {
 
 	LIST_ENTRY(ods_s) entry;
 };
+
 // #define ODS_OBJ_HTBL_DEPTH 32653
 // #define ODS_OBJ_HTBL_DEPTH 65537
 #define ODS_OBJ_HTBL_DEPTH 131071
@@ -259,11 +257,32 @@ typedef struct ods_pg_s {
 	};
 } *ods_pg_t;
 
+typedef struct ods_lock_s {
+	union {
+		struct ods_spin_lock_s {
+			ods_atomic_t lock_word;
+			ods_atomic_t contested;
+			uint64_t owner;
+		} spin;
+		pthread_mutex_t mutex;
+	};
+} ods_lock_t;
+
+#define ODS_LOCK_MEM_SZ	(ODS_PAGE_SIZE - 32 - sizeof(ods_lock_t))
+#define ODS_LOCK_CNT	(ODS_LOCK_MEM_SZ / sizeof(ods_lock_t))
+
 typedef struct ods_pgt_s {
 	char pg_signature[8];	 /* pgt signature 'PGTSTORE' */
 	uint64_t pg_gen;	 /* generation number */
 	uint64_t pg_free;	 /* first free page offset */
 	uint64_t pg_count;	 /* count of pages */
+	ods_lock_t ods_lock;	 /* global ODS lock */
+	/* These locks are for applications */
+	union {
+		unsigned char lock_mem[ODS_LOCK_MEM_SZ];
+		ods_lock_t lck_tbl[0];
+	};
+	/* Should being on a 4096B boundary */
 	struct ods_bkt_s bkt_table[ODS_BKT_TABLE_SZ];
 	struct ods_pg_s pg_pages[0];/* array of page control information */
 } *ods_pgt_t;

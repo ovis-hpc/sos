@@ -171,7 +171,7 @@ static ods_obj_t __sos_part_create(sos_t sos, char *tmp_path,
 	ods_obj_t part, new_part;
 
 	/* Take the partition lock */
-	ods_spin_lock(&sos->part_lock, -1);
+	ods_lock(sos->part_ods, 0, NULL);
 
 	/* See if the specified name already exists in the filesystem */
 	if (part_path == NULL)
@@ -234,13 +234,13 @@ static ods_obj_t __sos_part_create(sos_t sos, char *tmp_path,
 		SOS_PART_UDATA(sos->part_udata)->tail = ods_obj_ref(new_part);
 	}
 	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
-	ods_spin_unlock(&sos->part_lock);
+	ods_unlock(sos->part_ods, 0);
 	return new_part;
  err_2:
 	ods_obj_delete(new_part);
 	ods_obj_put(new_part);
  err_1:
-	ods_spin_unlock(&sos->part_lock);
+	ods_unlock(sos->part_ods, 0);
 	return NULL;
 }
 
@@ -476,7 +476,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 	sos_part_state_t cur_state;
 
 	pthread_mutex_lock(&sos->lock);
-	ods_spin_lock(&sos->part_lock, -1);
+	ods_lock(sos->part_ods, 0, NULL);
 	cur_state = SOS_PART(part->part_obj)->state;
 	if (cur_state == SOS_PART_STATE_BUSY
 	    || cur_state == SOS_PART_STATE_PRIMARY) {
@@ -484,7 +484,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 		goto out;
 	}
 	__make_part_busy(sos, part);
-	ods_spin_unlock(&sos->part_lock);
+	ods_unlock(sos->part_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 
 	switch (cur_state) {
@@ -495,9 +495,9 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 			rc = __sos_open_partition(sos, part);
 			if (rc) {
 				pthread_mutex_lock(&sos->lock);
-				ods_spin_lock(&sos->part_lock, -1);
+				ods_lock(sos->part_ods, 0, NULL);
 				__make_part_offline(sos, part);
-				ods_spin_unlock(&sos->part_lock);
+				ods_unlock(sos->part_ods, 0);
 				pthread_mutex_unlock(&sos->lock);
 				return EINVAL;
 			}
@@ -521,7 +521,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 	}
 
 	pthread_mutex_lock(&sos->lock);
-	ods_spin_lock(&sos->part_lock, -1);
+	ods_lock(sos->part_ods, 0, NULL);
 	assert(SOS_PART_STATE_BUSY == SOS_PART(part->part_obj)->state);
 
 	switch (cur_state) {
@@ -568,7 +568,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 		assert(0);
 	}
  out:
-	ods_spin_unlock(&sos->part_lock);
+	ods_unlock(sos->part_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
 }
@@ -619,9 +619,9 @@ static int __refresh_part_list(sos_t sos)
 static int refresh_part_list(sos_t sos)
 {
 	int rc;
-	ods_spin_lock(&sos->part_lock, -1);
+	ods_lock(sos->part_ods, 0, NULL);
 	rc = __refresh_part_list(sos);
-	ods_spin_unlock(&sos->part_lock);
+	ods_unlock(sos->part_ods, 0);
 	return rc;
 }
 
@@ -637,7 +637,6 @@ int __sos_open_partitions(sos_t sos, char *tmp_path)
 	sos->part_udata = ods_get_user_data(sos->part_ods);
 	if (!sos->part_udata)
 		goto err_1;
-	ods_spin_init(&sos->part_lock, &(SOS_PART_UDATA(sos->part_udata)->lock));
 	rc = refresh_part_list(sos);
 	return rc;
  err_1:
@@ -656,7 +655,7 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 		return sos->primary_part;
 
 	pthread_mutex_lock(&sos->lock);
-	ods_spin_lock(&sos->part_lock, -1);
+	ods_lock(sos->part_ods, 0, NULL);
 	if (sos->part_gn != SOS_PART_UDATA(sos->part_udata)->gen) {
 		int rc = __refresh_part_list(sos);
 		if (rc)
@@ -669,7 +668,7 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 		}
 	}
  out:
-	ods_spin_unlock(&sos->part_lock);
+	ods_unlock(sos->part_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return part;
 }
@@ -1003,7 +1002,7 @@ int sos_part_delete(sos_part_t part)
 	sos_part_state_t cur_state;
 
 	pthread_mutex_unlock(&sos->lock);
-	ods_spin_lock(&sos->part_lock, -1);
+	ods_lock(sos->part_ods, 0, NULL);
 	cur_state = SOS_PART(part->part_obj)->state;
 	if (cur_state != SOS_PART_STATE_OFFLINE)
 		goto out;
@@ -1018,7 +1017,7 @@ int sos_part_delete(sos_part_t part)
 	/* Put the app reference reference */
 	sos_part_put(part);
  out:
-	ods_spin_unlock(&sos->part_lock);
+	ods_unlock(sos->part_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
 }
@@ -1060,7 +1059,7 @@ int sos_part_move(sos_part_t part, const char *new_part_path)
 
 	sprintf(tmp_path, "%s/%s", new_part_path, sos_part_name(part));
 	pthread_mutex_unlock(&sos->lock);
-	ods_spin_lock(&sos->part_lock, -1);
+	ods_lock(sos->part_ods, 0, NULL);
 
 	ods_commit(part->obj_ods, SOS_COMMIT_SYNC);
 
@@ -1167,7 +1166,7 @@ int sos_part_move(sos_part_t part, const char *new_part_path)
 			perror("Removing partition directory");
 	}
 	free(old_part_path);
-	ods_spin_unlock(&sos->part_lock);
+	ods_unlock(sos->part_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	sos_part_put(part);
 	return rc;
