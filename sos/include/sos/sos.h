@@ -111,6 +111,8 @@ int sos_container_stat(sos_t sos, struct stat *sb);
 void sos_container_close(sos_t c, sos_commit_t flags);
 int sos_container_commit(sos_t c, sos_commit_t flags);
 void sos_container_info(sos_t sos, FILE* fp);
+int sos_container_lock_info(const char *path, FILE *fp);
+int sos_container_lock_cleanup(const char *path);
 void sos_inuse_obj_info(sos_t sos, FILE *fp);
 void sos_free_obj_info(sos_t sos, FILE *fp);
 int sos_container_config_set(const char *path, const char *option, const char *value);
@@ -241,9 +243,13 @@ typedef union sos_value_data_u {
 typedef struct sos_value_s {
 	sos_obj_t obj;		/*! The object to which the value refers  */
 	sos_attr_t attr;	/*! The attribute in the object */
+	sos_value_data_t data;	      /*! Points at data_ or into obj */
 	union sos_value_data_u data_; /*! Memory based value data */
-	sos_value_data_t data;	      /*! Object based value */
 } *sos_value_t;
+
+#define SOS_STRUCT_VALUE(_name_, _sz_)					\
+	unsigned char _name_ ## value_data [_sz_ + sizeof(struct sos_value_s)]; \
+	sos_value_t _name_ = (sos_value_t)_name_ ## value_data;
 
 enum sos_cond_e {
 	SOS_COND_LT,

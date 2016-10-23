@@ -123,6 +123,7 @@
  * See the \ref indices section for more information.
  */
 
+#define _GNU_SOURCE
 #include <sys/queue.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -137,6 +138,7 @@
 #include <limits.h>
 #include <errno.h>
 #include <assert.h>
+#include <ftw.h>
 
 #include <sos/sos.h>
 #include <ods/ods.h>
@@ -178,6 +180,8 @@ pthread_mutex_t cont_list_lock;
  * - sos_container_commit() Commit a Container's contents to stable storage
  * - sos_container_delete() Destroy a Container and all of it's contents
  * - sos_container_info() - Print Container information to a FILE pointer
+ * - sos_container_lock_info() - Print Container lock information to a FILE pointer
+ * - sos_container_lock_cleanup() - Release locks held by no process
  */
 
 /* This function effectively implements 'mkdir -p' */
@@ -518,6 +522,71 @@ void sos_container_info(sos_t sos, FILE *fp)
 		if (part->obj_ods)
 			ods_info(part->obj_ods, fp);
 	}
+}
+
+static int show_locks(const char *path, const struct stat *sb,
+		      int typeflags, struct FTW *ftw)
+{
+	size_t len;
+	char tmp_path[PATH_MAX];
+
+	strncpy(tmp_path, path, PATH_MAX);
+	len = strlen(tmp_path);
+	if (strcmp(&tmp_path[len-3], ".PG"))
+		return 0;
+	/* strip the .PG, ods_lock_info will append it */
+	tmp_path[len-3] = '\0';
+	ods_lock_info(tmp_path, stdout);
+	return 0;
+}
+
+static int release_locks(const char *path, const struct stat *sb,
+			 int typeflags, struct FTW *ftw)
+{
+	size_t len;
+	char tmp_path[PATH_MAX];
+
+	strncpy(tmp_path, path, PATH_MAX);
+	len = strlen(tmp_path);
+	if (strcmp(&tmp_path[len-3], ".PG"))
+		return 0;
+	/* strip the .PG, ods_lock_info will append it */
+	tmp_path[len-3] = '\0';
+	ods_lock_cleanup(tmp_path);
+	return 0;
+}
+
+/**
+ * \brief Print container lock information
+ *
+ * Prints information about the locks held on the container to a FILE pointer.
+ *
+ * \param sos	The container handle
+ * \param fp	The FILE pointer
+ */
+int sos_container_lock_info(const char *path, FILE *fp)
+{
+	int rc;
+
+	rc = nftw(path, show_locks, 1024, FTW_DEPTH|FTW_PHYS);
+	return rc;
+}
+
+/**
+ * \brief Release locks held by dead processes
+ *
+ * It is possible for a process to die while holding container
+ * locks. This renders the container inaccessible. This function will
+ * release locks held by dead processes.
+ *
+ * \param sos	The container handle
+ */
+int sos_container_lock_cleanup(const char *path)
+{
+	int rc;
+
+	rc = nftw(path, release_locks, 1024, FTW_DEPTH|FTW_PHYS);
+	return rc;
 }
 
 void sos_inuse_obj_info(sos_t sos, FILE *outp)

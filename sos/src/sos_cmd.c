@@ -69,13 +69,15 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
 #ifdef ENABLE_YAML
-const char *short_options = "f:I:M:C:K:O:S:X:V:F:T:s:o:icql";
+const char *short_options = "f:I:M:C:K:O:S:X:V:F:T:s:o:icqlLR";
 #else
-const char *short_options = "f:I:M:C:K:O:S:X:V:F:T:icql";
+const char *short_options = "f:I:M:C:K:O:S:X:V:F:T:icqlLR";
 #endif
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
+	{"locks",	no_argument,	    0,  'L'},
+	{"cleanup",	no_argument,	    0,  'R'},
 	{"info",	no_argument,	    0,  'i'},
 	{"create",	no_argument,	    0,  'c'},
 	{"query",	no_argument,        0,  'q'},
@@ -1205,6 +1207,8 @@ int add_object(sos_t sos, FILE* fp)
 #define SCHEMA_DIR	0x020
 #define CSV		0x080
 #define CONFIG  	0x100
+#define LOCKS		0x200
+#define CLEANUP		0x400
 
 struct cond_key_s {
 	char *name;
@@ -1314,6 +1318,12 @@ int main(int argc, char **argv)
 		case 'i':
 			action |= INFO;
 			break;
+		case 'L':
+			action |= LOCKS;
+			break;
+		case 'R':
+			action |= CLEANUP;
+			break;
 		case 's':
 			action |= SCHEMA;
 			schema_file = fopen(optarg, "r");
@@ -1407,6 +1417,12 @@ int main(int argc, char **argv)
 
 	if (!action)
 		return 0;
+
+	if (action & CLEANUP)
+		sos_container_lock_cleanup(path);
+
+	if (action & LOCKS)
+		return sos_container_lock_info(path, stdout);
 
 	if (action & CONFIG) {
 		struct cfg_s *cfg;

@@ -564,6 +564,19 @@ extern void ods_unlock(ods_t ods, int lock_id);
 extern size_t ods_lock_count(ods_t);
 
 /**
+ * \brief Print information about locks held on the ODS
+ * \param path The path to the ODS
+ * \param fp FILE* where information will be printed
+ */
+int ods_lock_info(const char *path, FILE *fp);
+
+/**
+ * \brief Release locks held by dead processes
+ * \param path The path to the ODS
+ */
+int ods_lock_cleanup(const char *path);
+
+/**
  * \brief Print debug information about the repository
  * \param ods The ODS handle
  * \param fp A FILE* pointer to receive the output

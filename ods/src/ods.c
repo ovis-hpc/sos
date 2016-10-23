@@ -637,6 +637,134 @@ static int print_map(struct rbn *rbn, void *arg, int l)
 	return 0;
 }
 
+static int check_lock(pthread_mutex_t *mtx, int cleanup)
+{
+	char proc_path[80];
+	struct stat sb;
+	int rc;
+
+	if (mtx->__data.__lock == 0)
+		return 0;
+
+	/* Check if the holder of the lock is an active process */
+	sprintf(proc_path, "/proc/%d", mtx->__data.__owner);
+	rc = stat(proc_path, &sb);
+	if (rc) {
+		if (cleanup)
+			pthread_mutex_unlock(mtx);
+		return 1;
+	}
+	return 0;
+}
+
+static void do_lock_header(const char *path, FILE *fp)
+{
+	fprintf(fp, "%s\n", path);
+	fprintf(fp, "%-2s %-6s %-8s %-8s %-12s %-8s\n", "Id", "Type", "Lock",
+		"Count", "Owner", "Users");
+	fprintf(fp, "-- ------ -------- -------- ------------ --------\n");
+}
+
+static void print_lock(FILE *fp, int *do_hdr, const char *path, const char *lck_type,
+		       int id, pthread_mutex_t *mtx)
+{
+	if (mtx->__data.__lock == 0)
+		return;
+	if (*do_hdr) {
+		do_lock_header(path, fp);
+		*do_hdr = 0;
+	}
+	fprintf(fp, "%2d %6s %8d %8d %12d %8d",
+		id,
+		lck_type,
+		mtx->__data.__lock,
+		mtx->__data.__count,
+		mtx->__data.__owner,
+		mtx->__data.__nusers);
+
+	if (check_lock(mtx, 0)) {
+		printf("  <--- DEAD LOCK: process %d does not exist ---\n",
+		       mtx->__data.__owner);
+	} else {
+		fprintf(fp, "\n");
+	}
+}
+
+int ods_lock_cleanup(const char *path)
+{
+	char tmp_path[PATH_MAX];
+	int id, pg_fd, rc;
+	ods_pgt_t pgt;
+	pthread_mutex_t *mtx;
+
+	/* Open the page table file */
+	sprintf(tmp_path, "%s%s", path, ODS_PGTBL_SUFFIX);
+	pg_fd = open(tmp_path, O_RDWR);
+	if (pg_fd < 0) {
+		rc = errno;
+		goto err_0;
+	}
+
+	pgt = mmap(NULL, ODS_PAGE_SIZE,
+		   PROT_READ | PROT_WRITE,
+		   MAP_FILE | MAP_SHARED, pg_fd, 0);
+	if (pgt == MAP_FAILED) {
+		rc = errno;
+		goto err_1;
+	}
+
+	mtx = &pgt->ods_lock.mutex;
+	check_lock(mtx, 1);
+
+	for (id = 0; id < ODS_LOCK_CNT; id++) {
+		mtx = &pgt->lck_tbl[id].mutex;
+		check_lock(mtx, 1);
+	}
+	munmap(pgt, ODS_PAGE_SIZE);
+ err_1:
+	close(pg_fd);
+ err_0:
+	return rc;
+}
+
+int ods_lock_info(const char *path, FILE *fp)
+{
+	char tmp_path[PATH_MAX];
+	int id, pg_fd, rc;
+	ods_pgt_t pgt;
+	pthread_mutex_t *mtx;
+	int do_hdr = 1;
+
+	/* Open the page table file */
+	sprintf(tmp_path, "%s%s", path, ODS_PGTBL_SUFFIX);
+	pg_fd = open(tmp_path, O_RDWR);
+	if (pg_fd < 0) {
+		rc = errno;
+		goto err_0;
+	}
+
+	pgt = mmap(NULL, ODS_PAGE_SIZE,
+		   PROT_READ | PROT_WRITE,
+		   MAP_FILE | MAP_PRIVATE, pg_fd, 0);
+	if (pgt == MAP_FAILED) {
+		rc = errno;
+		goto err_1;
+	}
+
+	mtx = &pgt->ods_lock.mutex;
+	print_lock(fp, &do_hdr, tmp_path, "Global", 0, mtx);
+
+	for (id = 0; id < ODS_LOCK_CNT; id++) {
+		mtx = &pgt->lck_tbl[id].mutex;
+		print_lock(fp, &do_hdr, tmp_path, "User", id, mtx);
+	}
+	munmap(pgt, ODS_PAGE_SIZE);
+ err_1:
+	close(pg_fd);
+ err_0:
+	return rc;
+}
+
 void ods_info(ods_t ods, FILE *fp)
 {
 	ods_obj_t obj;
@@ -1198,6 +1326,15 @@ const char *ods_path(ods_t ods)
 	return ods->path;
 }
 
+/*
+ * Run through all the locks in the ODS. If the lock is held, ensure
+ * that the holding process exists. If it does not exist,
+ * re-initialize the lock.
+ */
+void cleanup_dead_locks(ods_t ods)
+{
+}
+
 ods_t ods_open(const char *path, ods_perm_t o_perm)
 {
 	char tmp_path[PATH_MAX];
@@ -1268,6 +1405,7 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 #endif
 
 	pthread_mutex_lock(&ods_list_lock);
+	cleanup_dead_locks(ods);
 	LIST_INSERT_HEAD(&ods_list, ods, entry);
 	pthread_mutex_unlock(&ods_list_lock);
 	return ods;
