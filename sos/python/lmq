@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
 import matplotlib.dates as mdates
 from matplotlib.ticker import Formatter
+from matplotlib import rc
+
+rc('text', usetex=True)
 
 class MyXFormatter(Formatter):
     def __init__(self, fmt='%m/%d %H:%M:%S'):
@@ -55,8 +58,8 @@ def plot_xy(x, y, title_str, args,
         plt.plot(x, mu, lw=4, alpha=.5, label='$ \mu $', color='black')
     if stddev:
         std = y.std()
-        plt.plot(x, mu+std, lw=4, alpha=.5, color='red', label=r'$ \sigma$ ')
-        plt.plot(x, mu-std, lw=4, alpha=.5, color='green', label='$ \sigma$ ')
+        plt.plot(x, mu+std, lw=4, alpha=.5, color='red', label=r'+1 $\sigma$ ')
+        plt.plot(x, mu-std, lw=4, alpha=.5, color='green', label='-1 $\sigma$ ')
 
     s = dt.datetime.fromtimestamp(min_x)
     year_str = str(s.year)
@@ -65,7 +68,7 @@ def plot_xy(x, y, title_str, args,
         year_str += "-"+str(e.year)
     plt.xlabel('Date/Time ({0})'.format(year_str))
     plt.ylabel(y_label)
-    plt.title(title_str + " $\mu$ and $\pm \sigma$ interval")
+    plt.title(title_str.replace("_", "\_") + " $\mu$ and $\pm \sigma$ interval")
     plt.axis([min_x, max_x, min_y, max_y])
     axis.legend(loc='upper left')
     # plt.yscale(args.y_scale)
