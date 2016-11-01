@@ -259,7 +259,7 @@ static int init_pgtbl(int pg_fd)
 	pthread_mutexattr_t attr;
 	pthread_mutexattr_init(&attr);
 	pthread_mutexattr_setpshared(&attr, 1);
-	pthread_mutex_init(&pgt.ods_lock.mutex, &attr);
+	pthread_mutex_init(&pgt.pgt_lock.mutex, &attr);
 	for (i = 0; i < ODS_LOCK_CNT; i++)
 		pthread_mutex_init(&pgt.lck_tbl[i].mutex, &attr);
 
@@ -404,19 +404,29 @@ void ods_unlock(ods_t ods, int lock_id)
 	return __release_lock(lock);
 }
 
-static int __ods_lock(ods_t ods)
+static int __pgt_lock(ods_t ods)
 {
 	ods_pgt_t pgt = ods->lck_table;
 	assert(pgt);
-	return __take_lock(&pgt->ods_lock, NULL);
+	return __take_lock(&pgt->pgt_lock, NULL);
 }
 
-static void __ods_unlock(ods_t ods)
+static void __pgt_unlock(ods_t ods)
 {
 	ods_lock_t *lock;
 	ods_pgt_t pgt = ods->lck_table;
 	assert(pgt);
-	return __release_lock(&pgt->ods_lock);
+	return __release_lock(&pgt->pgt_lock);
+}
+
+static int __ods_lock(ods_t ods)
+{
+	pthread_mutex_lock(&ods->lock);
+}
+
+static void __ods_unlock(ods_t ods)
+{
+	pthread_mutex_unlock(&ods->lock);
 }
 
 static void dump_maps()
@@ -713,7 +723,7 @@ int ods_lock_cleanup(const char *path)
 		goto err_1;
 	}
 
-	mtx = &pgt->ods_lock.mutex;
+	mtx = &pgt->pgt_lock.mutex;
 	check_lock(mtx, 1);
 
 	for (id = 0; id < ODS_LOCK_CNT; id++) {
@@ -751,7 +761,7 @@ int ods_lock_info(const char *path, FILE *fp)
 		goto err_1;
 	}
 
-	mtx = &pgt->ods_lock.mutex;
+	mtx = &pgt->pgt_lock.mutex;
 	print_lock(fp, &do_hdr, tmp_path, "Global", 0, mtx);
 
 	for (id = 0; id < ODS_LOCK_CNT; id++) {
@@ -1153,6 +1163,7 @@ int ods_extend(ods_t ods, size_t sz)
 		return EPERM;
 
 	__ods_lock(ods);
+	__pgt_lock(ods);
 	/*
 	 * Update our cached sizes in case they have been changed
 	 * since our last map_new()
@@ -1219,6 +1230,7 @@ int ods_extend(ods_t ods, size_t sz)
 	empty_del_list(&del_list);
 	rc = 0;
  out:
+	__pgt_unlock(ods);
 	__ods_unlock(ods);
 	return rc;
 }
@@ -1393,6 +1405,7 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 		goto err;
 
 	ods->obj_count = 0;
+	pthread_mutex_init(&ods->lock, NULL);
 	LIST_INIT(&ods->obj_list);
 	LIST_INIT(&ods->obj_free_list);
 	ods->obj_map_sz = ODS_MAP_DEF_SZ;
@@ -1618,7 +1631,7 @@ ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
 		return NULL;
 	}
 
-	__ods_lock(ods);
+	__pgt_lock(ods);
 
 	/* Get and/or refresh the page table */
 	pgt = pgt_get(ods);
@@ -1637,12 +1650,17 @@ ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
 		}
 		ref = pg_no << ODS_PAGE_SHIFT;
 	}
-	obj = _ref_as_obj_with_lock(ods, ref);
-	if (!obj)
-		free_ref(ods, ref);
  out:
-	if (obj)
-		assert(ref_valid(ods, obj->ref));
+	__pgt_unlock(ods);
+	__ods_lock(ods);
+	if (ref)
+		assert(ref_valid(ods, ref));
+	obj = _ref_as_obj_with_lock(ods, ref);
+	if (!obj) {
+		__pgt_lock(ods);
+		free_ref(ods, ref);
+		__pgt_unlock(ods);
+	}
 	__ods_unlock(ods);
 	return obj;
 }
@@ -1736,9 +1754,9 @@ int ref_valid(ods_t ods, ods_ref_t ref)
 int ods_ref_valid(ods_t ods, ods_ref_t ref)
 {
 	int rc;
-	__ods_lock(ods);
+	__pgt_lock(ods);
 	rc = ref_valid(ods, ref);
-	__ods_unlock(ods);
+	__pgt_unlock(ods);
 	return rc;
 }
 
@@ -1907,7 +1925,7 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
 	unsigned char flags;
 	uint32_t status = 0;
 
-	__ods_lock(ods);
+	__pgt_lock(ods);
 
 	if (!ref_valid(ods, ref)) {
 		status |= ODS_REF_STATUS_INVALID;
@@ -1929,7 +1947,7 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
 			status |= ODS_REF_STATUS_FREE;
 	}
  out:
-	__ods_unlock(ods);
+	__pgt_unlock(ods);
 	return status;
 }
 
@@ -1938,9 +1956,9 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
  */
 void ods_ref_delete(ods_t ods, ods_ref_t ref)
 {
-	__ods_lock(ods);
+	__pgt_lock(ods);
 	free_ref(ods, ref);
-	__ods_unlock(ods);
+	__pgt_unlock(ods);
 }
 
 /*
@@ -1955,14 +1973,15 @@ void ods_obj_delete(ods_obj_t obj)
 		errno = EPERM;
 		return;
 	}
-	__ods_lock(obj->ods);
 	ref = ods_obj_ref(obj);
-	if (ref)
+	if (ref) {
+		__pgt_lock(obj->ods);
 		free_ref(obj->ods, ref);
+		__pgt_unlock(obj->ods);
+	}
 	obj->ref = 0;
 	obj->as.ptr = NULL;
 	obj->size = 0;
-	__ods_unlock(obj->ods);
 }
 
 void ods_dump(ods_t ods, FILE *fp)

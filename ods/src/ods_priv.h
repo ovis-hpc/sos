@@ -166,6 +166,9 @@ struct ods_s {
 	/* Tree of object maps. Key is file offset. */
 	struct rbt map_tree;
 
+	/* Local lock for this ODS instance */
+	pthread_mutex_t lock;
+
 	/* The object list */
 	ods_atomic_t obj_count;
 	LIST_HEAD(obj_list_head, ods_obj_s) obj_list;
@@ -276,8 +279,8 @@ typedef struct ods_pgt_s {
 	uint64_t pg_gen;	 /* generation number */
 	uint64_t pg_free;	 /* first free page offset */
 	uint64_t pg_count;	 /* count of pages */
-	ods_lock_t ods_lock;	 /* global ODS lock */
-	/* These locks are for applications */
+	ods_lock_t pgt_lock;	 /* inter-process page-table lock */
+	/* Inter-process locks for applications */
 	union {
 		unsigned char lock_mem[ODS_LOCK_MEM_SZ];
 		ods_lock_t lck_tbl[0];
