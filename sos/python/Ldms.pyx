@@ -1,15 +1,24 @@
 from __future__ import print_function
-from cpython cimport PyObject, Py_INCREF
+import cython
+# if you forget this, your module cannot be imported by other cythong modules
+cimport cython
+# cimport Sos
+# cimport Array
+
 from libc.stdint cimport *
+from libc.stdlib cimport *
+from libc.string cimport *
+cimport numpy as np
+from numpy cimport npy_intp
+
 import sys
 import numpy as np
 import struct
-from numpy cimport npy_intp
-cimport numpy as np
-import Sos
-cimport Sos
 
-np.import_array()
+cimport Sos
+import Sos
+# from sos import Array
+import Array
 
 cdef class Vector(object):
     cdef cont
@@ -67,8 +76,8 @@ cdef class Vector(object):
 
         return ( first[time_name], last[time_name] )
 
-    def query(self, metric_name, start_time, end_time, comp_id=None, samples=None,
-              time_name=None, comp_name=None):
+    def query(self, metric_name, comp_id,
+              start_time=None, end_time=None, index_name=None):
         """Query the store for a metric vector
 
         This function queries the SOS container and returns a 1
@@ -77,98 +86,87 @@ cdef class Vector(object):
         If comp_is None, samples will be accumulated across
         components.
 
-        If samples is specified, the timeseries will be clamped to the
-        specified number of buckets and values will be summed inside each
-        bucket.
-
         It is assumed that an attribute named 'timestamp' contains the
-        Unix timestamp. The name can be overridden with the time_name
+        Unix timestamp. The name can be overridden with the time_attr
         keyword parameter.
 
         It is assumed that an attributed named 'component_id' contains
         the Component Id. This name can be overridden with the
-        comp_name keyword parameter.
+        comp_attr keyword parameter.
 
         Positional arguments:
         -- The attribute name for the metric
         -- The Unix timestamp start time
         -- The Unix timestamp end time
         -- The component Id
-        -- The maximum number of samples in the resulting array
 
         Keyword Arguments:
         time_name -- The name of the Timestamp attribute.
         comp_name -- The name of the Component Id attribute
+        index_name -- The name of the attribute to use for the Index
         """
-
-        cdef size_t sample_count
-        cdef double bin_width
-        cdef np.npy_intp shape[1]
-        cdef size_t bkt
         cdef double start
         cdef double end
-        cdef double sample_time
+        cdef size_t rec_no
 
-        if not time_name:
-            time_name = self.time_name
-        if not comp_name:
-            comp_name = self.comp_name
+        metric_attr = self.schema.attr_by_name(metric_name)
+        if not metric_attr:
+            raise Sos.SchemaAttrError(metric_name, self.schema.name())
+        if not index_name:
+            index_name = self.time_name
 
-        #
-        # Create the filter with a primary index on 'timestamp'
-        #
-        attr = self.schema.attr_by_name(time_name)
-        if attr is None:
-            raise Sos.SchemaAttrError(time_name, self.schema.name())
+        time_attr = self.schema.attr_by_name(self.time_name)
+        if not time_attr:
+            raise Sos.SchemaAttrError(self.time_name, self.schema.name())
+        comp_attr = self.schema.attr_by_name(self.comp_name)
+        if not comp_attr:
+            raise Sos.SchemaAttrError(self.comp_name, self.schema.name())
 
-        filt = Sos.Filter(attr)
-
-        # Add the start time condition
-        v = Sos.Value(attr)
-        v.value = <int>start_time
-        filt.where(Sos.FILT_COND_GE, v)
-
-        # Add the end time condition. NB: this has to be a new attr to
-        # avoid overwriting the start time condition value
-        v = Sos.Value(attr)
-        v.value = <int>end_time
-        filt.where(Sos.FILT_COND_LE, v)
-
-        # Add the component if specified
-        if comp_id is not None:
-            attr = self.schema.attr_by_name(comp_name)
-            if attr is None:
-                raise Sos.SchemaAttrError(comp_name, self.schema.name())
-            v = Sos.Value(attr)
-            v.value = comp_id
-            filt.where(Sos.FILT_COND_EQ, v)
-
-        # Get the number of records the filter matches
-        print("Counting samples...", end='')
-        sys.stdout.flush()
-        if samples is None:
-            sample_count = filt.count()
+        if index_name:
+            index_attr = self.schema.attr_by_name(index_name)
+            if not index_attr:
+                raise Sos.SchemaAttrError(index_name, self.schema.name())
         else:
-            sample_count = samples
-        print("{0}".format(sample_count))
+            index_attr = time_attr
 
-        # Divide the time span into equidistant buckets based
-        # on the sample count
-        start = start_time
-        end = end_time
-        bin_width = <double>(end - start + 1) / <double>sample_count;
+        if start_time:
+            start = start_time
+        else:
+            start = 0
 
-        shape[0] = <np.npy_intp>sample_count
-        result = np.zeros(shape, dtype=np.float64, order='C')
-        print("Computing result...", end='')
-        sys.stdout.flush()
-        for o in filt:
-            sample_time = <double>o[time_name]
-            bkt = <long>((sample_time - start) / bin_width)
-            result[bkt] += <double>o[metric_name]
-        print("complete")
-        result = filt.as_array(sample_count)
-        return result
+        if end_time:
+            end = end_time
+        else:
+            end = 0
+
+        x = Array.Array()
+        y = Array.Array()
+
+        ct_attr = self.schema.attr_by_name("CompTime")
+        key = Sos.Key(ct_attr.size())
+        kv = struct.pack(">QQ", comp_id, start)
+        key.set_value(kv)
+        it = Sos.AttrIter(ct_attr, start_key=key)
+
+        rec_no = 0
+        time = Sos.Value(time_attr)
+        metric = Sos.Value(metric_attr)
+        comp = Sos.Value(comp_attr)
+
+        for sample in it:
+            time.obj = sample
+            if end != 0 and time.value > end:
+                break
+            comp.obj = sample
+            if comp.value != comp_id:
+                print("Next component is {0}".format(comp.value))
+                break
+            metric.obj = sample
+            x.append(time.value)
+            y.append(metric.value)
+            rec_no += 1
+        # return (rec_no, x.as_ndarray(), y.as_ndarray())
+        return (rec_no, x, y)
 
     def __dealloc__(self):
         pass

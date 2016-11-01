@@ -137,9 +137,11 @@ cdef class Container(SosObject):
     cdef sos_t c_cont
     cdef sos_schema_t c_next_schema
 
-    def __init__(self):
+    def __init__(self, path=None, o_perm=SOS_PERM_RO):
         SosObject.__init__(self)
         self.c_cont = NULL
+        if path:
+            self.open(path, o_perm=o_perm)
 
     def open(self, path, o_perm=SOS_PERM_RW):
         if self.c_cont != NULL:
@@ -177,7 +179,7 @@ cdef class Container(SosObject):
             self.abort(rc)
 
     def part_create(self, name, path=None):
-        cdef int rc;
+        cdef int rc
         if path:
             rc = sos_part_create(self.c_cont, name, path)
         else:
@@ -491,9 +493,9 @@ cdef class Key(SosObject):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.uint16_
 
-    cdef uint8_t uint8(self):
+    cdef uint8_t byte(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
-        return data.prim.uint8_
+        return data.prim.byte_
 
     cdef int64(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
@@ -506,10 +508,6 @@ cdef class Key(SosObject):
     cdef int16(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.int16_
-
-    cdef int8(self):
-        cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
-        return data.prim.int8_
 
     cdef float32(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
@@ -673,7 +671,7 @@ cdef class Attr(SosObject):
 
         c_key = sos_iter_key(c_iter)
         key = Key(sos_key_size(c_key))
-        sos_key_set(key.c_key, sos_key_value(c_key), sos_key_len(c_key));
+        sos_key_set(key.c_key, sos_key_value(c_key), sos_key_len(c_key))
         sos_key_put(c_key)
         sos_iter_free(c_iter)
         return key
@@ -691,7 +689,7 @@ cdef class Attr(SosObject):
 
         c_key = sos_iter_key(c_iter)
         key = Key(sos_key_size(c_key))
-        sos_key_set(key.c_key, sos_key_value(c_key), sos_key_len(c_key));
+        sos_key_set(key.c_key, sos_key_value(c_key), sos_key_len(c_key))
         sos_key_put(c_key)
         sos_iter_free(c_iter)
         return key
@@ -1219,16 +1217,21 @@ cdef class Value(object):
                                                       self.c_v.data,
                                                       v)
     cdef assign(self, sos_obj_t c_obj):
+        if self.c_obj:
+            sos_obj_put(self.c_obj)
         self.c_obj = c_obj
         self.c_v = sos_value_init(&self.c_v_, self.c_obj, self.c_attr)
 
     @property
     def obj(self):
-        None
+        return None
+
+    cdef _set_obj_(self, Object o):
+        self.assign(o.c_obj)
 
     @obj.setter
     def obj(self, o):
-        self.assign(<sos_obj_t>o.c_obj)
+        self._set_obj_(o)
 
     def name(self):
         return sos_attr_name(self.c_attr)
@@ -1261,7 +1264,7 @@ cdef class Object(SosObject):
 
     def __dealloc__(self):
         if self.c_obj:
-            sos_obj_put(self.c_obj);
+            sos_obj_put(self.c_obj)
             self.c_obj = NULL
 
     cdef assign(self, sos_obj_t obj):

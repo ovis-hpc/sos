@@ -1,0 +1,173 @@
+#!/usr/bin/env python
+import datetime as dt
+import sys
+import numpy as np
+import argparse
+from sos import Sos
+from sos import Ldms
+import matplotlib.pyplot as plt
+import matplotlib.mlab as mlab
+import matplotlib.dates as mdates
+from matplotlib.ticker import Formatter
+
+class MyXFormatter(Formatter):
+    def __init__(self, fmt='%m/%d %H:%M:%S'):
+        self.fmt = fmt
+
+    def __call__(self, x, pos=0):
+        x = int(x)
+        d = dt.datetime.fromtimestamp(x)
+        return d.strftime(self.fmt)
+
+class MyYFormatter(Formatter):
+    def __init__(self, fmt='{0:.2f}'):
+        self.fmt = fmt
+
+    def __call__(self, x, pos=0):
+        return self.fmt.format(float(x))
+
+def plot_xy(x, y, title_str, args,
+            y_label=None, y_fmt=None,
+            mean=False, stddev=False):
+    print("Starting plot_xy")
+    min_x = min(x)
+    max_x = max(x)
+    min_y = min(y)
+    max_y = max(y)
+
+    figure = plt.figure(figsize=(12,4))
+    axis = figure.add_axes([0.075, 0.225, 0.875, 0.65], axisbg='w')
+    axis.tick_params(labelsize=10, direction='out')
+    x_formatter = MyXFormatter()
+    if y_fmt:
+        y_formatter = MyYFormatter(y_fmt)
+    else:
+        y_formatter = MyYFormatter()
+    axis.xaxis.set_major_formatter(x_formatter)
+    axis.yaxis.set_major_formatter(y_formatter)
+    figure.autofmt_xdate()
+
+    plt.plot(x, y, color='b')
+    if mean:
+        mean = y.mean()
+        mu = np.empty(len(x))
+        mu.fill(mean)
+        plt.plot(x, mu, lw=4, alpha=.5, label='$ \mu $', color='black')
+    if stddev:
+        std = y.std()
+        plt.plot(x, mu+std, lw=4, alpha=.5, color='red', label=r'$ \sigma$ ')
+        plt.plot(x, mu-std, lw=4, alpha=.5, color='green', label='$ \sigma$ ')
+
+    s = dt.datetime.fromtimestamp(min_x)
+    year_str = str(s.year)
+    e = dt.datetime.fromtimestamp(max_x)
+    if e.year != s.year:
+        year_str += "-"+str(e.year)
+    plt.xlabel('Date/Time ({0})'.format(year_str))
+    plt.ylabel(y_label)
+    plt.title(title_str + " $\mu$ and $\pm \sigma$ interval")
+    plt.axis([min_x, max_x, min_y, max_y])
+    axis.legend(loc='upper left')
+    # plt.yscale(args.y_scale)
+    plt.grid(True)
+    print("Done...")
+    plt.show()
+
+def get_times_from_args(args):
+    if args.begin:
+        start = int(args.begin.strftime("%s"))
+    else:
+        start = 0
+
+    if args.end:
+        end = int(args.end.strftime("%s"))
+    else:
+        end = 0
+
+    return (start, end)
+
+def query_schema(cont, verbose=False):
+    for s in cont:
+        print s.name()
+        if verbose:
+            for a in s:
+                print "    {0}".format(a.name())
+
+def query_dates(cont, schema, time_name, comp_name, verbose=False):
+    v = Ldms.Vector(cont, schema, time_name=time_name, comp_name=comp_name)
+    rng = v.range()
+    start = dt.datetime.fromtimestamp(rng[0])
+    end = dt.datetime.fromtimestamp(rng[1])
+    print "There are data available from {0}:{1} " \
+        "through {2}:{3}".format(rng[0], start, rng[1], end)
+
+def query_data(args, cont, schema, metric_name, time_name, comp_name, comp_id,
+               start_time=None, end_time=None, verbose=False, samples=None):
+    v = Ldms.Vector(cont, schema, time_name=time_name, comp_name=comp_name)
+    print(start_time, end_time)
+    cnt, x, y = v.query(metric_name, comp_id, start_time=start_time, end_time=end_time)
+    if cnt == 2:
+        print("Insufficient plot data.")
+        return
+    X = x.as_ndarray()
+    Y = y.as_ndarray()
+    print(cnt, len(X), len(Y), min(X), max(X), min(Y), max(Y))
+    Y = Y / 1024
+    plot_xy(X, Y, metric_name, args, y_label='MB', y_fmt="{0:.1f}",
+            mean=True, stddev=True)
+
+def valid_date(date_str):
+    try:
+        return dt.datetime.strptime(date_str, "%Y/%m/%d %H:%M")
+    except:
+        msg = "{0} is not a valid date".format(date_str)
+        raise argparse.ArgumentTypeError(msg)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Query metric data in a container")
+    parser.add_argument("--path", default="/btrfs_nvme/aries_r",
+                        help="The path to the container.")
+    parser.add_argument("--schema", default='aries_r',
+                        help="The name of the schema")
+    parser.add_argument("--query", default="schema",
+                        help="Query the specified information category: " \
+                        "schema, dates, data.")
+    parser.add_argument("--metric", default="Time",
+                        help="The name of the metric. Used if --query=data. " \
+                        "The default is 'Time'")
+    parser.add_argument("--component", type=int,
+                        help="The Component Id to be queried. Used if --query=data.")
+    parser.add_argument("--time_name", default="Time",
+                        help="Specify the name of the attribute containing a " \
+                        "Timestamp. The default is 'Time'")
+    parser.add_argument("--comp_name", default="CompId",
+                        help="Specify the name of the attribute " \
+                        "containing a Component Id. The default is 'CompId'.")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Request verbose query output")
+    parser.add_argument("--begin", type=valid_date,
+                        help="Specify the start time/date for the query. " \
+                        "Format is YYYY/MM/DD HH:MM")
+    parser.add_argument("--end", type=valid_date,
+                        help="Specify the start time/date for the query. " \
+                        "Format is YYYY/MM/DD HH:MM")
+    parser.add_argument("--y_scale", default='linear',
+                        help="Specify the y-scale as 'log' or 'linear'")
+    args = parser.parse_args()
+
+    cont = Sos.Container(args.path)
+
+    if args.query.upper() == "SCHEMA":
+        query_schema(cont, verbose=args.verbose)
+
+    if args.query.upper() == "DATES":
+        query_dates(cont, args.schema,
+                    time_name=args.time_name,
+                    comp_name=args.comp_name,
+                    verbose=args.verbose)
+
+    if args.query.upper() == "DATA":
+        start, end = get_times_from_args(args)
+        query_data(args, cont, args.schema, args.metric,
+                   args.time_name, args.comp_name, args.component,
+                   start_time=start, end_time=end, verbose=args.verbose)

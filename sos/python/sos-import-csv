@@ -1,0 +1,112 @@
+#!/usr/bin/env python
+from __future__ import print_function
+import datetime as dt
+import sys
+import numpy as np
+import argparse
+from sos import Sos
+import struct
+import json
+
+def pack_it(cols, fmt, idx_ary):
+    vals = []
+    for spec in idx_ary:
+        if type(spec) == unicode:
+            try:
+                arg = int(float(spec))
+            except:
+                arg = spec
+        else:
+            arg = int(float(cols[spec]))
+        vals.append(arg)
+    if len(vals) == 1:
+        return vals[0]
+    tpl = tuple(v for v in vals)
+    return struct.pack(fmt, *tpl)
+
+def make_combo(fmt, ary):
+    return lambda cols: pack_it(cols, fmt, ary)
+
+def make_lambda(attr, col_no):
+    t = attr.type()
+    if t < Sos.TYPE_FLOAT:
+        return lambda cols: int(cols[col_no])
+    elif t < Sos.TYPE_TIMESTAMP:
+        return lambda cols: float(cols[col_no])
+    return lambda cols: cols[col_no]
+
+def make_value(attr, value):
+    t = attr.type()
+    if t < Sos.TYPE_FLOAT:
+        return lambda cols: int(value)
+    elif t < Sos.TYPE_TIMESTAMP:
+        return lambda cols: float(value)
+    return lambda cols: value
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Query metric data in a container")
+    parser.add_argument("--path", required=True,
+                        help="The path to the container.")
+    parser.add_argument("--schema", required=True,
+                        help="The schema defining the objects being imported")
+    parser.add_argument("--map",
+                        help="Specifies how input columns are mapped to attributes")
+    parser.add_argument("--file",
+                        help="The path to the file to import")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Request verbose status output")
+    args = parser.parse_args()
+
+    cont = Sos.Container()
+    cont.open(args.path)
+
+    mf = open(args.map, 'r')
+    imap = []                   # an entry for each column
+    l = mf.read()
+
+    schema = cont.schema_by_name(args.schema)
+
+    attr_id = 0
+    values = []
+    for e in l.split(':'):
+        attr = schema.attr_by_id(attr_id)
+        values.append(Sos.Value(attr))
+        try:
+            # entry is the CSV input column. we need a separate scope
+            # for each col_no, otherwise, the function will end up
+            # binding to the same var for every instance
+            imap.append(make_lambda(attr, int(e)))
+        except:
+            # parse the entry
+            if e[0].upper=="X":
+                imap.append(None)
+                continue
+            # first part is the struct
+            sep = e.find('[')
+            fmt = e[0:sep]      # the struct.pack fmt parameter
+            ids = e[sep:]       # the indices in the input line to use
+            try:
+                ary = json.loads(ids)
+            except:
+                print("{0} could not be decoded".format(ids))
+                sys.exit(1)
+            imap.append(make_combo(fmt, ary))
+        attr_id = attr_id + 1
+
+    df = open(args.file, 'r')
+    count = 0
+    for l in df:
+        cols = l.split(',')
+        attr_id = 0
+        obj = schema.alloc()
+        for c in imap:
+            v = c(cols)
+            # print("{0:32}: {1} {2}".format(values[attr_id].name(), type(v), v))
+            obj[attr_id] = v
+            attr_id = attr_id + 1
+        obj.index_add()
+        del obj
+        count = count + 1
+        if 0 == count % 1000:
+            print(count)
+    cont.close()
