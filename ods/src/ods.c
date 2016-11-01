@@ -133,7 +133,6 @@ static inline int alloc_bit(uint64_t *bits, size_t bit_count, int *is_empty)
 static inline void set_bit(uint64_t *bits, int bit)
 {
 	int word;
-	bit -= 1;
 	word = bit >> 6;
 	bit %= 64;
 	bits[word] |= (1L << bit);
@@ -1790,7 +1789,7 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 	}
 	if (0 == (pg->pg_flags & ODS_F_ALLOCATED) || /* ref page not allocated */
 	    0 == (pg->pg_flags & ODS_F_IDX_VALID) || /* ref is not in bucket page */
-	    ref % bkt_to_size(bkt)                || /* ref not aligned to size */
+	    ((ref & ~ODS_PAGE_MASK) % bkt_to_size(bkt))|| /* ref not aligned to size */
 	    bkt < 0 || bkt >= ODS_BKT_TABLE_SZ       /* bkt index is invalid */
 	    ) {
 		ODS_PANIC("Ref specified to free is invalid.\n");
