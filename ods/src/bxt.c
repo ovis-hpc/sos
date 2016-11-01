@@ -142,7 +142,6 @@ static void print_info(ods_idx_t idx, FILE *fp)
 	bxt_t t = idx->priv;
 	fprintf(fp, "%*s : %d\n", 12, "Order", t->udata->order);
 	fprintf(fp, "%*s : %lx\n", 12, "Root Ref", t->udata->root_ref);
-	fprintf(fp, "%*s : %d\n", 12, "Lock", t->udata->lock);
 	fprintf(fp, "%*s : %d\n", 12, "Depth", t->udata->depth);
 	fprintf(fp, "%*s : %d\n", 12, "Cardinality", t->udata->card);
 	fprintf(fp, "%*s : %d\n", 12, "Duplicates", t->udata->dups);
@@ -221,7 +220,6 @@ static int bxt_init(ods_t ods, const char *idx_type, const char *key_type, const
 
 	UDATA(udata)->order = order;
 	UDATA(udata)->root_ref = 0;
-	UDATA(udata)->lock = 0;
 	UDATA(udata)->depth = 0;
 	UDATA(udata)->card = 0;
 	UDATA(udata)->dups = 0;
@@ -487,6 +485,9 @@ static int bxt_find_lub(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	int rc = 0;
 	ods_obj_t rec;
+#ifdef BXT_THREAD_SAFE
+	ods_lock(idx->ods, 0, NULL);
+#endif
 	rec = __find_lub(idx, key, 0);
 	if (!rec) {
 		rc = ENOENT;
@@ -495,6 +496,9 @@ static int bxt_find_lub(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	*data = REC(rec)->value;
 	ods_obj_put(rec);
  out:
+#ifdef BXT_THREAD_SAFE
+	ods_unlock(idx->ods, 0);
+#endif
 	return rc;
 }
 
@@ -537,6 +541,9 @@ static int bxt_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	int rc = 0;
 	ods_obj_t rec;
+#ifdef BXT_THREAD_SAFE
+	ods_lock(idx->ods, 0, NULL);
+#endif
 	rec = __find_glb(idx, key, 0);
 	if (!rec) {
 		rc = ENOENT;
@@ -545,6 +552,9 @@ static int bxt_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	*data = REC(rec)->value;
 	ods_obj_put(rec);
  out:
+#ifdef BXT_THREAD_SAFE
+	ods_unlock(idx->ods, 0);
+#endif
 	return rc;
 }
 
