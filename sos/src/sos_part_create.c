@@ -101,7 +101,7 @@ void usage(int argc, char *argv[])
 	printf("    -p <path>	Optional partition path. The container path is used by default.\n");
 	printf("    -s <state>  The initial state of a partition. Valid states are:\n"
 	       "                primary  - All new allocations go in this partition.\n"
-	       "                online   - Objects are accessible, the partition does not grow\n"
+	       "                active   - Objects are accessible, the partition does not grow\n"
 	       "                offline  - Object references are invalid; the partition\n"
 	       "                           may be moved or deleted.\n"
 	       "    <name>      The partition name.\n"

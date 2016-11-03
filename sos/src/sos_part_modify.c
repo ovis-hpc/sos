@@ -103,7 +103,7 @@ void usage(int argc, char *argv[])
 	printf("    -C <path>   The path to the container.\n");
 	printf("    -s <state>  Modify the state of a partition. Valid states are:\n"
 	       "                primary  - All new allocations go in this partition.\n"
-	       "                online   - Objects are accessible, the partition does not grow\n"
+	       "                active   - Objects are accessible, the partition does not grow\n"
 	       "                offline  - Object references are invalid; the partition\n"
 	       "                           may be moved or deleted.\n");
 	printf("    <name>	The partition name.\n");
