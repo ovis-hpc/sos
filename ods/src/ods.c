@@ -1801,7 +1801,7 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 static void free_pages(ods_t ods, ods_ref_t ref)
 {
 	ods_pgt_t pgt = ods->pg_table;
-	ods_pg_t pg, prev_pg, last_pg;
+	ods_pg_t pg, next_pg, last_pg;
 	uint64_t pg_no;
 	uint64_t count;
 	unsigned char flags;
@@ -1822,13 +1822,12 @@ static void free_pages(ods_t ods, ods_ref_t ref)
 		pg++;
 		assert(pg < last_pg);
 	}
-	for (prev_pg = pg; pg < last_pg && pg->pg_flags == 0;) {
+	next_pg = pg + pg->pg_count; /* next adjacent page */
+	while (next_pg < last_pg && next_pg->pg_flags == 0) {
 		/* Coelesce any adjacent free pages */
-		if (pg->pg_flags == 0) {
-			prev_pg->pg_count += pg->pg_count;
-			pg->pg_count = 0;     /* interior pages have 0 pg_count */
-			pg += pg->pg_count;
-		}
+		pg->pg_count += next_pg->pg_count;
+		next_pg->pg_count = 0;    /* interior pages have 0 pg_count */
+		next_pg = pg + pg->pg_count; /* next adjacent page */
 	}
 }
 
