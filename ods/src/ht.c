@@ -469,6 +469,7 @@ static int ht_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void 
 		}
 		break;
 	case ODS_VISIT_NOP:
+		rc = 0;
 		if (ent)
 			ods_obj_put(ent);
 		break;
