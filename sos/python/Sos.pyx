@@ -366,7 +366,7 @@ cdef class Schema(SosObject):
 
             rc = sos_schema_attr_add(self.c_schema, attr['name'], t, <size_t>sz)
             if rc != 0:
-                self.abort(rc)
+                raise ValueError("The attribute named {0} resulted in error {1}".format(attr['name'], rc))
 
             if 'index' in attr:
                 rc = sos_schema_index_add(self.c_schema, attr['name'])
@@ -1216,6 +1216,7 @@ cdef class Value(object):
                                                       self.c_attr,
                                                       self.c_v.data,
                                                       v)
+
     cdef assign(self, sos_obj_t c_obj):
         if self.c_obj:
             sos_obj_put(self.c_obj)
@@ -1225,6 +1226,9 @@ cdef class Value(object):
     @property
     def obj(self):
         return None
+
+    def set_obj(self, Object o):
+        self.assign(o.c_obj)
 
     cdef _set_obj_(self, Object o):
         self.assign(o.c_obj)

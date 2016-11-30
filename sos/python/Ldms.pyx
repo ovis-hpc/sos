@@ -154,14 +154,14 @@ cdef class Vector(object):
         comp = Sos.Value(comp_attr)
 
         for sample in it:
-            time.obj = sample
+            time.set_obj(sample)
             if end != 0 and time.value > end:
                 break
-            comp.obj = sample
+            comp.set_obj(sample)
             if comp.value != comp_id:
                 print("Next component is {0}".format(comp.value))
                 break
-            metric.obj = sample
+            metric.set_obj(sample)
             x.append(time.value)
             y.append(metric.value)
             rec_no += 1
