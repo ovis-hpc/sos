@@ -216,6 +216,7 @@ struct sos_attr_s {
 	sos_value_to_str_fn_t to_str_fn;
 	sos_value_key_value_fn_t key_value_fn;
 
+	TAILQ_ENTRY(sos_attr_s) idx_entry;
 	TAILQ_ENTRY(sos_attr_s) entry;
 };
 
@@ -243,6 +244,7 @@ struct sos_schema_s {
 	struct rbn id_rbn;
 	sos_attr_t *dict;
 	LIST_ENTRY(sos_schema_s) entry;
+	TAILQ_HEAD(sos_index_list, sos_attr_s) idx_attr_list;
 	TAILQ_HEAD(sos_attr_list, sos_attr_s) attr_list;
 };
 

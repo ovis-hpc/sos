@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2015 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2015 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2016 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2016 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -165,6 +165,7 @@ sos_schema_t sos_schema_new(const char *name)
 		schema->data = &schema->data_;
 		strcpy(schema->data->name, name);
 		TAILQ_INIT(&schema->attr_list);
+		TAILQ_INIT(&schema->idx_attr_list);
 		schema->ref_count = 1;
 	}
 	return schema;
@@ -484,8 +485,13 @@ int sos_schema_index_add(sos_schema_t schema, const char *attr_name)
 	if (!attr)
 		return ENOENT;
 
-	attr->data->indexed = 1;
-	return 0;
+	/* Protect against adding it to the idx_list twice */
+	if (!attr->data->indexed) {
+		TAILQ_INSERT_TAIL(&schema->idx_attr_list, attr, idx_entry);
+		attr->data->indexed = 1;
+		return 0;
+	}
+	return EEXIST;
 }
 
 static void __toupper(char *s)
@@ -940,6 +946,7 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 		return NULL;
 	dup->ref_count = 1;
 	TAILQ_INIT(&dup->attr_list);
+	TAILQ_INIT(&dup->idx_attr_list);
 	dup->data = &dup->data_;
 	*dup->data = *schema->data;
 	dup->dict = calloc(dup->data->attr_cnt, sizeof(sos_attr_t));
@@ -952,6 +959,8 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 			goto err_1;
 		schema->dict[idx++] = attr;
 		*attr->data = *src_attr->data;
+		if (attr->data->indexed)
+			TAILQ_INSERT_TAIL(&dup->idx_attr_list, attr, idx_entry);
 		TAILQ_INSERT_TAIL(&dup->attr_list, attr, entry);
 	}
 	rbn_init(&dup->name_rbn, dup->data->name);
@@ -984,6 +993,7 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 		return NULL;
 	schema->ref_count = 1;
 	TAILQ_INIT(&schema->attr_list);
+	TAILQ_INIT(&schema->idx_attr_list);
 	schema->schema_obj = schema_obj;
 	schema->sos = sos;
 	schema->data = schema_obj->as.ptr;
@@ -997,6 +1007,8 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 			goto err_1;
 		schema->dict[idx] = attr;
 		attr->data = &schema->data->attr_dict[idx];
+		if (attr->data->indexed)
+			TAILQ_INSERT_TAIL(&schema->idx_attr_list, attr, idx_entry);
 		TAILQ_INSERT_TAIL(&schema->attr_list, attr, entry);
 	}
 	rbn_init(&schema->name_rbn, schema->data->name);
@@ -1025,9 +1037,8 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 	sos_attr_t attr;
 	char idx_name[SOS_SCHEMA_NAME_LEN + SOS_ATTR_NAME_LEN + 2];
 
-	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
-		if (!attr->data->indexed)
-			continue;
+	TAILQ_FOREACH(attr, &schema->idx_attr_list, idx_entry) {
+		assert(attr->data->indexed);
 	retry:
 		sprintf(idx_name, "%s_%s", schema->data->name, attr->data->name);
 		attr->index = sos_index_open(sos, idx_name);
@@ -1190,8 +1201,6 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 			goto err_2;
 		}
 		schema->dict[idx++] = attr;
-		if (!attr->data->indexed)
-			continue;
 	}
 	schema->data = schema_obj->as.ptr;
 	rc = ods_idx_insert(sos->schema_idx, schema_key, sos_obj_ref.idx_data);

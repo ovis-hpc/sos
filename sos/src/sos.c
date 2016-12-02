@@ -1202,9 +1202,8 @@ int sos_obj_index(sos_obj_t obj)
 	SOS_KEY(key);
 	int rc;
 
-	TAILQ_FOREACH(attr, &obj->schema->attr_list, entry) {
-		if (!attr->data->indexed)
-			continue;
+	TAILQ_FOREACH(attr, &obj->schema->idx_attr_list, idx_entry) {
+		assert(attr->data->indexed);
 		value = sos_value_init(&v_, obj, attr);
 		key_sz = sos_value_size(value);
 		if (key_sz < 254) {
