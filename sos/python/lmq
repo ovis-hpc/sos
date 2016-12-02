@@ -104,11 +104,14 @@ def query_dates(cont, schema, time_name, comp_name, verbose=False):
     print "There are data available from {0}:{1} " \
         "through {2}:{3}".format(rng[0], start, rng[1], end)
 
-def query_data(args, cont, schema, metric_name, time_name, comp_name, comp_id,
+def query_data(args, cont, schema, metric_name, time_name,
+               comp_name, comp_id, index_name,
                start_time=None, end_time=None, verbose=False, samples=None):
     v = Ldms.Vector(cont, schema, time_name=time_name, comp_name=comp_name)
     print(start_time, end_time)
-    cnt, x, y = v.query(metric_name, comp_id, start_time=start_time, end_time=end_time)
+    cnt, x, y = v.query(metric_name, comp_id,
+                        index_name=index_name,
+                        start_time=start_time, end_time=end_time)
     if cnt == 2:
         print("Insufficient plot data.")
         return
@@ -146,6 +149,9 @@ if __name__ == "__main__":
     parser.add_argument("--comp_name", default="CompId",
                         help="Specify the name of the attribute " \
                         "containing a Component Id. The default is 'CompId'.")
+    parser.add_argument("--index_name", default="CompTime",
+                        help="Specify the name of the index attribute used to order the data." \
+                        " The default is 'CompTime'.")
     parser.add_argument("--verbose", action="store_true",
                         help="Request verbose query output")
     parser.add_argument("--begin", type=valid_date,
@@ -173,4 +179,5 @@ if __name__ == "__main__":
         start, end = get_times_from_args(args)
         query_data(args, cont, args.schema, args.metric,
                    args.time_name, args.comp_name, args.component,
+                   index_name=args.index_name,
                    start_time=start, end_time=end, verbose=args.verbose)
