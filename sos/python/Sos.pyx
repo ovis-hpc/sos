@@ -802,6 +802,8 @@ cdef class Filter(SosObject):
 
 cdef class Index(SosObject):
     cdef sos_index_t c_index
+    cdef sos_index_stat_s c_stats
+
     def __init__(self, Attr attr=None, name=None):
         SosObject.__init__(self)
         if attr:
@@ -829,6 +831,13 @@ cdef class Index(SosObject):
             o = Object()
             return o.assign(c_obj)
         return None
+
+    def name(self):
+        return sos_index_name(self.c_index)
+
+    def stats(self):
+        cdef int rc = sos_index_stat(self.c_index, &self.c_stats)
+        return self.c_stats
 
 ################################
 # Object getter functions
