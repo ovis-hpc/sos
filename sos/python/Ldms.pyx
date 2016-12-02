@@ -142,7 +142,7 @@ cdef class Vector(object):
         x = Array.Array()
         y = Array.Array()
 
-        ct_attr = self.schema.attr_by_name("CompTime")
+        ct_attr = self.schema.attr_by_name(index_name)
         key = Sos.Key(ct_attr.size())
         kv = struct.pack(">QQ", comp_id, start)
         key.set_value(kv)
