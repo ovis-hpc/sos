@@ -5,22 +5,6 @@ DEPENDENCIES
 - libyaml-0-2-dbg [optional]
 - libyaml-dev
 
-TODO
-
-- Implement object linking code
-
-BUILD with CMAKE
-
-In the simplest case, where all dependencies are in default
-locations. Do the following in order to build:
-
-# mkdir build
-# cd build
-# cmake .. -DCMAKE_BUILD_TYPE=<type> -DCMAKE_INSTALL_PREFIX=<prefix>
-
-where <type> is one of DEBUG or RELEASE.
-
-
 BUILD with Automake
 
 mkdir build
