@@ -10,18 +10,21 @@ import json
 def query_schema(cont, verbose=False):
     for s in cont:
         print(s.name())
-        print("{0:4} {1:16} {2:12} {3:32}".format("Id", "Type", "Indexed", "Name"))
-        print("{0} {1} {2} {3}".\
-              format('-'.ljust(4, '-'), '-'.ljust(16,'-'),
-                     '-'.ljust(12,'-'), '-'.ljust(32,'-')))
         if verbose:
+            print("{0:4} {1:16} {2:12} {3:32}".format("Id", "Type", "Indexed", "Name"))
+            print("{0} {1} {2} {3}".\
+                  format('-'.ljust(4, '-'), '-'.ljust(16,'-'),
+                         '-'.ljust(12,'-'), '-'.ljust(32,'-')))
             for a in s:
                 if a.indexed():
                     idx_s = "True"
                 else:
                     idx_s = ""
+                type_name = a.type_name()
+                if a.type() == Sos.TYPE_STRUCT:
+                    type_name += '[' + str(a.size()) + ']'
                 print("{0:4} {1:16} {2} {3}".\
-                      format(a.attr_id(), a.type_name(),
+                      format(a.attr_id(), type_name,
                              idx_s.ljust(12,' '), a.name()))
 
 def add_schema(cont, path):
