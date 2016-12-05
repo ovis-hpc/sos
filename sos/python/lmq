@@ -5,7 +5,6 @@ import numpy as np
 import argparse
 from sos import Sos
 from sos import Ldms
-import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
 import matplotlib.dates as mdates
 from matplotlib.ticker import Formatter
@@ -33,6 +32,7 @@ def plot_xy(x, y, title_str, args,
             y_label=None, y_fmt=None,
             mean=False, stddev=False):
     print("Starting plot_xy")
+    import matplotlib.pyplot as plt
     min_x = min(x)
     max_x = max(x)
     min_y = min(y)
