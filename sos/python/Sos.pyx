@@ -1307,7 +1307,7 @@ cdef class Object(SosObject):
         else:
             c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), idx)
         if c_attr == NULL:
-            raise ValueError("Object has no attribute with id {0}".format(idx))
+            raise ValueError("Object has no attribute with id '{0}'".format(idx))
         arr_obj = NULL
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
         return self.get_py_value(arr_obj, c_attr, c_data)
@@ -1320,7 +1320,7 @@ cdef class Object(SosObject):
             raise ValueError("No SOS object assigned to Object")
         c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name)
         if c_attr == NULL:
-            raise ValueError("Object has no attribute with name {0}".format(name))
+            raise ValueError("Object has no attribute with name '{0}'".format(name))
         arr_obj = NULL
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
         return self.get_py_value(arr_obj, c_attr, c_data)
@@ -1333,7 +1333,7 @@ cdef class Object(SosObject):
             raise ValueError("No SOS object assigned to Object")
         c_attr = sos_schema_attr_by_id(sos_obj_schema(self.c_obj), idx)
         if c_attr == NULL:
-            raise ValueError("Object has no attribute with id {0}".format(idx))
+            raise ValueError("Object has no attribute with id '{0}'".format(idx))
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
         self.set_py_value(c_attr, c_data, val)
 
@@ -1432,12 +1432,12 @@ cdef class Object(SosObject):
 class SchemaAttrError(NameError):
     def __init__(self, attr, schema):
         NameError.__init__(self,
-                           "Attribute name {0} is not " \
-                           "present in schema {1}".format(attr, schema))
+                           "Attribute name '{0}' is not " \
+                           "present in schema '{1}'".format(attr, schema))
 
 class ObjAttrError(NameError):
     def __init__(self, attr, schema):
         NameError.__init__(self,
-                           "Object has not attribute with the name {0}" \
+                           "Object has not attribute with the name '{0}'" \
 			   .format(attr, schema))
 

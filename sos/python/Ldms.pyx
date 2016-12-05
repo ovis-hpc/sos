@@ -30,6 +30,8 @@ cdef class Vector(object):
                  time_name="timestamp", comp_name="component_id"):
         self.cont = container
         self.schema = container.schema_by_name(schema)
+        if not self.schema:
+            raise NameError("The schema named '{0}' does not exist.".format(schema))
         self.time_name = time_name
         self.comp_name = comp_name
 

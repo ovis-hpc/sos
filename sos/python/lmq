@@ -76,16 +76,23 @@ def plot_xy(x, y, title_str, args,
     print("Done...")
     plt.show()
 
-def get_times_from_args(args):
+def get_times_from_args(cont, args):
     if args.begin:
         start = int(args.begin.strftime("%s"))
     else:
         start = 0
-
     if args.end:
         end = int(args.end.strftime("%s"))
     else:
         end = 0
+
+    if start == 0 or end == 0:
+        v = Ldms.Vector(cont, args.schema, time_name=args.time_name, comp_name=args.comp_name)
+        rng = v.range()
+        if start == 0:
+            start = rng[0]
+        if end == 0:
+            end = rng[1]
 
     return (start, end)
 
@@ -108,7 +115,6 @@ def query_data(args, cont, schema, metric_name, time_name,
                comp_name, comp_id, index_name,
                start_time=None, end_time=None, verbose=False, samples=None):
     v = Ldms.Vector(cont, schema, time_name=time_name, comp_name=comp_name)
-    print(start_time, end_time)
     cnt, x, y = v.query(metric_name, comp_id,
                         index_name=index_name,
                         start_time=start_time, end_time=end_time)
@@ -138,20 +144,21 @@ if __name__ == "__main__":
     parser.add_argument("--query", default="schema",
                         help="Query the specified information category: " \
                         "schema, dates, data.")
-    parser.add_argument("--metric", default="Time",
-                        help="The name of the metric. Used if --query=data. " \
-                        "The default is 'Time'")
-    parser.add_argument("--component", type=int,
-                        help="The Component Id to be queried. Used if --query=data.")
+    parser.add_argument("--metric_name", default="Time",
+                        help="Specifies the name of the schema attribute containing the data to plot. " \
+                        "Used if --query=data. ")
+    parser.add_argument("--component_id", type=int,
+                        help="Specifies the Id of the Component. Used if --query=data.")
     parser.add_argument("--time_name", default="Time",
-                        help="Specify the name of the attribute containing a " \
-                        "Timestamp. The default is 'Time'")
+                        help="Specifies the name of the schema attribute containing " \
+                        "the timestamp. The default is 'Time'")
     parser.add_argument("--comp_name", default="CompId",
-                        help="Specify the name of the attribute " \
-                        "containing a Component Id. The default is 'CompId'.")
+                        help="Specifies the name of the schema attribute containing the Component Id. " \
+                        "The default is 'CompId'.")
     parser.add_argument("--index_name", default="CompTime",
-                        help="Specify the name of the index attribute used to order the data." \
-                        " The default is 'CompTime'.")
+                        help="Specifies the name of the schema attribute to use to order the data. " \
+                        "The default is 'CompTime'. Note that picking this attribute unwisely can result " \
+                        "in poor performance.")
     parser.add_argument("--verbose", action="store_true",
                         help="Request verbose query output")
     parser.add_argument("--begin", type=valid_date,
@@ -166,18 +173,22 @@ if __name__ == "__main__":
 
     cont = Sos.Container(args.path)
 
-    if args.query.upper() == "SCHEMA":
-        query_schema(cont, verbose=args.verbose)
-
-    if args.query.upper() == "DATES":
-        query_dates(cont, args.schema,
-                    time_name=args.time_name,
-                    comp_name=args.comp_name,
-                    verbose=args.verbose)
-
-    if args.query.upper() == "DATA":
-        start, end = get_times_from_args(args)
-        query_data(args, cont, args.schema, args.metric,
-                   args.time_name, args.comp_name, args.component,
-                   index_name=args.index_name,
-                   start_time=start, end_time=end, verbose=args.verbose)
+    try:
+        if args.query.upper() == "SCHEMA":
+            query_schema(cont, verbose=args.verbose)
+        else:
+            if not args.schema:
+                print("The schema must be specified using the --schema argument.")
+            elif args.query.upper() == "DATES":
+                query_dates(cont, args.schema,
+                            time_name=args.time_name,
+                            comp_name=args.comp_name,
+                            verbose=args.verbose)
+            elif args.query.upper() == "DATA":
+                start, end = get_times_from_args(cont, args)
+                query_data(args, cont, args.schema, args.metric_name,
+                           args.time_name, args.comp_name, args.component_id,
+                           index_name=args.index_name,
+                           start_time=start, end_time=end, verbose=args.verbose)
+    except Exception as ex:
+        print(ex)
