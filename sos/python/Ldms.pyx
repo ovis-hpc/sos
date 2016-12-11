@@ -2,8 +2,6 @@ from __future__ import print_function
 import cython
 # if you forget this, your module cannot be imported by other cythong modules
 cimport cython
-# cimport Sos
-# cimport Array
 
 from libc.stdint cimport *
 from libc.stdlib cimport *

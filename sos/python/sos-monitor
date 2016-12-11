@@ -1,0 +1,135 @@
+#!/usr/bin/env python
+import argparse
+import curses
+from curses.textpad import Textbox, rectangle
+from sosdb import Sos
+from datetime import datetime
+import time
+import sys
+
+t0 = 0.0
+
+class SchemaMonitor(object):
+    def __init__(self, cont, schema):
+        self.cont = cont
+        self.schema = schema
+        self.indices = {}
+        self.cards = []
+        self.dups = []
+        self.sizes = []
+        self.name_len = 0
+
+        for attr in schema:
+            if attr.indexed():
+                nlen = len(attr.name())
+                if nlen > self.name_len:
+                    self.name_len = nlen
+                self.indices[attr.name()] = attr.index()
+                self.cards.append(0)
+                self.dups.append(0)
+                self.sizes.append(0)
+
+    def update_stats(self, stdscr, row, col):
+        global t0
+        fmt = "{0:" + str(self.name_len+4) + "} {1:16} {2:16} {3:16} {4:16} {5:16} {6:16}"
+        stdscr.addstr(row, col, fmt.format("Name",
+                                           "Cardinality", "Inserts/s",
+                                           "Duplicates", "Inserts/s",
+                                           "Size", "Bytes/s"), curses.A_REVERSE)
+        row += 1
+        i = 0
+        t1 = time.time()
+        for idx_name in self.indices:
+            idx = self.indices[idx_name]
+            stats = idx.stats()
+            stdscr.addstr(row, 0, idx_name)
+            col = self.name_len + 4
+            col_width = 16
+
+            c = stats['cardinality']
+            d = stats['duplicates']
+            s = stats['size']
+
+            if t0 != 0.0:
+                diff_time = t1 - t0
+                insert_rate = (c - self.cards[i]) / diff_time
+                dup_rate = (d - self.dups[i]) / diff_time
+                size_rate  = (s - self.sizes[i]) / diff_time
+            self.cards[i] = c
+            self.dups[i] = d
+            self.sizes[i] = s
+            i += 1
+
+            stdscr.addstr(row, col, "{0:>{width},} ".format(c, width=col_width))
+            col += col_width
+            if t0 != 0.:
+                stdscr.addstr(row, col, "{0:>{width},} ".format(int(insert_rate), width=col_width))
+            col += col_width
+
+            stdscr.addstr(row, col, "{0:>{width},} ".format(d, width=col_width))
+            col += col_width
+            if t0 != 0.:
+                stdscr.addstr(row, col, "{0:>{width},} ".format(int(dup_rate), width=col_width))
+            col += col_width
+
+            stdscr.addstr(row, col, "{0:>{width},}".format(s, width=col_width))
+            col += col_width
+            if t0 != 0.:
+                stdscr.addstr(row, col, "{0:>{width},}".format(int(size_rate), width=col_width))
+
+            row += 1
+        return row
+
+def csv(arg_list):
+    return arg_list.split(',')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Query metric data in a container")
+    parser.add_argument("--path", required=True,
+                        help="The path to the container.")
+    parser.add_argument("--schema", required=True, type=csv,
+                        help="A comma separated list of schema names")
+    parser.add_argument("--refresh", type=int, default=1,
+                        help="Specify the refresh interval in seconds. Default is 1 s.")
+    args = parser.parse_args()
+
+    cont = Sos.Container()
+    cont.open(args.path)
+    schemas = {}
+    for name in args.schema:
+        schema = cont.schema_by_name(name)
+        if not schema:
+            print("No schema named '{0}' was found.".format(name))
+            sys.exit(1)
+        schemas[name] = SchemaMonitor(cont, schema)
+
+    stdscr = curses.initscr()
+    curses.noecho()
+    curses.cbreak()
+    stdscr.nodelay(1)
+    stdscr.clear()
+    try:
+        while stdscr.getch() == -1:
+            row = 0
+            col = 0
+            for name in schemas:
+                schema = schemas[name]
+                stdscr.addstr(row, col, "Monitoring schema {0} in container {1} at {2}" \
+                              .format(name, args.path, datetime.now()))
+                row += 2
+                row = schema.update_stats(stdscr, row, col)
+                row += 2
+            t0 = time.time()
+            stdscr.refresh()
+            time.sleep(args.refresh)
+
+    except Exception as ex:
+        stdscr.addstr(24, 0, repr(ex))
+
+    stdscr.getch()
+    stdscr.refresh()
+    curses.nocbreak()
+    stdscr.keypad(False)
+    curses.endwin()
+    print("WTF")
+

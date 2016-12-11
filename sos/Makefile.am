@@ -1,5 +1,5 @@
 SUBDIRS = src include
 
-if ENABLE_SWIG
-SUBDIRS += swig python
+if ENABLE_PYTHON
+SUBDIRS += python
 endif

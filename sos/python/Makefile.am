@@ -1,35 +1,39 @@
 CFLAGS := $(filter-out -Werror, ${CFLAGS})
-INCLUDES = -I$(srcdir)/../include \
+PY_INCLUDES = -I$(srcdir)/../include \
 	   -I$(srcdir)/../src \
 	   -I$(top_srcdir)/ods/include \
-	   -I/usr/include
+	   -I/usr/include \
+	   -I$(NUMPY_INCLUDE_PATH)
 
 pkgpyexec_LTLIBRARIES = Sos.la Ldms.la Array.la
 
 Sos_la_SOURCES = Sos.pyx Sos.pxd
 nodist_Sos_la_SOURCES = Sos.c
-Sos_la_CFLAGS = -g -O0 -I$(top_srcdir) $(SWIG_PYTHON_CPPFLAGS) $(INCLUDES)
+Sos_la_CFLAGS = -g -O0 -I$(top_srcdir) $(PYTHON_CPPFLAGS) $(PY_INCLUDES)
 Sos_la_LDFLAGS = $(PYTHON_LDFLAGS) -module -shared
 Sos_la_LIBADD = $(top_builddir)/sos/src/libsos.la
 
 # Array_la_SOURCES = Array.pyx Array.pxd
 Array_la_SOURCES = Array.pyx
 nodist_Array_la_SOURCES = Array.c
-Array_la_CFLAGS = -g -O0 -I$(top_srcdir) $(SWIG_PYTHON_CPPFLAGS) $(INCLUDES)
+Array_la_CFLAGS = -g -O0 -I$(top_srcdir) $(PYTHON_CPPFLAGS) $(PY_INCLUDES)
 Array_la_LDFLAGS = $(PYTHON_LDFLAGS) -module -shared
 Array_la_LIBADD = $(top_builddir)/sos/src/libsos.la
 
 Ldms_la_SOURCES = Ldms.pyx
 nodist_Ldms_la_SOURCES = Ldms.c
-Ldms_la_CFLAGS = -g -O0 -I$(top_srcdir) $(SWIG_PYTHON_CPPFLAGS) $(INCLUDES)
+Ldms_la_CFLAGS = -g -O0 -I$(top_srcdir) $(PYTHON_CPPFLAGS) $(PY_INCLUDES)
 Ldms_la_LDFLAGS = $(PYTHON_LDFLAGS) -module -shared
 Ldms_la_LIBADD = $(top_builddir)/sos/src/libsos.la
 
 pkgpyexecdir = $(pkgpythondir)
 
+pkgpython_PYTHON = __init__.py
+
 dist_bin_SCRIPTS = sos-schema sos-import-csv lmq
 
 Sos.c: Sos.pyx Sos.pxd
+	echo PYTHON_LDFLAGS are "$(PYTHON_LDFLAGS)"
 	cython --gdb $< -o $@
 
 Ldms.c: Ldms.pyx Sos.pxd

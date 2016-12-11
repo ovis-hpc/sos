@@ -1,0 +1,102 @@
+Name: @PACKAGE_NAME@
+Version: @PACKAGE_VERSION@
+Release: 1%{?dist}
+Summary: Scalable Object Storage
+
+%define _grp Application/Databases
+Group: %{_grp}
+License: GPLv2 or BSD
+URL: http://www.ogc.us
+Source0: %{name}-%{version}.tar.gz
+
+Prefix: @prefix@
+%define _prefix @prefix@
+
+%description
+Scalable Object Storage (SOS) ...
+
+
+%prep
+%setup -q
+
+
+%build
+%configure @ac_configure_args@
+make %{?_smp_mflags}
+
+%install
+make install DESTDIR=%{buildroot}
+rm -f %{buildroot}%{_libdir}/*.la
+
+%clean
+rm -rf %{buildroot}
+
+# files for main package
+%files
+%{_libdir}/libidx_*
+%{_libdir}/libkey_*
+%{_libdir}/libods.*
+%{_libdir}/libsos.*
+
+# Legacy storage management commands
+%package legacy
+Summary: SOSDB compatability commands
+Group: %{_grp}
+%description legacy
+Legacy storage management commands
+%files legacy
+%defattr(-,root,root)
+%{_bindir}/sos_cmd
+%{_bindir}/sos_part_create
+%{_bindir}/sos_part_delete
+%{_bindir}/sos_part_modify
+%{_bindir}/sos_part_move
+%{_bindir}/sos_part_query
+
+# sosdb-devel package
+%package devel
+Summary: SOSDB header files
+Group: %{_grp}
+%description devel
+Header files for developing SOSDB applications
+%files devel
+%defattr(-,root,root)
+%{_includedir}/ods/
+%{_includedir}/sos/
+
+# sosdb-python package
+%package python
+Summary: Python support for SOSDB
+Group: %{_grp}
+%description python
+Python module for implementing SOSDB applications in Python
+%files python
+%defattr(-,root,root)
+%{_prefix}/lib*/python*/site-packages/%{name}/
+
+%package utils
+Summary: SOSDB Utilities
+Group: %{_grp}
+%description utils
+Commands for managing SOSDB databases
+%files utils
+%defattr(-,root,root)
+%{_prefix}/bin/lmq
+%{_prefix}/bin/sos-import-csv
+%{_prefix}/bin/sos-schema
+
+%if "@ENABLE_DOC_TRUE@x" == "x"
+# SOS-doc package
+%package doc
+Summary: SOS documentation
+Group: %{_grp}
+%description doc
+Documetnation for SOS package.
+%files doc
+%defattr(-,root,root)
+%if "@ENABLE_DOC_HTML_TRUE@x" == "x"
+%{_datadir}/doc
+%endif
+%endif
+
+%changelog

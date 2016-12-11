@@ -4,7 +4,7 @@ import datetime as dt
 import sys
 import numpy as np
 import argparse
-from sos import Sos
+from sosdb import Sos
 import json
 
 def query_schema(cont, verbose=False):

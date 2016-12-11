@@ -1,5 +1,5 @@
 AC_PREREQ(2.63)
-AC_INIT([SOS], 3.3.0, tom@ogc.us)
+AC_INIT([sosdb], 3.4.0, tom@ogc.us)
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR(config)
 AM_CONFIG_HEADER(config.h)
@@ -13,8 +13,8 @@ dnl this will add document options. Please see m4/options.m4.
 OPTION_DOC
 
 OPTION_DEFAULT_ENABLE([obj_debug], [ENABLE_OBJ_DEBUG])
-OPTION_DEFAULT_DISABLE([bwx], [ENABLE_BWX])
 OPTION_DEFAULT_ENABLE([yaml], [ENABLE_YAML])
+OPTION_DEFAULT_ENABLE([python], [ENABLE_PYTHON])
 
 if test -z "$ENABLE_YAML_TRUE"; then
 dnl yaml stuff
@@ -33,16 +33,13 @@ AC_CHECK_LIB(yaml, yaml_parser_load, [],
 			[-lyaml ${YAML_LIBDIR_FLAG}])
 fi
 
-dnl Reset LIBS variable.
-LIBS=""
-
-dnl Swig stuff
-OPTION_DEFAULT_DISABLE([swig], [ENABLE_SWIG])
-if test -z "$ENABLE_SWIG_TRUE"
+if test -z "$ENABLE_PYTHON_TRUE"
 then
-AM_PATH_PYTHON(2.6)
-AC_PROG_SWIG
-SWIG_PYTHON
+  AM_PATH_PYTHON(,,[:])
+  NUMPY_INCLUDE_PATH=$($PYTHON -c "import numpy; print(numpy.get_include())")
+  AX_PYTHON_DEVEL()
+  AC_MSG_RESULT([${NUMPY_INCLUDE_PATH}])
+  AC_SUBST([NUMPY_INCLUDE_PATH])
 fi
 
 distdir=${PACKAGE_NAME}-${PACKAGE_VERSION}
@@ -60,13 +57,8 @@ AC_CONFIG_FILES([
 		sos/Makefile
 		sos/include/Makefile
 		sos/src/Makefile
-		sos/swig/Makefile
 		sos/python/Makefile
-		bwx/Makefile
-		bwx/include/Makefile
-		bwx/src/Makefile
-		bwx/swig/Makefile
-		rpm/rhel7.spec
+		rpm/sosdb.spec
 ])
 
 AC_OUTPUT

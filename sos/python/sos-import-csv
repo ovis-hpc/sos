@@ -3,7 +3,7 @@ from __future__ import print_function
 import time
 import sys
 import argparse
-from sos import Sos
+from sosdb import Sos
 import struct
 import json
 

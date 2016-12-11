@@ -3,8 +3,8 @@ import datetime as dt
 import sys
 import numpy as np
 import argparse
-from sos import Sos
-from sos import Ldms
+from sosdb import Sos
+from sosdb import Ldms
 import matplotlib.mlab as mlab
 import matplotlib.dates as mdates
 from matplotlib.ticker import Formatter

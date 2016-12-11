@@ -14,7 +14,8 @@ libsos_la_SOURCES = sos_fn.c \
 		    sos_index.c \
 		    sos_key.c \
 		    sos_iter.c \
-		    sos_value.c
+		    sos_value.c \
+		    sos_priv.h
 
 libsos_la_LIBADD = ../../ods/src/libods.la -ldl -lpthread
 lib_LTLIBRARIES += libsos.la

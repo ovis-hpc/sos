@@ -569,9 +569,7 @@ static int h2bxt_iter_end(ods_iter_t oi)
 	return rv;
 }
 
-static ods_idx_data_t NULL_DATA = {
-	.bytes = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-};
+static ods_idx_data_t NULL_DATA;
 
 /*
  * Return the min valued key in the rbt of the iterator
