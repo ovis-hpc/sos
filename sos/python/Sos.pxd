@@ -366,7 +366,7 @@ cdef extern from "sos/sos.h":
         uint64_t size
         uint64_t accessed
         uint64_t modified
-        uint64_t created
+        uint64_t changed
     ctypedef sos_part_stat_s *sos_part_stat_t
 
     cdef struct sos_part_iter_s:

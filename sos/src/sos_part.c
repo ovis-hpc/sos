@@ -1195,7 +1195,7 @@ int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
 	stat->size = sb.st_size;
 	stat->modified = sb.st_mtime;
 	stat->accessed = sb.st_atime;
-	stat->created = sb.st_ctime;
+	stat->changed = sb.st_ctime;
  out:
 	return rc;
 }

@@ -350,7 +350,7 @@ typedef struct sos_part_stat_s {
 	uint64_t size;		/*! Size of the partition in bytes */
 	uint64_t accessed;	/*! Last access time as a Unix timestamp */
 	uint64_t modified;	/*! Last modify time as a Unix timestamp */
-	uint64_t created;	/*! The partition create time as a Unix timestamp */
+	uint64_t changed;	/*! Status change time as a Unix timestamp */
 } *sos_part_stat_t;
 
 typedef struct sos_part_iter_s *sos_part_iter_t;
