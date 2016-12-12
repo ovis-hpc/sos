@@ -84,6 +84,9 @@ Commands for managing SOSDB databases
 %{_prefix}/bin/lmq
 %{_prefix}/bin/sos-import-csv
 %{_prefix}/bin/sos-schema
+%{_prefix}/bin/sos-db
+%{_prefix}/bin/sos-part
+%{_prefix}/bin/sos-monitor
 
 %if "@ENABLE_DOC_TRUE@x" == "x"
 # SOS-doc package

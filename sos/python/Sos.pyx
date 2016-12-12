@@ -133,9 +133,50 @@ cdef class SosObject:
         else:
             raise Exception("Error {0}".format[self.error])
 
+cdef class SchemaIter(SosObject):
+    cdef sos_schema_t c_next_schema
+    def __init__(self, Container cont):
+        self.c_next_schema = sos_schema_first(cont.c_cont)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.c_next_schema == NULL:
+            raise StopIteration
+        s = Schema()
+        s.assign(self.c_next_schema)
+        self.c_next_schema = sos_schema_next(self.c_next_schema)
+        return s
+
+cdef class PartIter(SosObject):
+    cdef sos_part_iter_t c_iter
+    cdef sos_part_t c_part
+    def __init__(self, Container cont):
+        self.c_iter = sos_part_iter_new(cont.c_cont)
+        if self.c_iter == NULL:
+            raise MemoryError("Could not allocate a new partition iterator.")
+        self.c_part = NULL
+
+    def __iter__(self):
+        self.c_part = sos_part_first(self.c_iter)
+        return self
+
+    def __next__(self):
+        if self.c_part == NULL:
+            raise StopIteration
+        p = Partition()
+        p.assign(self.c_part)
+        self.c_part = sos_part_next(self.c_iter)
+        return p
+
+    def __dealloc__(self):
+        if self.c_part != NULL:
+            sos_part_iter_free(self.c_iter)
+            self.c_iter = NULL
+
 cdef class Container(SosObject):
     cdef sos_t c_cont
-    cdef sos_schema_t c_next_schema
 
     def __init__(self, path=None, o_perm=SOS_PERM_RO):
         SosObject.__init__(self)
@@ -180,6 +221,8 @@ cdef class Container(SosObject):
 
     def part_create(self, name, path=None):
         cdef int rc
+        if self.c_cont == NULL:
+            raise ValueError("The container is not open.")
         if path:
             rc = sos_part_create(self.c_cont, name, path)
         else:
@@ -194,6 +237,9 @@ cdef class Container(SosObject):
             p.assign(c_part)
             return p
         return None
+
+    def part_iter(self):
+        return PartIter(self)
 
     def schema_by_name(self, name):
         cdef sos_schema_t c_schema = sos_schema_by_name(self.c_cont, name)
@@ -211,30 +257,87 @@ cdef class Container(SosObject):
             return s
         return None
 
-    def __iter__(self):
-        self.c_next_schema = sos_schema_first(self.c_cont)
-        return self
+    def schema_iter(self):
+        return SchemaIter(self)
 
-    def __next__(self):
-        if self.c_next_schema == NULL:
-            raise StopIteration
-        s = Schema()
-        s.assign(self.c_next_schema)
-        self.c_next_schema = sos_schema_next(self.c_next_schema)
-        return s
+PART_STATE_OFFLINE = SOS_PART_STATE_OFFLINE
+PART_STATE_PRIMARY = SOS_PART_STATE_PRIMARY
+PART_STATE_ACTIVE = SOS_PART_STATE_ACTIVE
+PART_STATE_BUSY = SOS_PART_STATE_BUSY
+
+cdef class PartState(object):
+    cdef int c_state
+    def __init__(self, int state):
+        self.c_state = state
+
+    def __int__(self):
+        return self.c_state
+
+    def __long__(self):
+        return self.c_state
+
+    def __str__(self):
+        if self.c_state == SOS_PART_STATE_OFFLINE:
+            return "OFFLINE"
+        elif self.c_state == SOS_PART_STATE_ACTIVE:
+            return "ACTIVE"
+        elif self.c_state == SOS_PART_STATE_PRIMARY:
+            return "PRIMARY"
+        elif self.c_state == SOS_PART_STATE_BUSY:
+            return "BUSY"
+        raise ValueError("{0} is an invalid partition state".format(self.c_state))
+
+cdef class PartStat(object):
+    cdef sos_part_stat_s c_stat
+    def __init__(self, Partition part):
+        cdef int rc = sos_part_stat(part.c_part, &self.c_stat)
+
+    @property
+    def accessed(self):
+        return self.c_stat.accessed
+
+    @property
+    def changed(self):
+        return self.c_stat.changed
+
+    @property
+    def modified(self):
+        return self.c_stat.modified
+
+    @property
+    def size(self):
+        return self.c_stat.size
+
+    def __str__(self):
+        return str(self.c_stat)
 
 cdef class Partition(SosObject):
     cdef sos_part_t c_part
+    # cdef sos_part_stat_s c_stat
+
     def __init__(self):
         self.c_part = NULL
 
     cdef assign(self, sos_part_t c_part):
         self.c_part = c_part
 
+    def name(self):
+        return sos_part_name(self.c_part)
+
+    def path(self):
+        return sos_part_path(self.c_part)
+
+    def state(self):
+        return PartState(sos_part_state(self.c_part))
+
+    def stat(self):
+        return PartStat(self)
+
     def delete(self):
         cdef int rc = sos_part_delete(self.c_part)
         if rc != 0:
             self.abort(rc)
+        self.c_part = NULL
 
     def move(self, new_path):
         cdef int rc = sos_part_move(self.c_part, new_path)
@@ -255,6 +358,10 @@ cdef class Partition(SosObject):
         rc = sos_part_state_set(self.c_part, state)
         if rc != 0:
             self.abort(rc)
+
+    def __dealloc__(self):
+        if self.c_part:
+            sos_part_put(self.c_part)
 
 sos_type_strs = {
      SOS_TYPE_INT16 : "INT16",
@@ -1255,7 +1362,7 @@ cdef class Value(object):
         if self.c_obj:
             sos_obj_put(self.c_obj)
 
-cdef class Object(SosObject):
+cdef class Object(object):
     """
     The Object encapsulates the SOS container object in memory.
     To support python-like usage, it implements an internal

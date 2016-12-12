@@ -1,0 +1,144 @@
+#!/usr/bin/env python
+from __future__ import print_function
+import shutil
+import sys
+import argparse
+from sosdb import Sos
+
+def fmt_size(size):
+    if size < 1000.0:
+        return "{0:8.1f}".format(size)
+    size /= 1000.0
+    if size < 1000.0:
+        return "{0:8.1f}K".format(size)
+    size /= 1000.0
+    if size < 1000.0:
+        return "{0:8.1f}M".format(size)
+    size /= 1000.0
+    if size < 1000.0:
+        return "{0:8.1f}G".format(size)
+    size /= 1000.0
+    if size < 1000.0:
+        return "{0:8.1f}T".format(size)
+    size /= 1000.0
+    return "{0:8.1f}P".format(size)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Manage the partitions in a SOSDB.")
+    parser.add_argument("--path", metavar="DB-PATH", required=True,
+                        help="Specifies the path to the database.")
+    parser.add_argument("--name", metavar="PART-NAME",
+                        help="Specifies the parition name.")
+
+    actions = parser.add_mutually_exclusive_group(required=True)
+    actions.add_argument("--query", action="store_true",
+                        help="Query a container's partitions.")
+    actions.add_argument("--create", action="store_true",
+                         help="Create a new partition. ")
+    actions.add_argument("--state", metavar="STATE-NAME",
+                         choices=[ 'primary', 'active', 'offline' ],
+                         help="Set the state of a partition.")
+    actions.add_argument("--move", action="store_true",
+                         help="Move a partition to a new location.")
+    actions.add_argument("--remove", action="store_true",
+                         help="Remove the partition from the database.")
+    actions.add_argument("--delete", action="store_true",
+                         help="Remove the partition from the database and delete the data.")
+
+    parser.add_argument("--location", metavar="PART-PATH",
+                        help="Specifies the location of the partition. " \
+                        "Used by the create and move actions.")
+    args = parser.parse_args()
+    cont = Sos.Container()
+
+    # Open the database
+    try:
+        cont.open(args.path)
+    except Exception as ex:
+        print("The database '{0}' could not be opened.".format(args.path))
+
+    #
+    # Query the partitions
+    #
+    if args.query:
+        import datetime as dt
+        pi = cont.part_iter()
+        print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
+              format("Name", "State", "Accessed", "Modified", "Size", "Path"))
+        print("{0} {1} {2} {3} {4} {5}". \
+              format('-'.ljust(18,'-'), '-'.ljust(10,'-'),
+                     '-'.ljust(18,'-'), '-'.ljust(18,'-'), '-'.ljust(11,'-'),
+                     '-'.ljust(20,'-')))
+        for p in pi:
+            stat = p.stat()
+            accessed = dt.datetime.fromtimestamp(stat.accessed)
+            modified = dt.datetime.fromtimestamp(stat.modified)
+            print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
+                  format(p.name(), str(p.state()),
+                         accessed.strftime("%m/%d/%y %H:%M:%S"),
+                         modified.strftime("%m/%d/%y %H:%M:%S"),
+                         fmt_size(stat.size), p.path()))
+        sys.exit(0)
+
+    if args.create or args.state or args.move or args.delete:
+        if not args.name:
+            print("A partition name must be specified.")
+            syst.exit(1)
+        part = cont.part_by_name(args.name)
+        if args.create:
+            if part is not None:
+                print("The partition name '{0}' already exists.".format(args.name))
+                sys.exit(1)
+        elif not part:
+            print("The partition name '{0}' was not found.".format(args.name))
+            sys.exit(1)
+    #
+    # Create a new partition
+    #
+    if args.create:
+        try:
+            cont.part_create(args.name, args.location)
+        except Exception as ex:
+            print("The partition could not be created.\n{0}".format(ex))
+            sys.exit(1)
+        sys.exit(0)
+    #
+    # Change the state of a partition
+    #
+    if args.state:
+        part = cont.part_by_name(args.name)
+        if not part:
+            print("The part name '{0}' was not found.".format(args.name))
+            sys.exit(1)
+        try:
+            part.state_set(args.state)
+        except Exception as ex:
+            print("The state could not be set.\n{0}".format(ex))
+            sys.exit(1)
+        sys.exit(0)
+    #
+    # Move a partition
+    #
+    if args.move:
+        if not args.location:
+            print("The new location for the partition must be specified.")
+            sys.exit(1)
+        try:
+            part.move(args.location)
+        except Exception as ex:
+            print("The partition could not be moved.\n{0}".format(ex))
+            sys.exit(1)
+        sys.exit(0)
+    #
+    # Delete a partition
+    #
+    if args.remove or args.delete:
+        try:
+            path = part.path() + '/' + part.name()
+            part.delete()
+            if args.delete:
+                shutil.rmtree(path)
+        except Exception as ex:
+            print("The partition could not be moved.\n{0}".format(ex))
+            sys.exit(1)
+        sys.exit(0)

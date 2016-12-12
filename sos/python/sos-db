@@ -1,0 +1,78 @@
+#!/usr/bin/env python
+from __future__ import print_function
+import sys
+import argparse
+from sosdb import Sos
+
+def fmt_size(size):
+    if size < 1000.0:
+        return "{0:8.1f}KB".format(size / 1000.0)
+    size /= 1000000.0
+    if size < 1000.0:
+        return "{0:8.1f}MB".format(size)
+    size /= 1000.0
+    if size < 1000.0:
+        return "{0:8.1f} GB".format(size)
+    size /= 1000.0
+    if size < 1000.0:
+        return "{0:8.1f} TB".format(size)
+    size /= 1000.0
+    return "{0:8.1f} PB".format(size)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Create a SOS DB")
+    parser.add_argument("--path", required=True,
+                        help="The path to the database.")
+    parser.add_argument("--create", action="store_true",
+                        help="Create a new SOS database. " \
+                        "The --path parameter specifies the path to the new " \
+                        "database.")
+    parser.add_argument("--mode", metavar="FILE-CREATION-MASK", type=int,
+                        help="The permissions to assign to SOS database files.")
+    parser.add_argument("--no-root", action="store_true",
+                        help="Use this option if you do not want a ROOT partition created.")
+    parser.add_argument("--query", action="store_true",
+                        help="Query a container's storage information")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Request verbose query output")
+    args = parser.parse_args()
+
+    cont = Sos.Container()
+
+    if args.create:
+        try:
+            # Create the database
+            if args.mode:
+                cont.create(args.path, o_perm=args.mode)
+            else:
+                cont.create(args.path)
+            # Create a ROOT partition unless the user asked us not to
+            if not args.no_root:
+                cont.open(args.path)
+                cont.part_create("ROOT")
+                part = cont.part_by_name("ROOT")
+                part.state_set("primary")
+        except Exception as ex:
+            print("The database could not be created.")
+            print(ex)
+            sys.exit(1)
+
+    if args.query:
+        import datetime as dt
+        cont.open(args.path)
+        pi = cont.part_iter()
+        print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
+              format("Name", "State", "Accessed", "Modified", "Size", "Path"))
+        print("{0} {1} {2} {3} {4} {5}". \
+              format('-'.ljust(18,'-'), '-'.ljust(10,'-'),
+                     '-'.ljust(18,'-'), '-'.ljust(18,'-'), '-'.ljust(11,'-'),
+                     '-'.ljust(20,'-')))
+        for p in pi:
+            stat = p.stat()
+            accessed = dt.datetime.fromtimestamp(stat.accessed)
+            modified = dt.datetime.fromtimestamp(stat.modified)
+            print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
+                  format(p.name(), str(p.state()),
+                         accessed.strftime("%m/%d/%y %H:%M:%S"),
+                         modified.strftime("%m/%d/%y %H:%M:%S"),
+                         fmt_size(stat.size), p.path()))
