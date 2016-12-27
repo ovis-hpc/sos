@@ -8,7 +8,7 @@ from sosdb import Sos
 import json
 
 def query_schema(cont, verbose=False):
-    for s in cont:
+    for s in cont.schema_iter():
         print(s.name())
         if verbose:
             print("{0:4} {1:16} {2:12} {3:32}".format("Id", "Type", "Indexed", "Name"))
