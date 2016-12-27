@@ -509,7 +509,7 @@ cdef class Schema(SosObject):
     def attr_by_id(self, attr_id):
         return Attr(self, attr_id=attr_id)
 
-    def AttrCount(self):
+    def attr_count(self):
         return sos_schema_attr_count(self.c_schema)
 
     def schema_id(self):
