@@ -186,6 +186,9 @@ sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr)
 /**
  * \brief Initialize a value with an object's attribute data
  *
+ * The returned value has a reference on the parameter object <tt>obj<tt>. The
+ * caller must call sos_value_put() when the value is no longer in use.
+ *
  * \param val Pointer to the value to be initialized
  * \param obj The object handle
  * \param attr The attribute handle
@@ -198,6 +201,8 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 	if (!obj)
 		return mem_value_init(val, attr);
 
+	if (sos_attr_type(attr) == SOS_TYPE_JOIN)
+		sos_attr_join(obj, attr);
 	val->attr = attr;
 	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
 	if (!sos_attr_is_array(attr)) {
@@ -228,7 +233,9 @@ sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *ar
 {
 	sos_obj_t ref_obj;
 	sos_value_data_t ref_val = NULL;
-	*arr_obj = NULL;
+
+	if (arr_obj)
+		*arr_obj = NULL;
 
 	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
 	if (!sos_attr_is_array(attr))
@@ -236,7 +243,8 @@ sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *ar
 
 	ref_obj = sos_ref_as_obj(obj->sos, ref_val->prim.ref_);
 	if (ref_obj) {
-		*arr_obj = ref_obj; /* ref from sos_ref_as_obj */
+		if (arr_obj)
+			*arr_obj = ref_obj; /* ref from sos_ref_as_obj */
 		ref_val = (sos_value_data_t)&SOS_OBJ(ref_obj->obj)->data[0];
 	}
 

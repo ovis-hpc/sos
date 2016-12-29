@@ -1,5 +1,6 @@
 from cpython cimport PyObject, Py_INCREF
 from libc.stdint cimport *
+from libc.stdlib cimport malloc
 import numpy as np
 import struct
 cimport numpy as np
@@ -93,7 +94,7 @@ libc_errno_str = {
     EPERM : "Operation not permitted",
     EPFNOSUPPORT : "Protocol family not supported",
     EPIPE : "Broken pipe",
-    EPROTO : "Protocol error",
+    EPROTO : "API or Protocol version error",
     EPROTONOSUPPORT : "Protocol not supported",
     EPROTOTYPE : "Protocol wrong type for socket",
     ERANGE : "Result too large (POSIX.1, C99)",
@@ -171,14 +172,40 @@ cdef class PartIter(SosObject):
         return p
 
     def __dealloc__(self):
-        if self.c_part != NULL:
+        if self.c_iter != NULL:
             sos_part_iter_free(self.c_iter)
+            self.c_iter = NULL
+
+cdef class IndexIter(SosObject):
+    cdef sos_container_index_iter_t c_iter
+    cdef sos_index_t c_idx
+    def __init__(self, Container cont):
+        self.c_iter = sos_container_index_iter_new(cont.c_cont)
+        if self.c_iter == NULL:
+            raise MemoryError("Could not allocate a new container iterator.")
+        self.c_idx = NULL
+
+    def __iter__(self):
+        self.c_idx = sos_container_index_iter_first(self.c_iter)
+        return self
+
+    def __next__(self):
+        if self.c_idx == NULL:
+            raise StopIteration
+        idx = Index()
+        idx.assign(self.c_idx)
+        self.c_idx = sos_container_index_iter_next(self.c_iter)
+        return idx
+
+    def __dealloc__(self):
+        if self.c_iter != NULL:
+            sos_container_index_iter_free(self.c_iter)
             self.c_iter = NULL
 
 cdef class Container(SosObject):
     cdef sos_t c_cont
 
-    def __init__(self, path=None, o_perm=SOS_PERM_RO):
+    def __init__(self, path=None, o_perm=SOS_PERM_RW):
         SosObject.__init__(self)
         self.c_cont = NULL
         if path:
@@ -189,7 +216,7 @@ cdef class Container(SosObject):
             self.abort(EBUSY)
         self.c_cont = sos_container_open(path, o_perm)
         if self.c_cont == NULL:
-            self.abort()
+            raise self.abort(errno)
 
     def create(self, path, o_mode=0660):
         cdef int rc
@@ -240,6 +267,9 @@ cdef class Container(SosObject):
 
     def part_iter(self):
         return PartIter(self)
+
+    def index_iter(self):
+        return IndexIter(self)
 
     def schema_by_name(self, name):
         cdef sos_schema_t c_schema = sos_schema_by_name(self.c_cont, name)
@@ -321,30 +351,41 @@ cdef class Partition(SosObject):
     cdef assign(self, sos_part_t c_part):
         self.c_part = c_part
 
+    def part_id(self):
+        """Returns the Partition id"""
+        return sos_part_id(self.c_part)
+
     def name(self):
+        """Returns the partition name"""
         return sos_part_name(self.c_part)
 
     def path(self):
+        """Returns the partition path"""
         return sos_part_path(self.c_part)
 
     def state(self):
+        """Returns the partition state"""
         return PartState(sos_part_state(self.c_part))
 
     def stat(self):
+        """Returns the partition PartStat (size, access time, etc...) information"""
         return PartStat(self)
 
     def delete(self):
+        """Delete the paritition"""
         cdef int rc = sos_part_delete(self.c_part)
         if rc != 0:
             self.abort(rc)
         self.c_part = NULL
 
     def move(self, new_path):
+        """Move the paritition to a different location"""
         cdef int rc = sos_part_move(self.c_part, new_path)
         if rc != 0:
             self.abort(rc)
 
     def state_set(self, new_state):
+        """Set the partition state"""
         cdef int rc
         cdef sos_part_state_t state
         if new_state.upper() == "PRIMARY":
@@ -376,6 +417,7 @@ sos_type_strs = {
      SOS_TYPE_TIMESTAMP : "TIMESTAMP",
      SOS_TYPE_OBJ : "OBJ",
      SOS_TYPE_STRUCT : "STRUCT",
+     SOS_TYPE_JOIN : "JOIN",
      SOS_TYPE_BYTE_ARRAY : "BYTE_ARRAY",
      SOS_TYPE_CHAR_ARRAY : "CHAR_ARRAY",
      SOS_TYPE_CHAR_ARRAY : "STRING",
@@ -405,6 +447,7 @@ sos_attr_types = {
     "TIMESTAMP" : SOS_TYPE_TIMESTAMP,
     "OBJ" : SOS_TYPE_OBJ,
     "STRUCT" : SOS_TYPE_STRUCT,
+    "JOIN" : SOS_TYPE_JOIN,
     "BYTE_ARRAY" : SOS_TYPE_BYTE_ARRAY,
     "CHAR_ARRAY" : SOS_TYPE_CHAR_ARRAY,
     "STRING" : SOS_TYPE_CHAR_ARRAY,
@@ -449,6 +492,9 @@ cdef class Schema(SosObject):
         cdef const char *idx_type = NULL
         cdef const char *idx_key = NULL
         cdef const char *idx_args = NULL
+        cdef int join_count
+        cdef char **join_args;
+
         self.c_schema = sos_schema_new(name)
         if self.c_schema == NULL:
             self.abort(ENOMEM)
@@ -465,13 +511,23 @@ cdef class Schema(SosObject):
             else:
                 raise ValueError("Invalid attribute type {0}.".format(n))
 
-            sz = 0
-            if t == SOS_TYPE_STRUCT:
+            if t == SOS_TYPE_JOIN:
+                join_attrs = attr['join_attrs']
+                join_count = len(join_attrs)
+                join_args = <char **>malloc(join_count * 8);
+                rc = 0
+                for attr_name in join_attrs:
+                    join_args[rc] = <char *>attr_name
+                    rc += 1
+                rc = sos_schema_attr_add(self.c_schema, attr['name'], t, <size_t>join_count, join_args)
+            elif t == SOS_TYPE_STRUCT:
                 if 'size' not in attr:
                     raise ValueError("The type {0} must have a 'size'.".format(n))
                 sz = attr['size']
+                rc = sos_schema_attr_add(self.c_schema, attr['name'], t, <size_t>sz)
+            else:
+                rc = sos_schema_attr_add(self.c_schema, attr['name'], t, 0)
 
-            rc = sos_schema_attr_add(self.c_schema, attr['name'], t, <size_t>sz)
             if rc != 0:
                 raise ValueError("The attribute named {0} resulted in error {1}".format(attr['name'], rc))
 
@@ -548,12 +604,20 @@ cdef class Schema(SosObject):
         s += "\n  ]\n}"
         return s
 
-cdef class Key(SosObject):
+cdef class Key(object):
     cdef sos_key_t c_key
     cdef size_t c_size
+    cdef Attr attr
 
-    def __init__(self, size):
-        SosObject.__init__(self)
+    def __init__(self, size=None, attr=None):
+        if not size and not attr:
+            raise ValueError("Either size or attr must be specified")
+        if attr:
+            self.attr = attr
+            if not size:
+                size = attr.size()
+        else:
+            self.attr = None
         self.c_key = sos_key_new(size)
         self.c_size = size
 
@@ -561,7 +625,11 @@ cdef class Key(SosObject):
         return self.c_size
 
     def __str__(self):
-        s = sos_key_value(self.c_key)
+        cdef char *s
+        if self.attr:
+            s = sos_attr_key_to_str(self.attr.c_attr, self.c_key)
+        else:
+            s = <char *>sos_key_value(self.c_key)
         return s
 
     def __del__(self):
@@ -689,6 +757,7 @@ TYPE_LONG_DOUBLE = SOS_TYPE_LONG_DOUBLE
 TYPE_TIMESTAMP = SOS_TYPE_TIMESTAMP
 TYPE_OBJ = SOS_TYPE_OBJ
 TYPE_STRUCT = SOS_TYPE_STRUCT
+TYPE_JOIN = SOS_TYPE_JOIN
 TYPE_BYTE_ARRAY = SOS_TYPE_BYTE_ARRAY
 TYPE_CHAR_ARRAY = SOS_TYPE_CHAR_ARRAY
 TYPE_CHAR_ARRAY = SOS_TYPE_CHAR_ARRAY
@@ -702,6 +771,9 @@ TYPE_FLOAT_ARRAY = SOS_TYPE_FLOAT_ARRAY
 TYPE_DOUBLE_ARRAY = SOS_TYPE_DOUBLE_ARRAY
 TYPE_LONG_DOUBLE_ARRAY = SOS_TYPE_LONG_DOUBLE_ARRAY
 TYPE_OBJ_ARRAY = SOS_TYPE_OBJ_ARRAY
+
+PERM_RW = SOS_PERM_RW
+PERM_RO = SOS_PERM_RO
 
 cdef class Attr(SosObject):
     cdef sos_schema_t c_schema
@@ -725,26 +797,32 @@ cdef class Attr(SosObject):
             raise SchemaAttrError(name, schema.name())
 
     def attr_id(self):
+        """Returns the attribute id"""
         return sos_attr_id(self.c_attr)
 
     def name(self):
+        """Returns the attribute name"""
         return sos_attr_name(self.c_attr)
 
     def type(self):
+        """Returns the attribute type"""
         return sos_attr_type(self.c_attr)
 
     def type_name(self):
         return sos_type_strs[sos_attr_type(self.c_attr)]
 
     def indexed(self):
+        """Returns True if the attribute has an index"""
         if sos_attr_index(self.c_attr) != NULL:
             return True
         return False
 
     def size(self):
+        """Returns the size of the attribute data in bytes"""
         return sos_attr_size(self.c_attr)
 
     def index(self):
+        """Returns an Index() object for this attribute"""
         return Index(self)
 
     def set_start(self, Key key):
@@ -771,13 +849,16 @@ cdef class Attr(SosObject):
         cdef int c_rc
         cdef sos_key_t c_key
 
+        if not self.indexed:
+            return 0
+
         c_iter = sos_attr_iter_new(self.c_attr)
         c_rc = sos_iter_end(c_iter)
         if c_rc:
             return None
 
         c_key = sos_iter_key(c_iter)
-        key = Key(sos_key_size(c_key))
+        key = Key(attr=self)
         sos_key_set(key.c_key, sos_key_value(c_key), sos_key_len(c_key))
         sos_key_put(c_key)
         sos_iter_free(c_iter)
@@ -789,13 +870,16 @@ cdef class Attr(SosObject):
         cdef int c_rc
         cdef sos_key_t c_key
 
+        if not self.indexed:
+            return 0
+
         c_iter = sos_attr_iter_new(self.c_attr)
         c_rc = sos_iter_end(c_iter)
         if c_rc:
             return None
 
         c_key = sos_iter_key(c_iter)
-        key = Key(sos_key_size(c_key))
+        key = Key(attr=self)
         sos_key_set(key.c_key, sos_key_value(c_key), sos_key_len(c_key))
         sos_key_put(c_key)
         sos_iter_free(c_iter)
@@ -816,6 +900,9 @@ cdef class Filter(SosObject):
     cdef sos_obj_t c_obj
 
     def __init__(self, Attr attr):
+        """Parameters:
+        -- attr - The primary filter attribute
+        """
         self.attr = attr
         self.c_iter = sos_attr_iter_new(attr.c_attr)
         if self.c_iter == NULL:
@@ -907,16 +994,18 @@ cdef class Filter(SosObject):
         if self.c_filt:
             sos_filter_free(self.c_filt)
 
-cdef class Index(SosObject):
+cdef class Index(object):
     cdef sos_index_t c_index
     cdef sos_index_stat_s c_stats
 
     def __init__(self, Attr attr=None, name=None):
-        SosObject.__init__(self)
         if attr:
             self.c_index = sos_attr_index(attr.c_attr)
         else:
             self.c_index = NULL
+
+    cdef assign(self, sos_index_t idx):
+        self.c_index = idx
 
     def find(self, Key key):
         cdef sos_obj_t c_obj = sos_index_find(self.c_index, key.c_key)
@@ -1052,7 +1141,10 @@ cdef object get_INT16(sos_obj_t c_obj, sos_value_data_t c_data):
     return c_data.prim.int16_
 
 cdef object get_STRUCT(sos_obj_t c_obj, sos_value_data_t c_data):
-        return c_data.prim.uint64_
+    return c_data.prim.uint64_
+
+cdef object get_ERROR(sos_obj_t c_obj, sos_value_data_t c_data):
+    raise ValueError("Get is not supported on this attribute type.")
 
 ctypedef object (*type_getter_fn_t)(sos_obj_t, sos_value_data_t)
 cdef type_getter_fn_t type_getters[SOS_TYPE_LAST+1]
@@ -1065,8 +1157,9 @@ type_getters[<int>SOS_TYPE_UINT64] = get_UINT64
 type_getters[<int>SOS_TYPE_FLOAT] = get_FLOAT
 type_getters[<int>SOS_TYPE_DOUBLE] = get_DOUBLE
 type_getters[<int>SOS_TYPE_TIMESTAMP] = get_TIMESTAMP
-# type_getters[<int>SOS_TYPE_OBJ] = get_OBJ
+type_getters[<int>SOS_TYPE_OBJ] = get_ERROR
 type_getters[<int>SOS_TYPE_STRUCT] = get_STRUCT
+type_getters[<int>SOS_TYPE_JOIN] = get_STRUCT
 type_getters[<int>SOS_TYPE_BYTE_ARRAY] = get_BYTE_ARRAY
 type_getters[<int>SOS_TYPE_CHAR_ARRAY] = get_CHAR_ARRAY
 type_getters[<int>SOS_TYPE_INT16_ARRAY] = get_INT16_ARRAY
@@ -1077,7 +1170,7 @@ type_getters[<int>SOS_TYPE_UINT32_ARRAY] = get_UINT32_ARRAY
 type_getters[<int>SOS_TYPE_UINT64_ARRAY] = get_UINT64_ARRAY
 type_getters[<int>SOS_TYPE_FLOAT_ARRAY] = get_FLOAT_ARRAY
 type_getters[<int>SOS_TYPE_DOUBLE_ARRAY] = get_DOUBLE_ARRAY
-# type_getters[<int>SOS_TYPE_OBJ_ARRAY] = get_OBJ_ARRAY
+type_getters[<int>SOS_TYPE_OBJ_ARRAY] = get_ERROR
 
 ################################
 # Object setter functions
@@ -1280,6 +1373,12 @@ cdef object set_STRUCT(sos_obj_t c_obj,
     cdef char *s = val
     memcpy(&c_data.prim.byte_, s, sos_attr_size(c_attr))
 
+cdef object set_ERROR(sos_obj_t c_obj,
+                      sos_attr_t c_attr,
+                      sos_value_data_t c_data,
+                      val):
+    raise ValueError("Set is not supported on this attribute type")
+
 ctypedef object (*type_setter_fn_t)(sos_obj_t, sos_attr_t, sos_value_data_t, val)
 cdef type_setter_fn_t type_setters[SOS_TYPE_LAST+1]
 type_setters[<int>SOS_TYPE_INT16] = set_INT16
@@ -1291,7 +1390,8 @@ type_setters[<int>SOS_TYPE_UINT64] = set_UINT64
 type_setters[<int>SOS_TYPE_FLOAT] = set_FLOAT
 type_setters[<int>SOS_TYPE_DOUBLE] = set_DOUBLE
 type_setters[<int>SOS_TYPE_TIMESTAMP] = set_TIMESTAMP
-# type_setters[<int>SOS_TYPE_OBJ] = set_OBJ
+type_setters[<int>SOS_TYPE_OBJ] = set_ERROR
+type_setters[<int>SOS_TYPE_JOIN] = set_ERROR
 type_setters[<int>SOS_TYPE_STRUCT] = set_STRUCT
 type_setters[<int>SOS_TYPE_BYTE_ARRAY] = set_BYTE_ARRAY
 type_setters[<int>SOS_TYPE_CHAR_ARRAY] = set_CHAR_ARRAY
@@ -1303,7 +1403,7 @@ type_setters[<int>SOS_TYPE_UINT32_ARRAY] = set_UINT32_ARRAY
 type_setters[<int>SOS_TYPE_UINT64_ARRAY] = set_UINT64_ARRAY
 type_setters[<int>SOS_TYPE_FLOAT_ARRAY] = set_FLOAT_ARRAY
 type_setters[<int>SOS_TYPE_DOUBLE_ARRAY] = set_DOUBLE_ARRAY
-# type_setters[<int>SOS_TYPE_OBJ_ARRAY] = set_OBJ_ARRAY
+type_setters[<int>SOS_TYPE_OBJ_ARRAY] = set_ERROR
 
 cdef class Value(object):
     cdef sos_value_s c_v_

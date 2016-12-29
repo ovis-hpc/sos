@@ -62,6 +62,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <string.h>
+#include <endian.h>
 #include <sos/sos.h>
 #include "sos_priv.h"
 
@@ -334,6 +335,7 @@ static const char *key_types[] = {
 	[SOS_TYPE_TIMESTAMP] = "UINT64",
 	[SOS_TYPE_OBJ] = "NONE",
 	[SOS_TYPE_STRUCT] = "MEMCMP",
+	[SOS_TYPE_JOIN] = "MEMCMP",
 	[SOS_TYPE_BYTE_ARRAY] = "MEMCMP",
 	[SOS_TYPE_CHAR_ARRAY] = "STRING",
 	[SOS_TYPE_INT16_ARRAY] = "NONE",
@@ -399,11 +401,27 @@ static sos_attr_t _attr_by_idx(sos_schema_t schema, int attr_id)
  * Add an attribute to a schema. The schema can only be modified if it
  * is not already a member of the container.
  *
+ *    rc = sos_schema_attr_add(s, "an_int32_attr", SOS_TYPE_INT32);
+ *    rc = sos_schema_attr_add(s, "a_float_attr", SOS_TYPE_FLOAT);
+ *    rc = sos_schema_attr_add(s, "a_struct_attr", SOS_TYPE_STRUCT, 24);   // 24B untyped value
+ *    rc = sos_schema_attr_add(s, "a_float_array", SOS_TYPE_FLOAT_ARRAY);  // Arrays have strict element type, but variable length
+ *    char *join[] = {
+ *          "an_int32_attr", "a_float_attr"
+ *    };
+ *    rc = sos_schema_attr_add(s, "a_join_key", SOS_TYPE_JOIN, 2, join);   // An attribute that is composed of two other attributes
+ *
  * \param schema	The schema
  * \param name		The attribute name
  * \param type		The attribute type
- * \param size		If the type is SOS_TYPE_STRUCT, this is the size
- *                      in bytes of the attribute.
+ *
+ * If the type is SOS_TYPE_STRUCT:
+ * \param size          The size in bytes of the attribute.
+ *
+ * If the type is SOS_TYPE_JOIN:
+ * \param count         The number of attributes in this key
+ * \param cmp_fn        Name of the key comparison function. If NULL, memcmp is used.
+ * \param a_1-N         Count additional arguments that specify the attribute names comprising the key
+ *
  * \retval 0		Success
  * \retval ENOMEM	Insufficient resources
  * \retval EEXIST	An attribute with that name already exists
@@ -413,9 +431,11 @@ static sos_attr_t _attr_by_idx(sos_schema_t schema, int attr_id)
 int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, ...)
 {
 	sos_attr_t attr;
-	sos_attr_t prev = NULL;
 	va_list ap;
 	size_t size;
+	int i, join_count;
+	char **join_attrs;
+	sos_array_t ext_ptr = NULL;
 
 	if (schema->schema_obj)
 		return EBUSY;
@@ -428,27 +448,67 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, 
 	if (type > SOS_TYPE_LAST)
 		return EINVAL;
 
-	if (!TAILQ_EMPTY(&schema->attr_list))
-		prev = TAILQ_LAST(&schema->attr_list, sos_attr_list);
-
-	if (type == SOS_TYPE_STRUCT) {
+	switch (type) {
+	case SOS_TYPE_STRUCT:
 		va_start(ap, type);
-		size = va_arg(ap, int);
+		size = va_arg(ap, size_t);
 		size = (size + 3) & ~3; /* round up to a multiple of 4B */
 		if (!size)
 			return EINVAL;
-	} else
+		break;
+	case SOS_TYPE_JOIN:
+		va_start(ap, type);
+		join_count = va_arg(ap, size_t);
+		join_attrs = va_arg(ap, char **);
 		size = 0;
+		ext_ptr = malloc(SOS_ARRAY_SIZE(join_count, uint32_t));
+		if (!ext_ptr)
+			return ENOMEM;
+		ext_ptr->count = join_count;
+		for (i = 0; i < join_count; i++) {
+			int join_type;
+			sos_attr_t join_attr = sos_schema_attr_by_name(schema, join_attrs[i]);
+			if (!join_attr) {
+				free(ext_ptr);
+				return ENOENT;
+			}
+			join_type = sos_attr_type(join_attr);
+			switch (join_type) {
+			case SOS_TYPE_INT64:
+			case SOS_TYPE_UINT64:
+			case SOS_TYPE_TIMESTAMP:
+			case SOS_TYPE_DOUBLE:
+			case SOS_TYPE_INT32:
+			case SOS_TYPE_UINT32:
+			case SOS_TYPE_FLOAT:
+			case SOS_TYPE_INT16:
+			case SOS_TYPE_UINT16:
+				break;
+			default:
+				free(ext_ptr);
+				return EINVAL;
+			}
+			ext_ptr->data.uint32_[i] = sos_attr_id(join_attr);
+			size += sos_attr_size(join_attr);
+		}
+		break;
+	default:
+		size = 0;
+		break;
+	}
 	attr = attr_new(schema, type, size);
 	if (!attr)
 		return ENOMEM;
 	strcpy(attr->data->name, name);
 	attr->data->type = type;
 	attr->data->id = schema->data->attr_cnt++;
-	if (prev)
+	attr->ext_ptr = ext_ptr;
+	if (!TAILQ_EMPTY(&schema->attr_list)) {
+		sos_attr_t prev = TAILQ_LAST(&schema->attr_list, sos_attr_list);
 		attr->data->offset = prev->data->offset + prev->data->size;
-	else
+	} else {
 		attr->data->offset = sizeof(struct sos_obj_data_s);
+	}
 
 	uint32_t a_size = sos_attr_size(attr);
 	if (a_size > schema->data->key_sz)
@@ -645,6 +705,75 @@ int sos_attr_id(sos_attr_t attr)
 const char *sos_attr_name(sos_attr_t attr)
 {
 	return attr->data->name;
+}
+
+/**
+ * \brief Update a join attributes's value
+ *
+ * A join attribute's value is built from the values of other
+ * attributes. This function builds the value of the join attribute by
+ * combining the values of it's join members. This function should be
+ * called after all of the join member values have been set.
+ *
+ * \retval 0 The attributes were combined successfully
+ * \retval EINVAL An invalid object or attr were specified
+ */
+int sos_attr_join(sos_obj_t obj, sos_attr_t attr)
+{
+	sos_value_data_t d;
+	struct sos_value_s v_;
+	sos_value_t v;
+	void *dst;
+	uint64_t u64;
+	uint32_t u32;
+	uint16_t u16;
+	long double ld;
+	int i, count, join_id;
+	sos_attr_t join_attr;
+	sos_schema_t schema = sos_attr_schema(attr);
+
+	if (!schema)
+		return EINVAL;
+
+	if (sos_attr_type(attr) != SOS_TYPE_JOIN)
+		return EINVAL;
+
+	d = sos_obj_attr_data(obj, attr, NULL);
+	dst = &d->struc;
+	count = attr->ext_ptr->count;
+	for (i = 0; i < count; i++) {
+		join_id = attr->ext_ptr->data.uint32_[i];
+		join_attr = sos_schema_attr_by_id(schema, join_id);
+		if (!join_attr)
+			return EINVAL;
+		v = sos_value_init(&v_, obj, join_attr);
+		switch (sos_attr_type(join_attr)) {
+		case SOS_TYPE_INT64:
+		case SOS_TYPE_UINT64:
+		case SOS_TYPE_TIMESTAMP:
+		case SOS_TYPE_DOUBLE:
+			u64 = htobe64(v->data->prim.uint64_);
+			memcpy(dst, &u64, sizeof(u64));
+			dst += sizeof(u64);
+			break;
+		case SOS_TYPE_INT32:
+		case SOS_TYPE_UINT32:
+		case SOS_TYPE_FLOAT:
+			u32 = htobe32(v->data->prim.uint32_);
+			memcpy(dst, &u32, sizeof(u32));
+			dst += sizeof(u32);
+			break;
+		case SOS_TYPE_INT16:
+		case SOS_TYPE_UINT16:
+			u32 = htobe16(v->data->prim.uint16_);
+			memcpy(dst, &u16, sizeof(u16));
+			dst += sizeof(u16);
+		default:
+			assert(0 == "The join attribute type must be a simple primitive");
+		}
+		sos_value_put(v);
+	}
+	return 0;
 }
 
 /**
@@ -961,6 +1090,13 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 		*attr->data = *src_attr->data;
 		if (attr->data->indexed)
 			TAILQ_INSERT_TAIL(&dup->idx_attr_list, attr, idx_entry);
+		if (src_attr->ext_ptr) {
+			size_t join_ext_sz = SOS_ARRAY_SIZE(src_attr->ext_ptr->count, uint32_t);
+			sos_array_t join_ext = malloc(join_ext_sz);
+			if (!join_ext)
+				goto err_1;
+			memcpy(join_ext, src_attr->ext_ptr, join_ext_sz);
+		}
 		TAILQ_INSERT_TAIL(&dup->attr_list, attr, entry);
 	}
 	rbn_init(&dup->name_rbn, dup->data->name);
@@ -971,6 +1107,8 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 	while (!TAILQ_EMPTY(&dup->attr_list)) {
 		attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&dup->attr_list, attr, entry);
+		if (attr->ext_ptr)
+			free(attr->ext_ptr);
 		free(attr->key_type);
 		free(attr->idx_type);
 		free(attr);
@@ -985,6 +1123,9 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	sos_attr_t attr;
 	sos_schema_t schema;
 	int idx;
+	ods_obj_t ext_obj;
+	sos_array_t ext;
+	size_t ext_sz;
 
 	if (!schema_obj)
 		return NULL;
@@ -1009,6 +1150,23 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 		attr->data = &schema->data->attr_dict[idx];
 		if (attr->data->indexed)
 			TAILQ_INSERT_TAIL(&schema->idx_attr_list, attr, idx_entry);
+		if (attr->data->ext_ref) {
+			ext_obj = ods_ref_as_obj(ods_obj_ods(schema_obj), attr->data->ext_ref);
+			if (!ext_obj) {
+				errno = EPROTO;
+				goto err_1;
+			}
+			ext = ODS_PTR(sos_array_t, ext_obj);
+			ext_sz = SOS_ARRAY_SIZE(ext->count, uint32_t);
+			attr->ext_ptr = malloc(ext_sz);
+			if (!attr->ext_ptr) {
+				errno = ENOMEM;
+				goto err_1;
+			}
+			/* Instantiate the array and place a memory copy in attr */
+			memcpy(attr->ext_ptr, ext, ext_sz);
+			ods_obj_put(ext_obj);
+		}
 		TAILQ_INSERT_TAIL(&schema->attr_list, attr, entry);
 	}
 	rbn_init(&schema->name_rbn, schema->data->name);
@@ -1021,6 +1179,8 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
+		if (attr->ext_ptr)
+			free(attr->ext_ptr);
 		free(attr->key_type);
 		free(attr->idx_type);
 		free(attr);
@@ -1195,6 +1355,17 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
 		sos_attr_data_t attr_data = &SOS_SCHEMA(schema_obj)->attr_dict[idx];
 		*attr_data = *attr->data;
+		if (attr->ext_ptr) {
+			int i;
+			size_t ext_sz = SOS_ARRAY_SIZE(attr->ext_ptr->count, uint32_t);
+			ods_obj_t ext_obj = ods_obj_alloc(ods_obj_ods(schema_obj), ext_sz);
+			sos_array_t join = ODS_PTR(sos_array_t, ext_obj);
+			join->count = attr->ext_ptr->count;
+			for (i = 0; i < attr->ext_ptr->count; i++)
+				join->data.uint32_[i] = attr->ext_ptr->data.uint32_[i];
+			attr_data->ext_ref = ods_obj_ref(ext_obj);
+			ods_obj_put(ext_obj);
+		}
 		attr->data = attr_data;
 		if (attr->data->indexed && !attr->key_type) {
 			rc = EINVAL;
@@ -1292,6 +1463,7 @@ static const char *type_names[] = {
 	[SOS_TYPE_TIMESTAMP] = "TIMESTAMP",
 	[SOS_TYPE_OBJ] = "OBJ",
 	[SOS_TYPE_STRUCT] = "STRUCT",
+	[SOS_TYPE_JOIN] = "JOIN",
 	[SOS_TYPE_BYTE_ARRAY] = "BYTE_ARRAY",
 	[SOS_TYPE_CHAR_ARRAY] = "CHAR_ARRAY",
 	[SOS_TYPE_INT16_ARRAY] = "INT16_ARRAY",
@@ -1303,7 +1475,7 @@ static const char *type_names[] = {
 	[SOS_TYPE_FLOAT_ARRAY] = "FLOAT_ARRAY",
 	[SOS_TYPE_DOUBLE_ARRAY] = "DOUBLE_ARRAY",
 	[SOS_TYPE_LONG_DOUBLE_ARRAY] = "LONG_DOUBLE_ARRAY",
-	[SOS_TYPE_OBJ_ARRAY] = "OBJ_ARRAY"
+	[SOS_TYPE_OBJ_ARRAY] = "OBJ_ARRAY",
 };
 
 static const char *type_name(sos_type_t t)

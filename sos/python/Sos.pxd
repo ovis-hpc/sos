@@ -172,6 +172,7 @@ cdef extern from "sos/sos.h":
         SOS_TYPE_DOUBLE_ARRAY,
         SOS_TYPE_LONG_DOUBLE_ARRAY,
         SOS_TYPE_OBJ_ARRAY,
+        SOS_TYPE_JOIN,
         SOS_TYPE_LAST,
     ctypedef sos_type_e sos_type_t
 

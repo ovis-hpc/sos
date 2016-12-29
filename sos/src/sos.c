@@ -687,8 +687,6 @@ static int schema_id_cmp(void *a, void *b)
  * \param o_perm	The requested read/write permissions
  * \retval !NULL	The sos_t handle for the container.
  * \retval NULL		An error occured, consult errno for the reason.
- * \retval EPERM	The user has insufficient privilege to open the container.
- * \retval ENOENT	The container does not exist
  */
 sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 {
@@ -752,7 +750,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	ods_obj_t udata = ods_get_user_data(sos->schema_ods);
 	if ((SOS_SCHEMA_UDATA(udata)->signature != SOS_SCHEMA_SIGNATURE)
 	    || (SOS_SCHEMA_UDATA(udata)->version != SOS_LATEST_VERSION)) {
-		errno = EINVAL;
+		errno = EPROTO;
 		ods_obj_put(udata);
 		goto err;
 	}
@@ -799,8 +797,10 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 		sos->schema_count++;
 		LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
 		rc = __sos_schema_open(sos, schema);
-		if (rc)
+		if (rc) {
+			errno = rc;
 			goto err;
+		}
 	}
 	ods_iter_delete(iter);
 
@@ -808,8 +808,10 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	 * Open the partitions
 	 */
 	rc = __sos_open_partitions(sos, tmp_path);
-	if (rc)
+	if (rc) {
+		errno = rc;
 		goto err;
+	}
 	pthread_mutex_lock(&cont_list_lock);
 	LIST_INSERT_HEAD(&cont_list, sos, entry);
 	pthread_mutex_unlock(&cont_list_lock);

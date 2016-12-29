@@ -82,7 +82,7 @@ typedef enum sos_internal_schema_e {
 	SOS_SCHEMA_FIRST_USER = 128,
 } sos_ischema_t;
 
-#define SOS_LATEST_VERSION 0x03020000
+#define SOS_LATEST_VERSION 0x03030000
 #define SOS_SCHEMA_SIGNATURE 0x534f535348434D41 /* 'SOSSCHMA' */
 typedef struct sos_schema_udata_s {
 	uint64_t signature;
@@ -181,14 +181,21 @@ struct sos_obj_s {
 #define SOS_OBJ_BE	1
 #define SOS_OBJ_LE	2
 
+/* Extended data for the join attribute type */
+typedef struct sos_join_data_s {
+	char key[SOS_INDEX_KEY_TYPE_LEN];	/* comparator name */
+	sos_obj_ref_t attr_list;		/* list of attr ids in this join */
+} sos_join_data_t;
+
 typedef struct sos_attr_data_s {
 	char name[SOS_ATTR_NAME_LEN];
 	uint32_t id;
 	uint32_t type:8;
 	uint32_t pad:23;
-	uint32_t size;
-	uint32_t indexed:1;
-	uint64_t offset;
+	uint32_t size;		/* The size of the attribute in bytes */
+	uint32_t indexed:1;	/* !0 if there is an associated index */
+	uint64_t offset;	/* location of attribute in the object */
+	ods_ref_t ext_ref;	/* reference to extended data */
 } *sos_attr_data_t;
 
 typedef size_t (*sos_value_size_fn_t)(sos_value_t);
@@ -211,6 +218,7 @@ struct sos_attr_s {
 	char *idx_type;
 	char *key_type;
 	char *idx_args;
+	sos_array_t ext_ptr;
 	sos_value_size_fn_t size_fn;
 	sos_value_from_str_fn_t from_str_fn;
 	sos_value_to_str_fn_t to_str_fn;

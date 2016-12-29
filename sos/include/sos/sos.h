@@ -159,6 +159,7 @@ typedef enum sos_type_e {
 	SOS_TYPE_TIMESTAMP,
 	SOS_TYPE_OBJ,
 	SOS_TYPE_STRUCT,
+	SOS_TYPE_JOIN,
 	SOS_TYPE_BYTE_ARRAY = 32,
 	SOS_TYPE_ARRAY = SOS_TYPE_BYTE_ARRAY,
 	SOS_TYPE_CHAR_ARRAY,
@@ -208,11 +209,13 @@ typedef struct sos_array_s {
 	uint32_t count;
 	union sos_array_element_u data;
 } *sos_array_t;
+#define SOS_ARRAY_SIZE(_count_, _type_)   ((sizeof(_type_) * _count_) + sizeof(uint32_t))
 
 union sos_timestamp_u {
 	uint64_t time;
 	struct sos_timestamp_s {
-		uint32_t usecs;	/* NB: presumes LE byte order for comparison order */
+		/* NB: will make usecs secondary if time is BE byte swapped for memcmp */
+		uint32_t usecs;
 		uint32_t secs;
 	} fine;
 };
@@ -315,6 +318,7 @@ sos_type_t sos_attr_type(sos_attr_t attr);
 sos_index_t sos_attr_index(sos_attr_t attr);
 size_t sos_attr_size(sos_attr_t attr);
 sos_schema_t sos_attr_schema(sos_attr_t attr);
+int sos_attr_join(sos_obj_t obj, sos_attr_t attr);
 
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
@@ -438,7 +442,6 @@ sos_schema_t sos_obj_schema(sos_obj_t obj);
 
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj);
 sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref);
-#define SOS_NULL_REF(_ref_)  ((_ref_).ref == 0)
 
 sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val);
 void sos_obj_delete(sos_obj_t obj);
