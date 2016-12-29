@@ -42,6 +42,38 @@ def make_value(attr, value):
         return lambda cols: float(value)
     return lambda cols: value
 
+def make_cast(attr):
+    t = attr.type()
+    if t == Sos.TYPE_INT16:
+        return lambda s : int(s)
+    elif t == Sos.TYPE_INT32:
+        return lambda s : int(s)
+    elif t == Sos.TYPE_INT64:
+        return lambda s : int(s)
+    elif t == Sos.TYPE_UINT16:
+        return lambda s : int(s)
+    elif t == Sos.TYPE_UINT32:
+        return lambda s : int(s)
+    elif t == Sos.TYPE_UINT64:
+        return lambda s : int(s)
+    elif t == Sos.TYPE_FLOAT:
+        return lambda s : float(s)
+    elif t == Sos.TYPE_DOUBLE:
+        return lambda s : float(s)
+    elif t == Sos.TYPE_LONG_DOUBLE:
+        return lambda s : float(s)
+    elif t == Sos.TYPE_TIMESTAMP:
+        return lambda s : int(s)
+    raise ValueError("{0} is an unsupported cast".format(repr(t)))
+
+def assign(obj, line, cast, args):
+    # print("assigning attr_id {0} = {1}".format(args[0], line[args[1]]))
+    obj[args[0]] = cast(line[args[1]])
+
+def setter(obj, line, cast, args):
+    # print("setting attr_id {0} = {1}".format(args[0], args[1]))
+    obj[args[0]] = cast(args[1])
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Query metric data in a container")
     parser.add_argument("--path", required=True,
@@ -64,43 +96,36 @@ if __name__ == "__main__":
     mf = open(args.map, 'r')
     imap = []                   # an entry for each column
     spec = {}
-    l = mf.read()
 
     schema = cont.schema_by_name(args.schema)
     print("Importing from CSV file {0} into {1} using map {2}".format(args.csv, args.path, args.map))
 
-    attr_id = 0
-    values = []
-    for e in l.split(':'):
-        attr = schema.attr_by_id(attr_id)
-        values.append(Sos.Value(attr))
-        try:
-            # entry is the CSV input column. we need a separate scope
-            # for each col_no, otherwise, the function will end up
-            # binding to the same var for every instance
-            k = make_lambda(attr, int(e))
-            imap.append(k)
-            spec[k] = e
-        except:
-            # parse the entry
-            if e.upper() == "X":
-                imap.append(None)
-                spec[None] = e
-                continue
-            # first part is the struct
-            sep = e.find('[')
-            fmt = e[0:sep]      # the struct.pack fmt parameter
-            ids = e[sep:]       # the indices in the input line to use
-            try:
-                ary = json.loads(ids)
-            except Exception as ex:
-                print(ex)
-                print("{0} could not be decoded, spec is {1}".format(ids, e))
-                sys.exit(1)
-            k = make_combo(fmt, ary)
-            imap.append(k)
-            spec[k] = e
-        attr_id = attr_id + 1
+    try:
+        mapspec = json.load(mf)
+    except Exception as ex:
+        print("{0}".format(repr(ex)))
+        sys.exit(1)
+
+    input_process = []
+    for spec in mapspec:
+        action = spec['action']
+        a = []
+        fn_args = spec['args']
+        if action == "assign" or action == "set":
+            if type(fn_args[0]) == int:
+                attr_id = fn_args[0]
+                attr = schema.attr_by_id(attr_id)
+            else:
+                attr = schema.attr_by_name(fn_args[0])
+                attr_id = attr.attr_id()
+            a.append(attr_id)
+            a.append(fn_args[1])
+            if action == "assign":
+                input_process.append([assign, make_cast(attr), a])
+            else:
+                input_process.append([setter, make_cast(attr), a])
+        else:
+            raise ValueError("Error processing {0}".format(spec))
 
     df = open(args.csv, 'r')
     count = 0
@@ -109,29 +134,17 @@ if __name__ == "__main__":
     obj = None
     for l in df:
         cols = l.split(',')
-        attr_id = 0
-
         if not args.test:
             obj = schema.alloc()
 
-        for c in imap:
-            if c is None:
-                # This is the "X" in the input conversion
-                continue
+        for action in input_process:
             try:
-                v = c(cols)
-                if obj:
-                    obj[attr_id] = v
+                action[0](obj, cols, action[1], action[2])
             except Exception as ex:
                 print("An exception occurred parsing the CSV input.")
                 print("Exception Detail : {0}".format(ex))
-                print("Value            : '{0}' Type {1}".format(v, type(v)))
-                print("Attribute Id     : {0}".format(attr_id))
-                print("Parsing function : {0}".format(c))
-                print("Associated Spec  : {0}".format(spec[c]))
-                print("Input Line       :\n{0}".format(cols))
+                print("Action           : {0}".format(action))
                 sys.exit(1)
-            attr_id = attr_id + 1
 
         if obj:
             obj.index_add()
