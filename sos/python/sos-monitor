@@ -84,17 +84,22 @@ def csv(arg_list):
     return arg_list.split(',')
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Query metric data in a container")
-    parser.add_argument("--path", required=True,
+    parser = argparse.ArgumentParser(description="Query metric data in a container.")
+    parser.add_argument("-p", "--path", required=True,
                         help="The path to the container.")
-    parser.add_argument("--schema", required=True, type=csv,
-                        help="A comma separated list of schema names")
-    parser.add_argument("--refresh", type=int, default=1,
-                        help="Specify the refresh interval in seconds. Default is 1 s.")
+    parser.add_argument("-s", "--schema", required=True, type=csv, metavar="NAME-LIST",
+                        help="A comma separated list of schema names.")
+    parser.add_argument("-r", "--refresh", type=int, default=1, metavar="INTERVAL",
+                        help="Specifies the refresh interval in seconds. Default is 1 second.")
     args = parser.parse_args()
 
-    cont = Sos.Container()
-    cont.open(args.path)
+    try:
+        cont = Sos.Container()
+        cont.open(args.path)
+    except Exception as ex:
+        print("The container '{0}' could not be opened.".format(args.path))
+        sys.exit(1)
+
     schemas = {}
     for name in args.schema:
         schema = cont.schema_by_name(name)
