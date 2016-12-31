@@ -7,8 +7,12 @@ import argparse
 from sosdb import Sos
 import json
 
-def query_schema(cont, verbose=False):
+def query_schema(cont, schema_name, verbose=False):
+    count = 0
     for s in cont.schema_iter():
+        if s.name() != schema_name and schema_name != "ALL":
+            continue
+        count += 1
         print(s.name())
         if verbose:
             print("{0:4} {1:16} {2:12} {3:32}".format("Id", "Type", "Indexed", "Name"))
@@ -26,34 +30,45 @@ def query_schema(cont, verbose=False):
                 print("{0:4} {1:16} {2} {3}".\
                       format(a.attr_id(), type_name,
                              idx_s.ljust(12,' '), a.name()))
+    if count == 0:
+        print("The schema '{0}' was not found.".format(schema_name))
 
 def add_schema(cont, path):
-    fp = open(path, 'r')
-    spec = json.load(fp)
-    schema = Sos.Schema()
-    schema.from_template(spec['name'], spec['attrs'])
-    schema.add(cont)
+    try:
+        fp = open(path, 'r')
+        spec = json.load(fp)
+        schema = Sos.Schema()
+        schema.from_template(spec['name'], spec['attrs'])
+        schema.add(cont)
+    except Exception as ex:
+        print(str(ex))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Query metric data in a container")
-    parser.add_argument("--path", required=True,
+    parser.add_argument("-p", "--path", required=True, dest="path",
                         help="The path to the container.")
-    parser.add_argument("--query", action="store_true",
-                        help="Query a container's schema")
-    parser.add_argument("--add", action="store_true",
-                        help="Add a schema to the container.")
-    parser.add_argument("--template",
-                        help="The path to a JSon formatted schema specification file")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Request verbose query output")
+    parser.add_argument("-q", "--query", metavar="SCHEMA-NAME", dest="query",
+                        help="Query a container's schema. Specify 'ALL' to see all schema. "
+                        "Use the --verbose option to display all schema attributes")
+    parser.add_argument("-v", "--verbose", action="store_true", dest="verbose",
+                        help="Display all of the schema's attributes.")
+    parser.add_argument("-a", "--add", metavar="JSON-FILE", dest="add",
+                        help="Add the schema defined in the JSON-FILE to the container.")
     args = parser.parse_args()
 
-    cont = Sos.Container()
-    cont.open(args.path)
+    if not args.query and not args.add:
+        print("One or both of the --query or --add options must be specified.")
+        sys.exit(1)
+
+    try:
+        cont = Sos.Container()
+        cont.open(args.path)
+    except:
+        print("The container {0} could not be opened.".format(args.path))
 
     if args.query:
-        query_schema(cont, verbose=args.verbose)
+        query_schema(cont, args.query, verbose=args.verbose)
 
     if args.add:
-        add_schema(cont, args.template)
+        add_schema(cont, args.add)
 
