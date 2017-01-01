@@ -777,6 +777,23 @@ int sos_attr_join(sos_obj_t obj, sos_attr_t attr)
 }
 
 /**
+ * \brief Return an array with the list of attributes in the join list
+ *
+ * The function will return NULL if the attribute is not of the type
+ * SOS_TYPE_JOIN.
+ *
+ *    retval->count                    - The attribute count.
+ *    retval->data.uint32_[0..count-1] - The id of each attribute
+ *
+ * \param attr The attribute handle
+ * \returns A pointer to an array defining the join list.
+ */
+sos_array_t sos_attr_join_list(sos_attr_t attr)
+{
+	return attr->ext_ptr;
+}
+
+/**
  * \brief Return the schema of an attribute
  *
  * \param attr The attribute handle

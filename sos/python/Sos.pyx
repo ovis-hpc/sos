@@ -350,6 +350,7 @@ cdef class Partition(SosObject):
 
     cdef assign(self, sos_part_t c_part):
         self.c_part = c_part
+        return self
 
     def part_id(self):
         """Returns the Partition id"""
@@ -475,6 +476,7 @@ cdef class Schema(SosObject):
         if c_schema == NULL:
             raise ValueError("schema argument cannot be NULL")
         self.c_schema = c_schema
+        return self
 
     def __iter__(self):
         self.c_next_attr = sos_schema_attr_first(self.c_schema)
@@ -641,6 +643,7 @@ cdef class Key(object):
         if self.c_key:
             sos_key_put(self.c_key)
         self.c_key = c_key
+        return self
 
     def release(self):
         if self.c_key != NULL:
@@ -775,6 +778,28 @@ TYPE_OBJ_ARRAY = SOS_TYPE_OBJ_ARRAY
 PERM_RW = SOS_PERM_RW
 PERM_RO = SOS_PERM_RO
 
+cdef class AttrJoinIter(object):
+    cdef id_list
+    cdef Schema schema
+    cdef int next_idx
+
+    def __init__(self, Attr attr):
+        if attr.type() != SOS_TYPE_JOIN:
+            raise ValueError("The attribute type must be SOS_TYPE_JOIN")
+        self.schema = attr.schema()
+        self.id_list = attr.join_list()
+        self.next_idx = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.next_idx >= len(self.id_list):
+            raise StopIteration
+        attr_id = self.id_list[self.next_idx]
+        self.next_idx += 1
+        return self.schema.attr_by_id(attr_id)
+
 cdef class Attr(SosObject):
     cdef sos_schema_t c_schema
     cdef sos_attr_t c_attr
@@ -795,6 +820,24 @@ cdef class Attr(SosObject):
             else:
                 name = "unspecified"
             raise SchemaAttrError(name, schema.name())
+
+    def __richcmp__(self, b, op):
+        if op == 0:   # <
+            return self.attr_id() < b.attr_id()
+        elif op == 2: # ==
+            return self.attr_id() == b.attr_id()
+        elif op == 4: # >
+            return self.attr_id() > b.attr_id()
+        elif op == 1: # <=
+            return self.attr_id() <= b.attr_id()
+        elif op == 3: # !=
+            return self.attr_id() != b.attr_id()
+        elif op == 5: # >=
+            return self.attr_id() >= b.attr_id()
+
+    def schema(self):
+        s = Schema()
+        return s.assign(sos_attr_schema(self.c_attr))
 
     def attr_id(self):
         """Returns the attribute id"""
@@ -833,6 +876,14 @@ cdef class Attr(SosObject):
 
     def __iter__(self):
         return AttrIter(self)
+
+    def join_list(self):
+        cdef sos_array_t array = sos_attr_join_list(self.c_attr)
+        a = OAArray()
+        return a.set_data(NULL, &array.data.byte_, array.count, np.NPY_UINT32)
+
+    def join_iter(self):
+        return AttrJoinIter(self)
 
     def find(self, Key key):
         cdef sos_index_t c_index = sos_attr_index(self.c_attr)
@@ -1006,6 +1057,7 @@ cdef class Index(object):
 
     cdef assign(self, sos_index_t idx):
         self.c_index = idx
+        return self
 
     def find(self, Key key):
         """Positions the index at the first matching key
@@ -1077,7 +1129,7 @@ cdef class Index(object):
 ################################
 # Object getter functions
 ################################
-cdef class Array:
+cdef class OAArray:
     cdef sos_obj_t c_obj
     cdef void *c_ptr
     cdef int c_size
@@ -1112,43 +1164,43 @@ cdef class Array:
             self.c_obj = NULL
 
 cdef object get_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_FLOAT64)
 
 cdef object get_FLOAT_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_FLOAT32)
 
 cdef object get_UINT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT64)
 
 cdef object get_UINT32_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT32)
 
 cdef object get_UINT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT16)
 
 cdef object get_BYTE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT8)
 
 cdef object get_CHAR_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT8)
 
 cdef object get_INT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT64)
 
 cdef object get_INT32_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT32)
 
 cdef object get_INT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = Array()
+    array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT16)
 
 cdef object get_TIMESTAMP(sos_obj_t c_obj, sos_value_data_t c_data):
@@ -1477,6 +1529,7 @@ cdef class Value(object):
             sos_obj_put(self.c_obj)
         self.c_obj = c_obj
         self.c_v = sos_value_init(&self.c_v_, self.c_obj, self.c_attr)
+        return self
 
     @property
     def obj(self):

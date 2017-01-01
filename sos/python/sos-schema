@@ -24,12 +24,24 @@ def query_schema(cont, schema_name, verbose=False):
                     idx_s = "True"
                 else:
                     idx_s = ""
+                aname = a.name()
                 type_name = a.type_name()
                 if a.type() == Sos.TYPE_STRUCT:
                     type_name += '[' + str(a.size()) + ']'
+                elif a.type() == Sos.TYPE_JOIN:
+                    idl = a.join_list()
+                    aname += ' ['
+                    comma = False
+                    for i in idl:
+                        jattr = s.attr_by_id(i)
+                        if comma:
+                            aname += '+'
+                        comma = True
+                        aname += jattr.name()
+                    aname += ']'
                 print("{0:4} {1:16} {2} {3}".\
                       format(a.attr_id(), type_name,
-                             idx_s.ljust(12,' '), a.name()))
+                             idx_s.ljust(12,' '), aname))
     if count == 0:
         print("The schema '{0}' was not found.".format(schema_name))
 

@@ -319,6 +319,7 @@ sos_index_t sos_attr_index(sos_attr_t attr);
 size_t sos_attr_size(sos_attr_t attr);
 sos_schema_t sos_attr_schema(sos_attr_t attr);
 int sos_attr_join(sos_obj_t obj, sos_attr_t attr);
+sos_array_t sos_attr_join_list(sos_attr_t attr);
 
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
