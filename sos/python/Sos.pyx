@@ -1008,6 +1008,16 @@ cdef class Index(object):
         self.c_index = idx
 
     def find(self, Key key):
+        """Positions the index at the first matching key
+
+        Return the object at the key that matches the specified key.
+        If no match was found, None is returned.
+
+        Positional Arguments:
+        -- The Key to match
+        Returns:
+        -- The Object at the index position
+        """
         cdef sos_obj_t c_obj = sos_index_find(self.c_index, key.c_key)
         if c_obj != NULL:
             o = Object()
@@ -1015,6 +1025,18 @@ cdef class Index(object):
         return None
 
     def find_inf(self, Key key):
+        """Positions the index at the infinum of the specified key
+
+        Return the object at the key that is the infinum (greatest
+        lower bound) of the specified key. If no match was found, None
+        is returned.
+
+        Positional Arguments:
+        -- The Key to match
+        Returns:
+        -- The Object at the index position or None if the infinum was not found
+
+        """
         cdef sos_obj_t c_obj = sos_index_find_inf(self.c_index, key.c_key)
         if c_obj != NULL:
             o = Object()
@@ -1022,6 +1044,17 @@ cdef class Index(object):
         return None
 
     def find_sup(self, Key key):
+        """Positions the index at the supremum of the specified key
+
+        Return the object at the key that is the supremum (least
+        upper bound) of the specified key. If no match was found, None
+        is returned.
+
+        Positional Arguments:
+        -- The Key to match
+        Returns:
+        -- The Object at the index position or None if the supremum was not found
+        """
         cdef sos_obj_t c_obj = sos_index_find_sup(self.c_index, key.c_key)
         if c_obj != NULL:
             o = Object()
@@ -1029,9 +1062,15 @@ cdef class Index(object):
         return None
 
     def name(self):
+        """Return the name of the index"""
         return sos_index_name(self.c_index)
 
     def stats(self):
+        """Return a dictionary of index statistics as follows:
+            cardinality - Number of index entries
+            duplicates  - Number of duplicate keys
+            size        - The storage size consumed by the index in bytes
+        """
         cdef int rc = sos_index_stat(self.c_index, &self.c_stats)
         return self.c_stats
 
