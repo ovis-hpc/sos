@@ -65,6 +65,7 @@ if __name__ == "__main__":
         cont.open(args.path)
     except:
         print("The container {0} could not be opened.".format(args.path))
+        sys.exit(1)
 
     if args.query:
         query_schema(cont, args.query, verbose=args.verbose)
