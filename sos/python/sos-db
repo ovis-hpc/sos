@@ -39,6 +39,10 @@ if __name__ == "__main__":
 
     cont = Sos.Container()
 
+    if not args.create and not args.query:
+        print("Either the --create or --query options must be specified.")
+        sys.exit(1)
+
     if args.create:
         try:
             # Create the database
