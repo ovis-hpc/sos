@@ -223,9 +223,14 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 
 sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
 {
-	memcpy(dst, src, sizeof(*src));
-	if (dst->obj)
+	dst->attr = src->attr;
+	if (src->obj) {
 		dst->obj = sos_obj_get(dst->obj);
+		dst->data = src->data;
+	} else {
+		memcpy(&dst->data_, &src->data_, sizeof(src->data_));
+		dst->data = &dst->data_;
+	}
 	return dst;
 }
 

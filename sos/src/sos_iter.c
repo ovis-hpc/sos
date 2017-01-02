@@ -178,6 +178,40 @@ int sos_iter_pos(sos_iter_t iter, sos_pos_t pos)
 	return ods_iter_pos(iter->iter, (ods_pos_t)pos);
 }
 
+int sos_pos_from_str(sos_pos_t pos, const char *str)
+{
+        const char *src = str;
+        int i;
+        for (i = 0; i < sizeof(pos->data); i++) {
+                int rc = sscanf(src, "%02hhX", &pos->data[i]);
+                if (rc != 1)
+                        return EINVAL;
+                src += 2;
+        }
+        return 0;
+}
+
+const char *sos_pos_to_str(sos_pos_t pos)
+{
+	char *str;
+        char *dst;
+	str = malloc(40);
+	if (!str)
+		return NULL;
+        dst = str;
+        int i;
+        for (i = 0; i < sizeof(pos->data); i++) {
+                sprintf(dst, "%02hhX", pos->data[i]);
+                dst += 2;
+        }
+        return str;
+}
+
+void sos_pos_str_free(char *str)
+{
+	free(str);
+}
+
 /**
  * \brief Sets the current iterator position
  *

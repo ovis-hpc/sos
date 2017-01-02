@@ -634,9 +634,6 @@ cdef class Key(object):
             s = <char *>sos_key_value(self.c_key)
         return s
 
-    def __del__(self):
-        self.release()
-
     cdef assign(self, sos_key_t c_key):
         if c_key == NULL:
             raise ValueError("key argument cannot be NULL")
@@ -645,10 +642,8 @@ cdef class Key(object):
         self.c_key = c_key
         return self
 
-    def release(self):
-        if self.c_key != NULL:
-            sos_key_put(self.c_key)
-            self.c_key = NULL
+    def get_attr(self):
+        return self.attr
 
     def set_value(self, string):
         """Set the value of a key.
@@ -659,39 +654,105 @@ cdef class Key(object):
         cdef char *s = string
         memcpy(sos_key_value(self.c_key), s, self.c_size)
 
-    def uint64(self):
+    def __int__(self):
+        cdef int typ
+        if self.attr:
+            typ = self.attr.type()
+            if typ == SOS_TYPE_UINT64:
+                return self.get_uint64()
+            elif typ == SOS_TYPE_INT64:
+                return self.get_int64()
+            if typ == SOS_TYPE_UINT32:
+                return self.get_uint32()
+            elif typ == SOS_TYPE_INT32:
+                return self.get_int32()
+            if typ == SOS_TYPE_UINT16:
+                return self.get_uint16()
+            elif typ == SOS_TYPE_INT16:
+                return self.get_int16()
+            if typ == SOS_TYPE_FLOAT:
+                return self.get_float()
+            elif typ == SOS_TYPE_DOUBLE:
+                return self.get_double()
+        raise TypeError("The base type cannot be converted to an integer.")
+
+    def __long__(self):
+        cdef int typ
+        if self.attr:
+            typ = self.attr.type()
+            if typ == SOS_TYPE_UINT64:
+                return self.get_uint64()
+            elif typ == SOS_TYPE_INT64:
+                return self.get_int64()
+            if typ == SOS_TYPE_UINT32:
+                return self.get_uint32()
+            elif typ == SOS_TYPE_INT32:
+                return self.get_int32()
+            if typ == SOS_TYPE_UINT16:
+                return self.get_uint16()
+            elif typ == SOS_TYPE_INT16:
+                return self.get_int16()
+            if typ == SOS_TYPE_FLOAT:
+                return self.get_float()
+            elif typ == SOS_TYPE_DOUBLE:
+                return self.get_double()
+        raise TypeError("The base type cannot be converted to a long.")
+
+    def __float__(self):
+        cdef int typ
+        if self.attr:
+            typ = self.attr.type()
+            if typ == SOS_TYPE_UINT64:
+                return float(self.get_uint64())
+            elif typ == SOS_TYPE_INT64:
+                return float(self.get_int64())
+            if typ == SOS_TYPE_UINT32:
+                return float(self.get_uint32())
+            elif typ == SOS_TYPE_INT32:
+                return float(self.get_int32())
+            if typ == SOS_TYPE_UINT16:
+                return float(self.get_uint16())
+            elif typ == SOS_TYPE_INT16:
+                return float(self.get_int16())
+            if typ == SOS_TYPE_FLOAT:
+                return self.get_float()
+            elif typ == SOS_TYPE_DOUBLE:
+                return self.get_double()
+        raise TypeError("The base type cannot be converted to an float.")
+
+    def get_uint64(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.uint64_
 
-    cdef uint32_t uint32(self):
+    def get_uint32(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.uint32_
 
-    cdef uint16_t uint16(self):
+    def get_uint16(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.uint16_
 
-    cdef uint8_t byte(self):
+    def get_byte(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.byte_
 
-    cdef int64(self):
+    def get_int64(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.int64_
 
-    cdef int32(self):
+    def get_int32(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.int32_
 
-    cdef int16(self):
+    def get_int16(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.int16_
 
-    cdef float32(self):
+    def get_float(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.float_
 
-    cdef float64(self):
+    def get_double(self):
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
         return data.prim.double_
 
@@ -925,7 +986,7 @@ cdef class Attr(SosObject):
             return 0
 
         c_iter = sos_attr_iter_new(self.c_attr)
-        c_rc = sos_iter_end(c_iter)
+        c_rc = sos_iter_begin(c_iter)
         if c_rc:
             return None
 
@@ -936,23 +997,23 @@ cdef class Attr(SosObject):
         sos_iter_free(c_iter)
         return key
 
-FILT_COND_LT = SOS_COND_LT
-FILT_COND_LE = SOS_COND_LE
-FILT_COND_EQ = SOS_COND_EQ
-FILT_COND_GE = SOS_COND_GE
-FILT_COND_GT = SOS_COND_GT
-FILT_COND_NE = SOS_COND_NE
+COND_LT = SOS_COND_LT
+COND_LE = SOS_COND_LE
+COND_EQ = SOS_COND_EQ
+COND_GE = SOS_COND_GE
+COND_GT = SOS_COND_GT
+COND_NE = SOS_COND_NE
 
-cdef class Filter(SosObject):
-
+cdef class Filter(object):
     cdef Attr attr
     cdef sos_iter_t c_iter
     cdef sos_filter_t c_filt
     cdef sos_obj_t c_obj
+    cdef sos_pos c_pos
 
     def __init__(self, Attr attr):
-        """Parameters:
-        -- attr - The primary filter attribute
+        """Positional Parameters:
+        -- The primary filter attribute
         """
         self.attr = attr
         self.c_iter = sos_attr_iter_new(attr.c_attr)
@@ -961,43 +1022,115 @@ cdef class Filter(SosObject):
 
         self.c_filt = sos_filter_new(self.c_iter)
 
-    def where(self, sos_cond_t cond, Value value):
+    def add_condition(self, Attr cond_attr, cond, value_str):
         cdef int rc
-        rc = sos_filter_cond_add(self.c_filt,
-                                 <sos_attr_t>value.c_attr,
-                                 cond,
-                                 <sos_value_t>value.c_v)
-        if rc:
-            raise ValueError("Unsupported condition added " \
-                             "with error {0}".format(rc))
+        cdef sos_value_t cond_v
 
-    def first(self):
-        cdef sos_obj_t o_0 = sos_filter_begin(self.c_filt)
-        if o_0 == NULL:
+        # strip embedded '"' from value if present
+        value_str = value_str.replace('"', '')
+
+        cond_v = sos_value_new()
+        if not cond_v:
+            raise ValueError("The attribute value for {0} could not be created.".format(cond_attr.name()))
+
+        cond_v = sos_value_init(cond_v, NULL, cond_attr.c_attr);
+        rc = sos_value_from_str(cond_v, value_str, NULL)
+        if rc != 0:
+            raise ValueError("The value {0} is invalid for the {1} attribute."
+                             .format(value_str, cond_attr.name()))
+
+        rc = sos_filter_cond_add(self.c_filt, cond_attr.c_attr,
+                                 cond, cond_v)
+        sos_value_put(cond_v)
+        sos_value_free(cond_v)
+        if rc != 0:
+            raise ValueError("Invalid filter condition, error {0}".format(rc))
+
+    def unique(self):
+        sos_filter_flags_set(self.c_filt, SOS_ITER_F_UNIQUE)
+
+    def begin(self):
+        cdef sos_obj_t c_obj = sos_filter_begin(self.c_filt)
+        if c_obj == NULL:
             return None
-        O_0 = Object()
-        O_0.assign(o_0)
-        return O_0
+        o = Object()
+        return o.assign(c_obj)
 
-    def last(self):
-        cdef sos_obj_t o_1 = sos_filter_end(self.c_filt)
-        if o_1 == NULL:
-            raise SystemError("If first is found, last should not be NULL")
-        O_1 = Object()
-        O_1.assign(o_1)
-        return O_1
+    def end(self):
+        cdef sos_obj_t c_obj = sos_filter_end(self.c_filt)
+        if c_obj == NULL:
+            return None
+        o = Object()
+        return o.assign(c_obj)
+
+    def next(self):
+        cdef sos_obj_t c_obj = sos_filter_next(self.c_filt)
+        if c_obj == NULL:
+            return None
+        o = Object()
+        return o.assign(c_obj)
+
+    def prev(self):
+        cdef sos_obj_t c_obj = sos_filter_prev(self.c_filt)
+        if c_obj == NULL:
+            return None
+        o = Object()
+        return o.assign(c_obj)
+
+    def skip(self, count):
+        cdef sos_obj_t c_obj = sos_filter_skip(self.c_filt, count)
+        if c_obj == NULL:
+            return None
+        o = Object()
+        return o.assign(c_obj)
 
     def count(self):
         cdef size_t count = 0
         cdef sos_obj_t c_o = sos_filter_begin(self.c_filt)
         if c_o == NULL:
             return count
+        count += 1
         sos_obj_put(c_o)
         while c_o != NULL:
             c_o = sos_filter_next(self.c_filt)
             sos_obj_put(c_o)
             count = count + 1
         return count
+
+    def obj(self):
+        cdef sos_obj_t c_obj = sos_filter_obj(self.c_filt)
+        if c_obj:
+            o = Object()
+            return o.assign(c_obj)
+        return None
+
+    def get_pos_as_str(self):
+        """Returns the currrent filter position as a string
+
+        The intent is that this string can be exchanged over the network
+        to enable paging of filter records at the browser
+        """
+        cdef char *c_str
+        cdef int rc = sos_filter_pos(self.c_filt, &self.c_pos)
+        if rc != 0:
+            return None
+        c_str = sos_pos_to_str(&self.c_pos)
+        return c_str
+
+    def set_pos_from_str(self, pos_str):
+        """Sets the currrent filter position from a string
+
+        The string parameter is converted to a sos_pos_t and used to set the
+        current filter position. The string was returned from a
+        previous call to self.pos()
+
+        Positional Parameters:
+        -- Strig representation of the filter position
+        """
+        cdef int rc = sos_pos_from_str(&self.c_pos, pos_str)
+        if rc == 0:
+            return sos_filter_set(self.c_filt, &self.c_pos)
+        return rc
 
     def as_array(self, count):
         cdef size_t sample_count = count
@@ -1023,19 +1156,6 @@ cdef class Filter(SosObject):
             idx = idx + 1
 
         return result
-
-    def __iter__(self):
-        self.c_obj = sos_filter_begin(self.c_filt)
-        return self
-
-    def __next__(self):
-        cdef sos_obj_t c_obj = self.c_obj
-        if c_obj == NULL:
-            raise StopIteration
-        o = Object()
-        o.assign(c_obj)
-        self.c_obj = sos_filter_next(self.c_filt)
-        return o
 
     def __dealloc__(self):
         if self.c_obj:
