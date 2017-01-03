@@ -41,7 +41,7 @@ cdef class Vector(object):
         component. If comp_id is not specified, the first and last
         sample times in the container will be returned.
 
-        Positional arguments:
+        Positional Arguments:
         -- The attribute name for the metric
 
         Keyword Arguments:

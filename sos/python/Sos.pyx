@@ -1125,35 +1125,38 @@ cdef class Filter(object):
         previous call to self.pos()
 
         Positional Parameters:
-        -- Strig representation of the filter position
+        -- String representation of the filter position
         """
         cdef int rc = sos_pos_from_str(&self.c_pos, pos_str)
         if rc == 0:
             return sos_filter_set(self.c_filt, &self.c_pos)
         return rc
 
-    def as_array(self, count):
-        cdef size_t sample_count = count
+    def as_ndarray(self, Attr attr, size_t count):
         cdef sos_obj_t c_o
-        cdef Value v = Value(self.attr)
+        cdef sos_value_s v_
+        cdef sos_value_t v
         cdef int idx = 0
+        cdef int atype = sos_attr_type(attr.c_attr)
 
         shape = []
-        shape.append(<np.npy_intp>sample_count)
+        shape.append(<np.npy_intp>count)
         result = np.zeros(shape, dtype=np.float64, order='C')
 
         c_o = sos_filter_begin(self.c_filt)
         if c_o == NULL:
             return result
 
-        sos_obj_put(c_o)
         idx = 0
         while c_o != NULL:
-            v.assign(c_o)
-            result[idx] = v.value
-            c_o = sos_filter_next(self.c_filt)
+            v = sos_value_init(&v_, c_o, attr.c_attr)
+            result[idx] = <object>type_getters[atype](c_o, v.data)
+            sos_value_put(v)
             sos_obj_put(c_o)
             idx = idx + 1
+            if idx >= count:
+                break
+            c_o = sos_filter_next(self.c_filt)
 
         return result
 
@@ -1818,10 +1821,16 @@ cdef class Object(object):
         s.assign(self.c_schema)
         return s
 
-    def as_array(self, name, eltype = np.uint64):
+    def as_ndarray(self, name, eltype = np.uint64):
         """
         Return the object data or an attributes data as an ndarray of the
         specified type
+
+        Positional Parameters:
+        -- The name of the object attribute
+
+        Keyword parameters:
+        eltype - The type of each element in the ndarray
         """
         cdef int t
         cdef sos_obj_t arr_obj
