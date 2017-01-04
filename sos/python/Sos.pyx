@@ -1,6 +1,6 @@
 from cpython cimport PyObject, Py_INCREF
 from libc.stdint cimport *
-from libc.stdlib cimport malloc
+from libc.stdlib cimport malloc, free
 import numpy as np
 import struct
 cimport numpy as np
@@ -1132,32 +1132,143 @@ cdef class Filter(object):
             return sos_filter_set(self.c_filt, &self.c_pos)
         return rc
 
-    def as_ndarray(self, Attr attr, size_t count):
+    def as_ndarray(self, size_t count, shape=None, order='attribute'):
+        """Return filter data as a Numpy array
+
+        The keyword parameter 'shape' is used to specify the object attributes
+        that will comprise the returned array. Each element of the array should
+        be the name of an object attribute in the same schema that the positional
+        'attr' argument is a member of. The default value of 'shape' is:
+
+             [ self.attr.name() ]
+
+        If the len(shape) is 1, the array will be simplified to a singly
+        dimensioned array of the 'attr' attribute of the each object.
+
+        If the number of objects defined by the Filter is less than 'count',
+        the array will be padded with zeroes.
+
+        The return value is a tuple containing the number of elements written
+        to the array and the array itself. For example,
+
+             schema = db.schema_by_name('Sample')
+             tstamp = schema.attr_by_name('timestamp')
+             shape = [ "timestamp", "current_freeem" ]
+             count, array = f.as_array(tstamp, 1024, shape=shape)
+
+        will return the number of elements actually written to 'array' of
+        size 1024 elements. The array is an Numpy.ndarray as follows:
+
+             [ [ 1425362400.0, 1425362460.0, ... ], [ 62453912.0, 6553912.0, ... ] ]
+
+        which is an 'attribute' ordering of attribute values. This ordering is more
+        natural for numerical analysis as each array contains data of the same type.
+
+        For applications such as graphing, it is often preferred to have the
+        attribute values grouped by index. Set the 'order' keyword argument to
+        'index', and the array data will be ordered as follows:
+
+             [ [ 1425362400.0, 62453912.0 ], [ 1425362460.0, 6553912.0 ], ... ]
+
+        Positional Parameters:
+        -- An Attr that is used as the primary index for the filter
+        -- A size_t count that specifies the maximum number of 'entries' in
+           the array, where an entry may have n-dimensions.
+
+        Keyword Parameters:
+        shape  -- A dictionary object that specifies each attribute in the
+                  the output array.
+        order  -- Specifies how data is ordered in the result array and is one
+                  of 'depth_first' (default), or 'breadth_first'
+        """
         cdef sos_obj_t c_o
         cdef sos_value_s v_
         cdef sos_value_t v
-        cdef int idx = 0
-        cdef int atype = sos_attr_type(attr.c_attr)
+        cdef int idx
+        cdef int el_idx
+        cdef int atype
+        cdef int nattr
+        cdef Schema schema = self.attr.schema()
+        cdef Attr attr
+        cdef sos_attr_t c_attr
+        cdef sos_attr_t *res_attr
+        cdef int *res_type
 
-        shape = []
-        shape.append(<np.npy_intp>count)
-        result = np.zeros(shape, dtype=np.float64, order='C')
+        if shape == None:
+            shape = [ self.attr.name() ]
 
-        c_o = sos_filter_begin(self.c_filt)
-        if c_o == NULL:
-            return result
+        nattr = len(shape)
+        if nattr > 1:
+            if order == 'index':
+                ndshape = [ count, nattr ]
+            elif order == 'attribute':
+                ndshape = [ nattr, count ]
+            else:
+                raise ValueError("The 'order' keyword parameter must be one of 'index' or 'attribute'")
+        else:
+            ndshape = [ count ]
+
+        res_attr = <sos_attr_t *>malloc(sizeof(sos_attr_t) * nattr)
+        if res_attr == NULL:
+            raise MemoryError("Insufficient memroy to allocate dimension array")
+        res_type = <int *>malloc(sizeof(uint64_t) * nattr)
+        if res_type == NULL:
+            free(res_attr)
+            raise MemoryError("Insufficient memory to allocate type array")
+
+        result = np.zeros(ndshape, dtype=np.float64, order='C')
 
         idx = 0
-        while c_o != NULL:
-            v = sos_value_init(&v_, c_o, attr.c_attr)
-            result[idx] = <object>type_getters[atype](c_o, v.data)
-            sos_value_put(v)
-            sos_obj_put(c_o)
-            idx = idx + 1
-            if idx >= count:
-                break
-            c_o = sos_filter_next(self.c_filt)
+        for aname in shape:
+            try:
+                attr = schema.attr_by_name(aname)
+                res_attr[idx] = attr.c_attr
+                res_type[idx] = sos_attr_type(attr.c_attr)
+                idx += 1
+            except:
+                free(res_attr)
+                free(res_type)
+                raise ValueError("The attribute {0} does not exist in the schema {1}".format(aname, schema.name()))
 
+        c_o = sos_filter_begin(self.c_filt)
+        idx = 0
+        if nattr == 1:
+            c_attr = res_attr[0]
+            atype = sos_attr_type(c_attr)
+            while c_o != NULL:
+                v = sos_value_init(&v_, c_o, c_attr)
+                result[idx] = <object>type_getters[atype](c_o, v.data)
+                sos_value_put(v)
+                sos_obj_put(c_o)
+                idx = idx + 1
+                if idx >= count:
+                    break
+                c_o = sos_filter_next(self.c_filt)
+        else:
+            if order == 'index':
+                while c_o != NULL:
+                    for el_idx in range(0, nattr):
+                        v = sos_value_init(&v_, c_o, res_attr[el_idx])
+                        result[idx][el_idx] = <object>type_getters[res_type[el_idx]](c_o, v.data)
+                        sos_value_put(v)
+                        sos_obj_put(c_o)
+                    idx = idx + 1
+                    if idx >= count:
+                        break
+                    c_o = sos_filter_next(self.c_filt)
+            elif order == 'attribute':
+                while c_o != NULL:
+                    for el_idx in range(0, nattr):
+                        v = sos_value_init(&v_, c_o, res_attr[el_idx])
+                        result[el_idx][idx] = <object>type_getters[res_type[el_idx]](c_o, v.data)
+                        sos_value_put(v)
+                        sos_obj_put(c_o)
+                    idx = idx + 1
+                    if idx >= count:
+                        break
+                    c_o = sos_filter_next(self.c_filt)
+        free(res_attr)
+        free(res_type)
         return result
 
     def __dealloc__(self):
@@ -1183,6 +1294,7 @@ cdef class Index(object):
         return self
 
     def find(self, Key key):
+
         """Positions the index at the first matching key
 
         Return the object at the key that matches the specified key.
