@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2013-2017 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2013-2015 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -628,6 +628,7 @@ int sos_iter_find_first(sos_iter_t iter, sos_key_t key);
 int sos_iter_find_last(sos_iter_t iter, sos_key_t key);
 int sos_iter_inf(sos_iter_t i, sos_key_t key);
 int sos_iter_sup(sos_iter_t i, sos_key_t key);
+sos_attr_t sos_iter_attr(sos_iter_t i);
 
 int sos_iter_flags_set(sos_iter_t i, sos_iter_flags_t flags);
 sos_iter_flags_t sos_iter_flags_get(sos_iter_t i);

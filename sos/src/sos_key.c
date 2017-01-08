@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2014-2017 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2014-2015 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
@@ -51,7 +51,7 @@
  */
 
 /*
-o * Author: Tom Tucker tom at ogc dot us
+ * Author: Tom Tucker tom at ogc dot us
  */
 
 #include <sys/queue.h>
@@ -236,8 +236,6 @@ unsigned char* sos_key_value(sos_key_t key)
 	return kv->value;
 }
 
-#include <stdarg.h>
-
 /**
  * \brief Return the value of a key as a character string
  *
@@ -309,6 +307,63 @@ char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_
 		p += el_sz;
 	}
 	return res_str;
+}
+
+int sos_key_join(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_t value)
+{
+	uint64_t u64;
+	uint32_t u32;
+	uint16_t u16;
+	ods_key_value_t kv;
+	char *dst;
+	int attr_id, idx;
+	sos_attr_t attr;
+	sos_array_t join_ids = sos_attr_join_list(join_attr);
+	if (!join_ids)
+		/* This is not a SOS_TYPE_JOIN attribute */
+		return EINVAL;
+
+	if (join_idx >= join_ids->count)
+		/* The specified join index is invalid */
+		return EINVAL;
+
+	kv = key->as.ptr;
+	kv->len = sos_attr_size(join_attr); /* join attr is a struct */
+	dst = kv->value;
+
+	for (idx = 0; idx <= join_idx; idx++) {
+		attr_id = join_ids->data.uint32_[idx];
+		attr = sos_schema_attr_by_id(sos_attr_schema(join_attr), attr_id);
+		if (!attr)
+			/* The join id in the join_attr is invalid. This is probably corruption */
+			return E2BIG;
+		if (idx != join_idx) {
+			dst += sos_attr_key_size(attr);
+			continue;
+		}
+		switch (sos_attr_type(attr)) {
+		case SOS_TYPE_UINT64:
+		case SOS_TYPE_INT64:
+		case SOS_TYPE_DOUBLE:
+			u64 = htobe64(value->data->prim.uint64_);
+			memcpy(dst, &u64, sizeof(u64));
+			break;
+		case SOS_TYPE_INT32:
+		case SOS_TYPE_UINT32:
+		case SOS_TYPE_FLOAT:
+			u32 = htobe32(value->data->prim.uint32_);
+			memcpy(dst, &u32, sizeof(u32));
+			break;
+		case SOS_TYPE_INT16:
+		case SOS_TYPE_UINT16:
+			u16 = htobe16(value->data->prim.uint16_);
+			memcpy(dst, &u16, sizeof(u16));
+			break;
+		default:
+			return E2BIG;
+		}
+	}
+	return 0;
 }
 
 /** @} */

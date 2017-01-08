@@ -376,6 +376,7 @@ struct sos_config_iter_s {
 };
 
 struct sos_iter_s {
+	sos_attr_t attr;	/* !NULL if this iterator is associated with an attribute */
 	sos_index_t index;
 	ods_iter_t iter;
 };

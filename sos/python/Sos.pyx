@@ -1153,8 +1153,8 @@ cdef class Filter(object):
 
              schema = db.schema_by_name('Sample')
              tstamp = schema.attr_by_name('timestamp')
-             shape = [ "timestamp", "current_freeem" ]
-             count, array = f.as_array(tstamp, 1024, shape=shape)
+             f = Filter(tstamp)
+             count, array = f.as_ndarray(1024, shape=['timestamp', 'current_freemem'], order=['attribute'])
 
         will return the number of elements actually written to 'array' of
         size 1024 elements. The array is an Numpy.ndarray as follows:
@@ -1171,7 +1171,6 @@ cdef class Filter(object):
              [ [ 1425362400.0, 62453912.0 ], [ 1425362460.0, 6553912.0 ], ... ]
 
         Positional Parameters:
-        -- An Attr that is used as the primary index for the filter
         -- A size_t count that specifies the maximum number of 'entries' in
            the array, where an entry may have n-dimensions.
 
@@ -1269,7 +1268,7 @@ cdef class Filter(object):
                     c_o = sos_filter_next(self.c_filt)
         free(res_attr)
         free(res_type)
-        return result
+        return (idx, result)
 
     def __dealloc__(self):
         if self.c_obj:

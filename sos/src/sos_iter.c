@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2017 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2014 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
@@ -74,6 +74,19 @@
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
+static void __sort_filter_conds(sos_filter_t f);
+static int __attr_join_idx(sos_attr_t filt_attr, sos_attr_t attr);
+
+/**
+ * \brief Create a SOS iterator from an index
+ *
+ * Create an iterator on the specified index.
+ *
+ * \param index The index handle
+ *
+ * \retval sos_iter_t for the specified index
+ * \retval NULL       If there was an error creating the iterator.
+ */
 sos_iter_t sos_index_iter_new(sos_index_t index)
 {
 	sos_iter_t i;
@@ -81,6 +94,7 @@ sos_iter_t sos_index_iter_new(sos_index_t index)
 	i = malloc(sizeof *i);
 	if (!i)
 		return NULL;
+	i->attr = NULL;
 	i->index = index;
 	i->iter = ods_iter_new(index->idx);
 	if (!i->iter)
@@ -94,7 +108,7 @@ sos_iter_t sos_index_iter_new(sos_index_t index)
 }
 
 /**
- * \brief Create a new SOS iterator
+ * \brief Create a SOS iterator from an attribute index
  *
  * Create an iterator on the specified attribute. If there is no index
  * defined on the iterator, the function will fail.
@@ -102,17 +116,31 @@ sos_iter_t sos_index_iter_new(sos_index_t index)
  * \param attr The schema attribute handle
  *
  * \retval sos_iter_t for the specified attribute
- * \retval NULL       If there was an error creating the iterator. Note
- *		      that failure to find a matching object is not an
- *		      error.
+ * \retval NULL       If there was an error creating the iterator.
  */
 sos_iter_t sos_attr_iter_new(sos_attr_t attr)
 {
+	sos_iter_t iter;
 	if (!sos_attr_index(attr))
 		return NULL;
 
 	assert(attr->index);
-	return sos_index_iter_new(attr->index);
+	iter = sos_index_iter_new(attr->index);
+	if (iter)
+		iter->attr = attr;
+	return iter;
+}
+
+/**
+ * \brief Return the attribute associated with the iterator
+ *
+ * \param iter The iterator handle
+ * \returns A pointer to the attribute or NULL if the iterator is not
+ *          associated with a schema attribute.
+ */
+sos_attr_t sos_iter_attr(sos_iter_t iter)
+{
+	return iter->attr;
 }
 
 /**
@@ -545,7 +573,272 @@ int sos_filter_flags_set(sos_filter_t f, sos_iter_flags_t flags)
 	return sos_iter_flags_set(f->iter, flags);
 }
 
-int sos_filter_cond_add(sos_filter_t f,
+
+static int __attr_join_idx(sos_attr_t filt_attr, sos_attr_t attr)
+{
+	int idx;
+	int attr_id;
+	sos_array_t attr_ids;
+
+	if (sos_attr_type(filt_attr) != SOS_TYPE_JOIN)
+		return -1;
+
+	/*
+	 * If the filter iterator attribute is a JOIN,
+	 * check if the condition attribute is a member
+	 */
+	attr_id = sos_attr_id(attr);
+	attr_ids = sos_attr_join_list(filt_attr);
+	for (idx = 0; idx < attr_ids->count; idx++) {
+		if (attr_ids->data.uint32_[idx] == attr_id)
+			return idx;
+	}
+	return -1;
+}
+
+static void
+__insert_filter_cond_fwd(sos_attr_t filt_attr, struct sos_cond_list *head,
+			 struct sos_filter_cond_s *new_cond)
+{
+	int filt_attr_id, new_attr_id, new_join_idx;
+	struct sos_filter_cond_s *cond;
+
+	if (TAILQ_EMPTY(head)) {
+		TAILQ_INSERT_TAIL(head, new_cond, entry);
+		return;
+	}
+
+	filt_attr_id = sos_attr_id(filt_attr);
+	new_attr_id = sos_attr_id(new_cond->attr);
+	new_join_idx = __attr_join_idx(filt_attr, new_cond->attr);
+
+	TAILQ_FOREACH(cond, head, entry) {
+		if (new_join_idx >= 0) {
+			int cond_join_idx = __attr_join_idx(filt_attr, cond->attr);
+			/* New condition is in the iterators join attr */
+			if (cond_join_idx < 0) {
+				/* cond not in join_attr, new_cond takes prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_join_idx < cond_join_idx) {
+				/* cond join index greater, new_cond takes prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_join_idx > cond_join_idx) {
+				/* cond's join idx is before new_cond in
+				 * the key, but there may be other conds
+				 * that also take precedence */
+				continue;
+			} else if (new_cond->cond > cond->cond) {
+				/* same join attr, condition takes prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_cond->cond < cond->cond) {
+				TAILQ_INSERT_AFTER(head, cond, new_cond, entry);
+				return;
+			} else {
+				/* Found duplicate condition, remove it */
+				sos_value_put(new_cond->value);
+				free(new_cond);
+				return;
+			}
+		} else if (filt_attr_id == new_attr_id) {
+			/* new cond is on iterator attribute */
+			if (sos_attr_id(cond->attr) != filt_attr_id) {
+				/* cond is not on iterator attribute, new_cond takes prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_cond->cond > cond->cond) {
+				/* cond is also on iterator attr, comparator defines prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_cond->cond < cond->cond) {
+				TAILQ_INSERT_AFTER(head, cond, new_cond, entry);
+				return;
+			} else {
+				/* Found duplicate condition, remove it */
+				sos_value_put(new_cond->value);
+				free(new_cond);
+				return;
+			}
+		} else if (new_attr_id == sos_attr_id(cond->attr)) {
+			/* Neiter condition is on filter iter, condition takes precedence */
+			if (new_cond->cond > cond->cond) {
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_cond->cond < cond->cond) {
+				TAILQ_INSERT_AFTER(head, cond, new_cond, entry);
+				return;
+			} else {
+				/* Found duplicate condition, remove it */
+				sos_value_put(new_cond->value);
+				free(new_cond);
+				return;
+			}
+		}
+		/*
+		 * New attribute doesn't match the condition and is
+		 * not on the iterator attribute, keep going to see if
+		 * we find ourselves.
+		 */
+	}
+	/* No other rule using this attribute, append to tail */
+	TAILQ_INSERT_TAIL(head, new_cond, entry);
+}
+
+static void
+__insert_filter_cond_bkwd(sos_attr_t filt_attr, struct sos_cond_list *head,
+			  struct sos_filter_cond_s *new_cond)
+{
+	int filt_attr_id, new_attr_id, new_join_idx;
+	struct sos_filter_cond_s *cond;
+
+	if (TAILQ_EMPTY(head)) {
+		TAILQ_INSERT_TAIL(head, new_cond, entry);
+		return;
+	}
+
+	filt_attr_id = sos_attr_id(filt_attr);
+	new_attr_id = sos_attr_id(new_cond->attr);
+	new_join_idx = __attr_join_idx(filt_attr, new_cond->attr);
+
+	TAILQ_FOREACH(cond, head, entry) {
+		if (new_join_idx >= 0) {
+			int cond_join_idx = __attr_join_idx(filt_attr, cond->attr);
+			/* New condition is in the iterators join attr */
+			if (cond_join_idx < 0) {
+				/* cond not in join_attr, new_cond takes prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_join_idx < cond_join_idx) {
+				/* cond join index greater, new_cond takes prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_join_idx > cond_join_idx) {
+				/* cond's join idx is before new_cond in
+				 * the key, but there may be other conds
+				 * that also take precedence */
+				continue;
+			} else if (new_cond->cond < cond->cond) {
+				/* same join attr, condition takes prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_cond->cond > cond->cond) {
+				TAILQ_INSERT_AFTER(head, cond, new_cond, entry);
+				return;
+			} else {
+				/* Found duplicate condition, remove it */
+				sos_value_put(new_cond->value);
+				free(new_cond);
+				return;
+			}
+		} else if (filt_attr_id == new_attr_id) {
+			/* new cond is on iterator attribute */
+			if (sos_attr_id(cond->attr) != filt_attr_id) {
+				/* cond is not on iterator attribute, new_cond takes prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_cond->cond < cond->cond) {
+				/* cond is also on iterator attr, comparator defines prec. */
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_cond->cond > cond->cond) {
+				TAILQ_INSERT_AFTER(head, cond, new_cond, entry);
+				return;
+			} else {
+				/* Found duplicate condition, remove it */
+				sos_value_put(new_cond->value);
+				free(new_cond);
+				return;
+			}
+		} else if (new_attr_id == sos_attr_id(cond->attr)) {
+			/* Neiter condition is on filter iter, condition takes precedence */
+			if (new_cond->cond < cond->cond) {
+				TAILQ_INSERT_BEFORE(cond, new_cond, entry);
+				return;
+			} else if (new_cond->cond > cond->cond) {
+				TAILQ_INSERT_AFTER(head, cond, new_cond, entry);
+				return;
+			} else {
+				/* Found duplicate condition, remove it */
+				sos_value_put(new_cond->value);
+				free(new_cond);
+				return;
+			}
+		}
+		/*
+		 * New attribute doesn't match the condition and is
+		 * not on the iterator attribute, keep going to see if
+		 * we find ourselves.
+		 */
+	}
+	/* No other rule using this attribute, append to tail */
+	TAILQ_INSERT_TAIL(head, new_cond, entry);
+}
+
+/*
+ * Sort the filter conditions
+ */
+static void __sort_filter_conds_fwd(sos_filter_t f)
+{
+	sos_attr_t filt_attr = sos_iter_attr(f->iter);
+	struct sos_cond_list cond_list;
+	struct sos_filter_cond_s *cond;
+
+	TAILQ_INIT(&cond_list);
+	while (!TAILQ_EMPTY(&f->cond_list)) {
+		cond = TAILQ_FIRST(&f->cond_list);
+		TAILQ_REMOVE(&f->cond_list, cond, entry);
+		__insert_filter_cond_fwd(filt_attr, &cond_list, cond);
+	}
+	while (!TAILQ_EMPTY(&cond_list)) {
+		cond = TAILQ_FIRST(&cond_list);
+		TAILQ_REMOVE(&cond_list, cond, entry);
+		TAILQ_INSERT_TAIL(&f->cond_list, cond, entry);
+	}
+}
+
+static void __sort_filter_conds_bkwd(sos_filter_t f)
+{
+	sos_attr_t filt_attr = sos_iter_attr(f->iter);
+	struct sos_cond_list cond_list;
+	struct sos_filter_cond_s *cond;
+
+	TAILQ_INIT(&cond_list);
+	while (!TAILQ_EMPTY(&f->cond_list)) {
+		cond = TAILQ_FIRST(&f->cond_list);
+		TAILQ_REMOVE(&f->cond_list, cond, entry);
+		__insert_filter_cond_bkwd(filt_attr, &cond_list, cond);
+	}
+	while (!TAILQ_EMPTY(&cond_list)) {
+		cond = TAILQ_FIRST(&cond_list);
+		TAILQ_REMOVE(&cond_list, cond, entry);
+		TAILQ_INSERT_TAIL(&f->cond_list, cond, entry);
+	}
+}
+
+/**
+ * \brief Add a filter condition to the filter
+ *
+ * The filter conditions affect which objects are returned by
+ * sos_filter_begin(), sos_filter_next(), etc...
+ *
+ * Logically, all filter conditions are ANDed together to get a
+ * TRUE/FALSE answer when evaluating an object. If all filter
+ * conditions match, the sos_filter_xxx() iterator functions will
+ * return the object, otherwise, the next object in the index will be
+ * evaluated until a match is found or all objects in the index are
+ * exhausted.
+ *
+ * \param filt    The filter handle returned by sos_filter_new()
+ * \param attr    The object attribute that will be evaluated by this condition
+ * \param cond_e  One of the sos_cond_e comparison conditions
+ * \param value   The value used in the expression "object-attribute-value cond_e value"
+ * \retval 0      The condition was added successfully
+ * \retval ENOMEM There was insufficient memory to allocate the filter condition
+ */
+
+int sos_filter_cond_add(sos_filter_t filt,
 			sos_attr_t attr, enum sos_cond_e cond_e, sos_value_t value)
 {
 	sos_filter_cond_t cond = malloc(sizeof *cond);
@@ -555,7 +848,7 @@ int sos_filter_cond_add(sos_filter_t f,
 	cond->cmp_fn = fn_table[cond_e];
 	cond->value = sos_value_copy(&cond->value_, value);
 	cond->cond = cond_e;
-	TAILQ_INSERT_TAIL(&f->cond_list, cond, entry);
+	TAILQ_INSERT_TAIL(&filt->cond_list, cond, entry);
 	return 0;
 }
 
@@ -581,14 +874,18 @@ static sos_obj_t next_match(sos_filter_t filt)
 		sos_filter_cond_t cond = sos_filter_eval(obj, filt);
 		if (cond) {
 			sos_obj_put(obj);
-			if (cond->attr->index == filt->iter->index
-			    && cond->cond <= SOS_COND_EQ)
-				/* On ordered index and the condition
-				 * requires a value <= */
+			if (
+			    (cond->attr->index == filt->iter->index)
+			    ||
+			    (0 <= __attr_join_idx(sos_iter_attr(filt->iter), cond->attr))
+			    ) {
+				/* On ordered index and the condition doesn't match */
 				break;
+			}
 			rc = sos_iter_next(filt->iter);
-		} else
+		} else {
 			return obj;
+		}
 	} while (rc == 0);
 	return NULL;
 }
@@ -601,46 +898,93 @@ static sos_obj_t prev_match(sos_filter_t filt)
 		sos_filter_cond_t cond = sos_filter_eval(obj, filt);
 		if (cond) {
 			sos_obj_put(obj);
-			if (cond->attr->index == filt->iter->index
-			    && cond->cond >= SOS_COND_EQ)
-				/* On ordered index and the condition
-				 * requires a value >= */
+			if (
+			    (cond->attr->index == filt->iter->index)
+			    ||
+			    (0 <= __attr_join_idx(sos_iter_attr(filt->iter), cond->attr))
+			    ) {
+				/* On ordered index and the condition doesn't match */
 				break;
+			}
 			rc = sos_iter_prev(filt->iter);
-		} else
+		} else {
 			return obj;
+		}
 	} while (rc == 0);
 	return NULL;
 }
 
+/**
+ * \brief Return the first matching object.
+ *
+ * \param filt The filter handle.
+ * \retval !NULL Pointer to the matching sos_obj_t.
+ * \retval NULL  No object's matched all of the filter conditions.
+ */
 sos_obj_t sos_filter_begin(sos_filter_t filt)
 {
 	sos_filter_cond_t cond;
 	int rc;
+	int join_idx, min_join_idx = 0;
+	sos_attr_t filt_attr = sos_iter_attr(filt->iter);
+	int filt_attr_id = sos_attr_id(filt_attr);
+	int sup = 0;
 	SOS_KEY(key);
 
-	/* Find the filter attribute condition with the smallest cardinality */
-	rc = sos_iter_begin(filt->iter);
-	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
-		if (cond->attr->index != filt->iter->index)
-			continue;
-		/* NB: this check presumes the index is in
-		 * increasing order. For all the built-in
-		 * types, this is the case, however, if the
-		 * user builds their own types/comparators,
-		 * this check is invalid */
-		if (cond->cond < SOS_COND_EQ)
-			continue;
+	__sort_filter_conds_fwd(filt);
 
-		sos_key_set(key, sos_value_as_key(cond->value),
-			    sos_value_size(cond->value));
-		rc = sos_iter_sup(filt->iter, key);
+	if (sos_attr_type(filt_attr) == SOS_TYPE_JOIN) {
+		/*
+		 * Initialize the key to zero, because it may only be
+		 * partially set inside the condition loop below
+		 */
+		ods_key_value_t kv = key->as.ptr;
+		memset(kv->value, 0, sos_attr_size(filt_attr));
 	}
+
+	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
+		join_idx = __attr_join_idx(filt_attr, cond->attr);
+		if (join_idx >= 0) {
+			/* Iter attr is SOS_TYPE_JOIN, fill in the bits from this condition */
+			if (join_idx >= min_join_idx) {
+				sos_key_join(key, filt_attr, join_idx, cond->value);
+				/* Once the bits of the JOIN key have been set,
+				 * don't overwrite the same index with another
+				 * condition value. The conditions are sorted
+				 * so that this works correctly, i.e. GE comes
+				 * before LE */
+				min_join_idx += 1;
+				sup = 1;
+				continue;
+			}
+		} else if (sos_attr_id(cond->attr) == filt_attr_id) {
+			sos_key_set(key, sos_value_as_key(cond->value),
+				    sos_value_size(cond->value));
+			sup = 1;
+			break;
+		}
+		/*
+		 * None of the filter conditions affect the iterator
+		 * attribute, start at the beginning of the index
+		 */
+		break;
+	}
+	if (sup)
+		rc = sos_iter_sup(filt->iter, key);
+	else
+		rc = sos_iter_begin(filt->iter);
 	if (!rc)
 		return next_match(filt);
 	return NULL;
 }
 
+/**
+ * \brief Return the next matching object.
+ *
+ * \param filt The filter handle.
+ * \retval !NULL Pointer to the matching sos_obj_t.
+ * \retval NULL  No object's matched all of the filter conditions.
+ */
 sos_obj_t sos_filter_next(sos_filter_t filt)
 {
 	int rc = sos_iter_next(filt->iter);
@@ -690,25 +1034,54 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 {
 	sos_filter_cond_t cond;
 	int rc;
-
-	rc = sos_iter_end(filt->iter);
+	int join_idx, min_join_idx = 0;
+	sos_attr_t filt_attr = sos_iter_attr(filt->iter);
+	int filt_attr_id = sos_attr_id(filt_attr);
+	int sup = 0;
 	SOS_KEY(key);
-	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
-		if (cond->attr->index != filt->iter->index)
-			continue;
 
-		/* NB: this check presumes the index is in
-		 * increasing order. For all the built-in
-		 * types, this is the case, however, if the
-		 * user builds their own types/comparators,
-		 * this check is invalid */
-		if (cond->cond >= SOS_COND_EQ)
-			continue;
+	__sort_filter_conds_bkwd(filt);
 
-		sos_key_set(key, sos_value_as_key(cond->value),
-			    sos_value_size(cond->value));
-		rc = sos_iter_inf(filt->iter, key);
+	if (sos_attr_type(filt_attr) == SOS_TYPE_JOIN) {
+		/*
+		 * Initialize the key to zero, because it may only be
+		 * partially set inside the condition loop below
+		 */
+		ods_key_value_t kv = key->as.ptr;
+		memset(kv->value, 0, sos_attr_size(filt_attr));
 	}
+
+	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
+		join_idx = __attr_join_idx(filt_attr, cond->attr);
+		if (join_idx >= 0) {
+			/* Iter attr is SOS_TYPE_JOIN, fill in the bits from this condition */
+			if (join_idx >= min_join_idx) {
+				sos_key_join(key, filt_attr, join_idx, cond->value);
+				/* Once the bits of the JOIN key have been set,
+				 * don't overwrite the same index with another
+				 * condition value. The conditions are sorted
+				 * so that this works correctly, i.e. GE comes
+				 * before LE */
+				min_join_idx += 1;
+				sup = 1;
+				continue;
+			}
+		} else if (sos_attr_id(cond->attr) == filt_attr_id) {
+			sos_key_set(key, sos_value_as_key(cond->value),
+				    sos_value_size(cond->value));
+			sup = 1;
+			break;
+		}
+		/*
+		 * None of the filter conditions affect the iterator
+		 * attribute, start at the end of the index
+		 */
+		break;
+	}
+	if (sup)
+		rc = sos_iter_inf(filt->iter, key);
+	else
+		rc = sos_iter_end(filt->iter);
 	if (!rc)
 		return prev_match(filt);
 	return NULL;
