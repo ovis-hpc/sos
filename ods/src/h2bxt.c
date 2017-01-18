@@ -753,7 +753,7 @@ static int h2bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
 	int bkt;
 
 	iter_cleanup(t, iter);
-	iter->dir = H2BXT_ITER_FWD;
+	iter->dir = H2BXT_ITER_REV;
 
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
 		if (ods_iter_find_glb(iter->iter_table[bkt], key))
