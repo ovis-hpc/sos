@@ -478,6 +478,9 @@ cdef class Schema(SosObject):
         self.c_schema = c_schema
         return self
 
+    def attr_iter(self):
+        return self.__iter__()
+
     def __iter__(self):
         self.c_next_attr = sos_schema_attr_first(self.c_schema)
         return self
@@ -495,7 +498,7 @@ cdef class Schema(SosObject):
         cdef const char *idx_key = NULL
         cdef const char *idx_args = NULL
         cdef int join_count
-        cdef char **join_args;
+        cdef char **join_args
 
         self.c_schema = sos_schema_new(name)
         if self.c_schema == NULL:
@@ -516,7 +519,7 @@ cdef class Schema(SosObject):
             if t == SOS_TYPE_JOIN:
                 join_attrs = attr['join_attrs']
                 join_count = len(join_attrs)
-                join_args = <char **>malloc(join_count * 8);
+                join_args = <char **>malloc(join_count * 8)
                 rc = 0
                 for attr_name in join_attrs:
                     join_args[rc] = <char *>attr_name
@@ -627,7 +630,7 @@ cdef class Key(object):
         return self.c_size
 
     def __str__(self):
-        cdef char *s
+        cdef const char *s
         if self.attr:
             s = sos_attr_key_to_str(self.attr.c_attr, self.c_key)
         else:
@@ -1026,6 +1029,9 @@ cdef class Filter(object):
         cdef int rc
         cdef sos_value_t cond_v
 
+        if type(value_str) != str:
+            value_str = str(value_str)
+
         # strip embedded '"' from value if present
         value_str = value_str.replace('"', '')
 
@@ -1033,7 +1039,7 @@ cdef class Filter(object):
         if not cond_v:
             raise ValueError("The attribute value for {0} could not be created.".format(cond_attr.name()))
 
-        cond_v = sos_value_init(cond_v, NULL, cond_attr.c_attr);
+        cond_v = sos_value_init(cond_v, NULL, cond_attr.c_attr)
         rc = sos_value_from_str(cond_v, value_str, NULL)
         if rc != 0:
             raise ValueError("The value {0} is invalid for the {1} attribute."
@@ -1110,7 +1116,7 @@ cdef class Filter(object):
         The intent is that this string can be exchanged over the network
         to enable paging of filter records at the browser
         """
-        cdef char *c_str
+        cdef const char *c_str
         cdef int rc = sos_filter_pos(self.c_filt, &self.c_pos)
         if rc != 0:
             return None
