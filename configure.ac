@@ -37,6 +37,8 @@ if test -z "$ENABLE_PYTHON_TRUE"
 then
   AM_PATH_PYTHON(,,[:])
   NUMPY_INCLUDE_PATH=$($PYTHON -c "import numpy; print(numpy.get_include())")
+  which cython >/dev/null 2>&1 || AC_MSG_ERROR("cython not found")
+  test -n "$NUMPY_INCLUDE_PATH" || AC_MSG_ERROR("numpy not found.")
   AX_PYTHON_DEVEL()
   AC_MSG_RESULT([${NUMPY_INCLUDE_PATH}])
   AC_SUBST([NUMPY_INCLUDE_PATH])
