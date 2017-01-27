@@ -944,7 +944,7 @@ cdef class Attr(SosObject):
     def join_list(self):
         cdef sos_array_t array = sos_attr_join_list(self.c_attr)
         a = OAArray()
-        return a.set_data(NULL, &array.data.byte_, array.count, np.NPY_UINT32)
+        return a.set_data(NULL, array.data.byte_, array.count, np.NPY_UINT32)
 
     def join_iter(self):
         return AttrJoinIter(self)
