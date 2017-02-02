@@ -1037,18 +1037,18 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 	int join_idx, min_join_idx = 0;
 	sos_attr_t filt_attr = sos_iter_attr(filt->iter);
 	int filt_attr_id = sos_attr_id(filt_attr);
-	int sup = 0;
+	int inf = 0;
 	SOS_KEY(key);
 
 	__sort_filter_conds_bkwd(filt);
 
 	if (sos_attr_type(filt_attr) == SOS_TYPE_JOIN) {
 		/*
-		 * Initialize the key to zero, because it may only be
+		 * Initialize the key to 0xFF, because it may only be
 		 * partially set inside the condition loop below
 		 */
 		ods_key_value_t kv = key->as.ptr;
-		memset(kv->value, 0, sos_attr_size(filt_attr));
+		memset(kv->value, 0xFF, sos_attr_size(filt_attr));
 	}
 
 	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
@@ -1063,13 +1063,13 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 				 * so that this works correctly, i.e. GE comes
 				 * before LE */
 				min_join_idx += 1;
-				sup = 1;
+				inf = 1;
 				continue;
 			}
 		} else if (sos_attr_id(cond->attr) == filt_attr_id) {
 			sos_key_set(key, sos_value_as_key(cond->value),
 				    sos_value_size(cond->value));
-			sup = 1;
+			inf = 1;
 			break;
 		}
 		/*
@@ -1078,7 +1078,7 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 		 */
 		break;
 	}
-	if (sup)
+	if (inf)
 		rc = sos_iter_inf(filt->iter, key);
 	else
 		rc = sos_iter_end(filt->iter);
