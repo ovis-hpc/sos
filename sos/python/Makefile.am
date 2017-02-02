@@ -4,7 +4,7 @@ PY_INCLUDES = -I$(srcdir)/../include \
 	   -I$(top_srcdir)/ods/include \
 	   -I$(NUMPY_INCLUDE_PATH)
 
-pkgpyexec_LTLIBRARIES = Sos.la Ldms.la Array.la
+pkgpyexec_LTLIBRARIES = Sos.la Array.la
 
 Sos_la_SOURCES = Sos.pyx Sos.pxd
 nodist_Sos_la_SOURCES = Sos.c
@@ -18,12 +18,6 @@ nodist_Array_la_SOURCES = Array.c
 Array_la_CFLAGS = -g -O0  $(PY_INCLUDES) $(PYTHON_CPPFLAGS)
 Array_la_LDFLAGS = $(PYTHON_LDFLAGS) -module -shared
 Array_la_LIBADD = $(top_builddir)/sos/src/libsos.la
-
-Ldms_la_SOURCES = Ldms.pyx
-nodist_Ldms_la_SOURCES = Ldms.c
-Ldms_la_CFLAGS = -g -O0  $(PY_INCLUDES) $(PYTHON_CPPFLAGS)
-Ldms_la_LDFLAGS = $(PYTHON_LDFLAGS) -module -shared
-Ldms_la_LIBADD = $(top_builddir)/sos/src/libsos.la
 
 pkgpyexecdir = $(pkgpythondir)
 

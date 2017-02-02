@@ -4,7 +4,6 @@ import sys
 import numpy as np
 import argparse
 from sosdb import Sos
-from sosdb import Ldms
 import matplotlib.mlab as mlab
 import matplotlib.dates as mdates
 from matplotlib.ticker import Formatter
@@ -39,6 +38,7 @@ def plot_xy(x, y, title_str, args,
     max_y = max(y)
 
     figure = plt.figure(figsize=(12,4))
+    # left, bottom, width, height
     axis = figure.add_axes([0.075, 0.225, 0.875, 0.65], axisbg='w')
     axis.tick_params(labelsize=10, direction='out')
     x_formatter = MyXFormatter()
@@ -71,61 +71,126 @@ def plot_xy(x, y, title_str, args,
     plt.title(title_str.replace("_", "\_") + " $\mu$ and $\pm \sigma$ interval")
     plt.axis([min_x, max_x, min_y, max_y])
     axis.legend(loc='upper left')
-    # plt.yscale(args.y_scale)
     plt.grid(True)
     print("Done...")
     plt.show()
 
-def get_times_from_args(cont, args):
-    if args.begin:
-        start = int(args.begin.strftime("%s"))
-    else:
-        start = 0
-    if args.end:
-        end = int(args.end.strftime("%s"))
-    else:
-        end = 0
-
-    if start == 0 or end == 0:
-        v = Ldms.Vector(cont, args.schema, time_name=args.time_name, comp_name=args.comp_name)
-        rng = v.range()
-        if start == 0:
-            start = rng[0]
-        if end == 0:
-            end = rng[1]
-
-    return (start, end)
-
 def query_schema(cont, verbose=False):
-    for s in cont:
+    for s in cont.schema_iter():
         print s.name()
         if verbose:
-            for a in s:
+            for a in s.attr_iter():
                 print "    {0}".format(a.name())
 
-def query_dates(cont, schema, time_name, comp_name, verbose=False):
-    v = Ldms.Vector(cont, schema, time_name=time_name, comp_name=comp_name)
-    rng = v.range()
-    start = dt.datetime.fromtimestamp(rng[0])
-    end = dt.datetime.fromtimestamp(rng[1])
-    print "There are data available from {0}:{1} " \
-        "through {2}:{3}".format(rng[0], start, rng[1], end)
+def fmt_timestamp(timestamp, fmt='%m/%d/%y %H:%M:%S'):
+    x = int(timestamp)
+    d = dt.datetime.fromtimestamp(x)
+    return d.strftime(fmt)
 
-def query_data(args, cont, schema, metric_name, time_name,
-               comp_name, comp_id, index_name,
-               start_time=None, end_time=None, verbose=False, samples=None):
-    v = Ldms.Vector(cont, schema, time_name=time_name, comp_name=comp_name)
-    cnt, x, y = v.query(metric_name, comp_id,
-                        index_name=index_name,
-                        start_time=start_time, end_time=end_time)
-    if cnt == 2:
+def date_range(cont, args):
+    schema = cont.schema_by_name(args.schema)
+    if not schema:
+        raise NameError("The schema named '{0}' does not exist.".format(args.schema))
+
+    comp_id = args.component_id
+    if comp_id:
+        comp_time_attr = schema.attr_by_name(args.comp_time_name)
+        if not comp_time_attr:
+            raise Sos.SchemaAttrError(args.comp_time_name, args.schema)
+
+        comp_attr = schema.attr_by_name(args.comp_name)
+        if not comp_attr:
+            raise Sos.SchemaAttrError(args.comp_name, args.schema)
+
+        filt = Sos.Filter(comp_time_attr)
+        filt.add_condition(comp_attr, Sos.COND_EQ, comp_id)
+    else:
+        time_attr = schema.attr_by_name(args.time_name)
+        if not time_attr:
+            raise Sos.SchemaAttrError(args.time_name, args.schema)
+        filt = Sos.Filter(time_attr)
+
+    first = filt.begin()
+    if first is None:
+        return None
+    end = filt.end()
+    return (first[args.time_name], end[args.time_name])
+
+def query_dates(cont, args):
+    start, end = date_range(cont, args)
+    print "There are data available from {0} ({1:.6f}) through {2} ({3:.6f})". \
+        format(fmt_timestamp(start), start, fmt_timestamp(end), end)
+
+def query_data(cont, args,
+               verbose=False, samples=None):
+
+    if args.component_id is None:
+        print ("The component_id argument is required for --query=data.")
+        return
+    schema = cont.schema_by_name(args.schema)
+    if not schema:
+        raise NameError("The schema named '{0}' does not exist.".format(args.schema))
+
+    if args.begin is None or args.end is None:
+        start_time, end_time = date_range(cont, args)
+        if not args.begin:
+            args.begin = start_time
+        if not args.end:
+            args.end = end_time
+
+    time_attr = schema.attr_by_name(args.time_name)
+    if not time_attr:
+        raise Sos.SchemaAttrError(args.time_name, args.schema)
+
+    comp_id = args.component_id
+    if comp_id:
+        comp_time_attr = schema.attr_by_name(args.comp_time_name)
+        if not comp_time_attr:
+            raise Sos.SchemaAttrError(args.comp_time_name, args.schema)
+
+        comp_attr = schema.attr_by_name(args.comp_name)
+        if not comp_attr:
+            raise Sos.SchemaAttrError(args.comp_name, args.schema)
+
+        filt = Sos.Filter(comp_time_attr)
+        filt.add_condition(comp_attr, Sos.COND_EQ, comp_id)
+    else:
+        filt = Sos.Filter(time_attr)
+
+    if args.begin:
+        filt.add_condition(time_attr, Sos.COND_GE, args.begin)
+    if args.end:
+        filt.add_condition(time_attr, Sos.COND_LE, args.end)
+
+    cnt, res = filt.as_ndarray(args.count, [args.time_name, args.metric_name])
+    if cnt == 0:
         print("Insufficient plot data.")
         return
-    X = x.as_ndarray()
-    Y = y.as_ndarray()
-    print(cnt, len(X), len(Y), min(X), max(X), min(Y), max(Y))
-    Y = Y / 1024
-    plot_xy(X, Y, metric_name, args, y_label='MB', y_fmt="{0:.1f}",
+    if args.rate:
+        Y = np.diff(res[1][0:cnt])
+    else:
+        Y = res[1][:cnt]
+    cnt = len(Y)
+    X = res[0][:cnt]
+    min_Y = min(Y)
+    max_Y = max(Y)
+    print(cnt, len(X), len(Y), min(X), max(X), min_Y, max_Y)
+    y_label = ''
+    if max_Y > 1.0e6:
+        if max_Y < 1.0e9:
+            Y /= 1.0e3
+            y_label='10^3'
+        elif max_Y < 1.0e12:
+            Y /= 1.0e6
+            y_label = '10^6'
+        else:
+            Y /= 1.e9
+            y_label = '10^9'
+    title = args.metric_name
+    if args.rate:
+        title += '(rate)'
+    plot_xy(X, Y, title, args,
+            y_label=y_label, y_fmt="{0:.1f}",
             mean=True, stddev=True)
 
 def valid_date(date_str):
@@ -136,59 +201,60 @@ def valid_date(date_str):
         raise argparse.ArgumentTypeError(msg)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Query metric data in a container")
-    parser.add_argument("--path", default="/btrfs_nvme/aries_r",
-                        help="The path to the container.")
-    parser.add_argument("--schema", default='aries_r',
-                        help="The name of the schema")
-    parser.add_argument("--query", default="schema",
+    parser = argparse.ArgumentParser(description="Query/Plot metric data in a SOS database.")
+    parser.add_argument("--path", required=True,
+                        help="The path to the SOS database.")
+    parser.add_argument("--schema", default='Sample',
+                        help="The name of the schema for metric data. The default is 'Sample'.")
+    parser.add_argument("--query", default="schema", metavar="QUERY_TYPE",
                         help="Query the specified information category: " \
                         "schema, dates, data.")
-    parser.add_argument("--metric_name", default="Time",
+
+    parser.add_argument("--metric_name", default="timestamp",
                         help="Specifies the name of the schema attribute containing the data to plot. " \
-                        "Used if --query=data. ")
+                        "Required if --query=data. ")
     parser.add_argument("--component_id", type=int,
-                        help="Specifies the Id of the Component. Used if --query=data.")
-    parser.add_argument("--time_name", default="Time",
-                        help="Specifies the name of the schema attribute containing " \
-                        "the timestamp. The default is 'Time'")
-    parser.add_argument("--comp_name", default="CompId",
-                        help="Specifies the name of the schema attribute containing the Component Id. " \
-                        "The default is 'CompId'.")
-    parser.add_argument("--index_name", default="CompTime",
-                        help="Specifies the name of the schema attribute to use to order the data. " \
-                        "The default is 'CompTime'. Note that picking this attribute unwisely can result " \
-                        "in poor performance.")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Request verbose query output")
-    parser.add_argument("--begin", type=valid_date,
+                        help="Specifies the Id of the Component. Required if --query=data.")
+
+    parser.add_argument("--rate", action="store_true",
+                        help="Output the data as rate/1st-difference.")
+
+    parser.add_argument("--begin", type=valid_date, metavar="TIME/DATE",
                         help="Specify the start time/date for the query. " \
                         "Format is YYYY/MM/DD HH:MM")
-    parser.add_argument("--end", type=valid_date,
-                        help="Specify the start time/date for the query. " \
+    parser.add_argument("--end", type=valid_date, metavar="TIME/DATE",
+                        help="Specify the end time/date for the query. " \
                         "Format is YYYY/MM/DD HH:MM")
     parser.add_argument("--y_scale", default='linear',
                         help="Specify the y-scale as 'log' or 'linear'")
+    parser.add_argument("--count", default=65536, type=int,
+                        help="Specify the maximum number of samples to include in output. " \
+                        "Default is 64k.")
+
+
+    parser.add_argument("--time_name", default="timestamp",
+                        help="Specifies the name of the schema attribute containing " \
+                        "the timestamp. The default is 'timestamp'.")
+    parser.add_argument("--comp_name", default="component_id",
+                        help="Specifies the name of the schema attribute containing the Component Id. " \
+                        "The default is 'component_id'.")
+    parser.add_argument("--comp_time_name", default="comp_time",
+                        help="Specifies the name of the schema attribute to use to order the data. " \
+                        "The default is 'comp_time'.")
+
+    parser.add_argument("--verbose", action="store_true",
+                        help="Request verbose query output")
     args = parser.parse_args()
 
-    cont = Sos.Container(args.path)
-
     try:
+        cont = Sos.Container(args.path)
         if args.query.upper() == "SCHEMA":
             query_schema(cont, verbose=args.verbose)
         else:
-            if not args.schema:
-                print("The schema must be specified using the --schema argument.")
-            elif args.query.upper() == "DATES":
-                query_dates(cont, args.schema,
-                            time_name=args.time_name,
-                            comp_name=args.comp_name,
-                            verbose=args.verbose)
+            if args.query.upper() == "DATES":
+                query_dates(cont, args)
             elif args.query.upper() == "DATA":
-                start, end = get_times_from_args(cont, args)
-                query_data(args, cont, args.schema, args.metric_name,
-                           args.time_name, args.comp_name, args.component_id,
-                           index_name=args.index_name,
-                           start_time=start, end_time=end, verbose=args.verbose)
+                query_data(cont, args)
+
     except Exception as ex:
         print(ex)
