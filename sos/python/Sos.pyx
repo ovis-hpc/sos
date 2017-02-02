@@ -1095,12 +1095,10 @@ cdef class Filter(object):
         cdef sos_obj_t c_o = sos_filter_begin(self.c_filt)
         if c_o == NULL:
             return count
-        count += 1
-        sos_obj_put(c_o)
         while c_o != NULL:
-            c_o = sos_filter_next(self.c_filt)
+            count += 1
             sos_obj_put(c_o)
-            count = count + 1
+            c_o = sos_filter_next(self.c_filt)
         return count
 
     def obj(self):
