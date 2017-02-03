@@ -16,16 +16,44 @@ class Bollinger_band(object):
 
     def __init__(self, attr_name = None, window = 60, multi_sd = 2):
         '''
-        Constructor
+        Constructor of Bolling_band
+        
+        Arguments:
+        --- attr_name: name of the data point to be calculated.
+        --- window: window width. The default window width is 60.
+        --- multi_sd: multiple of rolling standard deviation. The default of multi_sd is 2.
         '''
         self.window = window
         self.multi_sd = multi_sd
         self.attr_name = attr_name
 
     def set_attr_name(self, attr_name):
+        '''
+        Set the attr_name
+        
+        Positional Argument:
+        --- attr_name: name of the data point to be calculated.
+                       This is used in plot() function to construct the plot title.
+        '''
         self.attr_name = attr_name
 
     def outliers(self, x, y, ub, lb):
+        '''
+        Calcuate the outliers of the data. 
+        
+        Any y values that are greater than the upper bound or
+        less than the lower bound are outliers.
+        
+        Positional Arguments:
+        --- x: the x-axis data
+        --- y: the y-axis data to be calucated for outliers
+        --- ub: Upper bound of the y values.
+        --- lb: Lower bound of the y values.
+        
+        Returns:
+        --- list of 2 numpy.ndarray's (x values corresponding to outliers, outliers)
+            
+        '''
         outliers = []
         ts = []
         for i in range(len(x)):
@@ -35,6 +63,36 @@ class Bollinger_band(object):
         return((np.array(ts), np.array(outliers)))
 
     def calculate(self, x, y, window = None, multi_sd = None, is_outliers = True):
+        '''
+        Calculate the moving average (rolling average), rolling standard deviation,
+        upper bound, and lower bounds of each time unit.
+        
+        The outliers could be included in the result by set is_outliers = True.
+        
+        Positional Arguments:
+        --- x: a numpy.ndarray of the x-values.
+        --- y: a numpy.ndarray of the y-values.
+            The result are of the y-values.
+        
+        Optional Arguments:
+        --- window: window width used to calculate the rolling average and standard deviation.
+            If this is None, self.window is used. See the Constructor.
+        --- multi_sd: Multiply of the rolling standard deviation.
+            If this is None, self.multi_sd is used. See the Constructor.
+        --- is_outliers: the result includes the outliers if it is true. The default is true.
+        
+        Returns:
+        --- A dictionary x
+            x['ma'] is the numpy.ndarray of rolling average
+            x['std'] is the numpy.ndarray of rolling standard deviation
+            x['upperband'] is the numpy.ndarray of the upperbound
+            x['lowerband'] is the numpy.ndarray of the lowerbound
+            x['timestamp'] is the numpy.ndarray of the x-value. The length of this numpy.ndarray
+                           is shorter than the given 'x'. This is because the rolling of 'window' width.
+            x['window'] is the window width used in the calculation.
+            x['multi_sd'] is the multiply of the rolling standard deviation used in the calculation.
+            x['outlier'] is a list of 2 numpy.ndarray. See the Returns of 'outliers'
+        '''
         try:
             if type(x) is not np.ndarray:
                 raise Exception("'x' must be an numpy.ndarray")
@@ -66,9 +124,26 @@ class Bollinger_band(object):
         except:
             raise
 
-    def plot(self, x, y, window = None, multi_sd = None, bb = None, is_outliers = True,
-             xlabel = "timestamp", ylabel = None, title = None, 
-             is_filled = True, is_show = True):
+    def plot(self, x, y, window = None, multi_sd = None, bb = None,
+             xlabel = "timestamp", ylabel = None, title = None):
+        '''
+        Plot the Bollinger Band of the y value.
+
+        Positional Arguments:
+        --- x: x-value
+        --- y: y-value
+        
+        Optional Arguments:
+        --- window: window width used to calculate the rolling average and standard deviation.
+            If this is None, self.window is used. See the Constructor.
+        --- multi_sd: Multiply of the rolling standard deviation.
+            If this is None, self.multi_sd is used. See the Constructor.
+        --- bb: a result of the 'calculate' function.
+        --- xlabel: The label of the x-axis. The default is 'timestamp'.
+        --- ylabel: The label of the y-axis.
+        --- title: The title of the plot. If it is None and self.attr_name is not None,
+            the title is automatically constructed.
+        '''
         
         if multi_sd is None:
             multi_sd = self.multi_sd
@@ -76,10 +151,7 @@ class Bollinger_band(object):
             window = self.window
 
         if bb is None:
-            if not is_outliers:
-                bb = self.calculate(x, y, window, multi_sd, is_outliers = False)
-            else:
-                bb = self.calculate(x, y, window, multi_sd)
+            bb = self.calculate(x, y, window, multi_sd)
 
         ma = bb['ma']
         ub = bb['upperband']
@@ -98,17 +170,13 @@ class Bollinger_band(object):
         plt.plot(x[window:], ma, label='middle band', linewidth = 0.3, alpha=0.95)
         plt.plot(x[window:], ub, label='upper band', linewidth = 0.3, alpha=0.95)
         plt.plot(x[window:], lb, label='lower band', linewidth = 0.3, alpha=0.95)
-        if is_filled:
-            plt.fill_between(x[window:], lb, ub, facecolor = 'grey', alpha = 0.7)
+        plt.fill_between(x[window:], lb, ub, facecolor = 'grey', alpha = 0.7)
         
         plt.plot(x[window:], y[window:], label='plot', linewidth = 1.3)
         
         plt.xlim(x[window + 1], x[-1])
         
-        if is_outliers and ('outliers' not in bb.keys()):
-            ts, outliers = self.outliers(x, y, bb)
-        else:
-            ts, outliers = bb['outliers']
+        ts, outliers = bb['outliers']
         plt.scatter(ts, outliers, label='outliers', color='red', alpha=0.5)            
         
         if xlabel:
@@ -118,11 +186,11 @@ class Bollinger_band(object):
         if title:
             plt.title(title)
         else:
-            plt.title("{0} ({1}xsd ".format(self.attr_name, multi_sd) + 
-                  "and window of {0})".format(window))
+            if self.attr_name:
+                plt.title("{0} ({1}xsd ".format(self.attr_name, multi_sd) + 
+                          "and window of {0})".format(window))
         
         ax.legend(loc='best')
         plt.grid(True)
         
-        if is_show:
-            plt.show()
+        plt.show()
