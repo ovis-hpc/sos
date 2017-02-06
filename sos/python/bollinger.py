@@ -54,13 +54,12 @@ class Bollinger_band(object):
         --- list of 2 numpy.ndarray's (x values corresponding to outliers, outliers)
             
         '''
-        outliers = []
-        ts = []
-        for i in range(len(x)):
-            if (y[i] > ub[i]) or (y[i] < lb[i]):
-                outliers.append(y[i])
-                ts.append(x[i])
-        return((np.array(ts), np.array(outliers)))
+        
+        if (len(x) != len(ub)) or (len(x) != len(lb)):
+            raise Exception("Length of 'x', 'y', 'ub', and 'lb' must be equal.")
+        
+        cond = np.logical_or(y > ub, y < lb)
+        return(x[cond], y[cond])
 
     def calculate(self, x, y, window = None, multi_sd = None, is_outliers = True):
         '''
@@ -87,8 +86,6 @@ class Bollinger_band(object):
             x['std'] is the numpy.ndarray of rolling standard deviation
             x['upperband'] is the numpy.ndarray of the upperbound
             x['lowerband'] is the numpy.ndarray of the lowerbound
-            x['timestamp'] is the numpy.ndarray of the x-value. The length of this numpy.ndarray
-                           is shorter than the given 'x'. This is because the rolling of 'window' width.
             x['window'] is the window width used in the calculation.
             x['multi_sd'] is the multiply of the rolling standard deviation used in the calculation.
             x['outlier'] is a list of 2 numpy.ndarray. See the Returns of 'outliers'
@@ -107,14 +104,13 @@ class Bollinger_band(object):
             if multi_sd is None:
                 multi_sd = self.multi_sd
             
-            sma = df.y.rolling(window=window, center = False).mean()
-            roll_std = df.y.rolling(window=window, center=False).std()
+            sma = np.array(df.y.rolling(window=window, center = False).mean()[window:])
+            roll_std = np.array(df.y.rolling(window=window, center=False).std()[window:])
             ub = sma + (roll_std * multi_sd)
             lb = sma - (roll_std * multi_sd)
             
-            result = {'ma': sma[window:], 'std': roll_std[window:],
-                      'upperband': ub[window:], 'lowerband': lb[window:],
-                      'timestamp': x[window:], 
+            result = {'ma': sma, 'std': roll_std,
+                      'upperband': ub, 'lowerband': lb,
                       'window': window, 'multi_sd': multi_sd}
             
             if is_outliers:
