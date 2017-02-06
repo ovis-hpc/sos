@@ -8,6 +8,7 @@ import matplotlib.mlab as mlab
 import matplotlib.dates as mdates
 from matplotlib.ticker import Formatter
 from matplotlib import rc
+from sosdb import bollinger
 
 rc('text', usetex=True)
 
@@ -50,16 +51,38 @@ def plot_xy(x, y, title_str, args,
     axis.yaxis.set_major_formatter(y_formatter)
     figure.autofmt_xdate()
 
-    plt.plot(x, y, color='b')
-    if mean:
-        mean = y.mean()
-        mu = np.empty(len(x))
-        mu.fill(mean)
-        plt.plot(x, mu, lw=4, alpha=.5, label='$ \mu $', color='black')
-    if stddev:
-        std = y.std()
-        plt.plot(x, mu+std, lw=4, alpha=.5, color='red', label=r'+1 $\sigma$ ')
-        plt.plot(x, mu-std, lw=4, alpha=.5, color='green', label='-1 $\sigma$ ')
+    if args.bollinger:
+        b = bollinger.Bollinger_band()
+        bb = b.calculate(x, y)
+
+        ma = bb['ma']
+        ub = bb['upperband']
+        lb = bb['lowerband']
+        window = bb['window']
+        ts, outliers = bb['outliers']
+
+        if min_y > min(lb):
+            min_y = min(lb)
+        if max_y < max(ub):
+            max_y = max(ub)
+
+        plt.plot(x[window:], ma, label='Moving Average', linewidth = 0.3, alpha=0.95)
+        plt.plot(x[window:], ub, label='Upper Band', linewidth = 0.3, alpha=0.95)
+        plt.plot(x[window:], lb, label='Lower Band', linewidth = 0.3, alpha=0.95)
+        plt.fill_between(x[window:], lb, ub, facecolor = 'grey', alpha = 0.7)
+        plt.plot(x[window:], y[window:], label='Actual Data', linewidth = 1.3)
+        plt.scatter(ts, outliers, label='Outliers', color='red', alpha=0.5)
+    else:
+        plt.plot(x, y, color='b')
+        if mean:
+            mean = y.mean()
+            mu = np.empty(len(x))
+            mu.fill(mean)
+            plt.plot(x, mu, lw=4, alpha=.5, label='$ \mu $', color='black')
+        if stddev:
+            std = y.std()
+            plt.plot(x, mu+std, lw=4, alpha=.5, color='red', label=r'+1 $\sigma$ ')
+            plt.plot(x, mu-std, lw=4, alpha=.5, color='green', label='-1 $\sigma$ ')
 
     s = dt.datetime.fromtimestamp(min_x)
     year_str = str(s.year)
@@ -68,9 +91,15 @@ def plot_xy(x, y, title_str, args,
         year_str += "-"+str(e.year)
     plt.xlabel('Date/Time ({0})'.format(year_str))
     plt.ylabel(y_label)
-    plt.title(title_str.replace("_", "\_") + " $\mu$ and $\pm \sigma$ interval")
+    
+    if args.bollinger:
+        plt.title(title_str.replace("_", "\_") + 
+                  " -- Bollinger Band (window of {0} time units ".format(bb['window']) + 
+                  "and bands of {0} x sd)".format(bb['multi_sd']))
+    else:
+        plt.title(title_str.replace("_", "\_") + " $\mu$ and $\pm \sigma$ interval")
     plt.axis([min_x, max_x, min_y, max_y])
-    axis.legend(loc='upper left')
+    axis.legend(loc='best')
     plt.grid(True)
     print("Done...")
     plt.show()
@@ -175,6 +204,7 @@ def query_data(cont, args,
     min_Y = min(Y)
     max_Y = max(Y)
     print(cnt, len(X), len(Y), min(X), max(X), min_Y, max_Y)
+    
     y_label = ''
     if max_Y > 1.0e6:
         if max_Y < 1.0e9:
@@ -244,6 +274,11 @@ if __name__ == "__main__":
 
     parser.add_argument("--verbose", action="store_true",
                         help="Request verbose query output")
+
+    parser.add_argument("--bollinger", action="store_true",
+                        help="Plot Bollinger Bands")
+    parser.add_argument("--debug", action="store_true",
+                        help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     try:
@@ -257,4 +292,7 @@ if __name__ == "__main__":
                 query_data(cont, args)
 
     except Exception as ex:
-        print(ex)
+        if args.debug:
+            raise
+        else:
+            print(ex)
