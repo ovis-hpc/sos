@@ -248,6 +248,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--rate", action="store_true",
                         help="Output the data as rate/1st-difference.")
+    parser.add_argument("--bollinger", action="store_true",
+                        help="Plot Bollinger Bands")
 
     parser.add_argument("--begin", type=valid_date, metavar="TIME/DATE",
                         help="Specify the start time/date for the query. " \
@@ -275,8 +277,6 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true",
                         help="Request verbose query output")
 
-    parser.add_argument("--bollinger", action="store_true",
-                        help="Plot Bollinger Bands")
     parser.add_argument("--debug", action="store_true",
                         help=argparse.SUPPRESS)
     args = parser.parse_args()
