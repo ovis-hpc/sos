@@ -2054,7 +2054,11 @@ cdef class Object(object):
 
     cdef get_py_value(self, sos_obj_t c_obj, sos_attr_t c_attr, sos_value_data_t c_data):
         cdef int t = sos_attr_type(c_attr)
-        return <object>type_getters[<int>t](c_obj, c_data)
+        if t == SOS_TYPE_STRUCT:
+            n = sos_attr_size(c_attr)
+            return <object>c_data.struc.char_[:n]
+        else:
+            return <object>type_getters[<int>t](c_obj, c_data)
 
     cdef set_py_value(self, sos_attr_t c_attr, sos_value_data_t c_data, val):
         cdef int t = sos_attr_type(c_attr)
