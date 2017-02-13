@@ -1061,7 +1061,8 @@ int sos_part_move(sos_part_t part, const char *new_part_path)
 	pthread_mutex_unlock(&sos->lock);
 	ods_lock(sos->part_ods, 0, NULL);
 
-	ods_commit(part->obj_ods, SOS_COMMIT_SYNC);
+	if (part->obj_ods)
+		ods_commit(part->obj_ods, SOS_COMMIT_SYNC);
 
 	/* Check to see if this location is already in use. */
 	rc = stat(tmp_path, &sb);
@@ -1131,7 +1132,8 @@ int sos_part_move(sos_part_t part, const char *new_part_path)
 	close(in_fd);
 	close(out_fd);
 	strcpy(SOS_PART(part->part_obj)->path, new_part_path);
-	ods_close(part->obj_ods, SOS_COMMIT_ASYNC);
+	if (part->obj_ods)
+		ods_close(part->obj_ods, SOS_COMMIT_ASYNC);
 	rc = __sos_open_partition(part->sos, part);
 
 	goto out;
