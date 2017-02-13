@@ -656,14 +656,18 @@ cdef class Key(object):
     def get_attr(self):
         return self.attr
 
-    def set_value(self, string):
+    def set_value(self, py_val):
         """Set the value of a key.
-        This method *only* works with a string that has been prepared with
-        struct.pack. Using a normal python string will result in PyString
-        header garbage in your key.
+        For primitive types (e.g. int, float), this method conveniently set the
+        internal key value data according to types. For `SOS_TYPE_STRUCT`, the
+        supplied value `py_val` must be prepared with `struct.pack()`.
         """
-        cdef char *s = string
-        memcpy(sos_key_value(self.c_key), s, self.c_size)
+        cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
+        cdef char *c_val
+        if not self.attr:
+            raise TypeError("Key is not bound to any attribute.")
+        typ = self.attr.type()
+        type_setters[<int>typ](NULL, self.attr.c_attr, data, py_val)
 
     def __int__(self):
         cdef int typ
