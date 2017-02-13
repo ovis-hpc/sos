@@ -5,8 +5,6 @@ Created on Feb 2, 2017
 '''
 
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.dates import DateFormatter, DayLocator, HourLocator
 from pandas import DataFrame, Series
 
 from numpy.core.numeric import arange
@@ -140,7 +138,9 @@ class Bollinger_band(object):
         --- title: The title of the plot. If it is None and self.attr_name is not None,
             the title is automatically constructed.
         '''
-        
+        from matplotlib.dates import DateFormatter, DayLocator, HourLocator
+        import matplotlib.pyplot as plt
+
         if multi_sd is None:
             multi_sd = self.multi_sd
         if window is None:
