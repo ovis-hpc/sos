@@ -91,7 +91,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cont = Sos.Container()
-    cont.open(args.path)
+    try:
+        cont.open(args.path)
+    except Exception as ex:
+        print("The database '{0}' could not be opened.".format(args.path))
+        sys.exit(1)
 
     mf = open(args.map, 'r')
     imap = []                   # an entry for each column
