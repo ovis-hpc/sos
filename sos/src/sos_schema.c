@@ -1113,6 +1113,7 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 			if (!join_ext)
 				goto err_1;
 			memcpy(join_ext, src_attr->ext_ptr, join_ext_sz);
+			attr->ext_ptr = join_ext;
 		}
 		TAILQ_INSERT_TAIL(&dup->attr_list, attr, entry);
 	}
