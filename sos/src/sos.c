@@ -953,6 +953,74 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 	return NULL;
 }
 
+/**
+ * \brief Copy the data in one object to another
+ *
+ * Copy all of the data from the object specified by \c src_obj
+ * to the object specified by \c dst_obj. The objects do not
+ * need to be in the same container. If \c src_obj contains
+ * array attributes, an array of the required size is allocated
+ * in the destination object and the data copied.
+ *
+ * The objects do not need to have the same schema, however, the
+ * type of the attributes in \c src_obj must match the types of
+ * the attributes in the same order in \c dst_obj.
+ *
+ * \param dst_obj	The object to copy to
+ * \param src_obj	The object to copy from
+ * \retval 0		The object data was sucessfully copied
+ * \retval EINVAL	One or both of the input arguments are invalid
+ * \retval ENOMEM	There were insufficient resources in the
+ */
+int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
+{
+	sos_attr_t src_attr, dst_attr;
+	sos_value_data_t src_data, dst_data;
+	sos_obj_t src_arr_obj, dst_arr_obj;
+	size_t key_sz;
+	int rc;
+	sos_key_t key;
+
+	dst_attr = TAILQ_FIRST(&dst_obj->schema->attr_list);
+	TAILQ_FOREACH(src_attr, &src_obj->schema->attr_list, entry) {
+		if (sos_attr_type(src_attr) != sos_attr_type(dst_attr))
+			return EINVAL;
+		if (sos_attr_type(src_attr) == SOS_TYPE_JOIN) {
+			dst_attr = TAILQ_NEXT(dst_attr, entry);
+			continue;
+		}
+		sos_type_t type = sos_attr_type(src_attr);
+		assert(type == sos_attr_type(dst_attr));
+
+		if (!sos_attr_is_array(src_attr)) {
+			src_data = sos_obj_attr_data(src_obj, src_attr, NULL);
+			dst_data = sos_obj_attr_data(dst_obj, dst_attr, NULL);
+			if (!src_data || !dst_data)
+				return EINVAL;
+			memcpy(dst_data->prim.struc_, src_data->prim.struc_,
+			       sos_attr_size(src_attr));
+		} else {
+			struct sos_value_s src_v_, dst_v_;
+			sos_value_t src_value;
+			sos_value_t dst_value;
+			src_value = sos_value_init(&src_v_, src_obj, src_attr);
+			if (!src_value)
+				return EINVAL;
+			dst_value = sos_array_new(&dst_v_, dst_attr, dst_obj,
+						  src_value->data->array.count);
+			if (!dst_value)
+				return ENOMEM;
+			memcpy(dst_value->data->array.data.byte_,
+			       src_value->data->array.data.byte_,
+			       sos_value_size(src_value));
+			sos_value_put(src_value);
+			sos_value_put(dst_value);
+		}
+		dst_attr = TAILQ_NEXT(dst_attr, entry);
+	}
+	return 0;
+}
+
 static sos_obj_ref_t NULL_REF = {
 	.ref = { 0, 0 }
 };

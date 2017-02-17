@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013-2017 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2013-2015 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2013-2017 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
  * Export of this program may require a license from the United States
@@ -381,6 +381,8 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state);
 uint32_t sos_part_refcount(sos_part_t part);
 void sos_part_put(sos_part_t part);
 int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
+uint64_t sos_part_export(sos_part_t src_part, sos_t dst_sos);
+
 /**
  * \brief The callback function called by the sos_part_obj_iter() function
  *
@@ -440,7 +442,7 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
 
 sos_obj_t sos_obj_new(sos_schema_t schema);
 sos_schema_t sos_obj_schema(sos_obj_t obj);
-
+int sos_obj_copy(sos_obj_t dst, sos_obj_t src);
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj);
 sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref);
 

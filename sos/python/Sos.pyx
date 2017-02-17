@@ -401,6 +401,10 @@ cdef class Partition(SosObject):
         if rc != 0:
             self.abort(rc)
 
+    def export(self, Container dst_cont):
+        """Export the contents of this partition to another container"""
+        return sos_part_export(self.c_part, dst_cont.c_cont)
+
     def __dealloc__(self):
         if self.c_part:
             sos_part_put(self.c_part)

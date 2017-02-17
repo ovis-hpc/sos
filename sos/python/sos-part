@@ -44,6 +44,8 @@ if __name__ == "__main__":
                          help="Remove the partition from the database.")
     actions.add_argument("--delete", action="store_true",
                          help="Remove the partition from the database and delete the data.")
+    actions.add_argument("--export", metavar="DB-PATH",
+                         help="Export a partitions contents to another database.")
 
     parser.add_argument("--location", metavar="PART-PATH",
                         help="Specifies the location of the partition. " \
@@ -81,7 +83,7 @@ if __name__ == "__main__":
                          fmt_size(stat.size), p.path()))
         sys.exit(0)
 
-    if args.create or args.state or args.move or args.delete:
+    if args.create or args.state or args.move or args.delete or args.export:
         if not args.name:
             print("A partition name must be specified.")
             syst.exit(1)
@@ -143,3 +145,14 @@ if __name__ == "__main__":
             print("The partition could not be moved.\n{0}".format(ex))
             sys.exit(1)
         sys.exit(0)
+
+    #
+    # Export
+    #
+    if args.export:
+        try:
+            dst_sos = Sos.Container(args.export)
+            count = part.export(dst_sos)
+            print("{0} objects exported to the container {1}".format(count, args.export))
+        except Exception as ex:
+            print("The contents of the partitoin could not be exported.\n{0}".format(ex))

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2017 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -671,6 +671,147 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 	ods_unlock(sos->part_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return part;
+}
+
+struct export_obj_iter_args_s {
+	sos_t src_sos;
+	sos_t dst_sos;
+	sos_part_t src_part;
+	uint64_t export_count;
+};
+
+static int __export_callback_fn(ods_t ods, ods_obj_t ods_obj, void *arg)
+{
+	sos_obj_ref_t ref;
+	sos_obj_t src_obj, dst_obj;
+	struct export_obj_iter_args_s *uarg = arg;
+	sos_t src_sos = uarg->src_sos;
+	sos_t dst_sos = uarg->dst_sos;
+	sos_part_t src_part = uarg->src_part;
+	sos_obj_data_t sos_obj_data = ods_obj->as.ptr;
+	const char *schema_name;
+	sos_schema_t src_schema, dst_schema;
+	int rc;
+
+	src_schema = sos_schema_by_id(src_sos, sos_obj_data->schema);
+	if (!src_schema) {
+		printf("An object with the invalid schema id %d "
+		       "encountered.\n", sos_obj_data->schema);
+		return 0;
+	}
+
+	schema_name = sos_schema_name(src_schema);
+	dst_schema = sos_schema_by_name(dst_sos, schema_name);
+	if (!dst_schema) {
+		/* Duplicate and add the src_schema */
+		dst_schema = sos_schema_dup(src_schema);
+		if (!dst_schema) {
+			printf("The source schema %s could not be duplicated.",
+			       schema_name);
+			return rc;
+		}
+		/* Add the schema to the destination container */
+		rc = sos_schema_add(dst_sos, dst_schema);
+		if (rc) {
+			printf("Error %d adding schema %s to the destination "
+			       "container.\n", errno, schema_name);
+			return rc;
+		}
+	}
+
+	/* Create a new object instance in the destination container */
+	dst_obj = sos_obj_new(dst_schema);
+	if (!dst_obj) {
+		printf("Error %d encountered creating an object of type %s "
+		       "in the destination container.\n",
+		       errno, schema_name);
+	}
+
+	ref.ref.ods = SOS_PART(src_part->part_obj)->part_id;
+	ref.ref.obj = ods_obj_ref(ods_obj);
+	src_obj = __sos_init_obj(src_sos, src_schema, ods_obj, ref);
+	sos_obj_copy(dst_obj, src_obj);
+	sos_obj_index(dst_obj);
+	sos_obj_put(dst_obj);
+	sos_obj_put(src_obj);
+	uarg->export_count ++;
+	return 0;
+}
+
+/**
+ * \brief Export the objects in a partition to another container
+ *
+ * Export all of the objects in the specified partition to another
+ * container. The destination partition in the destination container
+ * will be the primary partition in the destination container.
+ *
+ * The source partition must not be the primary partition in order to
+ * ensure that every object will be exported.
+ *
+ * The source container (the container in which src_part is located)
+ * cannot be the same as the destination container.
+ *
+ * \param src_part	The source partition handle
+ * \param dst_cont	The destination container
+ * \retval		>= 0 The number of objects exported to the
+ *			     destination container
+ * \retval		<0   An error occured, see errno for more information
+ */
+uint64_t sos_part_export(sos_part_t src_part, sos_t dst_sos)
+{
+	sos_t src_sos = src_part->sos;
+	uint64_t rc = 0;
+	sos_part_state_t cur_state;
+	struct export_obj_iter_args_s uargs;
+	struct ods_obj_iter_pos_s pos;
+
+	/* The source container cannot be the same as the destination
+	 * container */
+	if (src_sos == dst_sos) {
+		return -EINVAL;
+		errno = EINVAL;
+	}
+
+	/* If the state is PRIMARY or BUSY, return EBUSY */
+	pthread_mutex_lock(&src_sos->lock);
+	ods_lock(src_sos->part_ods, 0, NULL);
+	cur_state = SOS_PART(src_part->part_obj)->state;
+	if (cur_state == SOS_PART_STATE_BUSY
+	    || cur_state == SOS_PART_STATE_PRIMARY) {
+		errno = EBUSY;
+		rc = -errno;
+		goto err;
+	}
+	/* Make the source partition busy to prevent changes while the
+	 * data is being copied */
+	__make_part_busy(src_sos, src_part);
+	ods_unlock(src_sos->part_ods, 0);
+	pthread_mutex_unlock(&src_sos->lock);
+
+	uargs.src_sos = src_sos;
+	uargs.src_part = src_part;
+	uargs.dst_sos = dst_sos;
+	uargs.export_count = 0;
+
+	/* Export all objects in src_part to the destination container */
+	ods_obj_iter_pos_init(&pos);
+	rc = ods_obj_iter(src_part->obj_ods, &pos, __export_callback_fn, &uargs);
+
+	/* Restore the source partition state */
+	pthread_mutex_lock(&src_sos->lock);
+	ods_lock(src_sos->part_ods, 0, NULL);
+	SOS_PART(src_part->part_obj)->state = cur_state;
+	ods_unlock(src_sos->part_ods, 0);
+	pthread_mutex_unlock(&src_sos->lock);
+
+	if (rc) {
+		errno = rc;
+		return -rc;
+	}
+	return uargs.export_count;
+ err:
+	pthread_mutex_unlock(&src_sos->lock);
+	return rc;
 }
 
 /**

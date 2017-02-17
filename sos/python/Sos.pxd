@@ -395,7 +395,7 @@ cdef extern from "sos/sos.h":
     uint32_t sos_part_refcount(sos_part_t part)
     void sos_part_put(sos_part_t part)
     int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
-
+    uint64_t sos_part_export(sos_part_t src_part, sos_t dst_sos)
     ctypedef int (*sos_part_obj_iter_fn_t)(sos_part_t part, sos_obj_t obj, void *arg)
     cdef struct sos_part_obj_iter_pos_s:
         pass
