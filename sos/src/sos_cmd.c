@@ -796,6 +796,8 @@ int add_schema(sos_t sos, FILE *fp)
 	} while(event.type != YAML_STREAM_END_EVENT);
 	if (schema_name)
 		free(schema_name);
+	if (attr_name)
+		free(attr_name);
 	yaml_event_delete(&event);
 	yaml_parser_delete(&parser);
 
@@ -1492,5 +1494,6 @@ int main(int argc, char **argv)
 		rc = import_csv(sos, csv_file, schema_name, col_map);
 	}
 	sos_container_close(sos, SOS_COMMIT_SYNC);
+	free(path);
 	return rc;
 }

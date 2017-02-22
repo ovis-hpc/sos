@@ -202,7 +202,11 @@ int main(int argc, char **argv)
 	rc = create_part(sos, name, part_path);
 	if (rc)
 		exit(1);
-	if (state)
+	if (state) {
 		modify_part(sos, name, state);
+		free(state);
+	}
+	free(cont_path);
+	free(name);
 	return 0;
 }
