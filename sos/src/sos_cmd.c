@@ -60,19 +60,11 @@
 #include <assert.h>
 #include <sos/sos.h>
 #include <ods/ods_atomic.h>
-#ifdef ENABLE_YAML
-#include <yaml.h>
-#include <sos/sos_yaml.h>
-#endif
 
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
-#ifdef ENABLE_YAML
-const char *short_options = "f:I:M:C:K:O:S:X:V:F:T:s:o:icqlLR";
-#else
 const char *short_options = "f:I:M:C:K:O:S:X:V:F:T:icqlLR";
-#endif
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
@@ -82,10 +74,6 @@ struct option long_options[] = {
 	{"create",	no_argument,	    0,  'c'},
 	{"query",	no_argument,        0,  'q'},
 	{"dir",         no_argument,        0,  'l'},
-#ifdef ENABLE_YAML
-	{"schema",      required_argument,  0,  's'},
-	{"object",	required_argument,  0,  'o'},
-#endif
 	{"help",        no_argument,        0,  '?'},
 	{"container",   required_argument,  0,  'C'},
 	{"mode",	required_argument,  0,  'O'},
@@ -102,13 +90,8 @@ struct option long_options[] = {
 
 void usage(int argc, char *argv[])
 {
-#ifdef ENABLE_YAML
-	printf("sos_cmd { -l | -i | -c | -o | -s | -K | -q } -C <container> "
-	       "[-O <mode_mask>]\n");
-#else
 	printf("sos_cmd { -l | -i | -c | -K | -q } -C <container> "
 	       "[-O <mode_mask>]\n");
-#endif
 	printf("    -C <path>      The path to the container. Required for all options.\n");
 	printf("\n");
 	printf("    -K <key>=<value> Set a container configuration option.\n");
@@ -121,14 +104,6 @@ void usage(int argc, char *argv[])
 	printf("       -O <mode>   The file mode bits for the container files,\n"
 	       "                   see the open() system call.\n");
 	printf("\n");
-#ifdef ENABLE_YAML
-	printf("    -s <path>      Add a schema to a container.\n"
-	       "                   <path> is the path to the YAML file defining the schema\n");
-	printf("\n");
-	printf("    -o <path>      Add an object to a container.\n"
-	       "                   <path> is the path to the YAML file containing the data\n");
-	printf("\n");
-#endif
 	printf("    -I <csv_file>  Import a CSV file into the container.\n");
 	printf("       -S <schema> The schema for objects.\n");
 	printf("       -M <map>    String that maps CSV columns to object attributes.\n");
@@ -522,288 +497,6 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 	sos_iter_free(iter);
 	return 0;
 }
-#ifdef ENABLE_YAML
-int add_schema(sos_t sos, FILE *fp)
-{
-	yaml_parser_t parser;
-	yaml_document_t document;
-
-	memset(&parser, 0, sizeof(parser));
-	memset(&document, 0, sizeof(document));
-
-	if (!yaml_parser_initialize(&parser))
-		return EINVAL;
-
-	/* Set the parser parameters. */
-	yaml_parser_set_input_file(&parser, fp);
-
-	enum sos_parser_state {
-		START,
-		SCHEMA_DEF,
-		SCHEMA_NAME_DEF,
-		ATTR_DEF,
-		ATTR_NAME_DEF,
-		ATTR_TYPE_DEF,
-		ATTR_INDEXED_DEF,
-		STOP
-	} state = START;
-	struct keyword kw_;
-	struct keyword *kw;
-	yaml_event_t event;
-	sos_schema_t schema = NULL;
-	char *schema_name = NULL;
-	char *attr_name = NULL;
-	char *key_type = NULL;
-	char *idx_args = NULL;
-	char *index_type = NULL;
-	char *index_str = NULL;
-	int attr_indexed = 0;
-	sos_type_t attr_type = SOS_TYPE_FIRST;
-	int attr_size = 0, rc = 0;
-	do {
-		if (!yaml_parser_parse(&parser, &event)) {
-			printf("Error Line %zu Column %zu : %s.\n",
-			       parser.context_mark.line,
-			       parser.context_mark.column,
-			       parser.problem);
-			return EINVAL;
-		}
-		switch(event.type) {
-		case YAML_NO_EVENT:
-		case YAML_STREAM_START_EVENT:
-		case YAML_STREAM_END_EVENT:
-		case YAML_DOCUMENT_START_EVENT:
-		case YAML_DOCUMENT_END_EVENT:
-		case YAML_MAPPING_START_EVENT:
-			switch (state) {
-			case START:
-				state = SCHEMA_DEF;
-				break;
-			default:
-				break;
-			}
-			break;
-		case YAML_SEQUENCE_END_EVENT:
-			if (sos && schema)
-				rc = sos_schema_add(sos, schema);
-			state = SCHEMA_DEF;
-			break;
-		case YAML_SEQUENCE_START_EVENT:
-			switch (state) {
-			case START:
-				state = SCHEMA_DEF;
-				break;
-			case SCHEMA_DEF:
-				state = SCHEMA_DEF;
-				break;
-			default:
-				printf("Unexpected new block in state %d.\n", state);
-				return EINVAL;
-			}
-			break;
-		case YAML_MAPPING_END_EVENT:
-			if (!schema_name) {
-				printf("The 'name' keyword must be used to "
-				       "specify the schema name before "
-				       "attributes are defined.\n");
-				return EINVAL;
-			}
-			switch (state) {
-			case SCHEMA_DEF:
-				state = STOP;
-				break;
-			case SCHEMA_NAME_DEF:
-				state = SCHEMA_DEF;
-				break;
-			case ATTR_DEF:
-				rc = sos_schema_attr_add(schema, attr_name,
-							 attr_type, attr_size);
-				if (rc) {
-					printf("Error %d adding attribute '%s'.\n",
-					       rc, attr_name);
-					return rc;
-				}
-				if (attr_indexed) {
-					rc = sos_schema_index_add(schema, attr_name);
-					if (rc) {
-						printf("Error %d adding the index "
-						       " for attribute '%s'.\n",
-						       rc, attr_name);
-						return rc;
-					}
-					if (key_type && key_type[0] != '\0') {
-						if (!index_type)
-							index_type = "BXTREE";
-						rc = sos_schema_index_modify
-							(
-							 schema, attr_name,
-							 index_type, key_type,
-							 idx_args
-							 );
-						if (rc)
-							printf("Warning: The key '%s' or index type '%s' "
-							       "were not recognizerd.\n", key_type, index_type);
-						free(index_str);
-					}
-				}
-				state = SCHEMA_DEF;
-				break;
-			default:
-				assert(0);
-				state = SCHEMA_DEF;
-				break;
-			}
-			break;
-		case YAML_ALIAS_EVENT:
-			break;
-		case YAML_SCALAR_EVENT:
-			kw_.str = (char *)event.data.scalar.value;
-			kw = bsearch(&kw_, keyword_table,
-				     sizeof(keyword_table)/sizeof(keyword_table[0]),
-				     sizeof(keyword_table[0]),
-				     compare_keywords);
-			switch (state) {
-			case SCHEMA_DEF:
-				if (!kw) {
-					printf("Unexpected keyword %s.\n",
-					       event.data.scalar.value);
-					return EINVAL;
-				}
-				switch (kw->id) {
-				case NAME_KW:
-					state = SCHEMA_NAME_DEF;
-					break;
-				case ATTRIBUTE_KW:
-					state = ATTR_NAME_DEF;
-					if (attr_name)
-						free(attr_name);
-					attr_name = NULL;
-					attr_size = 0;
-					attr_indexed = 0;
-					attr_type = -1;
-					break;
-				case SCHEMA_KW:
-					break;
-				default:
-					printf("The '%s' keyword is not "
-					       "expected here and is being ignored.\n",
-					       kw->str);
-					break;
-				}
-				break;
-			case ATTR_DEF:
-				if (!kw) {
-					printf("Unexpected keyword %s.\n",
-					       event.data.scalar.value);
-					break;
-				}
-				switch (kw->id) {
-				case NAME_KW:
-					printf("The 'name' keyword is not "
-					       "expected in an attribute definition.\n");
-					state = ATTR_DEF;
-					break;
-				case INDEXED_KW:
-					state = ATTR_INDEXED_DEF;
-					break;
-				case TYPE_KW:
-					state = ATTR_TYPE_DEF;
-					break;
-				default:
-					printf("The keyword '%s' is not expected here.\n",
-					       kw_.str);
-					break;
-				}
-				break;
-			case SCHEMA_NAME_DEF:
-				if (schema_name)
-					free(schema_name);
-				schema_name = strdup((char *)event.data.scalar.value);
-				schema = sos_schema_new(schema_name);
-				if (!schema) {
-					printf("The schema '%s' could not be "
-					       "created, errno %d.\n",
-					       schema_name, errno);
-					return errno;
-				}
-				break;
-			case ATTR_NAME_DEF:
-				if (isdigit(event.data.scalar.value[0])) {
-					printf("The first character of the attribute"
-					       "named '%s' cannot be a number.\n",
-					       event.data.scalar.value);
-					return errno;
-				}
-				attr_name = strdup((char *)event.data.scalar.value);
-				state = ATTR_DEF;
-				break;
-			case ATTR_INDEXED_DEF:
-				if (!kw) {
-					printf("The 'indexed' value must be "
-					       "'true' or 'false', %s is not "
-					       "recognized.\n", kw_.str);
-					break;
-				}
-				attr_indexed = kw->id;
-				index_str = strdup((char *)event.data.scalar.value);
-				index_str = strtok(index_str, ",");
-				key_type = strtok(NULL, ",");
-				if (key_type) {
-					while (isspace(*key_type)) key_type++;
-					index_type = strtok(NULL, ",");
-					if (index_type) {
-						while (isspace(*index_type)) index_type++;
-						idx_args = strtok(NULL, ",");
-						if (idx_args)
-							while (isspace(*idx_args)) idx_args++;
-					}
-				}
-				state = ATTR_DEF;
-				break;
-			case ATTR_TYPE_DEF:
-				if (!kw) {
-					printf("Unrecognized 'type' name "
-					       "'%s'.\n", kw_.str);
-					break;
-				}
-				attr_type = kw->id;
-				if (attr_type == SOS_TYPE_STRUCT) {
-					/* decode the size */
-					char *size_str, *str;
-					str = strdup((char *)event.data.scalar.value);
-					size_str = strtok(str, ",");
-					if (!size_str)
-						return EINVAL;
-					size_str = strtok(NULL, ",");
-					if (!size_str)
-						return EINVAL;
-					attr_size = strtoul(size_str, NULL, 0);
-					if (errno)
-						return EINVAL;
-					free(str);
-				} else
-					attr_size = 0;
-				state = ATTR_DEF;
-				break;
-			default:
-				printf("Parser error!\n");
-				return EINVAL;
-			}
-		}
-		if(event.type != YAML_STREAM_END_EVENT)
-			yaml_event_delete(&event);
-
-	} while(event.type != YAML_STREAM_END_EVENT);
-	if (schema_name)
-		free(schema_name);
-	if (attr_name)
-		free(attr_name);
-	yaml_event_delete(&event);
-	yaml_parser_delete(&parser);
-
-	return rc;
-}
-#endif
 
 int import_done = 0;
 
@@ -1051,161 +744,8 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 	return 0;
 }
 
-#ifdef ENABLE_YAML
-int add_object(sos_t sos, FILE* fp)
-{
-	yaml_parser_t parser;
-	yaml_document_t document;
-
-	memset(&parser, 0, sizeof(parser));
-	memset(&document, 0, sizeof(document));
-
-	if (!yaml_parser_initialize(&parser))
-		return 0;
-
-	/* Set the parser parameters. */
-	yaml_parser_set_input_file(&parser, fp);
-
-	enum parser_state {
-		START,
-		NEED_SCHEMA,
-		SCHEMA_VALUE,
-		NEXT_ATTR,
-		NEXT_VALUE,
-		STOP
-	}  state = START;
-	struct keyword kw_;
-	struct keyword *kw;
-	yaml_event_t event;
-	char *attr_name = NULL;
-	char *attr_value = NULL;
-	int rc;
-	int obj_count = 0;
-	sos_obj_t sos_obj = NULL;
-	sos_schema_t schema = NULL;
-	srandom(time(NULL));
-	do {
-		if (!yaml_parser_parse(&parser, &event)) {
-			printf("Error Line %zu Column %zu : %s.\n",
-			       parser.context_mark.line,
-			       parser.context_mark.column,
-			       parser.problem);
-			return obj_count;
-		}
-		switch(event.type) {
-		case YAML_NO_EVENT:
-		case YAML_STREAM_START_EVENT:
-		case YAML_STREAM_END_EVENT:
-		case YAML_DOCUMENT_END_EVENT:
-		case YAML_DOCUMENT_START_EVENT:
-		case YAML_MAPPING_START_EVENT:
-		case YAML_MAPPING_END_EVENT:
-		case YAML_ALIAS_EVENT:
-			break;
-		case YAML_SEQUENCE_START_EVENT:
-			state = NEED_SCHEMA;
-			break;
-		case YAML_SEQUENCE_END_EVENT:
-			if (schema) {
-				schema = NULL;
-			}
-			if (sos_obj) {
-				rc = sos_obj_index(sos_obj);
-				if (rc) {
-					printf("Error %d adding object to it's indices.\n",
-					       rc);
-				}
-			}
-			sos_obj_put(sos_obj);
-			sos_obj = NULL;
-			state = START;
-			break;
-		case YAML_SCALAR_EVENT:
-			kw_.str = (char *)event.data.scalar.value;
-			kw = bsearch(&kw_, keyword_table,
-				     sizeof(keyword_table)/sizeof(keyword_table[0]),
-				     sizeof(keyword_table[0]),
-				     compare_keywords);
-			switch (state) {
-			case NEED_SCHEMA:
-				if (!kw || kw->id != SCHEMA_KW) {
-					printf("Expected the 'schema' keyword.\n");
-					return obj_count;
-				}
-				state = SCHEMA_VALUE;
-				break;
-			case SCHEMA_VALUE:
-				schema = sos_schema_by_name(sos, kw_.str);
-				if (!schema) {
-					printf("The schema '%s' was not found.\n",
-					       kw_.str);
-					return obj_count;
-				}
-				sos_obj = sos_obj_new(schema);
-				if (!sos_obj) {
-					printf("Error %d creating the '%s' object.\n",
-					       errno,
-					       kw_.str);
-					return obj_count;
-				}
-				obj_count++;
-				state = NEXT_ATTR;
-				break;
-			case NEXT_ATTR:
-				if (attr_name)
-					free(attr_name);
-				attr_name = strdup(kw_.str);
-				state = NEXT_VALUE;
-				break;
-			case NEXT_VALUE:
-				if (attr_value)
-					free(attr_value);
-				if (kw) {
-					long val;
-					switch (kw->id) {
-					case TIME_FUNC_KW:
-						val = time(NULL);
-						attr_value = malloc(32);
-						sprintf(attr_value, "%ld", val);
-						break;
-					case RANDOM_FUNC_KW:
-						val = random();
-						attr_value = malloc(32);
-						sprintf(attr_value, "%ld", val);
-						break;
-					default:
-						attr_value = strdup(kw_.str);
-						break;
-					}
-				} else
-					attr_value = strdup(kw_.str);
-				rc = sos_obj_attr_by_name_from_str(sos_obj,
-								   attr_name, attr_value,
-								   NULL);
-				if (rc) {
-					printf("Error %d setting attribute '%s' to '%s'.\n",
-					       rc, attr_name, attr_value);
-				}
-				state = NEXT_ATTR;
-				break;
-			default:
-				break;
-			}
-		}
-		if(event.type != YAML_STREAM_END_EVENT)
-			yaml_event_delete(&event);
-
-	} while(event.type != YAML_STREAM_END_EVENT);
-	yaml_event_delete(&event);
-	yaml_parser_delete(&parser);
-	return 0;
-}
-#endif
-
 #define INFO		0x001
 #define CREATE		0x002
-#define SCHEMA  	0x004
-#define OBJECT		0x008
 #define QUERY		0x010
 #define SCHEMA_DIR	0x020
 #define CSV		0x080
@@ -1327,24 +867,6 @@ int main(int argc, char **argv)
 		case 'R':
 			action |= CLEANUP;
 			break;
-		case 's':
-			action |= SCHEMA;
-			schema_file = fopen(optarg, "r");
-			if (!schema_file) {
-				fprintf(stderr, "Bad -s %s\n", optarg);
-				perror("Error opening the schema file: ");
-				exit(9);
-			}
-			break;
-		case 'o':
-			action |= OBJECT;
-			obj_file = fopen(optarg, "r");
-			if (!obj_file) {
-				fprintf(stderr, "Bad -o %s\n", optarg);
-				perror("Error opening the object file: ");
-				exit(9);
-			}
-			break;
 		case 'l':
 			action |= SCHEMA_DIR;
 			break;
@@ -1448,7 +970,7 @@ int main(int argc, char **argv)
 		return 0;
 
 	sos_perm_t mode;
-	if (!(action & (CSV | OBJECT | SCHEMA)))
+	if (!(action & CSV))
 		mode = SOS_PERM_RO;
 	else
 		mode = SOS_PERM_RW;
@@ -1458,23 +980,6 @@ int main(int argc, char **argv)
 		       errno, path);
 		exit(1);
 	}
-#ifdef ENABLE_YAML
-	if (action & OBJECT) {
-		rc = add_object(sos, obj_file);
-		if (rc) {
-			printf("Error %d processing objects file.\n", rc);
-			exit(3);
-		}
-	}
-
-	if (action & SCHEMA) {
-		rc = add_schema(sos, schema_file);
-		if (rc) {
-			printf("Error %d processing schema file.\n", rc);
-			exit(2);
-		}
-	}
-#endif
 
 	if (action & INFO)
 		sos_container_info(sos, stdout);

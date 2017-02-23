@@ -13,25 +13,7 @@ dnl this will add document options. Please see m4/options.m4.
 OPTION_DOC
 
 OPTION_DEFAULT_ENABLE([obj_debug], [ENABLE_OBJ_DEBUG])
-OPTION_DEFAULT_ENABLE([yaml], [ENABLE_YAML])
 OPTION_DEFAULT_ENABLE([python], [ENABLE_PYTHON])
-
-if test -z "$ENABLE_YAML_TRUE"; then
-dnl yaml stuff
-OPTION_WITH([yaml], [YAML])
-OLD_CFLAGS=${CFLAGS}
-if test ! -z "${YAML_INCDIR}"; then
-   CFLAGS="${CFLAGS} -I${YAML_INCDIR}"
-fi
-AC_CHECK_HEADER(yaml.h, [],
-		AC_MSG_ERROR([yaml.h not found. Please specify yaml prefix with
-			--with-yaml configuration option.]))
-CFLAGS="${OLD_CFLAGS}"
-AC_CHECK_LIB(yaml, yaml_parser_load, [],
-		AC_MSG_ERROR([libyaml not found. Please specify yaml prefix with
-			--with-yaml configuration option.]),
-			[-lyaml ${YAML_LIBDIR_FLAG}])
-fi
 
 if test -z "$ENABLE_PYTHON_TRUE"
 then

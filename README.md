@@ -35,12 +35,9 @@ SOS C API.
 Compile Dependencies
 --------------------
 
-* libyaml
-* libyaml-dev
 * For SOS python interface:
-    * swig
-    * Python-2.7
-
+  * Cython
+  * Python >= 2.7
 
 Installation
 ------------
