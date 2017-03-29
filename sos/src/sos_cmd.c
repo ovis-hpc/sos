@@ -64,13 +64,14 @@
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
-const char *short_options = "f:I:M:C:K:O:S:X:V:F:T:icqlLR";
+const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:icqlLR";
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
 	{"locks",	no_argument,	    0,  'L'},
 	{"cleanup",	no_argument,	    0,  'R'},
 	{"info",	no_argument,	    0,  'i'},
+	{"move",	no_argument,	    0,  'm'},
 	{"create",	no_argument,	    0,  'c'},
 	{"query",	no_argument,        0,  'q'},
 	{"dir",         no_argument,        0,  'l'},
@@ -90,9 +91,10 @@ struct option long_options[] = {
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_cmd { -l | -i | -c | -K | -q } -C <container> "
+	printf("sos_cmd { -l | -i | -c | -K | -q } -C <path> -m <new_path>"
 	       "[-O <mode_mask>]\n");
 	printf("    -C <path>      The path to the container. Required for all options.\n");
+	printf("    -m <new_path>  Use to modify the path saved internally after the container is copied.\n");
 	printf("\n");
 	printf("    -K <key>=<value> Set a container configuration option.\n");
 	printf("\n");
@@ -752,6 +754,7 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 #define CONFIG  	0x100
 #define LOCKS		0x200
 #define CLEANUP		0x400
+#define MOVE		0x800
 
 struct cond_key_s {
 	char *name;
@@ -843,6 +846,7 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str)
 int main(int argc, char **argv)
 {
 	char *path = NULL;
+	char *new_path = NULL;
 	char *col_map = NULL;
 	int o, rc = 0;
 	int o_mode = 0664;
@@ -888,6 +892,10 @@ int main(int argc, char **argv)
 			break;
 		case 'C':
 			path = strdup(optarg);
+			break;
+		case 'm':
+			new_path = strdup(optarg);
+			action |= MOVE;
 			break;
 		case 'K':
 			action |= CONFIG;
@@ -941,6 +949,15 @@ int main(int argc, char **argv)
 	if (action & CREATE) {
 		rc = create(path, o_mode);
 		action &= ~CREATE;
+	}
+
+	if (action & MOVE) {
+		rc = sos_container_move(path, new_path);
+		if (rc) {
+			printf("Error %d updating the container's internal path data.\n", rc);
+			exit(1);
+		}
+		action &= ~MOVE;
 	}
 
 	if (!action)

@@ -127,7 +127,7 @@
  * - sos_part_find() Find a partition by name
  * - sos_part_put() Drop a reference on the partition
  * - sos_part_stat() Return size and access information about a partition
- * - sos_part_state() Return the state of a parittion
+ * - sos_part_state_set() Set the state of a parittion
  * - sos_part_name() Return the name of a partition
  * - sos_part_path() Return a partitions storage path
  */
