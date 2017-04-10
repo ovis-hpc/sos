@@ -468,7 +468,7 @@ struct rbn *rbt_least_gt_or_eq(struct rbn *n)
 struct rbn *rbt_find_lub(struct rbt *t, void *key)
 {
 	struct rbn *x;
-	struct rbn *lub;
+	struct rbn *lub = NULL;
 
 	for (x = t->root; x; ) {
 		int c;
