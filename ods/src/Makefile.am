@@ -7,6 +7,11 @@ if ENABLE_OBJ_DEBUG
 AM_CFLAGS += -DODS_OBJ_DEBUG
 endif
 
+ods_dump_SOURCES = ods_dump.c
+ods_dump_CFLAGS = $(AM_CFLAGS)
+ods_dump_LDADD = libods.la
+bin_PROGRAMS = ods_dump
+
 libods_la_SOURCES = ods_idx.c ods.c rbt.c ods_idx_priv.h ods_priv.h oidx_priv.h fnv_hash.h
 libods_la_LIBADD = -ldl -lpthread
 # libods_la_LDFLAGS = -pg
