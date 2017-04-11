@@ -41,8 +41,6 @@
  */
 
 /**
- *
- *
  * \section sos_part_query sos_part_query command
  *
  * \b NAME
@@ -51,13 +49,13 @@
  *
  * \b SYNOPSIS
  *
- * sos_part_query <container>
+ * sos_part_query -C <container> [-v]
  *
  * \b DESCRIPTION
  *
  * List the partitions defined in a Container. For example:
  *
- *      tom@css:/SOS/import$ sos_part /NVME/0/SOS_ROOT/Test
+ *      sos_part -C /NVME/0/SOS_ROOT/Test
  *      Partition Name       RefCount Status           Size     Modified         Accessed         Path
  *      -------------------- -------- ---------------- -------- ---------------- ---------------- ----------------
  *      00000000                    3 ACTIVE                 1M 2015/08/25 13:49 2015/08/25 13:51 /SOS_STAGING/Test
@@ -65,9 +63,10 @@
  *      00000002                    3 ACTIVE                 2M 2015/08/25 11:39 2015/08/25 13:51 /NVME/0/SOS_ROOT/Test
  *      00000003                    3 PRIMARY                2M 2015/08/25 11:39 2015/08/25 13:51 /NVME/0/SOS_ROOT/Test
  *
- * \b PATH
- *
+ * \b -C PATH
  * Specify the PATH to the Container. This option is required.
+ * \b -v
+ * Show all partitions including offline partitions
  *
  */
 #include <sys/time.h>

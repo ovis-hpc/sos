@@ -153,6 +153,9 @@ if __name__ == "__main__":
         try:
             dst_sos = Sos.Container(args.export)
             count = part.export(dst_sos)
-            print("{0} objects exported to the container {1}".format(count, args.export))
+            if count < 0:
+                print("Error {0} encountered exporting objects".format(count))
+            else:
+                print("{0} objects exported to the container {1}".format(count, args.export))
         except Exception as ex:
             print("The contents of the partitoin could not be exported.\n{0}".format(ex))
