@@ -57,7 +57,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "ods.h"
+#include <ods/ods.h>
 
 void usage(int argc, char *argv[])
 {
@@ -70,9 +70,10 @@ void usage(int argc, char *argv[])
 	exit(1);
 }
 
-void print_fn(ods_t ods, void *ptr, size_t sz, void *arg)
+int print_fn(ods_t ods, ods_obj_t obj, void *arg)
 {
-	printf("%p %zu\n", ptr, sz);
+	printf("%p %zu\n", obj->as.ptr, obj->size);
+	return 0;
 }
 
 int main(int argc, char *argv[])
@@ -80,6 +81,7 @@ int main(int argc, char *argv[])
 	ods_t ods;
 	int c, show_alloc = 0;
 	char *name = NULL;
+	struct ods_obj_iter_pos_s pos;
 	while ((c = getopt(argc, argv, "a")) > 0) {
 		switch (c) {
 		case 'a':
@@ -94,11 +96,17 @@ int main(int argc, char *argv[])
 	else
 		usage(argc, argv);
 
-	ods = ods_open(name, O_RDWR | O_CREAT, 0666);
-	if (show_alloc)
-		ods_iter(ods, print_fn, NULL);
-	else
+	ods = ods_open(name, O_RDONLY);
+	if (!ods) {
+		printf("Could not open the ODS %s\n", name);
+		exit(1);
+	}
+	if (show_alloc) {
+		ods_obj_iter_pos_init(&pos);
+		ods_obj_iter(ods, &pos, print_fn, NULL);
+	} else {
 		ods_dump(ods, stdout);
+	}
 	ods_close(ods, ODS_COMMIT_ASYNC);
 
 	return 0;
