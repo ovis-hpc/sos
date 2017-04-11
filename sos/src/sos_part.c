@@ -57,12 +57,10 @@
  *               accessible and it's objects may be
  *               referred to by one or more Indices.
  * - \b Offline  The contents of the Partition are not accessible.
- * - \b Moving   The contents of the Partition are being moved to
- *               another storage location.
+ * - \b Busy     The Parition is being updated and cannot be changed.
  *
- * In order to store data, a Container must have at least one
- * partition. There are several commands available to manipulate
- * partitions
+ * There are several commands available to manipulate
+ * partitions.
  *
  * - \ref sos_part_create Create a new partition
  * - \ref sos_part_query Query the partitions in a container
@@ -70,44 +68,62 @@
  * - \ref sos_part_move Move a partition to another storage location
  * - \ref sos_part_delete Destroy a partition
  *
- * A typical use case for partitions is to keep hot content on one
- * storage element and colder storage on another. Suppose the
- * administrator wishes to keep 5 days worth of hot data. Partitions
- * provide a mechanism to achieve this goal.  First, create 5
- * partitions to contain the data, all of these are initially on 'hot'
- * storage:
+ * There must be at least one partition in the container in the
+ * 'primary' state in order for objects to be allocated and stored in
+ * the container. For example:
  *
- *       sos_part_create -C MyContainer -s primary "2015-03-03"
- *       sos_part_create -C MyContainer "2015-03-04"
- *       sos_part_create -C MyContainer "2015-03-05"
- *       sos_part_create -C MyContainer "2015-03-06"
- *       sos_part_create -C MyContainer "2015-03-07"
+ *      sos_part_create -C theContainer -s primary "today"
  *
- * At the end of every day, we want to move the older data to a slower
- * storage tier. For example:
+ * Use the sos_part_query command to see the new partition
  *
- *       sos_part_move -C MyContainer -p /slow-boat "2015-03-03"
+ *      sos_part_query -C theContainer
+ *      Partition Name       RefCount Status           Size     Modified         Accessed         Path
+ *      -------------------- -------- ---------------- -------- ---------------- ---------------- ----------------
+ *      today                       2 PRIMARY               65K 2017/04/11 11:47 2017/04/11 11:47 /btrfs/test_data/theContainer
  *
- * When the command completes, the objects in 2015-03-03 are now
- * located on the /slow-boat storage element. They are, however, still
- * present in the indexes of the container.
+ * Let's create another partition to contain tomorrow's data:
  *
- * When a Partition's data is no longer needed, it may be deleted
- * as follows:
+ *      sos_part_create -C theContainer -s primary "tomorrow"
+ *      sos_part_query -C theContainer -v
+ *      Partition Name       RefCount Status           Size     Modified         Accessed         Path
+ *      -------------------- -------- ---------------- -------- ---------------- ---------------- ----------------
+ *      today                       2 PRIMARY               65K 2017/04/11 11:51 2017/04/11 11:51 /btrfs/test_data/theContainer
+ *      tomorrow                    3 OFFLINE                                                     /btrfs/test_data/theContainer
  *
- *      sos_part_delete -C MyContainer -s offline "2015-03-03"
- *      sos_part_delete -C MyContainer "2015-03-03"
+ * A typical use case for partitions is to group objects together by
+ * date and then migrate objects from an older partitions to another
+ * container on secondary storage.
  *
- * The list of Partitions defined in a Container can be queried as
- * follows:
+ * At midnight the administrator starts storing data in tomorrow's partition as follows:
  *
- *      tom@css:/SOS/import$ sos_part_query /NVME/0/SOS_ROOT/Test
- *      Partition Name       RefCount Status           Size     Modified         Accessed
- *      -------------------- -------- ---------------- -------- ---------------- ----------------
- *      00000000                    3 ONLINE                 1M 2015/08/25 13:49 2015/08/25 13:51
- *      00000001                    3 ONLINE                 2M 2015/08/25 11:54 2015/08/25 13:51
- *      00000002                    3 ONLINE                 2M 2015/08/25 11:39 2015/08/25 13:51
- *      00000003                    3 ONLINE PRIMARY         2M 2015/08/25 11:39 2015/08/25 13:51
+ *      sos_part_modify -C theContainer -s primary "tomorrow"
+ *      sos_part_query -C theContainer -v
+ *      Partition Name       RefCount Status           Size     Modified         Accessed         Path
+ *      -------------------- -------- ---------------- -------- ---------------- ---------------- ----------------
+ *      today                       2 PRIMARY               65K 2017/04/11 11:51 2017/04/11 11:51 /btrfs/test_data/theContainer
+ *      tomorrow                    3 OFFLINE                                                     /btrfs/test_data/theContainer
+ *
+ * New object allocations will immediately start flowing into the new
+ * primary partition. Objects in the original partition are still
+ * accessible and indexed.
+ *
+ * The administrator then wants to migrate the data from the today
+ * partition to another container in secondary storage. First create
+ * the container to contain 'backups'.
+ *
+ *      sos_cmd -C /secondary/backupContainer -c
+ *      sos_part_create -C theContainer -s primary "backup"
+ *
+ * Then export the contents of the today partition to the backup:
+ *
+ *      sos_part_export -C theContainer -E /secondary/backupContainer today
+ *
+ * All objects in the today partition are now in the
+ * /secondary/backupContainer. They are also still in theContainer in
+ * the today partition. To remove the today partition, delete the partition as follows:
+ *
+ *      sos_part_modify -C theContainer -s offline today
+ *      sos_part_delete -C theContainer today
  *
  * There are API for manipulating Partitions from a program. In
  * general, only management applications should call these
@@ -677,63 +693,202 @@ struct export_obj_iter_args_s {
 	sos_t src_sos;
 	sos_t dst_sos;
 	sos_part_t src_part;
-	uint64_t export_count;
+	ods_idx_t exp_idx;
+	int64_t export_count;
 };
 
-static int __export_callback_fn(ods_t ods, ods_obj_t ods_obj, void *arg)
+#pragma pack(4)
+union exp_obj_u {
+	struct ods_idx_data_s idx_data;
+	struct exp_obj_s {
+		uint64_t from_ref;
+		uint64_t to_ref;
+	} exp_data;
+};
+#pragma()
+
+static sos_schema_t __export_schema(sos_t sos, sos_schema_t src, const char *name)
 {
-	sos_obj_ref_t ref;
-	sos_obj_t src_obj, dst_obj;
+	sos_schema_t schema = sos_schema_by_name(sos, name);
+	if (!schema) {
+		/* Duplicate and add the src_schema */
+		schema = sos_schema_dup(src);
+		if (!schema)
+			return NULL;
+
+		/* Add the schema to the destination container */
+		int rc = sos_schema_add(sos, schema);
+		if (rc) {
+			errno = rc;
+			return NULL;
+		}
+	}
+	return schema;
+}
+
+static int __shallow_export(sos_t dst_sos, sos_t src_sos,
+			    ods_obj_t src_ods_obj, ods_idx_t exp_idx,
+			    sos_schema_t *dst_schema, sos_schema_t *src_schema,
+			    sos_obj_ref_t *dst_ref, ods_obj_t *dst_ods_obj)
+{
+	ods_obj_t dobj;
+	sos_obj_data_t sos_obj_data = src_ods_obj->as.ptr;
+	const char *schema_name;
+	sos_schema_t dschema, sschema;
+	sos_part_t part;
+	int rc;
+	ODS_KEY(exp_key);
+	union exp_obj_u exp;
+
+	sschema = sos_schema_by_id(src_sos, sos_obj_data->schema);
+	if (!sschema) {
+		printf("An object with the invalid schema id %d was "
+		       "encountered.\n", sos_obj_data->schema);
+		return EINVAL;
+	}
+
+	schema_name = sos_schema_name(sschema);
+	dschema = __export_schema(dst_sos, sschema, schema_name);
+	if (!dschema) {
+		printf("Error %d adding schema %s to the destination "
+		       "container.\n", errno, schema_name);
+		return errno;
+	}
+
+	part = __sos_primary_obj_part(dst_sos);
+	if (!part)
+		return ENOSPC;
+
+	/* Check to see if this object already exists in the
+	 * destination container. If it does, it was processed by
+	 * virtue of being referred to by a previously exported
+	 * object
+	 */
+	exp.exp_data.from_ref = ods_obj_ref(src_ods_obj);
+	ods_key_set(&exp_key, &exp.exp_data.from_ref, sizeof(exp.exp_data.from_ref));
+	rc = ods_idx_find(exp_idx, &exp_key, &exp.idx_data);
+	if (rc == 0) {
+		dobj = ods_ref_as_obj(part->obj_ods, exp.exp_data.to_ref);
+		if (!dobj)
+			return ENOSPC;
+	} else {
+		dobj = __sos_obj_new(part->obj_ods, src_ods_obj->size, &dst_sos->lock);
+		if (!dobj)
+			return ENOSPC;
+
+		memcpy(dobj->as.ptr, src_ods_obj->as.ptr, src_ods_obj->size);
+		SOS_OBJ(dobj)->schema = dschema->data->id;
+
+		/* Add this object to the index of objects that we've created */
+		exp.exp_data.from_ref = ods_obj_ref(src_ods_obj);
+		exp.exp_data.to_ref = ods_obj_ref(dobj);
+		sos_key_set(&exp_key, &exp.exp_data.from_ref, sizeof(exp.exp_data.from_ref));
+		rc = ods_idx_insert(exp_idx, &exp_key, exp.idx_data);
+		if (rc) {
+			printf("Error indexing exported object.\n");
+			return rc;
+		}
+	}
+
+	if (dst_ref) {
+		dst_ref->ref.ods = SOS_PART(part->part_obj)->part_id;
+		dst_ref->ref.obj = ods_obj_ref(dobj);
+	}
+	if (dst_ods_obj)
+		*dst_ods_obj = dobj;
+	if (dst_schema)
+		*dst_schema = dschema;
+	if (src_schema)
+		*src_schema = sschema;
+
+	return 0;
+}
+
+/**
+ * For each object in the source container/partition:
+ *     1. look up the source object reference to see if it has
+ *        been exported it to the new partition.
+ *
+ *     2. if found, continue
+ *
+ *     3. create a new object in the dest container
+ *
+ *     4. Add a tracking object to the obj_idx so we can find
+ *        this new object later in 1. above, or 5. below
+ *
+ *     5. Run through each attribute in the object and if it
+ *        is a reference, look it up and/or create it.
+ */
+static int __export_callback_fn(ods_t ods, ods_obj_t src_ods_obj, void *arg)
+{
 	struct export_obj_iter_args_s *uarg = arg;
 	sos_t src_sos = uarg->src_sos;
 	sos_t dst_sos = uarg->dst_sos;
 	sos_part_t src_part = uarg->src_part;
-	sos_obj_data_t sos_obj_data = ods_obj->as.ptr;
-	const char *schema_name;
+	sos_obj_t dst_sos_obj;
+	ods_obj_t dst_ods_obj;
 	sos_schema_t src_schema, dst_schema;
+	sos_obj_ref_t dst_ref;
 	int rc;
 
-	src_schema = sos_schema_by_id(src_sos, sos_obj_data->schema);
-	if (!src_schema) {
-		printf("An object with the invalid schema id %d "
-		       "encountered.\n", sos_obj_data->schema);
+	rc = __shallow_export(dst_sos, src_sos, src_ods_obj, uarg->exp_idx,
+			      &dst_schema, &src_schema, &dst_ref, &dst_ods_obj);
+	if (rc)
+		return rc;
+
+	/* If this is an internal schema object, no more processing is required */
+	if (dst_schema->flags & SOS_SCHEMA_F_INTERNAL) {
+		ods_obj_put(dst_ods_obj);
 		return 0;
 	}
 
-	schema_name = sos_schema_name(src_schema);
-	dst_schema = sos_schema_by_name(dst_sos, schema_name);
-	if (!dst_schema) {
-		/* Duplicate and add the src_schema */
-		dst_schema = sos_schema_dup(src_schema);
-		if (!dst_schema) {
-			printf("The source schema %s could not be duplicated.",
-			       schema_name);
-			return rc;
+	/* Instantiate a SOS version of the destination ODS object */
+	dst_sos_obj = __sos_init_obj(dst_sos, dst_schema, dst_ods_obj, dst_ref);
+	if (!dst_sos_obj)
+		return ENOMEM;
+
+	/* Run through the attributes of the object, instantiate any
+	 * reference objects, and fix-up the reference values in the
+	 * destination object.
+	 */
+	int attr_id;
+	for  (attr_id = 0; attr_id < sos_schema_attr_count(src_schema); attr_id++) {
+		sos_value_data_t ref_val;
+		sos_attr_t src_attr = sos_schema_attr_by_id(src_schema, attr_id);
+		if (!src_attr) {
+			printf("Error instantiating attribute id %d in schema %s\n",
+			       attr_id, sos_schema_name(src_schema));
+			return EINVAL;
 		}
-		/* Add the schema to the destination container */
-		rc = sos_schema_add(dst_sos, dst_schema);
-		if (rc) {
-			printf("Error %d adding schema %s to the destination "
-			       "container.\n", errno, schema_name);
-			return rc;
+		sos_type_t type = sos_attr_type(src_attr);
+		if (type < SOS_TYPE_ARRAY && type != SOS_TYPE_OBJ)
+			continue;
+
+		ref_val = (sos_value_data_t)&src_ods_obj->as.bytes[src_attr->data->offset];
+
+		/* The reference might point to an object in another partition :-\ */
+		ods_t ods = __sos_ods_from_ref(src_sos, ref_val->prim.ref_.ref.ods);
+		if (!ods)
+			continue;
+
+		ods_obj_t src_attr_obj = ods_ref_as_obj(ods, ref_val->prim.ref_.ref.obj);
+		if (!src_attr_obj)
+			continue;
+
+		ods_obj_t dst_attr_obj;
+		rc = __shallow_export(dst_sos, src_sos, src_attr_obj, uarg->exp_idx,
+				      NULL, NULL, &dst_ref, &dst_attr_obj);
+		ods_obj_put(src_attr_obj);
+		if (0 == rc) {
+			ref_val = (sos_value_data_t)&dst_ods_obj->as.bytes[src_attr->data->offset];
+			ref_val->prim.ref_ = dst_ref;
+			ods_obj_put(dst_attr_obj);
+		} else {
+			printf("Error exporting internal reference attribute %s\n", sos_attr_name(src_attr));
 		}
 	}
-
-	/* Create a new object instance in the destination container */
-	dst_obj = sos_obj_new(dst_schema);
-	if (!dst_obj) {
-		printf("Error %d encountered creating an object of type %s "
-		       "in the destination container.\n",
-		       errno, schema_name);
-	}
-
-	ref.ref.ods = SOS_PART(src_part->part_obj)->part_id;
-	ref.ref.obj = ods_obj_ref(ods_obj);
-	src_obj = __sos_init_obj(src_sos, src_schema, ods_obj, ref);
-	sos_obj_copy(dst_obj, src_obj);
-	sos_obj_index(dst_obj);
-	sos_obj_put(dst_obj);
-	sos_obj_put(src_obj);
+	sos_obj_index(dst_sos_obj);
+	sos_obj_put(dst_sos_obj);
 	uarg->export_count ++;
 	return 0;
 }
@@ -757,7 +912,7 @@ static int __export_callback_fn(ods_t ods, ods_obj_t ods_obj, void *arg)
  *			     destination container
  * \retval		<0   An error occured, see errno for more information
  */
-uint64_t sos_part_export(sos_part_t src_part, sos_t dst_sos)
+int64_t sos_part_export(sos_part_t src_part, sos_t dst_sos)
 {
 	sos_t src_sos = src_part->sos;
 	uint64_t rc = 0;
@@ -780,10 +935,33 @@ uint64_t sos_part_export(sos_part_t src_part, sos_t dst_sos)
 	    || cur_state == SOS_PART_STATE_PRIMARY) {
 		errno = EBUSY;
 		rc = -errno;
+		ods_unlock(src_sos->part_ods, 0);
 		goto err;
 	}
+
+	/* Create an index to track objects that are created so that
+	 * we handle objects that are referenced by other objects,
+	 * e.g. arrays. The index name is 'partition_name' && '_export'
+	 */
+	char idx_path[PATH_MAX];
+	snprintf(idx_path, sizeof(idx_path), "%s/%s_export",
+		 dst_sos->path, sos_part_name(src_part));
+	rc = ods_idx_create(idx_path, 0600, "BXTREE", "UINT64", NULL);
+	if (rc) {
+		errno = rc;
+		rc = -rc;
+		ods_unlock(src_sos->part_ods, 0);
+		goto err;
+	}
+	uargs.exp_idx = ods_idx_open(idx_path, ODS_PERM_RW);
+	if (!uargs.exp_idx) {
+		rc = -errno;
+		ods_unlock(src_sos->part_ods, 0);
+		goto err_1;
+	}
 	/* Make the source partition busy to prevent changes while the
-	 * data is being copied */
+	 * data is being copied
+	 */
 	__make_part_busy(src_sos, src_part);
 	ods_unlock(src_sos->part_ods, 0);
 	pthread_mutex_unlock(&src_sos->lock);
@@ -804,11 +982,14 @@ uint64_t sos_part_export(sos_part_t src_part, sos_t dst_sos)
 	ods_unlock(src_sos->part_ods, 0);
 	pthread_mutex_unlock(&src_sos->lock);
 
+	ods_destroy(idx_path);
 	if (rc) {
 		errno = rc;
 		return -rc;
 	}
 	return uargs.export_count;
+ err_1:
+	ods_destroy(idx_path);
  err:
 	pthread_mutex_unlock(&src_sos->lock);
 	return rc;
@@ -1152,6 +1333,7 @@ int sos_part_delete(sos_part_t part)
 	/* Remove the partition from the container */
 	TAILQ_REMOVE(&sos->part_list, part, entry);
 	/* Put the create reference, we still hold the part reference */
+	SOS_PART(part->part_obj)->ref_count = 2;
 	__sos_part_obj_put(sos, part->part_obj);
 	/* Put the container reference */
 	sos_part_put(part);

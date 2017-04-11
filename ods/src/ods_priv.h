@@ -277,7 +277,7 @@ typedef struct ods_lock_s {
 typedef struct ods_pgt_s {
 	char pg_signature[8];	 /* pgt signature 'PGTSTORE' */
 	uint64_t pg_gen;	 /* generation number */
-	uint64_t pg_free;	 /* first free page offset */
+	uint64_t pg_free;	 /* first free page number */
 	uint64_t pg_count;	 /* count of pages */
 	ods_lock_t pgt_lock;	 /* inter-process page-table lock */
 	/* Inter-process locks for applications */

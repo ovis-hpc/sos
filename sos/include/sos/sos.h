@@ -382,7 +382,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t state);
 uint32_t sos_part_refcount(sos_part_t part);
 void sos_part_put(sos_part_t part);
 int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
-uint64_t sos_part_export(sos_part_t src_part, sos_t dst_sos);
+int64_t sos_part_export(sos_part_t src_part, sos_t dst_sos);
 
 /**
  * \brief The callback function called by the sos_part_obj_iter() function

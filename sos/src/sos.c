@@ -179,6 +179,7 @@ pthread_mutex_t cont_list_lock;
  * - sos_container_close() Close a container
  * - sos_container_commit() Commit a Container's contents to stable storage
  * - sos_container_delete() Destroy a Container and all of it's contents
+ * - sos_container_move() Reset a Container's path after it has been copied to a new location
  * - sos_container_info() - Print Container information to a FILE pointer
  * - sos_container_lock_info() - Print Container lock information to a FILE pointer
  * - sos_container_lock_cleanup() - Release locks held by no process
@@ -927,6 +928,9 @@ void sos_container_close(sos_t sos, sos_commit_t flags)
 	free_sos(sos, SOS_COMMIT_ASYNC);
 }
 
+/*
+ * This function steals the reference count of the input ods_obj
+ */
 sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
 				 sos_obj_ref_t obj_ref)
 {
