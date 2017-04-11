@@ -115,15 +115,15 @@ static inline int alloc_bit(uint64_t *bits, size_t bit_count, int *is_empty)
 	int i, bit, words = bit_count >> 6;
 	if (!words)
 		words = 1;
-	*is_empty = 1;
+	*is_empty = 0;
 	for (bit = -1, i = 0; i < words; i++) {
 		int wit = ffsl(bits[i]);
 		if (wit) {
 			wit -= 1;	      /* ffsl returns 1 based bit #s */
 			bits[i] &= ~(1L << wit);
 			bit = (i << 6) + wit;
-			if (bits[i])
-				*is_empty = 0;
+			if ((0 == bits[i]) && (i == (words - 1)))
+				*is_empty = 1;
 			break;
 		}
 	}
@@ -1652,10 +1652,12 @@ ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
  out:
 	__pgt_unlock(ods);
 	__ods_lock(ods);
+#ifdef ODS_OBJ_DEBUG
 	if (ref)
 		assert(ref_valid(ods, ref));
+#endif
 	obj = _ref_as_obj_with_lock(ods, ref);
-	if (!obj) {
+	if (!obj && ref) {
 		__pgt_lock(ods);
 		free_ref(ods, ref);
 		__pgt_unlock(ods);
@@ -1998,46 +2000,64 @@ void ods_dump(ods_t ods, FILE *fp)
 	fprintf(fp, "--------------------------- Allocated Pages ----------------------------\n");
 	uint64_t i, j;
 	uint64_t count = 0;
-	for(i = 0; i < pgt->pg_count; i++) {
-		uint64_t start;
-		if (!(pgt->pg_pages[i].pg_flags & ODS_F_ALLOCATED))
+
+	for(pg_no = 1; pg_no < pgt->pg_count; ) {
+		pg = &pgt->pg_pages[pg_no];
+		if (0 == pg->pg_flags) {
+			pg_no++;
 			continue;
-		start = i; i += pgt->pg_pages[i].pg_count;
-		count += pgt->pg_pages[i].pg_count;
-		fprintf(fp, "%ld..%ld\n", start, i - 1);
+		}
+		if (pg->pg_flags & ODS_F_IDX_VALID) {
+			fprintf(fp, "BLKS[%5dB]     %10ld\n",
+				bkt_to_size(pg->pg_bkt_idx), pg_no);
+			pg_no++;
+			continue;
+		}
+		count += pg->pg_count;
+		fprintf(fp, "PGS [%6d]     %10ld ... %ld\n",
+			pg->pg_count, pg_no, pg_no + pg->pg_count - 1);
+		pg_no += pg->pg_count;
 	}
 	fprintf(fp, "Total Allocated Pages: %ld\n", count);
 
 	fprintf(fp, "--------------------------- Allocated Blocks ----------------------------\n");
-	for(i = 0; i < pgt->pg_count; i++) {
-		pg = &pgt->pg_pages[i];
-		if (!(pg->pg_flags & ODS_F_ALLOCATED) || !(pg->pg_flags & ODS_F_IDX_VALID))
+	int bkt, blk, sz;
+	for(pg_no = 1; pg_no < pgt->pg_count; ) {
+		pg = &pgt->pg_pages[pg_no];
+		if (0 == pg->pg_flags) {
+			pg_no++;
 			continue;
-		int bkt = pg->pg_bkt_idx;
-		size_t sz = bkt_to_size(bkt);
-		printf("======== Size %zu ========\n", sz);
-		for (count = 0, j = 0; j < ODS_PAGE_SIZE / sz; j++) {
-			if (test_bit(pg->pg_bits, j))
-				continue;
-			count ++;
-			fprintf(fp, "%d\n", j);
 		}
-		printf("Count %ld\n", count);
+		if (0 == (pg->pg_flags & ODS_F_IDX_VALID)) {
+			pg_no++;
+			continue;
+		}
+		bkt = pg->pg_bkt_idx;
+		sz = bkt_to_size(bkt);
+		printf("%6dB ", sz);
+		for (blk = 0; blk < ODS_PAGE_SIZE / sz; blk ++) {
+			if (test_bit(pg->pg_bits, blk))
+				/* block is free */
+				printf("-");
+			else
+				printf("A");
+		}
+		printf("\n");
+		pg_no++;
 	}
 
 	fprintf(fp, "------------------------------ Free Pages ------------------------------\n");
 	count = 0;
 	for (pg_no = pgt->pg_free; pg_no && pg_no < pgt->pg_count; ) {
 		pg = &pgt->pg_pages[pg_no];
-		fprintf(fp, "%-32s : 0x%016lx\n", "Page Offset", pg_no << ODS_PAGE_SHIFT);
+		fprintf(fp, "%-32s : 0x%016lx\n", "Page No", pg_no);
 		fprintf(fp, "%-32s : %zu\n", "Page Count", pg->pg_count);
 		count += pg->pg_count;
-		pg_no += pg->pg_count;
+		pg_no = pgt->pg_pages[pg_no].pg_next;
 	}
 	fprintf(fp, "Total Free Pages: %ld\n", count);
 
 	fprintf(fp, "------------------------------ Free Blocks -----------------------------\n");
-	int bkt, blk;
 	for (bkt = 0; bkt < ODS_BKT_TABLE_SZ; bkt++) {
 		if (0 == pgt->bkt_table[bkt].bkt_next)
 			continue;
@@ -2050,7 +2070,7 @@ void ods_dump(ods_t ods, FILE *fp)
 			fprintf(fp, "    %-32s : 0x%016lx\n", "Block Offset", blk * bkt_to_size(bkt));
 			count++;
 		}
-		fprintf(fp, "Total Free %zu blocks: %ld\n", bkt_to_size(bkt), count);
+		fprintf(fp, "Total Free %zuB blocks: %ld\n", bkt_to_size(bkt), count);
 	}
 	fprintf(fp, "==============================- ODS End =================================\n");
 }
@@ -2089,10 +2109,12 @@ int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
 		blk = 0;
 	}
 
-	for(; pg_no < pgt->pg_count; pg_no++) {
+	for(; pg_no < pgt->pg_count; ) {
 		pg = &pgt->pg_pages[pg_no];
-		if (0 == pg->pg_flags)
+		if (0 == pg->pg_flags) {
+			pg_no++;
 			continue;
+		}
 		if (pg->pg_flags & ODS_F_IDX_VALID) {
 			bkt = pg->pg_bkt_idx;
 			sz = bkt_to_size(bkt);
@@ -2106,6 +2128,7 @@ int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
 				if (rc)
 					goto out;
 			}
+			pg_no++;
 		} else {
 			blk = 0;
 			obj = ods_ref_as_obj(ods, pg_no << ODS_PAGE_SHIFT);
