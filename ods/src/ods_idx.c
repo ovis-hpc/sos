@@ -197,6 +197,11 @@ int ods_idx_create(const char *path, int mode,
 	return errno;
 }
 
+int ods_idx_destroy(const char *path)
+{
+	return ods_destroy(path);
+}
+
 ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm)
 {
 	ods_idx_t idx;

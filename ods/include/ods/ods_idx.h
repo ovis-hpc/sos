@@ -131,6 +131,13 @@ int ods_idx_create(const char *path, int mode,
 		   const char *args);
 
 /**
+ * \brief destroy an index
+ *
+ * \param path The path to the ODS
+ */
+int ods_idx_destroy(const char *path);
+
+/**
  * \brief Open an index
  *
  * An index implements a persistent key/value store in an ODS data
@@ -461,13 +468,6 @@ typedef int (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
  */
 int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data);
 
-#if 0
-typedef enum ods_idx_act_e {
-	ODS_IDX_ACT_IGN = 0,
-	ODS_IDX_ACT_INS = 1,
-} ods_idx_act_t;
-typedef int (*ods_idx_cb_fn_t)(ods_idx_t idx, ods_key_t key, int missing,
-			       ods_idx_data_t *pdata, void *user_ctxt);
 /**
  * \brief Locate the key position and call the callback function
  *
@@ -498,9 +498,6 @@ typedef int (*ods_idx_cb_fn_t)(ods_idx_t idx, ods_key_t key, int missing,
  * \retval EINVAL	The idx specified is invalid or the obj
  *			specified is 0
  */
-int ods_idx_insert_unique(ods_idx_t idx, ods_key_t key,
-			ods_idx_cb_fn_t cb_fn, void *ctxt);
-#endif
 typedef enum ods_visit_action {
 	ODS_VISIT_ADD = 1,	/*! Add the key and set it's data to idx_data */
 	ODS_VISIT_DEL,		/*! Delete the key */
