@@ -1333,7 +1333,6 @@ int sos_part_delete(sos_part_t part)
 	/* Remove the partition from the container */
 	TAILQ_REMOVE(&sos->part_list, part, entry);
 	/* Put the create reference, we still hold the part reference */
-	SOS_PART(part->part_obj)->ref_count = 2;
 	__sos_part_obj_put(sos, part->part_obj);
 	/* Put the container reference */
 	sos_part_put(part);
