@@ -1127,9 +1127,8 @@ int sos_part_create(sos_t sos, const char *part_name, const char *part_path)
 	part = __sos_part_new(sos, part_obj);
 	pthread_mutex_lock(&sos->lock);
 	TAILQ_INSERT_HEAD(&sos->part_list, part, entry);
-	rc = __sos_open_partition(sos, part);
 	pthread_mutex_unlock(&sos->lock);
-	return rc;
+	return 0;
 }
 
 /**
