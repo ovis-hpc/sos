@@ -414,5 +414,31 @@ int __sos_schema_name_cmp(void *a, void *b);
 int __sos_open_partitions(sos_t sos, char *tmp_path);
 int __sos_make_all_dir(const char *inp_path, mode_t omode);
 sos_part_t __sos_container_part_find(sos_t sos, const char *name);
+
+extern FILE *__log_fp;
+extern uint64_t __log_mask;
+
+static inline void sos_log(int level, const char *func, int line, char *fmt, ...)
+{
+	va_list ap;
+
+	if (!__log_fp)
+		return;
+
+	if (0 ==  (level & __log_mask))
+		return;
+
+	va_start(ap, fmt);
+	fprintf(__log_fp, "sosdb[%d] @ %s:%d | ", level, func, line);
+	vfprintf(__log_fp, fmt, ap);
+	fflush(__log_fp);
+}
+
+#define sos_fatal(fmt, ...) sos_log(SOS_LOG_FATAL, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define sos_error(fmt, ...) sos_log(SOS_LOG_ERROR, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define sos_warn(fmt, ...) sos_log(SOS_LOG_WARN, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define sos_info(fmt, ...) sos_log(SOS_LOG_INFO, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define sos_debug(fmt, ...) sos_log(SOS_LOG_DEBUG, __func__, __LINE__, fmt, ##__VA_ARGS__)
+
 #endif
 #endif

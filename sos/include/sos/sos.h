@@ -126,6 +126,22 @@ void sos_config_print(const char *path, FILE *fp);
 /** @} */
 /** @} */
 
+/** \defgroup log SOS Logging Functions
+ * @{
+ */
+
+#define SOS_LOG_FATAL	0x01
+#define SOS_LOG_ERROR	0x02
+#define SOS_LOG_WARN	0x04
+#define SOS_LOG_INFO	0x08
+#define SOS_LOG_DEBUG	0x10
+#define SOS_LOG_ALL	0xff
+
+void sos_log_file_set(FILE *fp);
+void sos_log_mask_set(uint64_t mask);
+
+/** @} */
+
 /** \defgroup schema SOS Schema
  * @{
  */
