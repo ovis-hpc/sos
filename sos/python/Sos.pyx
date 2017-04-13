@@ -401,9 +401,13 @@ cdef class Partition(SosObject):
         if rc != 0:
             self.abort(rc)
 
-    def export(self, Container dst_cont):
+    def export(self, Container dst_cont, reindex=False):
         """Export the contents of this partition to another container"""
-        return sos_part_export(self.c_part, dst_cont.c_cont)
+        return sos_part_export(self.c_part, dst_cont.c_cont, reindex)
+
+    def index(self):
+        """Index the contents of this partition"""
+        return sos_part_index(self.c_part)
 
     def __dealloc__(self):
         if self.c_part:

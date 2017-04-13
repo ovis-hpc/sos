@@ -937,8 +937,11 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 	sos_obj_t sos_obj;
 
 	/* Verify the reference provided */
-	if (!ods_ref_valid(ods_obj->ods, obj_ref.ref.obj))
+	if (!ods_ref_valid(ods_obj->ods, obj_ref.ref.obj)) {
+		sos_error("Invalid object reference %p:%p",
+			  obj_ref.ref.ods, obj_ref.ref.obj);
 		return NULL;
+	}
 	if (!LIST_EMPTY(&sos->obj_free_list)) {
 		sos_obj = LIST_FIRST(&sos->obj_free_list);
 		LIST_REMOVE(sos_obj, entry);

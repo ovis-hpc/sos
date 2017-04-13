@@ -41,35 +41,34 @@
  */
 
 /**
- * \section sos_part_export sos_part_export command
+ * \section sos_part_index sos_part_index command
  *
  * \b NAME
  *
- * sos_part_export - Export the objects in a partition to another container
+ * sos_part_index - Add objects in a partition to their schema indices
  *
  * \b SYNOPSIS
  *
- * sos_part_export -C <SRC-PATH> -E <DST-PATH> <PART-NAME>
+ * sos_part_index -C <SRC-PATH> <PART-NAME>
  *
  * \b DESCRIPTION
  *
- * Exports the objects from a partition in one container to the
- * primary partition of another container.
  *
- * The source partition must not be in the 'primary' state.
+ * Objects that have been exported to a partition may not be indexed
+ * by the export process. This command can be used to ensure that all
+ * objects in a partition have been added to their schema indices.
+ *
+ * The partition may not be in the OFFLINE state.
+ *
+ * See the \c sos_part_export command's -I option.
  *
  * \b -C SRC-PATH
  *
  * Specify the PATH to the source Container. This option is required.
  *
- * \b -E DST-PATH
- *
- * Specify the PATH to the destination Container. This option is required.
- *
  * \b PART-NAME
  *
- * The name of the partition in the source container to be exported to
- * the destination container.
+ * The name of the partition.
  */
 #include <sys/time.h>
 #include <time.h>
@@ -83,42 +82,30 @@ int verbose;
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_part_export -C <src-path> -E <dst-path> [-I] <part-name>\n");
-	printf("    -C <src-path> The path to the source container.\n");
-	printf("    -E <dst-path> The path to the destination container.\n");
-	printf("    -I            Add exported objects to their schema indices.\n");
-	printf("    <part-name>   The name of the partition in the source container to export.\n");
+	printf("sos_part_index -C <path> > <part-name>\n");
+	printf("    -C <src-path> The path to the container.\n");
+	printf("    <part-name>   The name of the partition to index.\n");
 	exit(1);
 }
 
-const char *short_options = "C:E:I";
+const char *short_options = "C:E:";
 
 struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},
 	{"path",        required_argument,  0,  'C'},
-	{"export",      required_argument,  0,  'E'},
-	{"index",	no_argument,	    0,  'I'},
 	{0,             0,                  0,  0}
 };
 
 int main(int argc, char **argv)
 {
-	sos_t src_sos, dst_sos;
+	sos_t src_sos;
 	int opt;
 	char *part_name = NULL;
 	char *src_path = NULL;
-	char *dst_path = NULL;
-	int reindex = 0;
 	while (0 < (opt = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (opt) {
 		case 'C':
 			src_path = strdup(optarg);
-			break;
-		case 'E':
-			dst_path = strdup(optarg);
-			break;
-		case 'I':
-			reindex = 1;
 			break;
 		case '?':
 		default:
@@ -126,7 +113,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (!src_path || !dst_path)
+	if (!src_path)
 		usage(argc, argv);
 
 	if (optind < argc)
@@ -134,9 +121,12 @@ int main(int argc, char **argv)
 	else
 		usage(argc, argv);
 
-	src_sos = sos_container_open(src_path, SOS_PERM_RO);
+	sos_log_file_set(stderr);
+	sos_log_mask_set(SOS_LOG_WARN);
+
+	src_sos = sos_container_open(src_path, SOS_PERM_RW);
 	if (!src_sos) {
-		printf("Error %d opening the source container %s.\n",
+		printf("Error %d opening the container %s.\n",
 		       errno, src_path);
 		exit(1);
 	}
@@ -145,25 +135,16 @@ int main(int argc, char **argv)
 		printf("The partition named '%s' was not found.\n", part_name);
 		exit(1);
 	}
-	if (sos_part_state(part) == SOS_PART_STATE_PRIMARY) {
-		printf("You cannot export objects from the primary partition.\n");
+	if (sos_part_state(part) == SOS_PART_STATE_OFFLINE) {
+		printf("You cannot export objects from an OFFLINE partition.\n");
 		sos_part_put(part);
 		exit(2);
 	}
-	dst_sos = sos_container_open(dst_path, SOS_PERM_RW);
-	if (!dst_sos) {
-		printf("Error %d opening the destination container %s.\n",
-		       errno, dst_path);
-		sos_part_put(part);
-		exit(1);
-	}
-	int64_t count = sos_part_export(part, dst_sos, reindex);
+	int64_t count = sos_part_index(part);
 	sos_part_put(part);
-	sos_container_close(src_sos, SOS_COMMIT_SYNC);
-	sos_container_close(dst_sos, SOS_COMMIT_SYNC);
 	if (count < 0)
-		printf("Error %d encountered exporting objects.\n", -count);
+		printf("Error %d encountered indexing objects.\n", -count);
 	else
-		printf("%d objects were exported.\n", count);
+		printf("%d objects were indexed.\n", count);
 	return 0;
 }

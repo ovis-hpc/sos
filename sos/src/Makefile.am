@@ -49,3 +49,7 @@ bin_PROGRAMS += sos_part_move
 sos_part_export_SOURCES = sos_part_export.c
 sos_part_export_LDADD = libsos.la
 bin_PROGRAMS += sos_part_export
+
+sos_part_index_SOURCES = sos_part_index.c
+sos_part_index_LDADD = libsos.la
+bin_PROGRAMS += sos_part_index

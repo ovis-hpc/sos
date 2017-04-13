@@ -260,6 +260,10 @@ static ods_obj_t __sos_part_create(sos_t sos, char *tmp_path,
 	return NULL;
 }
 
+/*
+ * This function uses the part reference. If the caller wants to
+ * continue using it, it must take it's own reference.
+ */
 static int __sos_open_partition(sos_t sos, sos_part_t part)
 {
 	char tmp_path[PATH_MAX];
@@ -304,16 +308,18 @@ static int __unindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 	sos_part_t part = uarg->part;
 	sos_obj_data_t sos_obj_data = obj->as.ptr;
 	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
-	if (!schema)
+	if (!schema) {
+		sos_warn("Object at %p is missing a valid schema id.\n", ods_obj_ref(obj));
 		/* This is a garbage object that should not be here */
 		return 0;
+	}
 	struct timeval tv;
 	(void)gettimeofday(&tv, NULL);
-	double now = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
+	double now = ((double)tv.tv_sec * 1.0e6) + (double)tv.tv_usec;
 	double dur = now - uarg->start;
 	uarg->count++;
-	if (dur > uarg->timeout) {
-		printf("Processed %ld objects in %f microseconds\n", uarg->count, dur);
+	if (now - uarg->start > uarg->timeout) {
+		sos_info("Processed %ld objects in %f microseconds\n", uarg->count, dur);
 		return 1;
 	}
 	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
@@ -323,7 +329,6 @@ static int __unindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 	sos_obj_put(sos_obj);
 	return 0;
 }
-
 
 void __unindex_part_objects(sos_t sos, sos_part_t part)
 {
@@ -376,15 +381,17 @@ static int __reindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 	sos_part_t part = rarg->part;
 	sos_obj_data_t sos_obj_data = obj->as.ptr;
 	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
-	if (!schema)
+	if (!schema) {
+		sos_warn("Object at %p is missing a valid schema id.\n", ods_obj_ref(obj));
 		/* This is a garbage object that should not be here */
 		return 0;
+	}
 	rc = gettimeofday(&tv, NULL);
-	double now = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
+	double now = ((double)tv.tv_sec * 1.0e6) + (double)tv.tv_usec;
 	double dur = now - rarg->start;
 	rarg->count++;
 	if (now - rarg->start > rarg->timeout) {
-		printf("Processed %ld objects in %f microseconds\n", rarg->count, dur);
+		sos_info("Processed %ld objects in %f microseconds\n", rarg->count, dur);
 		return 1;
 	}
 	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
@@ -393,6 +400,8 @@ static int __reindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
 	rc = sos_obj_index(sos_obj);
 	if (rc) {
 		/* The object couldn't be indexed for some reason */
+		sos_warn("The object of type '%s' at %p could not be indexed.\n",
+			 sos_schema_name(schema), ref.ref.obj);
 	}
 	sos_obj_put(sos_obj);
 	return 0;
@@ -437,7 +446,12 @@ static void __make_part_primary(sos_t sos, sos_part_t part)
 	cur_ref = SOS_PART_UDATA(sos->part_udata)->primary;
 	if (cur_ref) {
 		cur_primary = ods_ref_as_obj(sos->part_ods, cur_ref);
-		assert(cur_primary);
+		if (!cur_primary) {
+			sos_fatal("Could not get object for primary "
+				  "partition reference %p at %s:%d",
+				  cur_ref, __func__, __LINE__);
+			return;
+		}
 		SOS_PART(cur_primary)->state = SOS_PART_STATE_ACTIVE;
 		ods_obj_put(cur_primary);
 	}
@@ -694,6 +708,7 @@ struct export_obj_iter_args_s {
 	sos_t dst_sos;
 	sos_part_t src_part;
 	ods_idx_t exp_idx;
+	int reindex;
 	int64_t export_count;
 };
 
@@ -887,7 +902,8 @@ static int __export_callback_fn(ods_t ods, ods_obj_t src_ods_obj, void *arg)
 			printf("Error exporting internal reference attribute %s\n", sos_attr_name(src_attr));
 		}
 	}
-	sos_obj_index(dst_sos_obj);
+	if (uarg->reindex)
+		sos_obj_index(dst_sos_obj);
 	sos_obj_put(dst_sos_obj);
 	uarg->export_count ++;
 	return 0;
@@ -908,11 +924,12 @@ static int __export_callback_fn(ods_t ods, ods_obj_t src_ods_obj, void *arg)
  *
  * \param src_part	The source partition handle
  * \param dst_cont	The destination container
+ * \param reindex	Set to 1 to add exported objects to their schema indices
  * \retval		>= 0 The number of objects exported to the
  *			     destination container
  * \retval		<0   An error occured, see errno for more information
  */
-int64_t sos_part_export(sos_part_t src_part, sos_t dst_sos)
+int64_t sos_part_export(sos_part_t src_part, sos_t dst_sos, int reindex)
 {
 	sos_t src_sos = src_part->sos;
 	uint64_t rc = 0;
@@ -970,6 +987,7 @@ int64_t sos_part_export(sos_part_t src_part, sos_t dst_sos)
 	uargs.src_part = src_part;
 	uargs.dst_sos = dst_sos;
 	uargs.export_count = 0;
+	uargs.reindex = reindex;
 
 	/* Export all objects in src_part to the destination container */
 	ods_obj_iter_pos_init(&pos);
@@ -992,6 +1010,92 @@ int64_t sos_part_export(sos_part_t src_part, sos_t dst_sos)
 	ods_destroy(idx_path);
  err:
 	pthread_mutex_unlock(&src_sos->lock);
+	return rc;
+}
+
+static int __index_callback_fn(ods_t ods, ods_obj_t ods_obj, void *arg)
+{
+	struct export_obj_iter_args_s *uarg = arg;
+	sos_t sos = uarg->src_sos;
+	sos_part_t part = uarg->src_part;
+	sos_obj_data_t sos_obj_data = ods_obj->as.ptr;
+	sos_obj_t sos_obj;
+	sos_schema_t schema;
+	sos_obj_ref_t ref;
+
+	schema = sos_schema_by_id(sos, sos_obj_data->schema);
+	if (!schema) {
+		sos_warn("An object with the invalid schema id %d was "
+			 "encountered at %p.\n", sos_obj_data->schema,
+			 ods_obj_ref(ods_obj));
+		return EINVAL;
+	}
+
+	/* Internal schema objects are not indexed. */
+	if (schema->flags & SOS_SCHEMA_F_INTERNAL)
+		return 0;
+
+	/* Instantiate a SOS version of the ODS object */
+	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
+	ref.ref.obj = ods_obj_ref(ods_obj);
+	sos_obj = __sos_init_obj(sos, schema, ods_obj, ref);
+	if (!sos_obj)
+		return ENOMEM;
+
+	if (sos_obj_index(sos_obj))
+		sos_warn("The object at %p could not be indexed: errno %d\n",
+			 ref.ref.ods, ref.ref.obj, errno);
+	sos_obj_put(sos_obj);
+	uarg->export_count ++;
+	return 0;
+}
+
+int64_t sos_part_index(sos_part_t part)
+{
+	sos_t sos = part->sos;
+	uint64_t rc = 0;
+	sos_part_state_t cur_state;
+	struct export_obj_iter_args_s uargs;
+	struct ods_obj_iter_pos_s pos;
+
+	/* If the state is BUSY, return EBUSY */
+	pthread_mutex_lock(&sos->lock);
+	ods_lock(sos->part_ods, 0, NULL);
+	cur_state = SOS_PART(part->part_obj)->state;
+	if (cur_state == SOS_PART_STATE_BUSY
+	    || cur_state == SOS_PART_STATE_PRIMARY) {
+		sos_info("Cannot index a partition in the BUSY or PRIMARY states.\n");
+		errno = EBUSY;
+		rc = -errno;
+		ods_unlock(sos->part_ods, 0);
+		goto err;
+	}
+
+	/* Make the source partition busy to prevent changes while the
+	 * data is being copied
+	 */
+	__make_part_busy(sos, part);
+	ods_unlock(sos->part_ods, 0);
+	pthread_mutex_unlock(&sos->lock);
+
+	memset(&uargs, 0, sizeof(uargs));
+	uargs.src_sos = sos;
+	uargs.src_part = part;
+
+	/* Index all objects in part */
+	ods_obj_iter_pos_init(&pos);
+	rc = ods_obj_iter(part->obj_ods, &pos, __index_callback_fn, &uargs);
+
+	/* Restore the source partition state */
+	pthread_mutex_lock(&sos->lock);
+	ods_lock(sos->part_ods, 0, NULL);
+	SOS_PART(part->part_obj)->state = cur_state;
+	ods_unlock(sos->part_ods, 0);
+	pthread_mutex_unlock(&sos->lock);
+
+	return uargs.export_count;
+ err:
+	pthread_mutex_unlock(&sos->lock);
 	return rc;
 }
 
@@ -1048,8 +1152,14 @@ ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj)
 void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj)
 {
 	if (0 == ods_atomic_dec(&SOS_PART(part_obj)->ref_count)) {
-		assert(SOS_PART(part_obj)->state == SOS_PART_STATE_OFFLINE);
-		__sos_part_obj_delete(sos, part_obj);
+		if (SOS_PART(part_obj)->state == SOS_PART_STATE_OFFLINE) {
+			sos_error("Reference count has gone to zero on "
+				  "parition %s with state %d\n",
+				  SOS_PART(part_obj)->name,
+				  SOS_PART(part_obj)->state);
+		} else {
+			__sos_part_obj_delete(sos, part_obj);
+		}
 	}
 }
 
@@ -1537,9 +1647,11 @@ static int __part_obj_iter_cb(ods_t ods, ods_obj_t obj, void *arg)
 	sos_part_t part = oi_args->part;
 	sos_obj_data_t sos_obj_data = obj->as.ptr;
 	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
-	if (!schema)
+	if (!schema) {
+		sos_warn("Object at %p is missing a valid schema id.\n", ods_obj_ref(obj));
 		/* This is a garbage object that should not be here */
 		return 0;
+	}
 	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
 	ref.ref.obj = ods_obj_ref(obj);
 	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
