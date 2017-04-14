@@ -102,7 +102,6 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <errno.h>
-#include <assert.h>
 #include <string.h>
 #include <sos/sos.h>
 #include <ods/ods.h>
@@ -326,12 +325,14 @@ int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, v
  * \param key The key
  * \param obj The object to which the key will refer
  * \retval 0 Success
+ * \retval EINVAL The object or index is invalid
  * \retval !0 A Unix error code
  */
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
-	assert(ods_ref_valid(obj->obj->ods, obj->obj_ref.ref.obj));
-	return ods_idx_insert(index->idx, key, obj->obj_ref.idx_data);
+	if (ods_ref_valid(obj->obj->ods, obj->obj_ref.ref.obj))
+		return ods_idx_insert(index->idx, key, obj->obj_ref.idx_data);
+	return EINVAL;
 }
 
 /**
