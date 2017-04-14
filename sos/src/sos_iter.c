@@ -67,7 +67,6 @@
 #include <stdarg.h>
 #include <limits.h>
 #include <errno.h>
-#include <assert.h>
 
 #include <sos/sos.h>
 #include <ods/ods.h>
@@ -116,16 +115,19 @@ sos_iter_t sos_index_iter_new(sos_index_t index)
  * \param attr The schema attribute handle
  *
  * \retval sos_iter_t for the specified attribute
- * \retval NULL       If there was an error creating the iterator.
+ * \retval NULL       The attribute is not indexed
  */
 sos_iter_t sos_attr_iter_new(sos_attr_t attr)
 {
 	sos_iter_t iter;
-	if (!sos_attr_index(attr))
-		return NULL;
+	sos_index_t index = sos_attr_index(attr);
 
-	assert(attr->index);
-	iter = sos_index_iter_new(attr->index);
+	if (!index) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	iter = sos_index_iter_new(index);
 	if (iter)
 		iter->attr = attr;
 	return iter;
