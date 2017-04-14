@@ -1045,8 +1045,8 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
  * \param dst_obj	The object to copy to
  * \param src_obj	The object to copy from
  * \retval 0		The object data was sucessfully copied
- * \retval EINVAL	One or both of the input arguments are invalid
- * \retval ENOMEM	There were insufficient resources in the
+ * \retval EINVAL	The source and destination object attributes object attributes don't match
+ * \retval ENOMEM	There were insufficient resources to assign the object
  */
 int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 {
@@ -1065,9 +1065,6 @@ int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 			dst_attr = TAILQ_NEXT(dst_attr, entry);
 			continue;
 		}
-		sos_type_t type = sos_attr_type(src_attr);
-		assert(type == sos_attr_type(dst_attr));
-
 		if (!sos_attr_is_array(src_attr)) {
 			src_data = sos_obj_attr_data(src_obj, src_attr, NULL);
 			dst_data = sos_obj_attr_data(dst_obj, dst_attr, NULL);
