@@ -39,19 +39,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include <inttypes.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <limits.h>
-#include <errno.h>
-#include <assert.h>
-
 #include <sos/sos.h>
-#include "sos_priv.h"
 
 FILE *__log_fp;
 uint64_t __log_mask;

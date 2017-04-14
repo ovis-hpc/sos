@@ -67,7 +67,6 @@
 #include <stdarg.h>
 #include <limits.h>
 #include <errno.h>
-#include <assert.h>
 
 #include <sos/sos.h>
 #include <ods/ods.h>
