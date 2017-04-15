@@ -91,10 +91,10 @@ def plot_xy(x, y, title_str, args,
         year_str += "-"+str(e.year)
     plt.xlabel('Date/Time ({0})'.format(year_str))
     plt.ylabel(y_label)
-    
+
     if args.bollinger:
-        plt.title(title_str.replace("_", "\_") + 
-                  " -- Bollinger Band (window of {0} time units ".format(bb['window']) + 
+        plt.title(title_str.replace("_", "\_") +
+                  " -- Bollinger Band (window of {0} time units ".format(bb['window']) +
                   "and bands of {0} x sd)".format(bb['multi_sd']))
     else:
         plt.title(title_str.replace("_", "\_") + " $\mu$ and $\pm \sigma$ interval")
@@ -156,6 +156,9 @@ def query_data(cont, args,
     if args.component_id is None:
         print ("The component_id argument is required for --query=data.")
         return
+    if args.schema is None:
+        print("The 'schema' argument is requred for --query data")
+        return
     schema = cont.schema_by_name(args.schema)
     if not schema:
         raise NameError("The schema named '{0}' does not exist.".format(args.schema))
@@ -204,7 +207,7 @@ def query_data(cont, args,
     min_Y = min(Y)
     max_Y = max(Y)
     print(cnt, len(X), len(Y), min(X), max(X), min_Y, max_Y)
-    
+
     y_label = ''
     if max_Y > 1.0e6:
         if max_Y < 1.0e9:
@@ -234,8 +237,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Query/Plot metric data in a SOS database.")
     parser.add_argument("--path", required=True,
                         help="The path to the SOS database.")
-    parser.add_argument("--schema", default='Sample',
-                        help="The name of the schema for metric data. The default is 'Sample'.")
+    parser.add_argument("--schema",
+                        help="The name of the schema for metric data.")
     parser.add_argument("--query", default="schema", metavar="QUERY_TYPE",
                         help="Query the specified information category: " \
                         "schema, dates, data.")
