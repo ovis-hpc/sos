@@ -121,9 +121,6 @@ int main(int argc, char **argv)
 	else
 		usage(argc, argv);
 
-	sos_log_file_set(stderr);
-	sos_log_mask_set(SOS_LOG_WARN);
-
 	src_sos = sos_container_open(src_path, SOS_PERM_RW);
 	if (!src_sos) {
 		printf("Error %d opening the container %s.\n",

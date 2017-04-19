@@ -415,23 +415,23 @@ int __sos_open_partitions(sos_t sos, char *tmp_path);
 int __sos_make_all_dir(const char *inp_path, mode_t omode);
 sos_part_t __sos_container_part_find(sos_t sos, const char *name);
 
-extern FILE *__log_fp;
-extern uint64_t __log_mask;
+extern FILE *__ods_log_fp;
+extern uint64_t __ods_log_mask;
 
 static inline void sos_log(int level, const char *func, int line, char *fmt, ...)
 {
 	va_list ap;
 
-	if (!__log_fp)
+	if (!__ods_log_fp)
 		return;
 
-	if (0 ==  (level & __log_mask))
+	if (0 ==  (level & __ods_log_mask))
 		return;
 
 	va_start(ap, fmt);
-	fprintf(__log_fp, "sosdb[%d] @ %s:%d | ", level, func, line);
-	vfprintf(__log_fp, fmt, ap);
-	fflush(__log_fp);
+	fprintf(__ods_log_fp, "sosdb[%d] @ %s:%d | ", level, func, line);
+	vfprintf(__ods_log_fp, fmt, ap);
+	fflush(__ods_log_fp);
 }
 
 #define sos_fatal(fmt, ...) sos_log(SOS_LOG_FATAL, __func__, __LINE__, fmt, ##__VA_ARGS__)

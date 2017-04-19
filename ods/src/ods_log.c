@@ -39,15 +39,20 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include <sos/sos.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <inttypes.h>
 #include <ods/ods.h>
 
-void sos_log_file_set(FILE *fp)
+FILE *__ods_log_fp;
+uint64_t __ods_log_mask;
+
+void ods_log_file_set(FILE *fp)
 {
-	ods_log_file_set(fp);
+	__ods_log_fp = fp;
 }
 
-void sos_log_mask_set(uint64_t mask)
+void ods_log_mask_set(uint64_t mask)
 {
-	ods_log_mask_set(mask);
+	__ods_log_mask = mask;
 }

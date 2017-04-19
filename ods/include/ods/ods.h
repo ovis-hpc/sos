@@ -138,6 +138,16 @@ extern int ods_stat(ods_t ods, struct stat *sb);
  */
 int ods_pack(ods_t ods);
 
+#define ODS_LOG_FATAL	0x01
+#define ODS_LOG_ERROR	0x02
+#define ODS_LOG_WARN	0x04
+#define ODS_LOG_INFO	0x08
+#define ODS_LOG_DEBUG	0x10
+#define ODS_LOG_ALL	0xff
+
+void ods_log_file_set(FILE *fp);
+void ods_log_mask_set(uint64_t mask);
+
 /**
  * \brief Acquire a pointer to the user-data for the ODS
  *

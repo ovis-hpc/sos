@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2013-2017 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2013 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -299,5 +299,30 @@ struct ods_obj_data_s {
 #define ODS_PGTBL_MIN_SZ	(4096)
 #define ODS_PGTBL_MIN_SZ	(4096)
 #define ODS_OBJ_MIN_SZ		(16 * 4096)
+
+extern FILE *__ods_log_fp;
+extern uint64_t __ods_log_mask;
+
+static inline void ods_log(int level, const char *func, int line, char *fmt, ...)
+{
+	va_list ap;
+
+	if (!__ods_log_fp)
+		return;
+
+	if (0 ==  (level & __ods_log_mask))
+		return;
+
+	va_start(ap, fmt);
+	fprintf(__ods_log_fp, "ods[%d] @ %s:%d | ", level, func, line);
+	vfprintf(__ods_log_fp, fmt, ap);
+	fflush(__ods_log_fp);
+}
+
+#define ods_lfatal(fmt, ...) ods_log(ODS_LOG_FATAL, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define ods_lerror(fmt, ...) ods_log(ODS_LOG_ERROR, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define ods_lwarn(fmt, ...) ods_log(ODS_LOG_WARN, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define ods_linfo(fmt, ...) ods_log(ODS_LOG_INFO, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define ods_ldebug(fmt, ...) ods_log(ODS_LOG_DEBUG, __func__, __LINE__, fmt, ##__VA_ARGS__)
 
 #endif
