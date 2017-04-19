@@ -2222,5 +2222,17 @@ static void *gc_thread_fn(void *arg)
 
 static void __attribute__ ((constructor)) ods_lib_init(void)
 {
+	const char *env;
 	pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
+	env = getenv("ODS_LOG_MASK");
+	if (env) {
+		ods_log_mask_set(atoi(env));
+		if (__ods_log_mask){ 
+			env = getenv("ODS_LOG_FILE");
+			if (env)
+				__ods_log_fp = fopen(env, "w+");
+			if (!__ods_log_fp)
+				__ods_log_fp = stderr;
+		}
+	}
 }
