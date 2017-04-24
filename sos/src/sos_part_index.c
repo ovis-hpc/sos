@@ -140,8 +140,8 @@ int main(int argc, char **argv)
 	int64_t count = sos_part_index(part);
 	sos_part_put(part);
 	if (count < 0)
-		printf("Error %d encountered indexing objects.\n", -count);
+		printf("Error %ld encountered indexing objects.\n", -count);
 	else
-		printf("%d objects were indexed.\n", count);
+		printf("%ld objects were indexed.\n", count);
 	return 0;
 }

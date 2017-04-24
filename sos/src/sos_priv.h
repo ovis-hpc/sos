@@ -60,6 +60,7 @@
 #include <stdint.h>
 #include <sys/queue.h>
 #include <endian.h>
+#include <stdarg.h>
 
 #include <sos/sos.h>
 #include <ods/ods.h>
@@ -414,6 +415,7 @@ int __sos_schema_name_cmp(void *a, void *b);
 int __sos_open_partitions(sos_t sos, char *tmp_path);
 int __sos_make_all_dir(const char *inp_path, mode_t omode);
 sos_part_t __sos_container_part_find(sos_t sos, const char *name);
+int __sos_key_join(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_t value);
 
 extern FILE *__ods_log_fp;
 extern uint64_t __ods_log_mask;

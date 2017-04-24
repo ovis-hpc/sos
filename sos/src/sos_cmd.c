@@ -854,8 +854,6 @@ int main(int argc, char **argv)
 	sos_t sos;
 	char *index_name = NULL;
 	char *schema_name = NULL;
-	FILE *schema_file = NULL;
-	FILE *obj_file = NULL;
 	FILE *csv_file = NULL;
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (o) {

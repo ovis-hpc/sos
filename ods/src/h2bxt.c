@@ -166,6 +166,7 @@ static int h2bxt_open(ods_idx_t idx)
 	t = calloc(1, sizeof *t);
 	if (!t)
 		goto err_0;
+	t->hash_fn = fnv_hash_a1_32; /* compiler food */
 	t->hash_fn = fnv_hash_a1_64;
 	t->udata_obj = udata_obj;
 	t->udata = H2UDATA(udata_obj);
@@ -233,7 +234,6 @@ static int h2bxt_init(ods_t ods, const char *type, const char *key, const char *
 	const char *path;
 	const char *base;
 	ods_obj_t udata;
-	char *value;
 	uint32_t htlen = 0;
 	uint32_t order = 0;
 	uint32_t seed = 0;
@@ -769,7 +769,6 @@ static int h2bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
 
 static int h2bxt_iter_next(ods_iter_t oi)
 {
-	h2bxt_t t = oi->idx->priv;
 	h2bxt_iter_t iter = (typeof(iter))oi;
 	struct rbn *rbn;
 	iter_entry_t ent;
@@ -801,7 +800,6 @@ static int h2bxt_iter_next(ods_iter_t oi)
 
 static int h2bxt_iter_prev(ods_iter_t oi)
 {
-	h2bxt_t t = oi->idx->priv;
 	h2bxt_iter_t iter = (typeof(iter))oi;
 	struct rbn *rbn;
 	iter_entry_t ent;

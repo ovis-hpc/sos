@@ -407,7 +407,6 @@ static int bxt_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void
 		ods_obj_put(leaf);
 	if (rec)
 		ods_obj_put(rec);
- err_0:
 #ifdef BXT_THREAD_SAFE
 	ods_unlock(idx->ods, 0);
 #endif
@@ -1203,7 +1202,6 @@ static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 	else
 		ent = is_dup = 0;
 	rc = bxt_insert_with_leaf(idx, new_key, data, leaf, ent, is_dup);
- err_0:
 #ifdef BXT_THREAD_SAFE
 	ods_unlock(idx->ods, 0);
 #endif

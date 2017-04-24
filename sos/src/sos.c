@@ -1052,10 +1052,6 @@ int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 {
 	sos_attr_t src_attr, dst_attr;
 	sos_value_data_t src_data, dst_data;
-	sos_obj_t src_arr_obj, dst_arr_obj;
-	size_t key_sz;
-	int rc;
-	sos_key_t key;
 
 	dst_attr = TAILQ_FIRST(&dst_obj->schema->attr_list);
 	TAILQ_FOREACH(src_attr, &src_obj->schema->attr_list, entry) {

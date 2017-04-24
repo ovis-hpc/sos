@@ -162,8 +162,8 @@ int main(int argc, char **argv)
 	sos_container_close(src_sos, SOS_COMMIT_SYNC);
 	sos_container_close(dst_sos, SOS_COMMIT_SYNC);
 	if (count < 0)
-		printf("Error %d encountered exporting objects.\n", -count);
+		printf("Error %ld encountered exporting objects.\n", -count);
 	else
-		printf("%d objects were exported.\n", count);
+		printf("%ld objects were exported.\n", count);
 	return 0;
 }

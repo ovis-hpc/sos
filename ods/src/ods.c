@@ -52,6 +52,9 @@
  * Author: Tom Tucker tom at ogc dot us
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -81,6 +84,8 @@ static void free_ref(ods_t ods, ods_ref_t ref);
 static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz);
 static ods_pgt_t pgt_map(ods_t ods);
 static void pgt_unmap(ods_t ods);
+static int ref_valid(ods_t ods, ods_ref_t ref);
+static void __lock_init(ods_lock_t *lock);
 
 #if defined(ODS_OBJ_DEBUG)
 int ods_obj_track = 1;
@@ -139,6 +144,7 @@ static inline void reset_bit(uint64_t *bits, int bit)
 	bits[word] &= ~(1L << bit);
 }
 
+#ifdef _not_yet_
 static char *bit_str(uint64_t *bits, size_t bitlen)
 {
 	int i;
@@ -156,6 +162,7 @@ static char *bit_str(uint64_t *bits, size_t bitlen)
 	*s = '\0';
 	return p;
 }
+#endif
 
 static ods_pgt_t pgt_get(ods_t ods)
 {
@@ -183,8 +190,6 @@ static inline ods_map_t map_get(ods_map_t map)
 
 static void *ref_to_ptr(ods_t ods, uint64_t ref, uint64_t *ref_sz, ods_map_t *map)
 {
-	ods_map_t obj_map;
-	struct rbn *rbn;
 	if (!ref)
 		return NULL;
 
@@ -197,6 +202,7 @@ static void *ref_to_ptr(ods_t ods, uint64_t ref, uint64_t *ref_sz, ods_map_t *ma
 	return &(*map)->data[ref - (*map)->map.off];
 }
 
+#ifdef _not_yet_
 static ods_ref_t ptr_to_ref(ods_map_t map, void *p)
 {
 	ods_ref_t ref;
@@ -206,6 +212,7 @@ static ods_ref_t ptr_to_ref(ods_map_t map, void *p)
 	assert(ref < map->map.len);
 	return ref;
 }
+#endif
 
 static inline uint64_t ref_to_page_no(ods_ref_t ref)
 {
@@ -254,7 +261,7 @@ static int init_pgtbl(int pg_fd)
 	pthread_mutexattr_setpshared(&attr, 1);
 	pthread_mutex_init(&pgt.pgt_lock.mutex, &attr);
 	for (i = 0; i < ODS_LOCK_CNT; i++)
-		pthread_mutex_init(&pgt.lck_tbl[i].mutex, &attr);
+		__lock_init(&pgt.lck_tbl[i]);
 
 	rc = lseek(pg_fd, 0, SEEK_SET);
 	if (rc < 0)
@@ -406,15 +413,14 @@ static int __pgt_lock(ods_t ods)
 
 static void __pgt_unlock(ods_t ods)
 {
-	ods_lock_t *lock;
 	ods_pgt_t pgt = ods->lck_table;
 	assert(pgt);
 	return __release_lock(&pgt->pgt_lock);
 }
 
-static int __ods_lock(ods_t ods)
+static void __ods_lock(ods_t ods)
 {
-	pthread_mutex_lock(&ods->lock);
+	(void)pthread_mutex_lock(&ods->lock);
 }
 
 static void __ods_unlock(ods_t ods)
@@ -440,9 +446,7 @@ static void dump_maps()
  */
 static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 {
-	int rc;
 	void *obj_map;
-	struct stat sb;
 	struct rbn *rbn;
 	struct map_key_s key;
 	ods_map_t map;
@@ -549,9 +553,7 @@ static ods_pgt_t pgt_map(ods_t ods)
 
 static ods_pgt_t lck_map(ods_t ods)
 {
-	int rc;
 	void *lck_map;
-	struct stat sb;
 
 	lck_map = mmap(NULL, ODS_PAGE_SIZE,
 		       PROT_READ | PROT_WRITE,
@@ -636,8 +638,8 @@ static int print_map(struct rbn *rbn, void *arg, int l)
 	FILE *fp = arg;
 	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
 
-	fprintf(fp, "%14p %5d %14p %14zu %14zu\n",
-		map, map->refcount, map->map.off, map->map.len, map->data);
+	fprintf(fp, "%14p %5d %14p %14zu %14p\n",
+		map, map->refcount, (void *)map->map.off, map->map.len, map->data);
 
 	return 0;
 }
@@ -973,6 +975,7 @@ static void update_dirty(ods_t ods, ods_ref_t ref, size_t size)
 #endif
 }
 
+#ifdef _not_yet_
 /*
  * Create a memory object from a persistent reference
  */
@@ -1031,6 +1034,7 @@ static void ods_obj_htbl_del(ods_obj_htbl_t htbl, ods_obj_hent_t hent)
 	TAILQ_REMOVE(&htbl->lru, hent, tentry);
 	LIST_REMOVE(hent, lentry);
 }
+#endif
 
 static ods_obj_t _ref_as_obj_with_lock(ods_t ods, ods_ref_t ref)
 {
@@ -1149,7 +1153,6 @@ int ods_extend(ods_t ods, size_t sz)
 	struct ods_pg_s *pg;
 	size_t n_pages;
 	size_t n_sz;
-	size_t new_pg_off;
 	int rc;
 
 	if (!ods->o_perm)
@@ -1462,7 +1465,6 @@ ods_obj_t ods_get_user_data(ods_t ods)
 static uint64_t alloc_pages(ods_t ods, size_t pg_needed)
 {
 	uint64_t pg_no, p_pg_no, n_pg_no;
-	uint64_t pg_off;
 	ods_pgt_t pgt = ods->pg_table;
 
 	p_pg_no = 0;
@@ -1617,7 +1619,6 @@ ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
 	uint64_t pg_no;
 	ods_ref_t ref = 0;
 	ods_pgt_t pgt;
-	ods_map_t map;
 
 	if (!ods->o_perm) {
 		errno = EPERM;
@@ -1715,7 +1716,7 @@ static inline int ref_to_blk_no(ods_t ods, ods_ref_t ref)
  * unallocated or inside an allocation (i.e. not the start), return
  * False (0)
  */
-int ref_valid(ods_t ods, ods_ref_t ref)
+static int ref_valid(ods_t ods, ods_ref_t ref)
 {
 	uint64_t pg_no = ref_to_page_no(ref);
 	ods_pgt_t pgt = ods->pg_table;
@@ -1800,7 +1801,6 @@ static void free_pages(ods_t ods, ods_ref_t ref)
 	ods_pg_t pg, next_pg, last_pg;
 	uint64_t pg_no;
 	uint64_t count;
-	unsigned char flags;
 
 	pg_no = ref_to_page_no(ref);
 	assert(pg_no < pgt->pg_count);
@@ -1841,7 +1841,6 @@ static int commit_map_fn(struct rbn *rbn, void *arg, int l)
 void ods_commit(ods_t ods, int flags)
 {
 	int mflag = (flags ? MS_SYNC : MS_ASYNC);
-	ods_map_t map = NULL;
 	__ods_lock(ods);
 	rbt_traverse(&ods->map_tree, commit_map_fn, (void *)(unsigned long)mflag);
 	__ods_unlock(ods);
@@ -1886,7 +1885,7 @@ void ods_close(ods_t ods, int flags)
 
 	/* Clean up any maps */
 	struct rbn *rbn;
-	while (rbn = rbt_min(&ods->map_tree)) {
+	while ((rbn = rbt_min(&ods->map_tree))) {
 		map = container_of(rbn, struct ods_map_s, rbn);
 		rbt_del(&ods->map_tree, rbn);
 		int rc = munmap(map->data, map->map.len);
@@ -1915,9 +1914,6 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
 	uint64_t pg_no;
 	ods_pgt_t pgt;
 	ods_pg_t pg;
-	ods_map_t map;
-	int bkt;
-	unsigned char flags;
 	uint32_t status = 0;
 
 	__pgt_lock(ods);
@@ -1993,7 +1989,6 @@ void ods_dump(ods_t ods, FILE *fp)
 	uint64_t pg_no;
 
 	fprintf(fp, "--------------------------- Allocated Pages ----------------------------\n");
-	uint64_t i, j;
 	uint64_t count = 0;
 
 	for(pg_no = 1; pg_no < pgt->pg_count; ) {
@@ -2003,13 +1998,13 @@ void ods_dump(ods_t ods, FILE *fp)
 			continue;
 		}
 		if (pg->pg_flags & ODS_F_IDX_VALID) {
-			fprintf(fp, "BLKS[%5dB]     %10ld\n",
+			fprintf(fp, "BLKS[%5zuB]     %10zu\n",
 				bkt_to_size(pg->pg_bkt_idx), pg_no);
 			pg_no++;
 			continue;
 		}
 		count += pg->pg_count;
-		fprintf(fp, "PGS [%6d]     %10ld ... %ld\n",
+		fprintf(fp, "PGS [%6ld]     %10ld ... %ld\n",
 			pg->pg_count, pg_no, pg_no + pg->pg_count - 1);
 		pg_no += pg->pg_count;
 	}
@@ -2168,7 +2163,6 @@ static pthread_t gc_thread;
 static void *gc_thread_fn(void *arg)
 {
 	ods_t ods;
-	ods_map_t map;
 	struct map_list_head del_list;
 	struct del_fn_arg fn_arg;
 	uint64_t mapped;

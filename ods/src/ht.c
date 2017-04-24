@@ -26,8 +26,7 @@ static void delete_entry(ht_t t, ods_obj_t ent, int64_t bkt);
 
 void print_bkt(ods_idx_t idx, ht_t t, int64_t bkt, FILE *fp)
 {
-	ods_obj_t ent, key;
-	ods_key_value_t kv;
+	ods_obj_t ent;
 	ods_ref_t next_ref;
 	ht_tbl_t ht = t->htable;
 	fprintf(fp, "%ld : ", bkt);
@@ -157,10 +156,11 @@ static int ht_init(ods_t ods, const char *idx_type, const char *key_type, const 
 		if (arg) {
 			strcpy(arg_buf, arg);
 			name = strtok(arg_buf, "=");
+			type = strtok(NULL, "=");
 			if (name && (0 == strcasecmp(name, "TYPE"))) {
-				if (0 == strcasecmp(type, "fnv_32"))
+				if (type && (0 == strcasecmp(type, "fnv_32")))
 					hash_type = HT_HASH_FNV_32;
-				else if (0 == strcasecmp(type, "fnv_64"))
+				else if (type && (0 == strcasecmp(type, "fnv_64")))
 					hash_type = HT_HASH_FNV_64;
 				else
 					return EINVAL;
@@ -199,9 +199,6 @@ static int ht_init(ods_t ods, const char *idx_type, const char *key_type, const 
 
 static void ht_close_(ht_t t)
 {
-	struct ht_obj_el *el;
-	ods_obj_t node;
-
 	ods_atomic_dec(&t->udata->client_count);
 	ods_obj_put(t->udata_obj);
 	ods_obj_put(t->htable_obj);
@@ -256,7 +253,6 @@ static int ht_find(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t *data)
 {
 	int rc;
 	ht_t t = o_idx->priv;
-	ht_tbl_t ht = t->htable;
 	ods_obj_t ent;
 
 #ifdef HT_THREAD_SAFE
@@ -295,7 +291,6 @@ static int ht_update(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 	} else {
 		rc = ENOENT;
 	}
- out:
 #ifdef HT_THREAD_SAFE
 	ods_unlock(o_idx->ods, 0);
 #endif
@@ -375,7 +370,6 @@ static int ht_insert(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 {
 	ht_t t = o_idx->priv;
 	int rc = ENOMEM;
-	ht_tbl_t ht = t->htable;
 	ods_key_t new_key;
 	ods_obj_t ent;
 	int64_t bkt;
@@ -474,7 +468,6 @@ static int ht_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void 
 			ods_obj_put(ent);
 		break;
 	}
- out_0:
 #ifdef HT_THREAD_SAFE
 	ods_unlock(idx->ods, 0);
 #endif
@@ -557,7 +550,6 @@ static void delete_entry(ht_t t, ods_obj_t ent, int64_t bkt)
 static int ht_delete(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t *data)
 {
 	ht_t t = o_idx->priv;
-	ht_tbl_t ht = t->htable;
 	ods_obj_t ent;
 	int64_t bkt;
 
@@ -645,11 +637,10 @@ static ods_key_t ht_iter_key(ods_iter_t oi)
 	return ods_ref_as_obj(t->ods, HENT(hi->ent)->key_ref);
 }
 
-static struct ods_idx_data_s NO_DATA = { 0 };
+static struct ods_idx_data_s NO_DATA;
 static ods_idx_data_t ht_iter_data(ods_iter_t oi)
 {
 	ht_iter_t hi = (ht_iter_t)oi;
-	ht_t t = hi->iter.idx->priv;
 	if (!hi->ent)
 		return NO_DATA;
 	return HENT(hi->ent)->value;

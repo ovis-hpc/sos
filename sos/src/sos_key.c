@@ -308,13 +308,13 @@ char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_
 	return res_str;
 }
 
-int sos_key_join(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_t value)
+int __sos_key_join(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_t value)
 {
 	uint64_t u64;
 	uint32_t u32;
 	uint16_t u16;
 	ods_key_value_t kv;
-	char *dst;
+	unsigned char *dst;
 	int attr_id, idx;
 	sos_attr_t attr;
 	sos_array_t join_ids = sos_attr_join_list(join_attr);

@@ -720,7 +720,7 @@ union exp_obj_u {
 		uint64_t to_ref;
 	} exp_data;
 };
-#pragma()
+#pragma pack()
 
 static sos_schema_t __export_schema(sos_t sos, sos_schema_t src, const char *name)
 {
@@ -757,8 +757,8 @@ static int __shallow_export(sos_t dst_sos, sos_t src_sos,
 
 	sschema = sos_schema_by_id(src_sos, sos_obj_data->schema);
 	if (!sschema) {
-		printf("An object with the invalid schema id %d was "
-		       "encountered.\n", sos_obj_data->schema);
+		sos_error("ODS object with ref %p has the invalid schema id %ld\n",
+			  (void *)ods_obj_ref(src_ods_obj), sos_obj_data->schema);
 		return EINVAL;
 	}
 
@@ -839,7 +839,6 @@ static int __export_callback_fn(ods_t ods, ods_obj_t src_ods_obj, void *arg)
 	struct export_obj_iter_args_s *uarg = arg;
 	sos_t src_sos = uarg->src_sos;
 	sos_t dst_sos = uarg->dst_sos;
-	sos_part_t src_part = uarg->src_part;
 	sos_obj_t dst_sos_obj;
 	ods_obj_t dst_ods_obj;
 	sos_schema_t src_schema, dst_schema;
@@ -1222,7 +1221,6 @@ int sos_part_create(sos_t sos, const char *part_name, const char *part_path)
 	char tmp_path[PATH_MAX];
 	ods_obj_t part_obj;
 	sos_part_t part;
-	int rc;
 
 	part = sos_part_find(sos, part_name);
 	if (part) {

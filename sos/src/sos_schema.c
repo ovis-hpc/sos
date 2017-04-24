@@ -727,7 +727,6 @@ int sos_attr_join(sos_obj_t obj, sos_attr_t attr)
 	uint64_t u64;
 	uint32_t u32;
 	uint16_t u16;
-	long double ld;
 	int i, count, join_id;
 	sos_attr_t join_attr;
 	sos_schema_t schema = sos_attr_schema(attr);
