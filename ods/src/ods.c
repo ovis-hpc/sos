@@ -72,12 +72,6 @@
 #include "ods_priv.h"
 #define ODS_OBJ_SUFFIX		".OBJ"
 #define ODS_PGTBL_SUFFIX	".PG"
-#define ODS_PANIC(__msg) \
-{ \
-	fprintf(stderr, "Fatal Error: %s[%d]\n  " #__msg, \
-		__FUNCTION__, __LINE__); \
-	assert(0);			 \
-}
 
 static pthread_mutex_t ods_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static LIST_HEAD(ods_list_head, ods_s) ods_list = LIST_HEAD_INITIALIZER(ods_list);
@@ -431,9 +425,11 @@ static void __ods_unlock(ods_t ods)
 static void dump_maps()
 {
 	ods_t ods;
+	pthread_mutex_lock(&ods_list_lock);
 	LIST_FOREACH(ods, &ods_list, entry) {
 		ods_info(ods, stdout);
 	}
+	pthread_mutex_lock(&ods_list_lock);
 }
 /*
  * Must be called with the ODS lock held. The loff parameter specifies
@@ -588,9 +584,9 @@ void show_stackframe()
 
 	trace_size = backtrace(trace, 16);
 	messages = (char **)backtrace_symbols(trace, trace_size);
-	printf("[bt] Execution path:\n");
+	ods_ldebug("[bt] Execution path:\n");
 	for (i=0; i< trace_size; ++i)
-		printf("%s\n", messages[i]);
+		ods_ldebug("%s\n", messages[i]);
 }
 
 static inline void map_put(ods_map_t map)
@@ -600,7 +596,7 @@ static inline void map_put(ods_map_t map)
 
 	if ((int)map->refcount <= 0) {
 		show_stackframe();
-		assert(0 == "Putting a map with a zero refcount");
+		ods_lerror("Putting a map %p with a zero refcount\n", map);
 	}
 
 	if (!ods_atomic_dec(&map->refcount)) {
@@ -1129,9 +1125,7 @@ static void empty_del_list(struct map_list_head *del_q)
 	while (!LIST_EMPTY(del_q)) {
 		map = LIST_FIRST(del_q);
 		LIST_REMOVE(map, entry);
-#ifdef ODS_DEBUG
-		printf("Unmapping %p len %ld MB\n", map->data, map->map.len/1024/1024);
-#endif
+		ods_ldebug("Unmapping %p len %ld MB\n", map->data, map->map.len/1024/1024);
 		/* Drop the tree reference and remove it from the tree */
 		rbt_del(&map->ods->map_tree, &map->rbn);
 		map_put(map);
@@ -1786,7 +1780,7 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 
 	if (test_bit(pg->pg_bits, blk_no)) {
 		/* ref is already free */
-		ODS_PANIC("Ref specified to free is already free");
+		ods_lerror("Ref %p is already free\n", (void *)ref);
 		return;
 	}
 	if (0 == (pg->pg_flags & ODS_F_ALLOCATED) || /* ref page not allocated */
@@ -1794,7 +1788,7 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 	    ((ref & ~ODS_PAGE_MASK) % bkt_to_size(bkt))|| /* ref not aligned to size */
 	    bkt < 0 || bkt >= ODS_BKT_TABLE_SZ       /* bkt index is invalid */
 	    ) {
-		ODS_PANIC("Ref specified to free is invalid.\n");
+		ods_lerror("Ref %p is invalid.\n", (void *)ref);
 		return;
 	}
 	set_bit(pg->pg_bits, blk_no);
@@ -1816,7 +1810,8 @@ static void free_pages(ods_t ods, ods_ref_t ref)
 	 * If the page count is 0 ref is an interior page in an allocation
 	 */
 	if (0 == pg->pg_count) {
-		ODS_PANIC("Freeing in interior of page allocation\n");
+		ods_lerror("Ref %p @ page %d is in interior of page allocation\n",
+			   (void *)ref, pg_no);
 		return;
 	}
 	for (count = pg->pg_count; count; count--) {
@@ -2167,55 +2162,38 @@ static int q4_del_fn(struct rbn *rbn, void *arg, int l)
 	return 0;
 }
 
+#define DEFAULT_GC_TIMEOUT 10
+static time_t gc_timeout = DEFAULT_GC_TIMEOUT;
 static pthread_t gc_thread;
 static void *gc_thread_fn(void *arg)
 {
 	ods_t ods;
 	ods_map_t map;
-	struct ods_list_head dumpster;
 	struct map_list_head del_list;
 	struct del_fn_arg fn_arg;
-	time_t timeout = 10;
 	uint64_t mapped;
  gc:
-	LIST_INIT(&dumpster);
-	pthread_mutex_lock(&ods_list_lock);
-	while (!LIST_EMPTY(&ods_list)) {
-		ods = LIST_FIRST(&ods_list);
-		LIST_REMOVE(ods, entry);
-		LIST_INSERT_HEAD(&dumpster, ods, entry);
-	}
-	pthread_mutex_unlock(&ods_list_lock);
-
 	mapped = 0;
-	while (!LIST_EMPTY(&dumpster)) {
-
-		/* Remove the ODS from the dumpster */
-		ods = LIST_FIRST(&dumpster);
-		LIST_REMOVE(ods, entry);
-
+	pthread_mutex_lock(&ods_list_lock);
+	LIST_FOREACH(ods, &ods_list, entry) {
 		/*
 		 * Traverse the map_tree and add the maps that can be
 		 * deleted to the del_list
 		 */
 		LIST_INIT(&del_list);
 		__ods_lock(ods);
-		fn_arg.timeout = timeout;
+		fn_arg.timeout = gc_timeout;
 		fn_arg.del_q = &del_list;
 		fn_arg.mapped = 0;
 		rbt_traverse(&ods->map_tree, q4_del_fn, &fn_arg);
 		mapped += fn_arg.mapped;
 		empty_del_list(&del_list);
 		__ods_unlock(ods);
-
-		pthread_mutex_lock(&ods_list_lock);
-		LIST_INSERT_HEAD(&ods_list, ods, entry);
-		pthread_mutex_unlock(&ods_list_lock);
 	}
-#ifdef ODS_DEBUG
-	printf("Total mapped memory = %ld MB\n", mapped / 1024 / 1024);
-#endif
-	sleep(timeout);
+	pthread_mutex_unlock(&ods_list_lock);
+	ods_ldebug("Total mapped memory is %ld MB\n", mapped / 1024 / 1024);
+
+	sleep(gc_timeout);
 	goto gc;
 	return NULL;
 }
@@ -2234,5 +2212,11 @@ static void __attribute__ ((constructor)) ods_lib_init(void)
 			if (!__ods_log_fp)
 				__ods_log_fp = stderr;
 		}
+	}
+	env = getenv("ODS_GC_TIMEOUT");
+	if (env) {
+		gc_timeout = atoi(env);
+		if (gc_timeout <= 0)
+			gc_timeout = DEFAULT_GC_TIMEOUT;
 	}
 }
