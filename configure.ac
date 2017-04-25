@@ -12,7 +12,7 @@ AC_PROG_CC
 dnl this will add document options. Please see m4/options.m4.
 OPTION_DOC
 
-OPTION_DEFAULT_DISABLE([obj_debug], [ENABLE_OBJ_DEBUG])
+OPTION_DEFAULT_DISABLE([debug], [ENABLE_DEBUG])
 OPTION_DEFAULT_ENABLE([python], [ENABLE_PYTHON])
 
 if test -z "$ENABLE_PYTHON_TRUE"

@@ -429,14 +429,25 @@ int ods_iter_pos_remove(ods_iter_t iter, ods_pos_t pos)
 	return iter->idx->idx_class->prv->iter_pos_delete(iter, pos);
 }
 
-ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz)
+ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz, const char *func, int line)
 {
 	if (!idx->o_perm)
 		return NULL;
 
 	ods_key_t key =
-		ods_obj_alloc(idx->ods,
-			      sz + sizeof(struct ods_key_value_s));
+		_ods_obj_alloc(idx->ods,
+			       sz + sizeof(struct ods_key_value_s),
+			       func, line);
+	if (key)
+		*key->as.uint16 = sz;
+	return key;
+}
+
+ods_key_t _ods_key_malloc(size_t sz, const char *func, int line)
+{
+	ods_key_t key =
+		_ods_obj_malloc(sz + sizeof(struct ods_key_value_s),
+				func, line);
 	if (key)
 		*key->as.uint16 = sz;
 	return key;

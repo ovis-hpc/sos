@@ -60,9 +60,6 @@ typedef struct ods_pos_s {
 	char data[16];
 } *ods_pos_t;
 
-extern int ods_debug;
-extern int ods_obj_track;
-
 #define ODS_IDX_SIGNATURE	"ODSIDX00"
 
 #define ODS_IDX_DATA_LEN 16
@@ -255,15 +252,8 @@ typedef ods_obj_t ods_key_t;
  * \retval !0	ods_key_t pointer to the key
  * \retval 0	Insufficient resources
  */
-ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz);
-#define ods_key_alloc(idx, sz) ({		\
-	ods_key_t k = _ods_key_alloc(idx, sz);	\
-	if (ods_obj_track && k) {				\
-		k->alloc_line = __LINE__;	\
-		k->alloc_func = __func__;	\
-	}					\
-	k;					\
-})
+ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz, const char *func, int line);
+#define ods_key_alloc(idx, sz) _ods_key_alloc(idx, sz, __func__, __LINE__)
 
 /**
  * \brief Copy the contents of one key to another
@@ -315,13 +305,8 @@ void ods_key_copy(ods_key_t dst, ods_key_t src);
  * \retval !0	ods_key_t pointer to the key
  * \retval 0	Insufficient resources
  */
-#define ods_key_malloc(sz) ({			\
-	ods_key_t k = ods_obj_malloc(sz + sizeof(struct ods_key_value_s)); \
-	if (k) {				\
-		*k->as.uint16 = sz;		\
-	}					\
-	k;					\
-})
+extern ods_key_t _ods_key_malloc(size_t sz, const char *func, int line);
+#define ods_key_malloc(sz) _ods_key_malloc(sz, __func__, __LINE__)
 
 /**
  * \brief Set the value of a key

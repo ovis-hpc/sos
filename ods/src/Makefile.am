@@ -3,8 +3,8 @@ lib_LTLIBRARIES =
 # If xxx_CFLAGS is not specified, AM_CFLAGS will be used.
 AM_CFLAGS = -I$(srcdir)/../include/
 
-if ENABLE_OBJ_DEBUG
-AM_CFLAGS += -DODS_OBJ_DEBUG
+if ENABLE_DEBUG
+AM_CFLAGS += -DODS_DEBUG
 endif
 
 ods_dump_SOURCES = ods_dump.c

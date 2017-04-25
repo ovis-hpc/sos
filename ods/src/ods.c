@@ -87,12 +87,6 @@ static void pgt_unmap(ods_t ods);
 static int ref_valid(ods_t ods, ods_ref_t ref);
 static void __lock_init(ods_lock_t *lock);
 
-#if defined(ODS_OBJ_DEBUG)
-int ods_obj_track = 1;
-#else
-int ods_obj_track = 0;
-#endif
-
 #if defined(ODS_DEBUG)
 int ods_debug = 1;
 #else
@@ -867,12 +861,13 @@ void __ods_obj_put(ods_obj_t obj, int lock)
 	}
 }
 
-#ifdef ODS_OBJ_DEBUG
-void _ods_obj_put(ods_obj_t obj)
-#else
-void ods_obj_put(ods_obj_t obj)
-#endif
+void _ods_obj_put(ods_obj_t obj, const char *func, int line)
 {
+	if (obj) {
+		obj->thread = pthread_self();
+		obj->put_line = line;
+		obj->put_func = func;
+	}
 	__ods_obj_put(obj, 1);
 }
 
@@ -1058,12 +1053,7 @@ static ods_obj_t _ref_as_obj_with_lock(ods_t ods, ods_ref_t ref)
 	return NULL;
 }
 
-// #define ODS_CACHE_OBJECTS
-#ifdef ODS_OBJ_DEBUG
-ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref)
-#else
-ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref)
-#endif
+ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref, const char *func, int line)
 {
 #ifdef ODS_CACHE_OBJECTS
 	ods_obj_hent_t hent;
@@ -1093,9 +1083,13 @@ ods_obj_t ods_ref_as_obj(ods_t ods, ods_ref_t ref)
  out:
 #endif
 	__ods_unlock(ods);
+	obj->thread = pthread_self();
+	obj->alloc_line = line;
+	obj->alloc_func = func;
 	return obj;
  err_1:
-	assert(0);
+	ods_lerror("Newly created object at ref %p could be initialized errno %d",
+		   (void *)ref, errno);
 	LIST_INSERT_HEAD(&obj->ods->obj_free_list, obj, entry);
  err_0:
 	__ods_unlock(ods);
@@ -1432,11 +1426,7 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	return NULL;
 }
 
-#ifdef ODS_OBJ_DEBUG
-ods_obj_t _ods_get_user_data(ods_t ods)
-#else
-ods_obj_t ods_get_user_data(ods_t ods)
-#endif
+ods_obj_t _ods_get_user_data(ods_t ods, const char *func, int line)
 {
 	/* User data starts immediately after the object data header */
 	ods_ref_t user_ref = sizeof(struct ods_obj_data_s);
@@ -1453,6 +1443,9 @@ ods_obj_t ods_get_user_data(ods_t ods)
 
 	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
 	__ods_unlock(ods);
+	obj->thread = pthread_self();
+	obj->alloc_line = line;
+	obj->alloc_func = func;
 	return obj;
 
  err_1:
@@ -1608,12 +1601,7 @@ static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 	return ref;
 }
 
-
-#ifdef ODS_OBJ_DEBUG
-ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz)
-#else
-ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
-#endif
+ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz, const char *func, int line)
 {
 	ods_obj_t obj = NULL;
 	uint64_t pg_no;
@@ -1647,25 +1635,24 @@ ods_obj_t ods_obj_alloc(ods_t ods, size_t sz)
  out:
 	__pgt_unlock(ods);
 	__ods_lock(ods);
-#ifdef ODS_OBJ_DEBUG
-	if (ref)
+	if (ods_debug && ref)
 		assert(ref_valid(ods, ref));
-#endif
 	obj = _ref_as_obj_with_lock(ods, ref);
 	if (!obj && ref) {
 		__pgt_lock(ods);
 		free_ref(ods, ref);
 		__pgt_unlock(ods);
 	}
+	if (obj) {
+		obj->thread = pthread_self();
+		obj->alloc_line = line;
+		obj->alloc_func = func;
+	}
 	__ods_unlock(ods);
 	return obj;
 }
 
-#ifdef ODS_OBJ_DEBUG
-ods_obj_t _ods_obj_malloc(size_t sz)
-#else
-ods_obj_t ods_obj_malloc(size_t sz)
-#endif
+ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line)
 {
 	ods_obj_t obj;
 	obj = malloc(sz + sizeof(struct ods_obj_s));
@@ -1677,6 +1664,9 @@ ods_obj_t ods_obj_malloc(size_t sz)
 	obj->refcount = 1;
 	obj->map = NULL;
 	obj->size = sz;
+	obj->thread = pthread_self();
+	obj->alloc_line = line;
+	obj->alloc_func = func;
 	return obj;
 }
 
