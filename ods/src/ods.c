@@ -427,7 +427,7 @@ static void dump_maps()
 	ods_t ods;
 	pthread_mutex_lock(&ods_list_lock);
 	LIST_FOREACH(ods, &ods_list, entry) {
-		ods_info(ods, stdout);
+		ods_info(ods, __ods_log_fp);
 	}
 	pthread_mutex_lock(&ods_list_lock);
 }
@@ -606,9 +606,9 @@ static inline void map_put(ods_map_t map)
 			ods_obj_t obj;
 			LIST_FOREACH(obj, &map->ods->obj_list, entry) {
 				if (obj->map == map) {
-					printf("FATAL ERROR: obj %p map %p ods %p\n",
-					       obj, map, map->ods);
-					ods_info(map->ods, stdout);
+					ods_lfatal("obj %p map %p ods %p\n",
+						   obj, map, map->ods);
+					ods_info(map->ods, __ods_log_fp);
 					assert(1);
 				}
 			}
