@@ -970,67 +970,6 @@ static void update_dirty(ods_t ods, ods_ref_t ref, size_t size)
 #endif
 }
 
-#ifdef _not_yet_
-/*
- * Create a memory object from a persistent reference
- */
-static ods_obj_htbl_t ods_obj_htbl_new(size_t depth)
-{
-	ods_obj_htbl_t htbl;
-	size_t sztbl, sz = depth;
-	if (!sz)
-		sz = ODS_OBJ_HTBL_DEPTH;
-	sztbl = sizeof(*htbl) + (sz * sizeof(struct ods_obj_hent_s));
-	htbl = malloc(sztbl);
-	if (htbl) {
-		memset(htbl, 0, sztbl);
-		htbl->hcount = sz;
-		htbl->tcount = 0;
-		TAILQ_INIT(&htbl->lru);
-	}
-	return htbl;
-}
-
-static ods_obj_hent_t ods_obj_htbl_find(ods_obj_htbl_t htbl, ods_ref_t ref)
-{
-	ods_obj_hent_t hent;
-	size_t idx = ref % htbl->hcount;
-	LIST_FOREACH(hent, &htbl->htable[idx], lentry) {
-		if (ods_obj_ref(hent->obj) == ref) {
-			TAILQ_REMOVE(&htbl->lru, hent, tentry);
-			TAILQ_INSERT_HEAD(&htbl->lru, hent, tentry);
-			return hent;
-		}
-	}
-	return NULL;
-}
-
-static void ods_obj_htbl_add(ods_obj_htbl_t htbl, ods_obj_t obj)
-{
-	ods_ref_t ref = ods_obj_ref(obj);
-	ods_obj_hent_t hent;
-	if (htbl->tcount > htbl->hcount << 1) {
-		hent = TAILQ_LAST(&htbl->lru, ods_obj_tailq_head_s);
-		TAILQ_REMOVE(&htbl->lru, hent, tentry);
-		LIST_REMOVE(hent, lentry);
-		__ods_obj_put(hent->obj, 0);
-	} else {
-		htbl->tcount++;
-		hent = malloc(sizeof *hent);
-		assert(hent);
-	}
-	hent->obj = ods_obj_get(obj);
-	TAILQ_INSERT_HEAD(&htbl->lru, hent, tentry);
-	LIST_INSERT_HEAD(&htbl->htable[ref % htbl->hcount], hent, lentry);
-}
-
-static void ods_obj_htbl_del(ods_obj_htbl_t htbl, ods_obj_hent_t hent)
-{
-	TAILQ_REMOVE(&htbl->lru, hent, tentry);
-	LIST_REMOVE(hent, lentry);
-}
-#endif
-
 static ods_obj_t _ref_as_obj_with_lock(ods_t ods, ods_ref_t ref)
 {
 	ods_obj_t obj;
@@ -1055,21 +994,11 @@ static ods_obj_t _ref_as_obj_with_lock(ods_t ods, ods_ref_t ref)
 
 ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref, const char *func, int line)
 {
-#ifdef ODS_CACHE_OBJECTS
-	ods_obj_hent_t hent;
-#endif
 	ods_obj_t obj;
 	if (!ref)
 		return NULL;
 
 	__ods_lock(ods);
-#ifdef ODS_CACHE_OBJECTS
-	hent = ods_obj_htbl_find(ods->obj_htbl, ref);
-	if (hent) {
-		obj = ods_obj_get(hent->obj);
-		goto out;
-	}
-#endif
 	obj = obj_new(ods);
 	if (!obj)
 		goto err_0;
@@ -1078,10 +1007,6 @@ ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref, const char *func, int line)
 
 	update_dirty(ods, obj->ref, ods_obj_size(obj));
 	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
-#ifdef ODS_CACHE_OBJECTS
-	ods_obj_htbl_add(ods->obj_htbl, obj);
- out:
-#endif
 	__ods_unlock(ods);
 	obj->thread = pthread_self();
 	obj->alloc_line = line;
@@ -1401,11 +1326,6 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	ods->obj_map_sz = ODS_MAP_DEF_SZ;
 	rbt_init(&ods->map_tree, map_cmp);
 	rbt_init(&ods->dirty_tree, ref_cmp);
-
-#ifdef ODS_CACHE_OBJECTS
-	ods->obj_htbl = ods_obj_htbl_new(0);
-	assert(ods->obj_htbl);
-#endif
 
 	pthread_mutex_lock(&ods_list_lock);
 	cleanup_dead_locks(ods);

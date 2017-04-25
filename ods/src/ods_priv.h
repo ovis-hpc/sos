@@ -121,19 +121,6 @@ typedef struct ods_dirty_s {
 	struct rbn rbn;
 } *ods_dirty_t;
 
-typedef struct ods_obj_hent_s {
-	ods_obj_t obj;
-	TAILQ_ENTRY(ods_obj_hent_s) tentry;
-	LIST_ENTRY(ods_obj_hent_s) lentry;
-} *ods_obj_hent_t;
-
-typedef struct ods_obj_htbl_s {
-	size_t hcount;		/* table depth */
-	size_t tcount;		/* entry count */
-	TAILQ_HEAD(ods_obj_tailq_head_s, ods_obj_hent_s) lru;
-	LIST_HEAD(ods_obj_list_head_s, ods_obj_hent_s) htable[0];
-} *ods_obj_htbl_t;
-
 #define ODS_MAP_DEF_SZ	(ODS_PAGE_SIZE * 1024 * 64) /* 256M */
 struct ods_s {
 	/* The path to the file on disk */
@@ -174,20 +161,12 @@ struct ods_s {
 	LIST_HEAD(obj_list_head, ods_obj_s) obj_list;
 	LIST_HEAD(obj_free_list_head, ods_obj_s) obj_free_list;
 
-	/* In-memory object hash table */
-	ods_obj_htbl_t obj_htbl;
-
 	/* The dirty tree */
 	struct rbt dirty_tree;
 
 	LIST_ENTRY(ods_s) entry;
 };
 
-// #define ODS_OBJ_HTBL_DEPTH 32653
-// #define ODS_OBJ_HTBL_DEPTH 65537
-#define ODS_OBJ_HTBL_DEPTH 131071
-// #define ODS_OBJ_HTBL_DEPTH 262147
-// #define ODS_OBJ_HTBL_DEPTH 524287
 #define ODS_OBJ_SIGNATURE "OBJSTORE"
 #define ODS_PGT_SIGNATURE "PGTSTORE"
 #define ODS_OBJ_VERSION   "09082016"
