@@ -2241,7 +2241,7 @@ struct bxt_pos_s {
 	ods_ref_t rec_ref;
 };
 
-static int bxt_iter_set(ods_iter_t oi, const ods_pos_t pos_)
+static int bxt_iter_pos_set(ods_iter_t oi, const ods_pos_t pos_)
 {
 	struct bxt_pos_s *pos = (struct bxt_pos_s *)pos_;
 	bxt_iter_t i = (bxt_iter_t)oi;
@@ -2267,7 +2267,7 @@ static int bxt_iter_set(ods_iter_t oi, const ods_pos_t pos_)
 	return 0;
 }
 
-static int bxt_iter_pos(ods_iter_t oi, ods_pos_t pos_)
+static int bxt_iter_pos_get(ods_iter_t oi, ods_pos_t pos_)
 {
 	bxt_iter_t i = (bxt_iter_t)oi;
 	struct bxt_pos_s *pos = (struct bxt_pos_s *)pos_;
@@ -2283,7 +2283,12 @@ static int bxt_iter_pos(ods_iter_t oi, ods_pos_t pos_)
 	return 0;
 }
 
-static int bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
+static int bxt_iter_pos_put(ods_iter_t oi, ods_pos_t pos_)
+{
+	return ENOSYS;
+}
+
+static int bxt_iter_pos_remove(ods_iter_t oi, ods_pos_t pos_)
 {
 	bxt_iter_t i = (bxt_iter_t)oi;
 	struct bxt_pos_s *pos = (struct bxt_pos_s *)pos_;
@@ -2414,9 +2419,10 @@ static struct ods_idx_provider bxt_provider = {
 	.iter_end = bxt_iter_end,
 	.iter_next = bxt_iter_next,
 	.iter_prev = bxt_iter_prev,
-	.iter_set = bxt_iter_set,
-	.iter_pos = bxt_iter_pos,
-	.iter_pos_delete = bxt_iter_pos_delete,
+	.iter_pos_set = bxt_iter_pos_set,
+	.iter_pos_get = bxt_iter_pos_get,
+	.iter_pos_put = bxt_iter_pos_put,
+	.iter_pos_entry_remove = bxt_iter_pos_remove,
 	.iter_key = bxt_iter_key,
 	.iter_data = bxt_iter_data,
 	.print_idx = print_idx,

@@ -837,17 +837,22 @@ struct h2bxt_pos_s {
 	ods_ref_t rec_ref;
 };
 
-static int h2bxt_iter_set(ods_iter_t oi, const ods_pos_t pos_)
+static int h2bxt_iter_pos_set(ods_iter_t oi, const ods_pos_t pos_)
 {
 	return 0;
 }
 
-static int h2bxt_iter_pos(ods_iter_t oi, ods_pos_t pos_)
+static int h2bxt_iter_pos_get(ods_iter_t oi, ods_pos_t pos_)
 {
 	return 0;
 }
 
-static int h2bxt_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
+static int h2bxt_iter_pos_put(ods_iter_t oi, ods_pos_t pos_)
+{
+	return ENOSYS;
+}
+
+static int h2bxt_iter_pos_remove(ods_iter_t oi, ods_pos_t pos_)
 {
 	return ENOENT;
 }
@@ -908,9 +913,10 @@ static struct ods_idx_provider h2bxt_provider = {
 	.iter_end = h2bxt_iter_end,
 	.iter_next = h2bxt_iter_next,
 	.iter_prev = h2bxt_iter_prev,
-	.iter_set = h2bxt_iter_set,
-	.iter_pos = h2bxt_iter_pos,
-	.iter_pos_delete = h2bxt_iter_pos_delete,
+	.iter_pos_set = h2bxt_iter_pos_set,
+	.iter_pos_get = h2bxt_iter_pos_get,
+	.iter_pos_put = h2bxt_iter_pos_put,
+	.iter_pos_entry_remove = h2bxt_iter_pos_remove,
 	.iter_key = h2bxt_iter_key,
 	.iter_data = h2bxt_iter_data,
 	.print_idx = print_idx,

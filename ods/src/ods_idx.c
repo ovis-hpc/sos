@@ -404,14 +404,14 @@ int ods_iter_prev(ods_iter_t iter)
 	return iter->idx->idx_class->prv->iter_prev(iter);
 }
 
-int ods_iter_pos(ods_iter_t iter, ods_pos_t pos)
+int ods_iter_pos_get(ods_iter_t iter, ods_pos_t pos)
 {
-	return iter->idx->idx_class->prv->iter_pos(iter, pos);
+	return iter->idx->idx_class->prv->iter_pos_get(iter, pos);
 }
 
-int ods_iter_set(ods_iter_t iter, const ods_pos_t pos)
+int ods_iter_pos_set(ods_iter_t iter, const ods_pos_t pos)
 {
-	return iter->idx->idx_class->prv->iter_set(iter, pos);
+	return iter->idx->idx_class->prv->iter_pos_set(iter, pos);
 }
 
 ods_key_t ods_iter_key(ods_iter_t iter)
@@ -424,9 +424,14 @@ ods_idx_data_t ods_iter_data(ods_iter_t iter)
 	return iter->idx->idx_class->prv->iter_data(iter);
 }
 
-int ods_iter_pos_remove(ods_iter_t iter, ods_pos_t pos)
+int ods_iter_pos_put(ods_iter_t iter, ods_pos_t pos)
 {
-	return iter->idx->idx_class->prv->iter_pos_delete(iter, pos);
+	return iter->idx->idx_class->prv->iter_pos_put(iter, pos);
+}
+
+int ods_iter_pos_entry_remove(ods_iter_t iter, ods_pos_t pos)
+{
+	return iter->idx->idx_class->prv->iter_pos_entry_remove(iter, pos);
 }
 
 ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz, const char *func, int line)

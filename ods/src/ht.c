@@ -767,7 +767,7 @@ struct ht_pos_s {
 	ods_ref_t ent_ref;
 };
 
-static int ht_iter_set(ods_iter_t oi, const ods_pos_t pos_)
+static int ht_iter_pos_set(ods_iter_t oi, const ods_pos_t pos_)
 {
 	struct ht_pos_s *pos = (struct ht_pos_s *)pos_;
 	ht_iter_t hi = (ht_iter_t)oi;
@@ -786,7 +786,7 @@ static int ht_iter_set(ods_iter_t oi, const ods_pos_t pos_)
 	return 0;
 }
 
-static int ht_iter_pos(ods_iter_t oi, ods_pos_t pos_)
+static int ht_iter_pos_get(ods_iter_t oi, ods_pos_t pos_)
 {
 	ht_iter_t hi = (ht_iter_t)oi;
 	struct ht_pos_s *pos = (struct ht_pos_s *)pos_;
@@ -798,7 +798,12 @@ static int ht_iter_pos(ods_iter_t oi, ods_pos_t pos_)
 	return 0;
 }
 
-static int ht_iter_pos_delete(ods_iter_t oi, ods_pos_t pos_)
+static int ht_iter_pos_put(ods_iter_t oi, ods_pos_t pos_)
+{
+	return ENOSYS;
+}
+
+static int ht_iter_pos_remove(ods_iter_t oi, ods_pos_t pos_)
 {
 	ht_iter_t hi = (ht_iter_t)oi;
 	struct ht_pos_s *pos = (struct ht_pos_s *)pos_;
@@ -874,9 +879,10 @@ static struct ods_idx_provider ht_provider = {
 	.iter_end = ht_iter_end,
 	.iter_next = ht_iter_next,
 	.iter_prev = ht_iter_prev,
-	.iter_set = ht_iter_set,
-	.iter_pos = ht_iter_pos,
-	.iter_pos_delete = ht_iter_pos_delete,
+	.iter_pos_set = ht_iter_pos_set,
+	.iter_pos_get = ht_iter_pos_get,
+	.iter_pos_put = ht_iter_pos_put,
+	.iter_pos_entry_remove = ht_iter_pos_remove,
 	.iter_key = ht_iter_key,
 	.iter_data = ht_iter_data,
 	.print_idx = print_idx,

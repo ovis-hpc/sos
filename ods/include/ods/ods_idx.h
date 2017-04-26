@@ -668,7 +668,7 @@ ods_idx_t ods_iter_idx(ods_iter_t iter);
  * \retval 0   Success
  * \retval !0  An error occurred.
  */
-int ods_iter_pos_remove(ods_iter_t iter, ods_pos_t pos);
+int ods_iter_pos_entry_remove(ods_iter_t iter, ods_pos_t pos);
 
 /**
  * \brief Destroy an iterator
@@ -735,7 +735,7 @@ int ods_iter_find_last(ods_iter_t iter, ods_key_t key);
  * \retval 0   Success
  * \retval EINVAL The specified position is invalid
  */
-int ods_iter_set(ods_iter_t iter, const ods_pos_t pos);
+int ods_iter_pos_set(ods_iter_t iter, const ods_pos_t pos);
 
 /**
  * \brief Get the current iterator position
@@ -745,7 +745,21 @@ int ods_iter_set(ods_iter_t iter, const ods_pos_t pos);
  * \retval 0 Success
  * \retval ENOENT The iterator cursor is not at a valid position.
  */
-int ods_iter_pos(ods_iter_t iter, ods_pos_t pos);
+int ods_iter_pos_get(ods_iter_t iter, ods_pos_t pos);
+
+/**
+ * \brief Indicate that this iterator position will no longer be used
+ *
+ * Iterator positions are saved for a period of time by the index. If the
+ * application is finished with the iterator position, this function can
+ * be used to indicate to the index that the position will no longer be used.
+ *
+ * \param iter The iterator handle
+ * \param pos The iterator position
+ * \retval 0 Success
+ * \retval ENOENT The iterator position is invalid
+ */
+int ods_iter_pos_put(ods_iter_t iter, ods_pos_t pos);
 
 /**
  * \brief Position an iterator at the least-upper-bound of the \c key.

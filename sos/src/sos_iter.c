@@ -202,9 +202,9 @@ uint64_t sos_iter_dups(sos_iter_t iter)
  * \param pos The sos_pos_t that will receive the position value.
  * \returns The current iterator position or 0 if position is invalid
  */
-int sos_iter_pos(sos_iter_t iter, sos_pos_t pos)
+int sos_iter_pos_get(sos_iter_t iter, sos_pos_t pos)
 {
-	return ods_iter_pos(iter->iter, (ods_pos_t)pos);
+	return ods_iter_pos_get(iter->iter, (ods_pos_t)pos);
 }
 
 int sos_pos_from_str(sos_pos_t pos, const char *str)
@@ -249,9 +249,22 @@ void sos_pos_str_free(char *str)
  * \retval 0 Success
  * \retval ENOENT if the specified position is invalid
  */
-int sos_iter_set(sos_iter_t iter, const sos_pos_t pos)
+int sos_iter_pos_set(sos_iter_t iter, const sos_pos_t pos)
 {
-	return ods_iter_set(iter->iter, (ods_pos_t)pos);
+	return ods_iter_pos_set(iter->iter, (ods_pos_t)pos);
+}
+
+/**
+ * \brief Indicates to the iterator that this position is no longer in-use
+ *
+ * \param i The iterator handle
+ * \param pos The iterator cursor position
+ * \retval 0 Success
+ * \retval ENOENT The iterator position is invalid
+ */
+int sos_iter_pos_put(sos_iter_t iter, const sos_pos_t pos)
+{
+	return ods_iter_pos_put(iter->iter, (ods_pos_t)pos);
 }
 
 /**
@@ -311,10 +324,10 @@ sos_obj_ref_t sos_iter_ref(sos_iter_t i)
 int sos_iter_entry_remove(sos_iter_t iter)
 {
 	struct ods_pos_s pos;
-	int rc = ods_iter_pos(iter->iter, &pos);
+	int rc = ods_iter_pos_get(iter->iter, &pos);
 	if (rc)
 		return rc;
-	return ods_iter_pos_remove(iter->iter, &pos);
+	return ods_iter_pos_entry_remove(iter->iter, &pos);
 }
 
 /**
@@ -1013,14 +1026,19 @@ sos_obj_t sos_filter_skip(sos_filter_t filt, int count)
 	return obj;
 }
 
-int sos_filter_set(sos_filter_t filt, const sos_pos_t pos)
+int sos_filter_pos_set(sos_filter_t filt, const sos_pos_t pos)
 {
-	return sos_iter_set(filt->iter, pos);
+	return sos_iter_pos_set(filt->iter, pos);
 }
 
-int sos_filter_pos(sos_filter_t filt, sos_pos_t pos)
+int sos_filter_pos_get(sos_filter_t filt, sos_pos_t pos)
 {
-	return sos_iter_pos(filt->iter, pos);
+	return sos_iter_pos_get(filt->iter, pos);
+}
+
+int sos_filter_pos_put(sos_filter_t filt, sos_pos_t pos)
+{
+	return sos_iter_pos_put(filt->iter, pos);
 }
 
 sos_obj_t sos_filter_prev(sos_filter_t filt)
