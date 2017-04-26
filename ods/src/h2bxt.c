@@ -597,6 +597,7 @@ static ods_key_t h2bxt_iter_key_rev(ods_iter_t oi)
 	ent = container_of(rbn, struct iter_entry_s, rbn);
 	return ods_obj_get(ent->key);
 }
+
 static ods_key_t h2bxt_iter_key(ods_iter_t oi)
 {
 	h2bxt_iter_t iter = (typeof(iter))oi;
@@ -621,6 +622,7 @@ static ods_idx_data_t h2bxt_iter_data_fwd(ods_iter_t oi)
 	ent = container_of(rbn, struct iter_entry_s, rbn);
 	return ent->data;
 }
+
 static ods_idx_data_t h2bxt_iter_data_rev(ods_iter_t oi)
 {
 	iter_entry_t ent;
@@ -631,6 +633,7 @@ static ods_idx_data_t h2bxt_iter_data_rev(ods_iter_t oi)
 	ent = container_of(rbn, struct iter_entry_s, rbn);
 	return ent->data;
 }
+
 static ods_idx_data_t h2bxt_iter_data(ods_iter_t oi)
 {
 	h2bxt_iter_t iter = (typeof(iter))oi;
@@ -772,9 +775,36 @@ static int h2bxt_iter_next(ods_iter_t oi)
 	h2bxt_iter_t iter = (typeof(iter))oi;
 	struct rbn *rbn;
 	iter_entry_t ent;
-	int bkt;
+	ods_key_t key;
+	int bkt, rc;
+	h2bxt_t t = oi->idx->priv;
 
-	iter->dir = H2BXT_ITER_FWD; /* force direction to forward */
+	if (iter->dir == H2BXT_ITER_REV) {
+		/* need to reverse all sub iterators and rebuild the tree */
+		iter->dir = H2BXT_ITER_FWD;
+		iter_cleanup(t, iter);
+		for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+			key = ods_iter_key(iter->iter_table[bkt]);
+			if (key) {
+				/* valid iterator */
+				ods_obj_put(key);
+				rc = ods_iter_next(iter->iter_table[bkt]);
+			} else {
+				/* depleted iterator, must start from
+				 * the beginning */
+				rc = ods_iter_begin(iter->iter_table[bkt]);
+			}
+			if (rc)
+				continue;
+			ent = alloc_ent(iter, bkt);
+			if (!ent)
+				return ENOMEM;
+			rbt_ins(&iter->next_tree, &ent->rbn);
+		}
+		goto out;
+	}
+
+	assert(iter->dir == H2BXT_ITER_FWD); /* direction must be forward here */
 
 	/* Delete the min from the tree. */
 	rbn = rbt_min(&iter->next_tree);
@@ -793,6 +823,8 @@ static int h2bxt_iter_next(ods_iter_t oi)
 			return ENOMEM;
 		rbt_ins(&iter->next_tree, &ent->rbn);
 	}
+
+ out:
 	if (rbt_empty(&iter->next_tree))
 		return ENOENT;
 	return 0;
@@ -803,9 +835,36 @@ static int h2bxt_iter_prev(ods_iter_t oi)
 	h2bxt_iter_t iter = (typeof(iter))oi;
 	struct rbn *rbn;
 	iter_entry_t ent;
-	int bkt;
+	ods_key_t key;
+	int bkt, rc;
+	h2bxt_t t = oi->idx->priv;
 
-	iter->dir = H2BXT_ITER_REV; /* force direction to reverse */
+	if (iter->dir == H2BXT_ITER_FWD) {
+		/* need to reverse all sub iterators and rebuild the tree */
+		iter->dir = H2BXT_ITER_REV;
+		iter_cleanup(t, iter);
+		for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+			key = ods_iter_key(iter->iter_table[bkt]);
+			if (key) {
+				/* valid iterator */
+				ods_obj_put(key);
+				rc = ods_iter_prev(iter->iter_table[bkt]);
+			} else {
+				/* depleted iterator, must start from
+				 * the beginning */
+				rc = ods_iter_end(iter->iter_table[bkt]);
+			}
+			if (rc)
+				continue;
+			ent = alloc_ent(iter, bkt);
+			if (!ent)
+				return ENOMEM;
+			rbt_ins(&iter->next_tree, &ent->rbn);
+		}
+		goto out;
+	}
+
+	assert(iter->dir == H2BXT_ITER_REV);
 
 	/* Delete the max from the tree. */
 	rbn = rbt_max(&iter->next_tree);
@@ -824,6 +883,8 @@ static int h2bxt_iter_prev(ods_iter_t oi)
 			return ENOMEM;
 		rbt_ins(&iter->next_tree, &ent->rbn);
 	}
+
+ out:
 	if (rbt_empty(&iter->next_tree))
 		return ENOENT;
 	return 0;
