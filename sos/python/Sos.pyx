@@ -2063,6 +2063,21 @@ cdef class Object(object):
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
 
+        if slice == type(idx):
+            # Slice item retrieval
+            ret = []
+            _start = idx.start if idx.start else 0
+            _stop = idx.stop if idx.stop \
+                    else sos_schema_attr_count(self.c_schema)
+            _step = idx.step if idx.step else 1
+            for _i in range(_start, _stop, _step):
+                c_attr = sos_schema_attr_by_id(sos_obj_schema(self.c_obj), _i)
+                if c_attr == NULL:
+                    raise ValueError("Object has no attribute with id '{0}'".format(idx))
+                arr_obj = NULL
+                c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
+                ret.append(self.get_py_value(arr_obj, c_attr, c_data))
+            return ret
         if int == type(idx):
             c_attr = sos_schema_attr_by_id(sos_obj_schema(self.c_obj), idx)
         else:
@@ -2092,7 +2107,21 @@ cdef class Object(object):
         cdef sos_value_data_t c_data
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
-        c_attr = sos_schema_attr_by_id(sos_obj_schema(self.c_obj), idx)
+        if type(idx) == slice:
+            # slice assignment -- obj[a:b] = seq
+            _start = idx.start if idx.start else 0
+            _stop = idx.stop if idx.stop \
+                    else sos_schema_attr_count(self.c_schema)
+            _step = idx.step if idx.step else 1
+            for (_i, _v) in zip(range(_start, _stop, _step), val):
+                c_attr = sos_schema_attr_by_id(self.c_schema, _i)
+                if c_attr == NULL:
+                    raise ValueError("Object has no attribute with id '{0}'".format(_i))
+                c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
+                self.set_py_value(c_attr, c_data, _v)
+            return
+        # single index assignment
+        c_attr = sos_schema_attr_by_id(self.c_schema, idx)
         if c_attr == NULL:
             raise ValueError("Object has no attribute with id '{0}'".format(idx))
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
