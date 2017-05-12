@@ -429,9 +429,9 @@ int ods_iter_pos_put(ods_iter_t iter, ods_pos_t pos)
 	return iter->idx->idx_class->prv->iter_pos_put(iter, pos);
 }
 
-int ods_iter_pos_entry_remove(ods_iter_t iter, ods_pos_t pos)
+int ods_iter_entry_delete(ods_iter_t iter, ods_idx_data_t *data)
 {
-	return iter->idx->idx_class->prv->iter_pos_entry_remove(iter, pos);
+	return iter->idx->idx_class->prv->iter_entry_delete(iter, data);
 }
 
 ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz, const char *func, int line)

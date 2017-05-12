@@ -84,12 +84,18 @@ typedef struct bxt_s {
 	LIST_HEAD(node_el_q_head, bxt_obj_el) el_q;
 } *bxt_t;
 
-typedef struct bxt_iter {
+typedef struct bxt_pos_s {
+	ods_ref_t rec_ref;
+	uint32_t ent;
+} *bxt_pos_t;
+
+typedef struct bxt_iter_s {
 	struct ods_iter iter;
 	ods_obj_t rec;
-	int ent;
+	uint32_t ent;
 } *bxt_iter_t;
 
+#define BXT_EXTEND_SIZE	(1024 * 1024)
 #define BXT_SIGNATURE "BXTREE01"
 #pragma pack()
 
@@ -100,5 +106,5 @@ typedef struct bxt_iter {
 #define L_ENT(_o_,_i_) ODS_PTR(bxt_node_t, _o_)->entries[_i_].u.leaf
 #define NODE(_o_) ODS_PTR(bxt_node_t, _o_)
 #define REC(_o_) ODS_PTR(bxn_record_t, _o_)
-
+#define POS(_o_) ODS_PTR(bxt_pos_t, _o_)
 #endif

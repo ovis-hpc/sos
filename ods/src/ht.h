@@ -74,6 +74,11 @@ typedef struct ht_s {
 	ods_idx_compare_fn_t comparator;
 } *ht_t;
 
+typedef struct ht_pos_s {
+	int64_t bkt;
+	ods_ref_t ent_ref;
+} *ht_pos_t;
+
 typedef struct ht_iter {
 	struct ods_iter iter;
 	ods_obj_t ent;
@@ -92,5 +97,8 @@ typedef struct ht_iter {
 #define HENT(_o_) ODS_PTR(ht_entry_t, _o_)
 /* Hash Key */
 #define HKEY(_o_) ODS_PTR(ods_key_value_t, _o_)
+/* POS Structure */
+#define POS(_o_) ODS_PTR(ht_pos_t, _o_)
 
+#define HT_EXTEND_SIZE	(1024 * 1024)
 #endif

@@ -768,52 +768,188 @@ cdef class Key(object):
         return data.prim.double_
 
 cdef class AttrIter(SosObject):
+    """Implements a non-Python iterator on a Schema attribute
 
+    This class implements a database-style iterator. It is not a
+    Python iterable and does not employ the Python iterator
+    syntax. Calling iter(AttrIter) will genarate an exception,
+    An AttrIter can be contructed directly as follows:
+
+    ```python
+    schema = db.schema_by_name('vmstat')
+    ts = schema.attr_by_name('timestamp')
+    it = Sos.AttrIter(ts)
+    ```
+
+    There is also a convenience method in the Attr class Attr.iter(),
+    for example:
+
+    ```
+    it = ts.attr_iter()
+    ```
+    The AttrIter implements begin(), end(), prev(), and next() to
+    iterate through objects in the index. Each of these methods
+    returns True if there is an object at the current iterator
+    position or False otherwise. For example:
+
+    ```python
+    b = it.begin()
+    while b:
+        o = it.item()
+        # do something with the object
+        b = it.next()
+    ```
+    There are also methods that take a Key as an argument to position
+    the iterator at an object with the specified key. See find(),
+    find_sup(), and find_inf() for documentation on these methods.
+    """
     cdef Attr attr
     cdef sos_iter_t c_iter
-    cdef Key end_key
 
-    def __init__(self, Attr attr,
-                 Key start_key=None, Key end_key=None,
-                 Key filt_key=None):
+    def __init__(self, Attr attr):
+        """Instantiate an AttrIter object
+
+        Positional Arguments:
+        attr	The Attr with the Index on which the iterator is being
+                created.
+        """
         self.c_iter = sos_attr_iter_new(attr.c_attr)
-        if start_key is None:
-            sos_iter_begin(self.c_iter)
-        else:
-            sos_iter_sup(self.c_iter, start_key.c_key)
-        self.end_key = end_key
         self.attr = attr
 
-    def __iter__(self):
-        return self
-
-    def __next__(self):
+    def item(self):
+        """Return the Object at the current iterator position"""
         cdef sos_obj_t c_obj
         c_obj = sos_iter_obj(self.c_iter)
-        if c_obj == NULL:
-            raise StopIteration()
-        sos_iter_next(self.c_iter)
         o = Object()
         o.assign(c_obj)
         return o
 
+    def key(self):
+        """Return the Key at the current iterator position"""
+        cdef sos_key_t c_key
+        c_key = sos_iter_key(self.c_iter)
+        k = Key()
+        k.assign(c_key)
+        return k
+
+    def begin(self):
+        """Position the iterator at the first object in the index"""
+        cdef int rc = sos_iter_begin(self.c_iter);
+        if rc == 0:
+            return True
+        return False
+
+    def end(self):
+        """Position the iterator at the last object in the index"""
+        cdef int rc = sos_iter_end(self.c_iter);
+        if rc == 0:
+            return True
+        return False
+
+    def next(self):
+        """Move the iterator position to the next object in the index
+        Returns:
+        True    There is an object at the new iterator position
+        False   There is no object at the new iterator position
+        """
+        cdef int rc
+        rc = sos_iter_next(self.c_iter)
+        if rc == 0:
+            return True
+        return False
+
+    def prev(self):
+        """Move the iterator position to the previous object in the index
+        Returns:
+        True    There is an object at the new iterator position
+        False   There is no object at the new iterator position
+        """
+        cdef int rc = sos_iter_prev(self.c_iter)
+        if rc == 0:
+            return True
+        return False
+
     def find(self, Key key):
+        """Position the iterator at the object with the specified key
+
+        Find the index entry with a key that is equal the specified input Key
+
+        Positional arguments:
+        -- The key to search for
+
+        Returns:
+        True   There is an object with the specified key
+        False  There was no object with the specified key
+        """
         cdef int rc = sos_iter_find(self.c_iter, key.c_key)
         if rc == 0:
             return True
         return False
 
     def find_sup(self, Key key):
+        """Find the key in the index greater-or-equal to the input key
+
+        Find the index entry with a key that is greator-or-equal the
+        specified input Key
+
+        Positional arguments:
+        -- The key to search for
+
+        Returns:
+        True    Found
+        False   Not found
+
+        """
         cdef int rc = sos_iter_sup(self.c_iter, key.c_key)
         if rc == 0:
             return True
         return False
 
     def find_inf(self, Key key):
+        """Find the key in the index less-or-equal to the input key
+
+        Find the index entry with a key that is less-or-equal the
+        specified input Key
+
+        Returns:
+        True    Found
+        False   Not found
+        """
         cdef int rc = sos_iter_inf(self.c_iter, key.c_key)
         if rc == 0:
             return True
         return False
+
+    def get_pos(self):
+        """Returns the currrent iterator position as a string
+
+        The returned string represents the current iterator
+        position. The string can be passed to the set_pos() method to
+        set an iterator on the same index to this position.
+
+        An intent of this string is that it can be exchanged over the
+        network to enable paging of objects at the browser
+
+        """
+        cdef const char *c_str
+        cdef sos_pos_t c_pos
+        cdef int rc = sos_iter_pos_get(self.c_iter, &c_pos)
+        if rc != 0:
+            return None
+        c_str = sos_pos_to_str(c_pos)
+        return c_str
+
+    def set_pos(self, pos_str):
+        """Sets the currrent position from a string
+
+        Positional Parameters:
+        -- String representation of the iterator position
+        """
+        cdef sos_pos_t c_pos
+        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
+        if rc == 0:
+            return sos_iter_pos_set(self.c_iter, c_pos)
+        return rc
 
     def __del__(self):
         if self.c_iter != NULL:
@@ -940,14 +1076,13 @@ cdef class Attr(SosObject):
         """Returns an Index() object for this attribute"""
         return Index(self)
 
-    def set_start(self, Key key):
-        self.start_key = key
-
-    def set_end(self, Key key):
-        self.end_key = key
-
-    def __iter__(self):
+    def attr_iter(self):
+        """Return an AttrIter instance for this attribute"""
         return AttrIter(self)
+
+    def filter(self):
+        """Return a Filter instance for this attribute"""
+        return Filter(self)
 
     def join_list(self):
         cdef sos_array_t array = sos_attr_join_list(self.c_attr)
@@ -1016,11 +1151,47 @@ COND_GT = SOS_COND_GT
 COND_NE = SOS_COND_NE
 
 cdef class Filter(object):
+    """Implements a non-Python iterator on a Schema object
+
+    This class implements a database-style iterator. It is not a
+    Python iterable and does not employ the Python iterator
+    syntax. Calling iter(Filter) will generate an exception,
+    A Filter can be constructed directly as follows:
+
+    ```python
+    schema = db.schema_by_name('vmstat')
+    ts = schema.attr_by_name('timestamp')
+    it = Sos.Filter(ts)
+    ```
+
+    An Filter iterates through an index and will skip objects that do
+    not match the conditions specified by the add_condition() method.
+
+    ```python
+    it = ts.obj_iter()
+    ```
+
+    The Filter implements begin(), end(), prev(), and next() to
+    iterate through objects in the index. Each of these methods
+    returns an Object or None, if there is no object at the iterator
+    position. The rational for the difference of return value between
+    the AttrIter and Filter is that the object has to be instantiated
+    in memory in order to evaluate the match conditions whereas for an
+    AttrIter only the key (which is part of the Index) has to be
+    instantiated. For performance reasons, AttrIter does not
+    automatically instantiate the object while Filter does.
+
+    ```python
+    o = it.begin()
+    while o:
+        # do something with the object
+        o = it.next()
+    ```
+    """
     cdef Attr attr
     cdef sos_iter_t c_iter
     cdef sos_filter_t c_filt
     cdef sos_obj_t c_obj
-    cdef sos_pos c_pos
 
     def __init__(self, Attr attr):
         """Positional Parameters:
@@ -1034,6 +1205,23 @@ cdef class Filter(object):
         self.c_filt = sos_filter_new(self.c_iter)
 
     def add_condition(self, Attr cond_attr, cond, value_str):
+        """Add a filter condition on the iterator
+
+        Adds a condition on objects returned by the iterator. Objects
+        that do not match all of the conditions are skipped by the
+        iterator.
+
+        Positional parameters:
+        -- The attribute whose value is being compared
+        -- The condition:
+           SOS_COND_LE    less-or-equal
+           SOS_COND_LT    less-than
+           SOS_COND_EQ    equal
+           SOS_COND_NE    not-equal
+           SOS_COND_GE    greater-or-equal
+           SOS_COND_GT    greater-than
+        -- A string representation of the value
+        """
         cdef int rc
         cdef sos_value_t cond_v
 
@@ -1063,7 +1251,12 @@ cdef class Filter(object):
     def unique(self):
         sos_filter_flags_set(self.c_filt, SOS_ITER_F_UNIQUE)
 
+    def attr_iter(self):
+        """Return the Attriter for the primary attribute underlying this Filter"""
+        return AttrIter(self.attr)
+
     def begin(self):
+        """Set the filter at the first object that matches all of the input conditions"""
         cdef sos_obj_t c_obj = sos_filter_begin(self.c_filt)
         if c_obj == NULL:
             return None
@@ -1071,6 +1264,7 @@ cdef class Filter(object):
         return o.assign(c_obj)
 
     def end(self):
+        """Set the filter at the last object that matches all of the input conditions"""
         cdef sos_obj_t c_obj = sos_filter_end(self.c_filt)
         if c_obj == NULL:
             return None
@@ -1078,6 +1272,7 @@ cdef class Filter(object):
         return o.assign(c_obj)
 
     def next(self):
+        """Set the filter at the next object that matches all of the input conditions"""
         cdef sos_obj_t c_obj = sos_filter_next(self.c_filt)
         if c_obj == NULL:
             return None
@@ -1085,6 +1280,7 @@ cdef class Filter(object):
         return o.assign(c_obj)
 
     def prev(self):
+        """Set the filter at the previous object that matches all of the input conditions"""
         cdef sos_obj_t c_obj = sos_filter_prev(self.c_filt)
         if c_obj == NULL:
             return None
@@ -1099,6 +1295,7 @@ cdef class Filter(object):
         return o.assign(c_obj)
 
     def count(self):
+        """Return the number of objects matching all conditions"""
         cdef size_t count = 0
         cdef sos_obj_t c_o = sos_filter_begin(self.c_filt)
         if c_o == NULL:
@@ -1116,20 +1313,21 @@ cdef class Filter(object):
             return o.assign(c_obj)
         return None
 
-    def get_pos_as_str(self):
+    def get_pos(self):
         """Returns the currrent filter position as a string
 
         The intent is that this string can be exchanged over the network
         to enable paging of filter records at the browser
         """
         cdef const char *c_str
-        cdef int rc = sos_filter_pos(self.c_filt, &self.c_pos)
+        cdef sos_pos_t c_pos
+        cdef int rc = sos_filter_pos_get(self.c_filt, &c_pos)
         if rc != 0:
             return None
-        c_str = sos_pos_to_str(&self.c_pos)
+        c_str = sos_pos_to_str(c_pos)
         return c_str
 
-    def set_pos_from_str(self, pos_str):
+    def set_pos(self, pos_str):
         """Sets the currrent filter position from a string
 
         The string parameter is converted to a sos_pos_t and used to set the
@@ -1137,11 +1335,12 @@ cdef class Filter(object):
         previous call to self.pos()
 
         Positional Parameters:
-        -- String representation of the filter position
+        -- String representation of the iterator position
         """
-        cdef int rc = sos_pos_from_str(&self.c_pos, pos_str)
+        cdef sos_pos_t c_pos
+        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
         if rc == 0:
-            return sos_filter_set(self.c_filt, &self.c_pos)
+            return sos_filter_pos_set(self.c_filt, c_pos)
         return rc
 
     def as_ndarray(self, size_t count, shape=None, order='attribute'):

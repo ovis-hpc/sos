@@ -129,6 +129,7 @@ sos_iter_t sos_attr_iter_new(sos_attr_t attr)
 	iter = sos_index_iter_new(index);
 	if (iter)
 		iter->attr = attr;
+
 	return iter;
 }
 
@@ -195,6 +196,20 @@ uint64_t sos_iter_dups(sos_iter_t iter)
 	return sb.duplicates;
 }
 
+#define FNV_32_PRIME 0x01000193
+static uint32_t fnv_hash_a1_32(const void *str, int len, uint32_t seed)
+{
+	uint32_t h = seed;
+	const unsigned char *end = (unsigned char *)str + len;
+	const unsigned char *s;
+	for (s = str; s < end; s++) {
+		h ^= *s;
+		h *= FNV_32_PRIME;
+	}
+
+	return (uint32_t)h;
+}
+
 /**
  * \brief Returns the current iterator position
  *
@@ -202,38 +217,104 @@ uint64_t sos_iter_dups(sos_iter_t iter)
  * \param pos The sos_pos_t that will receive the position value.
  * \returns The current iterator position or 0 if position is invalid
  */
-int sos_iter_pos_get(sos_iter_t iter, sos_pos_t pos)
+int sos_iter_pos_get(sos_iter_t iter, sos_pos_t *pos)
 {
-	return ods_iter_pos_get(iter->iter, (ods_pos_t)pos);
+	struct timeval tv;
+	ods_obj_t pos_obj;
+	sos_t sos = iter->index->sos;
+	int rc;
+	uint32_t key;
+	ods_idx_data_t pos_data;
+	SOS_KEY(pos_key);
+
+	rc = gettimeofday(&tv, NULL);
+	if (rc)
+		return rc;
+
+	/* Create a SOS pos object to track this */
+	ods_lock(sos->pos_ods, 0, NULL);
+	rc = ENOMEM;
+	pos_obj = ods_obj_alloc_extend(sos->pos_ods, sizeof(struct sos_pos_data_s), 64 * 1024);
+	if (!pos_obj)
+		goto err_0;
+
+	rc = ods_iter_pos_get(iter->iter, &SOS_POS(pos_obj)->ods_pos);
+	if (rc)
+		goto err_1;
+
+	strncpy(SOS_POS(pos_obj)->name, iter->index->name, SOS_INDEX_NAME_LEN);
+	SOS_POS(pos_obj)->create_secs = tv.tv_sec;
+	SOS_POS(pos_obj)->create_usecs = tv.tv_usec;
+
+	/* Create the key */
+	while (1) {
+		key = fnv_hash_a1_32(SOS_POS(pos_obj)->name, SOS_INDEX_NAME_LEN, 0);
+		key = fnv_hash_a1_32(&SOS_POS(pos_obj)->create_secs, sizeof(uint32_t), key);
+		key = fnv_hash_a1_32(&SOS_POS(pos_obj)->create_usecs, sizeof(uint32_t), key);
+		key = fnv_hash_a1_32(&SOS_POS(pos_obj)->ods_pos, sizeof(uint64_t), key);
+		SOS_POS(pos_obj)->key = key;
+
+		/* See if this key is already used */
+		ods_key_set(pos_key, &key, sizeof(uint32_t));
+		rc = ods_idx_find(sos->pos_idx, pos_key, &pos_data);
+		if (!rc) {
+			/* bump the create_usecs and regenerate the hash */
+			SOS_POS(pos_obj)->create_usecs ++;
+			continue;
+		}
+		/* Save the pos object */
+		pos_data.uint64_[0] = ods_obj_ref(pos_obj);
+		pos_data.uint64_[1] = 0;
+		rc = ods_idx_insert(sos->pos_idx, pos_key, pos_data);
+		if (rc)
+			goto err_2;
+		break;
+	}
+	ods_obj_put(pos_obj);
+	ods_unlock(sos->pos_ods, 0);
+	*pos = key;
+	return 0;
+
+ err_2:
+	ods_iter_pos_put(iter->iter, &SOS_POS(pos_obj)->ods_pos);
+ err_1:
+	ods_obj_delete(pos_obj);
+	ods_obj_put(pos_obj);
+ err_0:
+	ods_unlock(sos->pos_ods, 0);
+	return rc;
 }
 
-int sos_pos_from_str(sos_pos_t pos, const char *str)
+int sos_pos_from_str(sos_pos_t *pos, const char *str)
 {
         const char *src = str;
+	unsigned char *dst = (unsigned char *)pos;
         int i;
-        for (i = 0; i < sizeof(pos->data); i++) {
-                int rc = sscanf(src, "%02hhX", &pos->data[i]);
+        for (i = 0; i < sizeof(*pos); i++) {
+                int rc = sscanf(src, "%02hhX", dst);
                 if (rc != 1)
                         return EINVAL;
-                src += 2;
+                src += 2; dst++;
         }
         return 0;
 }
 
 const char *sos_pos_to_str(sos_pos_t pos)
 {
-	char *str;
-        char *dst;
-	str = malloc(40);
-	if (!str)
-		return NULL;
-        dst = str;
         int i;
-        for (i = 0; i < sizeof(pos->data); i++) {
-                sprintf(dst, "%02hhX", pos->data[i]);
+	char *pos_str;
+	unsigned char *src = (unsigned char *)&pos;
+	char *dst = malloc((2 * sizeof(pos)) + 1);
+	if (!dst)
+		return NULL;
+        pos_str = dst;
+        for (i = 0; i < sizeof(pos); i++) {
+                sprintf(dst, "%02hhX", *src);
+		src += 1;
                 dst += 2;
         }
-        return str;
+	*dst = '\0';
+        return pos_str;
 }
 
 void sos_pos_str_free(char *str)
@@ -244,14 +325,58 @@ void sos_pos_str_free(char *str)
 /**
  * \brief Sets the current iterator position
  *
+ * Set the iterator position at the location specified by the \c pos
+ * parameter. Pos objects are single use, which means that after they
+ * are used, the pos is deleted and cannot be reused.
+ *
  * \param i The iterator handle
  * \param pos The iterator cursor position
  * \retval 0 Success
- * \retval ENOENT if the specified position is invalid
+ * \retval ENOENT The position was not found, or has already been used
+ * \retval EINVAL The position object is for a different index
  */
 int sos_iter_pos_set(sos_iter_t iter, const sos_pos_t pos)
 {
-	return ods_iter_pos_set(iter->iter, (ods_pos_t)pos);
+	ods_obj_t pos_obj;
+	sos_t sos = iter->index->sos;
+	int rc;
+	ods_idx_data_t pos_data;
+	SOS_KEY(pos_key);
+
+	ods_lock(sos->pos_ods, 0, NULL);
+
+	/* Look up the position */
+	ods_key_set(pos_key, &pos, sizeof(sos_pos_t));
+	rc = ods_idx_find(sos->pos_idx, pos_key, &pos_data);
+	if (!rc)
+		/* This position does not exist */
+		goto out_0;
+
+	/* Instantiate the pos object */
+	pos_obj = ods_ref_as_obj(sos->pos_ods, pos_data.uint64_[0]);
+	if (!pos_obj) {
+		rc = ENOENT;
+		goto out_1;
+	}
+
+	/* Check that the iterator index matches the position index */
+	if (strncmp(SOS_POS(pos_obj)->name, iter->index->name, SOS_INDEX_NAME_LEN)) {
+		/* Position is for a different index */
+		rc = EINVAL;
+		goto out_2;
+	}
+
+	/* Set the iterator position */
+	rc = ods_iter_pos_set(iter->iter, &SOS_POS(pos_obj)->ods_pos);
+
+ out_2:
+	ods_obj_delete(pos_obj);
+	ods_obj_put(pos_obj);
+ out_1:
+	ods_idx_delete(iter->index->idx, pos_key, &pos_data);
+ out_0:
+	ods_unlock(sos->pos_ods, 0);
+	return rc;
 }
 
 /**
@@ -264,7 +389,46 @@ int sos_iter_pos_set(sos_iter_t iter, const sos_pos_t pos)
  */
 int sos_iter_pos_put(sos_iter_t iter, const sos_pos_t pos)
 {
-	return ods_iter_pos_put(iter->iter, (ods_pos_t)pos);
+	ods_obj_t pos_obj;
+	sos_t sos = iter->index->sos;
+	int rc;
+	ods_idx_data_t pos_data;
+	SOS_KEY(pos_key);
+
+	ods_lock(sos->pos_ods, 0, NULL);
+
+	/* Look up the position */
+	ods_key_set(pos_key, &pos, sizeof(sos_pos_t));
+	rc = ods_idx_find(sos->pos_idx, pos_key, &pos_data);
+	if (rc)
+		/* This position does not exist */
+		goto out_0;
+
+	/* Instantiate the pos object */
+	pos_obj = ods_ref_as_obj(sos->pos_ods, pos_data.uint64_[0]);
+	if (!pos_obj) {
+		rc = ENOENT;
+		goto out_1;
+	}
+
+	/* Check that the iterator index matches the position index */
+	if (strncmp(SOS_POS(pos_obj)->name, iter->index->name, SOS_INDEX_NAME_LEN)) {
+		/* Position is for a different index */
+		rc = EINVAL;
+		goto out_2;
+	}
+
+	/* Put the iterator position */
+	rc = ods_iter_pos_put(iter->iter, &SOS_POS(pos_obj)->ods_pos);
+
+ out_2:
+	ods_obj_delete(pos_obj);
+	ods_obj_put(pos_obj);
+ out_1:
+	ods_idx_delete(sos->pos_idx, pos_key, &pos_data);
+ out_0:
+	ods_unlock(sos->pos_ods, 0);
+	return rc;
 }
 
 /**
@@ -323,11 +487,8 @@ sos_obj_ref_t sos_iter_ref(sos_iter_t i)
  */
 int sos_iter_entry_remove(sos_iter_t iter)
 {
-	struct ods_pos_s pos;
-	int rc = ods_iter_pos_get(iter->iter, &pos);
-	if (rc)
-		return rc;
-	return ods_iter_pos_entry_remove(iter->iter, &pos);
+	ods_idx_data_t data;
+	return ods_iter_entry_delete(iter->iter, &data);
 }
 
 /**
@@ -1031,7 +1192,7 @@ int sos_filter_pos_set(sos_filter_t filt, const sos_pos_t pos)
 	return sos_iter_pos_set(filt->iter, pos);
 }
 
-int sos_filter_pos_get(sos_filter_t filt, sos_pos_t pos)
+int sos_filter_pos_get(sos_filter_t filt, sos_pos_t *pos)
 {
 	return sos_iter_pos_get(filt->iter, pos);
 }

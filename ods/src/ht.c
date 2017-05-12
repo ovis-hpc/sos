@@ -176,14 +176,10 @@ static int ht_init(ods_t ods, const char *idx_type, const char *key_type, const 
 	}
 	ods_obj_t ht;
 	size_t ht_size = sizeof(struct ht_tbl_s) + (htable_size * sizeof(struct ht_bkt_s));
-	ht = ods_obj_alloc(ods, ht_size);
-	if (!ht) {
-		if (ods_extend(ods, ht_size * 2))
-			return ENOMEM;
-		ht = ods_obj_alloc(ods, ht_size);
-		if (!ht)
-			return ENOMEM;
-	}
+	ht = ods_obj_alloc_extend(ods, ht_size, HT_EXTEND_SIZE);
+	if (!ht)
+		return ENOMEM;
+
 	HTBL(ht)->first_bkt = -1;
 	HTBL(ht)->last_bkt = -1;
 	UDATA(udata)->htable_ref = ods_obj_ref(ht);
@@ -321,12 +317,7 @@ static ods_key_t key_new(ods_idx_t idx, ods_key_t key)
 
 static ods_obj_t entry_new(ods_idx_t idx)
 {
-	ods_obj_t ent = ods_obj_alloc(idx->ods, sizeof(struct ht_entry_s));
-	if (!ent) {
-		if (0 == ods_extend(idx->ods, ods_size(idx->ods) * 2))
-			ent = ods_obj_alloc(idx->ods, sizeof(struct ht_entry_s));
-	}
-	return ent;
+	return ods_obj_alloc_extend(idx->ods, sizeof(struct ht_entry_s), HT_EXTEND_SIZE);
 }
 
 static int insert_in_bucket(ods_idx_t o_idx, ods_key_t key,
@@ -690,15 +681,16 @@ static int64_t next_bucket(ht_t t, int64_t bkt)
 	return -1;
 }
 
-static int ht_iter_next(ods_iter_t oi)
+
+static int __iter_next(ht_t t, ht_iter_t hi)
 {
-	ht_iter_t hi = (ht_iter_t)oi;
-	ht_t t = hi->iter.idx->priv;
 	ht_tbl_t ht = t->htable;
 	ods_ref_t next_ref;
 	ods_obj_t next_obj;
+
 	if (!hi->ent)
 		return ENOENT;
+
 	next_ref = HENT(hi->ent)->next_ref;
 	ods_obj_put(hi->ent);
 	hi->ent = NULL;
@@ -719,6 +711,25 @@ static int ht_iter_next(ods_iter_t oi)
 	hi->ent = next_obj;
 	hi->bkt = bkt;
 	return 0;
+}
+
+static int ht_iter_next(ods_iter_t oi)
+{
+	ht_iter_t hi = (ht_iter_t)oi;
+	ht_t t = hi->iter.idx->priv;
+	int rc;
+
+#ifdef HT_THREAD_SAFE
+	if (ods_lock(oi->idx->ods, 0, NULL))
+		return EBUSY;
+#endif
+
+	rc = __iter_next(t, hi);
+
+#ifdef HT_THREAD_SAFE
+	ods_unlock(oi->idx->ods, 0);
+#endif
+	return rc;
 }
 
 static int64_t prev_bucket(ht_t t, int64_t bkt)
@@ -762,69 +773,102 @@ static int ht_iter_prev(ods_iter_t oi)
 	return 0;
 }
 
-struct ht_pos_s {
-	int64_t bkt;
-	ods_ref_t ent_ref;
-};
-
 static int ht_iter_pos_set(ods_iter_t oi, const ods_pos_t pos_)
 {
-	struct ht_pos_s *pos = (struct ht_pos_s *)pos_;
 	ht_iter_t hi = (ht_iter_t)oi;
 	ht_t t = hi->iter.idx->priv;
-	ods_obj_t ent;
+	ods_obj_t pos;
 
-	ent = ods_ref_as_obj(t->ods, pos->ent_ref);
-	if (!ent)
+	pos = ods_ref_as_obj(t->ods, pos_->ref);
+	if (!pos)
 		return EINVAL;
 
 	if (hi->ent)
 		ods_obj_put(hi->ent);
 
-	hi->ent = ent;
-	hi->bkt = pos->bkt;
+	hi->ent = ods_ref_as_obj(t->ods, POS(pos)->ent_ref);
+	if (!hi->ent)
+		goto err_0;
+
+	hi->bkt = POS(pos)->bkt;
+
+	ods_obj_delete(pos);	/* POS are 1-time use */
+	ods_obj_put(pos);
 	return 0;
+ err_0:
+	ods_obj_put(pos);	/* don't delete, could be garbage */
+	return EINVAL;
 }
 
 static int ht_iter_pos_get(ods_iter_t oi, ods_pos_t pos_)
 {
-	ht_iter_t hi = (ht_iter_t)oi;
-	struct ht_pos_s *pos = (struct ht_pos_s *)pos_;
+	ht_iter_t i = (ht_iter_t)oi;
+	ht_t t = i->iter.idx->priv;
+	ods_obj_t pos;
 
-	if (!hi->ent)
+	if (!i->ent)
 		return ENOENT;
-	pos->bkt = hi->bkt;
-	pos->ent_ref = ods_obj_ref(hi->ent);
+
+	pos = ods_obj_alloc_extend(t->ods, sizeof(struct ht_pos_s), HT_EXTEND_SIZE);
+	if (!pos)
+		return ENOMEM;
+
+	POS(pos)->ent_ref = ods_obj_ref(i->ent);
+	POS(pos)->bkt = i->bkt;
+	pos_->ref = ods_obj_ref(pos);
+	ods_obj_put(pos);
 	return 0;
 }
 
 static int ht_iter_pos_put(ods_iter_t oi, ods_pos_t pos_)
 {
-	return ENOSYS;
+	void __ods_obj_delete(ods_obj_t obj);
+	ods_obj_t obj;
+	ht_iter_t i = (ht_iter_t)oi;
+	ht_t t = i->iter.idx->priv;
+
+	obj = ods_ref_as_obj(t->ods, pos_->ref);
+	if (!obj)
+		return EINVAL;
+
+	__ods_obj_delete(obj);
+	ods_obj_put(obj);
+	return 0;
 }
 
-static int ht_iter_pos_remove(ods_iter_t oi, ods_pos_t pos_)
+static int ht_iter_entry_delete(ods_iter_t oi, ods_idx_data_t *data)
 {
 	ht_iter_t hi = (ht_iter_t)oi;
-	struct ht_pos_s *pos = (struct ht_pos_s *)pos_;
 	ht_t t = hi->iter.idx->priv;
-	int rc;
+	int rc = ENOENT;
 	ods_obj_t ent;
 	uint32_t status;
+	int64_t bkt;
 
 #ifdef HT_THREAD_SAFE
 	if (ods_lock(oi->idx->ods, 0, NULL))
 		return EBUSY;
 #endif
-	status = ods_ref_status(t->ods, pos->ent_ref);
-	assert(0 == (status & ODS_REF_STATUS_FREE));
-	ent = ods_ref_as_obj(t->ods, pos->ent_ref);
-	if (ent) {
-		delete_entry(t, ent, pos->bkt);
-		rc = 0;
-	} else {
-		rc = ENOENT;
-	}
+
+	if (!hi->ent)
+		goto out_0;
+
+	/* Reposition the iterator at the next entry */
+	ent = ods_obj_get(hi->ent);
+	bkt = hi->bkt;
+	(void)__iter_next(t, hi);
+
+	/* Check if the entry is already gone */
+	status = ods_ref_status(t->ods, ods_obj_ref(ent));
+	if (status & ODS_REF_STATUS_FREE)
+	    goto out_1;
+
+	*data = HENT(ent)->value;
+	delete_entry(t, ent, bkt);
+	rc = 0;
+ out_1:
+	ods_obj_put(ent);
+ out_0:
 #ifdef HT_THREAD_SAFE
 	ods_unlock(oi->idx->ods, 0);
 #endif
@@ -882,7 +926,7 @@ static struct ods_idx_provider ht_provider = {
 	.iter_pos_set = ht_iter_pos_set,
 	.iter_pos_get = ht_iter_pos_get,
 	.iter_pos_put = ht_iter_pos_put,
-	.iter_pos_entry_remove = ht_iter_pos_remove,
+	.iter_entry_delete = ht_iter_entry_delete,
 	.iter_key = ht_iter_key,
 	.iter_data = ht_iter_data,
 	.print_idx = print_idx,

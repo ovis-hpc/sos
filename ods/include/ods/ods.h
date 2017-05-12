@@ -211,6 +211,22 @@ extern ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz, const char *func, int line
 #define ods_obj_alloc(ods, sz) _ods_obj_alloc(ods, sz, __func__, __LINE__)
 
 /**
+ * \brief Allocate an object, extending the ODS if necessary
+ *
+ * Allocate an object of the requested size. If the allocation fails, attempt
+ * to extend the store by \c extend_size.
+ *
+ * \param ods The ODS handle
+ * \param sz The desired size
+ * \param extend_sz The number of bytes to add to the container if allocation fails.
+ * \return Pointer to an object of the requested size or NULL if there
+ * is an error.
+ */
+extern ods_obj_t _ods_obj_alloc_extend(ods_t ods, size_t sz, size_t extend_sz,
+				       const char *func, int line);
+#define ods_obj_alloc_extend(ods, sz, esz) _ods_obj_alloc_extend(ods, sz, esz, __func__, __LINE__)
+
+/**
  * \brief Allocate a memory object of the requested size
  *
  * Allocates space in memory for an object of at least

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2012-2015 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2012-2017 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2012-2017 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -247,6 +247,163 @@ int __sos_make_all_dir(const char *inp_path, mode_t omode)
 	return retval;
 }
 
+static int __create_pos_info(char *tmp_path, const char *path, int o_mode)
+{
+	int rc;
+	ods_obj_t udata;
+	ods_t pos_ods;
+
+	/* Create the ODS to contain the position objects */
+	sprintf(tmp_path, "%s/.__pos", path);
+ 	rc = ods_create(tmp_path, o_mode);
+ 	if (rc)
+		goto err_0;
+
+	pos_ods = ods_open(tmp_path, O_RDWR);
+	if (!pos_ods)
+		goto err_1;
+
+	/* Initialize the index dictionary */
+	udata = ods_get_user_data(pos_ods);
+	if (!udata) {
+		rc = errno;
+		goto err_2;
+	}
+
+	SOS_POS_UDATA(udata)->signature = SOS_POS_SIGNATURE;
+	SOS_POS_UDATA(udata)->lock = 0;
+	ods_obj_put(udata);
+	ods_close(pos_ods, ODS_COMMIT_ASYNC);
+
+	/* Create the index to look up positions */
+	sprintf(tmp_path, "%s/.__pos_idx", path);
+ 	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "STRING", NULL);
+ 	if (rc)
+ 		goto err_2;
+	return 0;
+
+ err_2:
+	ods_close(pos_ods, ODS_COMMIT_ASYNC);
+ err_1:
+	sprintf(tmp_path, "%s/.__pos", path);
+	ods_destroy(tmp_path);
+ err_0:
+	return rc;
+}
+
+struct pos_ent_s {
+	char name[SOS_INDEX_NAME_LEN];
+	sos_pos_t pos;
+	LIST_ENTRY(pos_ent_s) entry;
+};
+
+static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
+{
+	int rc = 0;
+	int pos_keep_time = 60;
+	char *pos_keep = getenv("SOS_POS_KEEP_TIME");
+	if (pos_keep) {
+		pos_keep_time = atoi(pos_keep);
+		if (pos_keep_time <= 0)
+			pos_keep_time = 60;
+	}
+	sprintf(tmp_path, "%s/.__pos", path);
+	sos->pos_ods = ods_open(tmp_path, ODS_PERM_RW);
+	if (!sos->pos_ods) {
+		int rc = __create_pos_info(tmp_path, path, sos->o_mode);
+		if (rc)
+			goto err;
+		sprintf(tmp_path, "%s/.__pos", path);
+		sos->pos_ods = ods_open(tmp_path, sos->o_perm);
+		if (!sos->pos_ods) {
+			rc = errno;
+			goto err;
+		}
+	}
+
+	/* Get the position object user data */
+	sos->pos_udata = ods_get_user_data(sos->pos_ods);
+	if (SOS_POS_UDATA(sos->pos_udata)->signature != SOS_POS_SIGNATURE) {
+		rc = EINVAL;
+		ods_obj_put(sos->pos_udata);
+		goto err;
+	}
+
+	/* Open the index on the position objects */
+	sprintf(tmp_path, "%s/.__pos_idx", path);
+	sos->pos_idx = ods_idx_open(tmp_path, ODS_PERM_RW);
+	if (!sos->pos_idx) {
+		rc = errno;
+		ods_obj_put(sos->pos_udata);
+		goto err;
+	}
+
+	/* Clean-up any position objects older than 24 hours */
+	ods_iter_t it = ods_iter_new(sos->pos_idx);
+	if (!it) {
+		rc = ENOMEM;
+		goto err;
+	}
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	struct pos_ent_s *pos_ent;
+	LIST_HEAD(pos_ent_list, pos_ent_s) pos_list = LIST_HEAD_INITIALIZER(pos_list);
+	for (rc = ods_iter_begin(it); rc == 0; rc = ods_iter_next(it)) {
+		ods_idx_data_t data;
+		ods_obj_t pos_obj;
+		data = ods_iter_data(it);
+		pos_obj = ods_ref_as_obj(sos->pos_ods, data.uint64_[0]);
+		if (pos_obj) {
+			sos_debug("key %08x secs %d usecs %d\n", SOS_POS(pos_obj)->key,
+				  SOS_POS(pos_obj)->create_secs,
+				  SOS_POS(pos_obj)->create_usecs
+				  );
+			if ((tv.tv_sec - SOS_POS(pos_obj)->create_secs) > pos_keep_time) {
+				sos_debug("key %08x will be deleted\n", SOS_POS(pos_obj)->key);
+				pos_ent = malloc(sizeof *pos_ent);
+				if (!pos_ent) {
+					sos_error("OOM\n");
+				} else {
+					pos_ent->pos = SOS_POS(pos_obj)->key;
+					strncpy(pos_ent->name, SOS_POS(pos_obj)->name,
+						SOS_INDEX_NAME_LEN);
+					LIST_INSERT_HEAD(&pos_list, pos_ent, entry);
+				}
+			}
+			ods_obj_put(pos_obj);
+		}
+	}
+	while (!LIST_EMPTY(&pos_list)) {
+		pos_ent = LIST_FIRST(&pos_list);
+		LIST_REMOVE(pos_ent, entry);
+		/* Get the index this pos entry is for */
+		sos_index_t idx = sos_index_open(sos, pos_ent->name);
+		if (!idx) {
+			sos_error("The index %s for pos %08x could not be opened.\n",
+				  pos_ent->name, pos_ent->pos);
+			free(pos_ent);
+			continue;
+		}
+		sos_iter_t iter = sos_index_iter_new(idx);
+		if (!iter) {
+			sos_error("An iterator for index %s could not be created, errno %d.\n",
+				  pos_ent->name, errno);
+			sos_index_close(idx, SOS_COMMIT_ASYNC);
+			free(pos_ent);
+			continue;
+		}
+		/* Put the SOS position */
+		sos_iter_pos_put(iter, pos_ent->pos);
+		sos_iter_free(iter);
+		sos_index_close(idx, SOS_COMMIT_ASYNC);
+		free(pos_ent);
+	}
+	ods_iter_delete(it);
+	rc = 0;
+ err:
+	return rc;
+}
+
 /** \defgroup container SOS Storage Containers
  * @{
  */
@@ -395,7 +552,15 @@ int sos_container_new(const char *path, int o_mode)
  	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "STRING", NULL);
  	if (rc)
  		goto err_7;
+
+	/* Create the ODS to contain the position objects */
+	rc = __create_pos_info(tmp_path, path, o_mode);
+	if (rc)
+		goto err_8;
 	return 0;
+ err_8:
+	sprintf(tmp_path, "%s/.__index_idx", path);
+	ods_destroy(tmp_path);
  err_7:
 	sprintf(tmp_path, "%s/.__index", path);
 	ods_destroy(tmp_path);
@@ -655,6 +820,10 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		ods_idx_close(sos->idx_idx, flags);
 	if (sos->idx_ods)
 		ods_close(sos->idx_ods, flags);
+	if (sos->pos_idx)
+		ods_idx_close(sos->pos_idx, flags);
+	if (sos->pos_ods)
+		ods_close(sos->pos_ods, flags);
 	sos_part_t part;
 	while (!TAILQ_EMPTY(&sos->part_list)) {
 		part = TAILQ_FIRST(&sos->part_list);
@@ -743,6 +912,33 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	if (rc)
 		goto err;
 
+	/* Open the ODS containing the Index objects */
+	sprintf(tmp_path, "%s/.__index", path);
+	sos->idx_ods = ods_open(tmp_path, sos->o_perm);
+	if (!sos->idx_ods)
+		goto err;
+
+	/* Get the index object user data */
+	sos->idx_udata = ods_get_user_data(sos->idx_ods);
+	if (SOS_IDXDIR_UDATA(sos->idx_udata)->signature != SOS_IDXDIR_SIGNATURE) {
+		errno = EINVAL;
+		ods_obj_put(sos->idx_udata);
+		goto err;
+	}
+
+	/* Open the index on the index objects */
+	sprintf(tmp_path, "%s/.__index_idx", path);
+	sos->idx_idx = ods_idx_open(tmp_path, sos->o_perm);
+	if (!sos->idx_idx) {
+		ods_obj_put(sos->idx_udata);
+		goto err;
+	}
+
+	/* Open the ODS containing the Position objects */
+	rc = __open_pos_info(sos, tmp_path, path);
+	if (rc)
+		goto err;
+
 	/* Open the ODS containing the schema objects */
 	sprintf(tmp_path, "%s/.__schemas", path);
 	sos->schema_ods = ods_open(tmp_path, sos->o_perm);
@@ -762,27 +958,6 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	sos->schema_idx = ods_idx_open(tmp_path, sos->o_perm);
 	if (!sos->schema_idx)
 		goto err;
-
-	/* Open the ODS containing the Index objects */
-	sprintf(tmp_path, "%s/.__index", path);
-	sos->idx_ods = ods_open(tmp_path, sos->o_perm);
-	if (!sos->idx_ods)
-		goto err;
-
-	sos->idx_udata = ods_get_user_data(sos->idx_ods);
-	if (SOS_IDXDIR_UDATA(sos->idx_udata)->signature != SOS_IDXDIR_SIGNATURE) {
-		errno = EINVAL;
-		ods_obj_put(sos->idx_udata);
-		goto err;
-	}
-
-	/* Open the index on the schema objects */
-	sprintf(tmp_path, "%s/.__index_idx", path);
-	sos->idx_idx = ods_idx_open(tmp_path, sos->o_perm);
-	if (!sos->idx_idx) {
-		ods_obj_put(sos->idx_udata);
-		goto err;
-	}
 
 	/*
 	 * Build the schema dictionary

@@ -1569,6 +1569,18 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz, const char *func, int line)
 		obj->alloc_func = func;
 	}
 	__ods_unlock(ods);
+	if (!obj)
+		errno = ENOMEM;
+	return obj;
+}
+
+ods_obj_t _ods_obj_alloc_extend(ods_t ods, size_t sz, size_t extend_sz, const char *func, int line)
+{
+	ods_obj_t obj = _ods_obj_alloc(ods, sz, func, line);
+	if (!obj) {
+		ods_extend(ods, ods_size(ods) + extend_sz);
+		obj = _ods_obj_alloc(ods, sz, func, line);
+	}
 	return obj;
 }
 
@@ -1865,16 +1877,9 @@ void ods_ref_delete(ods_t ods, ods_ref_t ref)
 /*
  * This function is thread safe
  */
-void ods_obj_delete(ods_obj_t obj)
+void __ods_obj_delete(ods_obj_t obj)
 {
-	ods_ref_t ref;
-	if (!obj->ods)
-		return;
-	if (!obj->ods->o_perm) {
-		errno = EPERM;
-		return;
-	}
-	ref = ods_obj_ref(obj);
+	ods_ref_t ref = ods_obj_ref(obj);
 	if (ref) {
 		__pgt_lock(obj->ods);
 		free_ref(obj->ods, ref);
@@ -1883,6 +1888,20 @@ void ods_obj_delete(ods_obj_t obj)
 	obj->ref = 0;
 	obj->as.ptr = NULL;
 	obj->size = 0;
+}
+
+/*
+ * This function is thread safe
+ */
+void ods_obj_delete(ods_obj_t obj)
+{
+	if (!obj->ods)
+		return;
+	if (!obj->ods->o_perm) {
+		errno = EPERM;
+		return;
+	}
+	__ods_obj_delete(obj);
 }
 
 void ods_dump(ods_t ods, FILE *fp)
@@ -2109,7 +2128,7 @@ static void __attribute__ ((constructor)) ods_lib_init(void)
 	env = getenv("ODS_LOG_MASK");
 	if (env) {
 		ods_log_mask_set(atoi(env));
-		if (__ods_log_mask){ 
+		if (__ods_log_mask) {
 			env = getenv("ODS_LOG_FILE");
 			if (env)
 				__ods_log_fp = fopen(env, "w+");

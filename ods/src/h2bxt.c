@@ -913,7 +913,7 @@ static int h2bxt_iter_pos_put(ods_iter_t oi, ods_pos_t pos_)
 	return ENOSYS;
 }
 
-static int h2bxt_iter_pos_remove(ods_iter_t oi, ods_pos_t pos_)
+static int h2bxt_iter_entry_delete(ods_iter_t oi, ods_idx_data_t *data)
 {
 	return ENOENT;
 }
@@ -977,7 +977,7 @@ static struct ods_idx_provider h2bxt_provider = {
 	.iter_pos_set = h2bxt_iter_pos_set,
 	.iter_pos_get = h2bxt_iter_pos_get,
 	.iter_pos_put = h2bxt_iter_pos_put,
-	.iter_pos_entry_remove = h2bxt_iter_pos_remove,
+	.iter_entry_delete = h2bxt_iter_entry_delete,
 	.iter_key = h2bxt_iter_key,
 	.iter_data = h2bxt_iter_data,
 	.print_idx = print_idx,

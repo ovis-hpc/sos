@@ -304,4 +304,5 @@ static inline void ods_log(int level, const char *func, int line, char *fmt, ...
 #define ods_linfo(fmt, ...) ods_log(ODS_LOG_INFO, __func__, __LINE__, fmt, ##__VA_ARGS__)
 #define ods_ldebug(fmt, ...) ods_log(ODS_LOG_DEBUG, __func__, __LINE__, fmt, ##__VA_ARGS__)
 
+void __ods_obj_delete(ods_obj_t obj);
 #endif

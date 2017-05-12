@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2013-2017 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -55,9 +55,12 @@ extern "C" {
 
 typedef struct ods_idx *ods_idx_t;
 typedef struct ods_iter *ods_iter_t;
+#define ODS_POS_DATA_LEN	sizeof(ods_ref_t)
 typedef struct ods_pos_s {
-	/* iterator position */
-	char data[16];
+	union {
+		ods_ref_t ref;
+		unsigned char data[ODS_POS_DATA_LEN];
+	};
 } *ods_pos_t;
 
 #define ODS_IDX_SIGNATURE	"ODSIDX00"
@@ -661,14 +664,17 @@ ods_iter_t ods_iter_new(ods_idx_t idx);
 ods_idx_t ods_iter_idx(ods_iter_t iter);
 
 /**
- * \brief Remove the index entry at the specified iterator position
+ * \brief Remove the index entry at the current iterator position
+ *
+ * Remove the object at the current iterator position. At exit, the
+ * iterator will have been advanced to the next entry if present.
  *
  * \param iter The iterator handle
- * \param pos  The iterator position to remove
- * \retval 0   Success
- * \retval !0  An error occurred.
+ * \param data Pointer to the index data for the entry that was removed
+ * \retval 0 Success
+ * \retval ENOENT The entry no longer exists
  */
-int ods_iter_pos_entry_remove(ods_iter_t iter, ods_pos_t pos);
+int ods_iter_entry_delete(ods_iter_t iter, ods_idx_data_t *data);
 
 /**
  * \brief Destroy an iterator
@@ -676,7 +682,7 @@ int ods_iter_pos_entry_remove(ods_iter_t iter, ods_pos_t pos);
  * Release the resources associated with the iterator. This function
  * has no impact on the index itself.
  *
- * \param iter	The iterator handle
+ * \param iter The iterator handle
  */
 void ods_iter_delete(ods_iter_t iter);
 

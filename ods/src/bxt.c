@@ -17,7 +17,7 @@
 #include <ods/ods.h>
 #include "bxt.h"
 
-/* #define BXT_DEBUG */
+/* #define ODS_DEBUG */
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 
 static struct bxt_obj_el *alloc_el(bxt_t t);
@@ -148,7 +148,7 @@ static void print_info(ods_idx_t idx, FILE *fp)
 	fflush(fp);
 }
 
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 static void verify_node(bxt_t t, ods_obj_t node)
 {
 	int i, j;
@@ -593,21 +593,17 @@ static struct bxt_obj_el *node_alloc(bxt_t t)
 	struct bxt_obj_el *el = alloc_el(t);
 	size_t sz = sizeof(struct bxt_node) +
 		(t->udata->order * sizeof(struct bxn_entry));
-	el->obj = ods_obj_alloc(t->ods, sz);
+	if (!el)
+		return NULL;
+	el->obj = ods_obj_alloc_extend(t->ods, sz, BXT_EXTEND_SIZE);
 	if (!el->obj) {
-		ods_extend(t->ods, ods_size(t->ods) * 2);
-		el->obj = ods_obj_alloc(t->ods, sz);
-		if (!el->obj) {
-			free_el(t, el);
-			goto err;
-		}
+		free_el(t, el);
+		return NULL;
 	}
 	NODE(el->obj)->parent = 0;
 	NODE(el->obj)->count = 0;
 	NODE(el->obj)->is_leaf = 0;
 	return el;
- err:
-	return NULL;
 }
 
 /*
@@ -652,13 +648,10 @@ static ods_obj_t rec_new(ods_idx_t idx, ods_key_t key, ods_idx_data_t data, int 
 	ods_obj_t obj;
 	bxn_record_t rec;
 
-	obj = ods_obj_alloc(idx->ods, sizeof(struct bxn_record));
-	if (!obj) {
-		ods_extend(idx->ods, ods_size(idx->ods) * 2);
-		obj = ods_obj_alloc(idx->ods, sizeof(struct bxn_record));
-		if (!obj)
-			return NULL;
-	}
+	obj = ods_obj_alloc_extend(idx->ods, sizeof(struct bxn_record), BXT_EXTEND_SIZE);
+	if (!obj)
+		goto err_0;
+
 	rec = obj->as.ptr;
 	memset(rec, 0, sizeof(struct bxn_record));
 	if (is_dup == 0) {
@@ -674,6 +667,7 @@ static ods_obj_t rec_new(ods_idx_t idx, ods_key_t key, ods_idx_data_t data, int 
  err_1:
 	ods_obj_delete(obj);
 	ods_obj_put(obj);
+ err_0:
 	return NULL;
 }
 
@@ -779,7 +773,7 @@ int leaf_insert(bxt_t t, ods_obj_t leaf, ods_obj_t new_rec, int ent, int dup)
 	L_ENT(leaf,ent).head_ref = ods_obj_ref(new_rec);
 	L_ENT(leaf,ent).tail_ref = ods_obj_ref(new_rec);
  out:
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	{
 		ods_key_t next = ods_ref_as_obj(t->ods, REC(new_rec)->next_ref);
 		ods_obj_t prev = ods_ref_as_obj(t->ods, REC(new_rec)->prev_ref);
@@ -819,7 +813,7 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 	NODE(right)->is_leaf = 1;
 	NODE(right)->parent = NODE(left)->parent;
 
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, left);
 	verify_node(t, right);
 #endif
@@ -885,7 +879,7 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 				j ++;
 			NODE(right)->entries[j] = NODE(left)->entries[i];
 			NODE(left)->entries[i] = ENTRY_INITIALIZER;
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 			assert(NODE(left)->count <= t->udata->order);
 #endif
 			NODE(left)->count--;
@@ -898,7 +892,7 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 		L_ENT(right, ins_idx).tail_ref = ods_obj_ref(new_rec);
 		NODE(right)->count++;
 	}
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, left);
 	verify_node(t, right);
 #endif
@@ -940,7 +934,7 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 	int count;
 	int midpoint = split_midpoint(t->udata->order);
 
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, left_node);
 	verify_node(t, right_node);
 #endif
@@ -1087,7 +1081,7 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 	ods_obj_t parent;
 	ods_obj_t new_rec;
 
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, leaf);
 #endif
 	if (!t->udata->root_ref) {
@@ -1121,7 +1115,7 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 			}
 			ods_obj_put(parent);
 		}
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 		verify_node(t, leaf);
 #endif
 		ods_atomic_inc(&t->udata->card);
@@ -1170,7 +1164,7 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 	ods_obj_put(parent);
 	parent = node_split_insert(idx, t, leaf, new_leaf_key_ref, new_leaf);
  out:
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, leaf);
 	verify_node(t, new_leaf);
 	verify_node(t, parent);
@@ -1456,7 +1450,7 @@ static int combine_right(bxt_t t, ods_obj_t right, int idx, ods_obj_t node)
 		NODE(right)->count ++;
 		idx++;
 	}
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, right);
 	verify_node(t, node);
 #endif
@@ -1487,7 +1481,7 @@ static int combine_left(bxt_t t, ods_obj_t left, ods_obj_t node)
 		NODE(left)->entries[i] = NODE(node)->entries[j];
 		NODE(left)->count++;
 	}
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, left);
 	verify_node(t, node);
 #endif
@@ -1550,7 +1544,7 @@ static void merge_from_left(bxt_t t, ods_obj_t left, ods_obj_t node, int midpoin
 		NODE(left)->count--;
 		NODE(node)->count++;
 	}
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, node);
 	verify_node(t, left);
 #endif
@@ -1583,7 +1577,7 @@ static void merge_from_right(bxt_t t, ods_obj_t right, ods_obj_t node, int midpo
 	for (j = NODE(right)->count; j < NODE(right)->count + count; j++)
 		NODE(right)->entries[j] = ENTRY_INITIALIZER;
 
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, node);
 	verify_node(t, right);
 #endif
@@ -1613,7 +1607,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 
  next_level:
 	parent = ods_ref_as_obj(t->ods, NODE(node)->parent);
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, node);
 	verify_node(t, parent);
 #endif
@@ -1666,7 +1660,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 	}
 	node_idx = node_neigh(t, node, &left, &right);
 	count = space(t, left) + space(t, right);
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	verify_node(t, left);
 	verify_node(t, right);
 	verify_node(t, node);
@@ -1682,7 +1676,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 			if (NODE(left)->count > midpoint) {
 				merge_from_left(t, left, node, midpoint);
 			}
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 			verify_node(t, left);
 			verify_node(t, node);
 #endif
@@ -1716,7 +1710,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 		 * Combining right will always modify the 0-th
 		 * element, therefore a parent fixup is required.
 		 */
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 		assert(NODE(right)->count + (NODE(node)->count - ent) <= t->udata->order);
 #endif
 		combine_right(t, right, ent, node);
@@ -1869,7 +1863,7 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 #ifdef BXT_THREAD_SAFE
 	ods_unlock(idx->ods, 0);
 #endif
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	print_idx(idx, NULL);
 #endif
 	return rc;
@@ -1917,7 +1911,7 @@ static int _iter_begin(bxt_iter_t i)
 		ods_obj_put(node);
 	} else
 		  i->rec = node;
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	if (i->rec)
 		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
@@ -1939,7 +1933,7 @@ static int _iter_end_unique(bxt_iter_t i)
 		ods_obj_put(i->rec);
 	i->rec = bxt_max_node(t);
 	if (i->rec) {
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
 		i->ent = NODE(i->rec)->count-1;
@@ -1957,7 +1951,7 @@ static int _iter_end(bxt_iter_t i)
 	if (node) {
 		i->ent = NODE(node)->count-1;
 		i->rec = ods_ref_as_obj(t->ods, L_ENT(node, i->ent).tail_ref);
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
 		ods_obj_put(node);
@@ -1994,12 +1988,29 @@ static ods_key_t _iter_key(bxt_iter_t i)
 	return ods_ref_as_obj(t->ods, REC(i->rec)->key_ref);
 }
 
-static ods_key_t bxt_iter_key(ods_iter_t oi)
+static ods_key_t __iter_key(bxt_iter_t i)
 {
-	bxt_iter_t i = (bxt_iter_t)oi;
 	if (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))
 		return _iter_key(i);
 	return _iter_key_unique(i);
+}
+
+static ods_key_t bxt_iter_key(ods_iter_t oi)
+{
+	bxt_iter_t i = (bxt_iter_t)oi;
+	ods_key_t key;
+
+#ifdef BXT_THREAD_SAFE
+	if (ods_lock(oi->idx->ods, 0, NULL))
+		return NULL;
+#endif
+
+	key = __iter_key(i);
+
+#ifdef BXT_THREAD_SAFE
+	ods_unlock(oi->idx->ods, 0);
+#endif
+	return key;
 }
 
 static ods_idx_data_t NULL_DATA;
@@ -2146,7 +2157,7 @@ static int _iter_next_unique(bxt_iter_t i)
 		ods_obj_put(i->rec);
 		i->rec = right;
 		i->ent = 0;
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 		if (i->rec)
 			assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
@@ -2161,7 +2172,7 @@ static int _iter_next(bxt_iter_t i)
 
 	if (i->rec) {
 		ods_ref_t next_ref = REC(i->rec)->next_ref;
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 		ods_ref_t rec_ref = ods_obj_ref(i->rec);
 		ods_ref_t prev_ref = REC(i->rec)->prev_ref;
 		assert(next_ref != rec_ref);
@@ -2172,7 +2183,7 @@ static int _iter_next(bxt_iter_t i)
 		next_rec = ods_ref_as_obj(t->ods, next_ref);
 		ods_obj_put(i->rec);
 		i->rec = next_rec;
-#ifdef BXT_DEBUG 
+#ifdef ODS_DEBUG 
 		if (i->rec)
 			assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
@@ -2180,12 +2191,28 @@ static int _iter_next(bxt_iter_t i)
 	return i->rec ? 0 : ENOENT;
 }
 
-static int bxt_iter_next(ods_iter_t oi)
+static int __iter_next(bxt_iter_t i)
 {
-	bxt_iter_t i = (bxt_iter_t)oi;
 	if (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))
 		return _iter_next(i);
 	return _iter_next_unique(i);
+}
+
+static int bxt_iter_next(ods_iter_t oi)
+{
+	bxt_iter_t i = (bxt_iter_t)oi;
+	int rc;
+#ifdef BXT_THREAD_SAFE
+	if (ods_lock(oi->idx->ods, 0, NULL))
+		return EBUSY;
+#endif
+
+	rc = __iter_next(i);
+
+#ifdef BXT_THREAD_SAFE
+		ods_unlock(oi->idx->ods, 0);
+#endif
+	return rc;
 }
 
 static int _iter_prev_unique(bxt_iter_t i)
@@ -2217,7 +2244,7 @@ static int _iter_prev(bxt_iter_t i)
 		prev_rec = ods_ref_as_obj(t->ods, REC(i->rec)->prev_ref);
 		ods_obj_put(i->rec);
 		i->rec = prev_rec;
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 		if (i->rec)
 			assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
@@ -2233,142 +2260,120 @@ static int bxt_iter_prev(ods_iter_t oi)
 	return _iter_prev_unique(i);
 }
 
-#define POS_PAD 0x54584220 /* 'BXT ' */
-
-struct bxt_pos_s {
-	uint32_t pad;
-	uint32_t ent;
-	ods_ref_t rec_ref;
-};
-
-static int bxt_iter_pos_set(ods_iter_t oi, const ods_pos_t pos_)
+static int bxt_iter_pos_set(ods_iter_t oi, const ods_pos_t pos)
 {
-	struct bxt_pos_s *pos = (struct bxt_pos_s *)pos_;
+	ods_obj_t obj;
 	bxt_iter_t i = (bxt_iter_t)oi;
 	bxt_t t = i->iter.idx->priv;
-	ods_obj_t rec;
 
-	if (pos->pad != POS_PAD)
+	obj = ods_ref_as_obj(t->ods, pos->ref);
+	if (!obj)
 		return EINVAL;
 
-	rec = ods_ref_as_obj(t->ods, pos->rec_ref);
-	if (!rec)
-		return EINVAL;
+	if (POS(obj)->ent > t->udata->order)
+		goto err_0;
 
 	if (i->rec)
 		ods_obj_put(i->rec);
 
-	i->rec = rec;
-	i->ent = pos->ent;
-#ifdef BXT_DEBUG
+	i->rec = ods_ref_as_obj(t->ods, POS(obj)->rec_ref);
+	if (!i->rec)
+		goto err_0;
+
+	i->ent = POS(obj)->ent;
+#ifdef ODS_DEBUG
 	if (i->rec)
 		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
+	ods_obj_delete(obj);	/* POS are 1-time use */
+	ods_obj_put(obj);
 	return 0;
+ err_0:
+	ods_obj_put(obj);
+	return EINVAL;
 }
 
-static int bxt_iter_pos_get(ods_iter_t oi, ods_pos_t pos_)
+
+static int bxt_iter_pos_get(ods_iter_t oi, ods_pos_t pos)
 {
 	bxt_iter_t i = (bxt_iter_t)oi;
-	struct bxt_pos_s *pos = (struct bxt_pos_s *)pos_;
+	bxt_t t = i->iter.idx->priv;
+	ods_obj_t obj;
 
 	if (!i->rec)
 		return ENOENT;
-#ifdef BXT_DEBUG
+#ifdef ODS_DEBUG
 	assert(REC(i->rec)->next_ref != 0xffffffffffffffff);
 #endif
-	pos->pad = POS_PAD;
-	pos->ent = i->ent;
-	pos->rec_ref = ods_obj_ref(i->rec);
+	if (i->ent > t->udata->order)
+		return EINVAL;
+
+	obj = ods_obj_alloc_extend(t->ods, sizeof(struct bxt_pos_s), BXT_EXTEND_SIZE);
+	if (!obj)
+		return ENOMEM;
+
+	pos->ref = ods_obj_ref(obj);
+	POS(obj)->rec_ref = ods_obj_ref(i->rec);
+	POS(obj)->ent = i->ent;
+	ods_obj_put(obj);
 	return 0;
 }
 
-static int bxt_iter_pos_put(ods_iter_t oi, ods_pos_t pos_)
+static int bxt_iter_pos_put(ods_iter_t oi, ods_pos_t pos)
 {
-	return ENOSYS;
+	void __ods_obj_delete(ods_obj_t obj);
+	ods_obj_t obj;
+	bxt_iter_t i = (bxt_iter_t)oi;
+	bxt_t t = i->iter.idx->priv;
+
+	obj = ods_ref_as_obj(t->ods, pos->ref);
+	if (!obj)
+		return EINVAL;
+
+	__ods_obj_delete(obj);
+	ods_obj_put(obj);
+	return 0;
 }
 
-static int bxt_iter_pos_remove(ods_iter_t oi, ods_pos_t pos_)
+static int bxt_iter_entry_delete(ods_iter_t oi, ods_idx_data_t *data)
 {
 	bxt_iter_t i = (bxt_iter_t)oi;
-	struct bxt_pos_s *pos = (struct bxt_pos_s *)pos_;
 	bxt_t t = i->iter.idx->priv;
-	int ent;
-	ods_obj_t leaf, rec;
-	int found;
+	int ent, found;
 	ods_key_t key;
-	ods_ref_t prev_ref, next_ref;
-	uint32_t status;
+	ods_obj_t leaf;
+	int rc = ENOENT;
 
 #ifdef BXT_THREAD_SAFE
 	if (ods_lock(oi->idx->ods, 0, NULL))
 		return EBUSY;
 #endif
-	status = ods_ref_status(t->ods, pos->rec_ref);
-	assert(0 == (status & ODS_REF_STATUS_FREE));
-	rec = ods_ref_as_obj(t->ods, pos->rec_ref);
-	if (!rec)
-		goto norec;
-#ifdef BXT_DEBUG
-	assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
-#endif
-	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
+	if (!i->rec)
+		goto out_0;
+
+	key = __iter_key(i);
+	if (!key)
+		goto out_0;
+
 	leaf = leaf_find(t, key);
 	if (!leaf)
-		goto noent;
+		goto out_1;
 
 	ent = find_key_idx(t, leaf, key, &found);
 	if (!found)
-		goto noent;
+		goto out_1;
 
-	prev_ref = REC(rec)->prev_ref;
-	next_ref = REC(rec)->next_ref;
-#ifdef BXT_DEBUG
-	assert(prev_ref != pos->rec_ref);
-	assert(next_ref != pos->rec_ref);
-#endif
-	ods_atomic_dec(&t->udata->card);
+	/* Advance the iterator */
+	(void)__iter_next(i);
 
-	/* If the rec has a prev, move the iterator to it, if not move to the next */
-	if (prev_ref)
-		i->rec = ods_ref_as_obj(t->ods, prev_ref);
-	else
-		i->rec = ods_ref_as_obj(t->ods, next_ref);
-#ifdef BXT_DEBUG
-	if (i->rec) {
-		assert(i->rec->ref != 0xFFFFFFFFFFFFFFFF);
-		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
-	}
-#endif
-	/*
-	 * Trivial case is that this is a dup key. In this case,
-	 * delete the pos entry on the REC list and return
-	 */
-	if (L_ENT(leaf, ent).head_ref != L_ENT(leaf, ent).tail_ref) {
-		ods_atomic_dec(&t->udata->dups);
-		delete_dup_rec(t, leaf, rec, ent);
-		ods_obj_put(leaf);
-#ifdef BXT_THREAD_SAFE
-		ods_unlock(oi->idx->ods, 0);
-#endif
-		return 0;
-	}
-
-	t->udata->root_ref = entry_delete(t, leaf, rec, ent);
-	ods_obj_delete(key);
-	ods_obj_put(rec);
-#ifdef BXT_THREAD_SAFE
-	ods_unlock(oi->idx->ods, 0);
-#endif
-	return 0;
- noent:
+	rc = bxt_delete_with_leaf(oi->idx, key, data, leaf, ent);
+ out_1:
 	ods_obj_put(key);
-	ods_obj_put(leaf);
- norec:
+ out_0:
 #ifdef BXT_THREAD_SAFE
 	ods_unlock(oi->idx->ods, 0);
 #endif
-	return ENOENT;
+	return rc;
 }
 
 static const char *bxt_get_type(void)
@@ -2422,7 +2427,7 @@ static struct ods_idx_provider bxt_provider = {
 	.iter_pos_set = bxt_iter_pos_set,
 	.iter_pos_get = bxt_iter_pos_get,
 	.iter_pos_put = bxt_iter_pos_put,
-	.iter_pos_entry_remove = bxt_iter_pos_remove,
+	.iter_entry_delete = bxt_iter_entry_delete,
 	.iter_key = bxt_iter_key,
 	.iter_data = bxt_iter_data,
 	.print_idx = print_idx,

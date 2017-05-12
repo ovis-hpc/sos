@@ -622,10 +622,7 @@ size_t sos_attr_key_size(sos_attr_t attr);
  * @{
  */
 typedef struct sos_iter_s *sos_iter_t;
-struct sos_pos {
-	char data[16];
-};
-typedef struct sos_pos *sos_pos_t;
+typedef uint32_t sos_pos_t;
 typedef enum sos_iter_flags_e {
 	SOS_ITER_F_ALL = ODS_ITER_F_ALL,
 	/** The iterator will skip duplicate keys in the index */
@@ -655,9 +652,9 @@ sos_iter_flags_t sos_iter_flags_get(sos_iter_t i);
 uint64_t sos_iter_card(sos_iter_t i);
 uint64_t sos_iter_dups(sos_iter_t i);
 int sos_iter_pos_set(sos_iter_t i, sos_pos_t pos);
-int sos_iter_pos_get(sos_iter_t i, const sos_pos_t pos);
-int sos_iter_pos_put(sos_iter_t i, const sos_pos_t pos);
-int sos_pos_from_str(sos_pos_t pos, const char *str);
+int sos_iter_pos_get(sos_iter_t i, sos_pos_t *pos);
+int sos_iter_pos_put(sos_iter_t i, sos_pos_t pos);
+int sos_pos_from_str(sos_pos_t *pos, const char *str);
 const char *sos_pos_to_str(sos_pos_t pos);
 void sos_pos_str_free(char *pos_str);
 int sos_iter_next(sos_iter_t iter);
@@ -679,8 +676,8 @@ sos_obj_t sos_filter_next(sos_filter_t filt);
 sos_obj_t sos_filter_skip(sos_filter_t filt, int count);
 sos_obj_t sos_filter_prev(sos_filter_t filt);
 sos_obj_t sos_filter_end(sos_filter_t filt);
-int sos_filter_pos_set(sos_filter_t filt, sos_pos_t pos);
 int sos_filter_pos_set(sos_filter_t filt, const sos_pos_t pos);
+int sos_filter_pos_get(sos_filter_t filt, sos_pos_t *pos);
 int sos_filter_pos_put(sos_filter_t filt, const sos_pos_t pos);
 sos_obj_t sos_filter_obj(sos_filter_t filt);
 int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags);

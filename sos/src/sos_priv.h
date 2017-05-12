@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2015 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2012-2015 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2012-2017 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2012-2017 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -157,6 +157,22 @@ typedef struct sos_idxdir_udata_s {
 } *sos_idxdir_udata_t;
 #define SOS_IDXDIR_UDATA(_o_) ODS_PTR(sos_idxdir_udata_t, _o_)
 
+#define SOS_POS_SIGNATURE 0x534f50534f535f5f  /* 'SOSPOS__' */
+typedef struct sos_pos_udata_s {
+	uint64_t signature;
+	ods_atomic_t lock;	/* Lock for adding/removing positions */
+} *sos_pos_udata_t;
+#define SOS_POS_UDATA(_o_) ODS_PTR(sos_pos_udata_t, _o_)
+
+typedef struct sos_pos_data_s {
+	uint32_t key;		/* fnv hash of the name + secs + usecs */
+	char name[SOS_INDEX_NAME_LEN];
+	uint32_t create_secs;
+	uint32_t create_usecs;
+	struct ods_pos_s ods_pos;
+} *sos_pos_data_t;
+#define SOS_POS(_o_) ODS_PTR(sos_pos_data_t, _o_)
+
 /*
  * An object is counted array of bytes. Everything in the ODS store is an object.
  *
@@ -312,6 +328,14 @@ struct sos_container_s {
 	struct rbt schema_name_rbt;	/* In memory schema tree by name */
 	struct rbt schema_id_rbt;	/* In memory schema tree by id */
 	size_t schema_count;
+
+	/*
+	 * Position dictionary - Keeps track of all postions defined on
+	 * iterators in the Container.
+	 */
+	ods_idx_t pos_idx;
+	ods_t pos_ods;
+	ods_obj_t pos_udata;
 
 	/*
 	 * Config - Keeps a dictionary of user-specified configuration
