@@ -257,6 +257,8 @@ typedef union sos_value_data_u {
 	union sos_primary_u prim;
 	union sos_array_element_u struc;
 	struct sos_array_s array;
+	struct sos_array_s join;
+	char __pad[256];
 } *sos_value_data_t;
 
 /*! Describes the value of an attribute in an object */
@@ -335,7 +337,6 @@ sos_type_t sos_attr_type(sos_attr_t attr);
 sos_index_t sos_attr_index(sos_attr_t attr);
 size_t sos_attr_size(sos_attr_t attr);
 sos_schema_t sos_attr_schema(sos_attr_t attr);
-int sos_attr_join(sos_obj_t obj, sos_attr_t attr);
 sos_array_t sos_attr_join_list(sos_attr_t attr);
 
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,

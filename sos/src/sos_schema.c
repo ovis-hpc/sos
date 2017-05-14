@@ -460,7 +460,7 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, 
 		va_start(ap, type);
 		join_count = va_arg(ap, size_t);
 		join_attrs = va_arg(ap, char **);
-		size = 0;
+		size = 0;	/* JOIN attrs consume no space in the object */
 		ext_ptr = malloc(SOS_ARRAY_SIZE(join_count, uint32_t));
 		if (!ext_ptr)
 			return ENOMEM;
@@ -473,23 +473,12 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, 
 				return ENOENT;
 			}
 			join_type = sos_attr_type(join_attr);
-			switch (join_type) {
-			case SOS_TYPE_INT64:
-			case SOS_TYPE_UINT64:
-			case SOS_TYPE_TIMESTAMP:
-			case SOS_TYPE_DOUBLE:
-			case SOS_TYPE_INT32:
-			case SOS_TYPE_UINT32:
-			case SOS_TYPE_FLOAT:
-			case SOS_TYPE_INT16:
-			case SOS_TYPE_UINT16:
-				break;
-			default:
+			if (join_type == SOS_TYPE_JOIN) {
+				/* Join types cannot be nested */
 				free(ext_ptr);
 				return EINVAL;
 			}
 			ext_ptr->data.uint32_[i] = sos_attr_id(join_attr);
-			size += sos_attr_size(join_attr);
 		}
 		break;
 	default:
@@ -705,74 +694,6 @@ int sos_attr_id(sos_attr_t attr)
 const char *sos_attr_name(sos_attr_t attr)
 {
 	return attr->data->name;
-}
-
-/**
- * \brief Update a join attributes's value
- *
- * A join attribute's value is built from the values of other
- * attributes. This function builds the value of the join attribute by
- * combining the values of it's join members. This function should be
- * called after all of the join member values have been set.
- *
- * \retval 0 The attributes were combined successfully
- * \retval EINVAL An invalid object or attr were specified
- */
-int sos_attr_join(sos_obj_t obj, sos_attr_t attr)
-{
-	sos_value_data_t d;
-	struct sos_value_s v_;
-	sos_value_t v;
-	void *dst;
-	uint64_t u64;
-	uint32_t u32;
-	uint16_t u16;
-	int i, count, join_id;
-	sos_attr_t join_attr;
-	sos_schema_t schema = sos_attr_schema(attr);
-
-	if (!schema)
-		return EINVAL;
-
-	if (sos_attr_type(attr) != SOS_TYPE_JOIN)
-		return EINVAL;
-
-	d = sos_obj_attr_data(obj, attr, NULL);
-	dst = &d->struc;
-	count = attr->ext_ptr->count;
-	for (i = 0; i < count; i++) {
-		join_id = attr->ext_ptr->data.uint32_[i];
-		join_attr = sos_schema_attr_by_id(schema, join_id);
-		if (!join_attr)
-			return EINVAL;
-		v = sos_value_init(&v_, obj, join_attr);
-		switch (sos_attr_type(join_attr)) {
-		case SOS_TYPE_INT64:
-		case SOS_TYPE_UINT64:
-		case SOS_TYPE_TIMESTAMP:
-		case SOS_TYPE_DOUBLE:
-			u64 = htobe64(v->data->prim.uint64_);
-			memcpy(dst, &u64, sizeof(u64));
-			dst += sizeof(u64);
-			break;
-		case SOS_TYPE_INT32:
-		case SOS_TYPE_UINT32:
-		case SOS_TYPE_FLOAT:
-			u32 = htobe32(v->data->prim.uint32_);
-			memcpy(dst, &u32, sizeof(u32));
-			dst += sizeof(u32);
-			break;
-		case SOS_TYPE_INT16:
-		case SOS_TYPE_UINT16:
-			u32 = htobe16(v->data->prim.uint16_);
-			memcpy(dst, &u16, sizeof(u16));
-			dst += sizeof(u16);
-		default:
-			assert(0 == "The join attribute type must be a simple primitive");
-		}
-		sos_value_put(v);
-	}
-	return 0;
 }
 
 /**

@@ -788,6 +788,11 @@ int leaf_insert(bxt_t t, ods_obj_t leaf, ods_obj_t new_rec, int ent, int dup)
 			assert(t->comparator(prev_key, rec_key) <= 0);
 		if (next_key)
 			assert(t->comparator(next_key, rec_key) >= 0);
+		ods_obj_put(prev_key);
+		ods_obj_put(next_key);
+		ods_obj_put(next);
+		ods_obj_put(prev);
+		ods_obj_put(rec_key);
 	}
 #endif
 	ods_obj_put(entry);
@@ -1862,9 +1867,6 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 
 #ifdef BXT_THREAD_SAFE
 	ods_unlock(idx->ods, 0);
-#endif
-#ifdef ODS_DEBUG
-	print_idx(idx, NULL);
 #endif
 	return rc;
  noent:

@@ -64,6 +64,8 @@ def make_cast(attr):
         return lambda s : float(s)
     elif t == Sos.TYPE_TIMESTAMP:
         return lambda s : int(s)
+    elif t == Sos.TYPE_CHAR_ARRAY:
+        return lambda s : str(s)
     raise ValueError("{0} is an unsupported cast".format(repr(t)))
 
 def assign(obj, line, cast, args):
@@ -84,8 +86,6 @@ if __name__ == "__main__":
                         help="Specifies how CSV columns are mapped to attributes")
     parser.add_argument("--csv",
                         help="The path to the CSV file to import")
-    parser.add_argument("--test", action="store_true",
-                        help="Process the input CSV with the map, but don't add the data")
     parser.add_argument("--status", action="store_true",
                         help="Show detail import status")
     args = parser.parse_args()
@@ -137,10 +137,13 @@ if __name__ == "__main__":
     new_recs = 0
     obj = None
     for l in df:
+        if l.endswith("\n"):
+            l = l[:-1]
         cols = l.split(',')
-        if not args.test:
-            obj = schema.alloc()
-
+        obj = schema.alloc()
+        if not obj:
+            print("An object with schema {0} could not be allocated.".format(schema.name()))
+            sys.exit(1)
         for action in input_process:
             try:
                 action[0](obj, cols, action[1], action[2])

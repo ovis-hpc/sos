@@ -57,6 +57,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sos/sos.h>
+#include <errno.h>
+#include <assert.h>
 #include "sos_priv.h"
 
 typedef int (*cmp_fn_t)(sos_value_t a, sos_value_t b);
@@ -183,6 +185,130 @@ sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr)
 	return value;
 }
 
+static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
+{
+	struct sos_value_s *v_;
+	sos_value_t *v;
+	size_t *value_size;
+	struct sos_value_s _v_[MAX_JOIN_ATTRS];
+	sos_value_t _v[MAX_JOIN_ATTRS];
+	size_t _value_size[MAX_JOIN_ATTRS];
+	void *dst;
+	struct sos_array_s *data;
+	long double *ld;
+	uint64_t *p64;
+	uint64_t u64;
+	uint32_t u32;
+	uint16_t u16;
+	int i, count, join_id;
+	sos_schema_t schema = sos_attr_schema(attr);
+	size_t size;
+	sos_attr_t join_attr;
+
+	assert(schema);
+	assert(sos_attr_type(attr) == SOS_TYPE_JOIN);
+
+	count = attr->ext_ptr->count;
+	if (count <= MAX_JOIN_ATTRS) {
+		v_ = _v_;
+		v = _v;
+		value_size = _value_size;
+	} else {
+		v_ = calloc(count, sizeof *v_);
+		if (!v_)
+			return NULL;
+		v = calloc(count, sizeof *v);
+		if (!v)
+			return NULL;
+		value_size = calloc(count, sizeof *value_size);
+		if (!value_size)
+			return NULL;
+	}
+
+	size = 0;
+	for (i = 0; i < count; i++) {
+		join_id = attr->ext_ptr->data.uint32_[i];
+		join_attr = sos_schema_attr_by_id(schema, join_id);
+		if (!join_attr) {
+			errno = EINVAL;
+			goto err;
+		}
+		v[i] = sos_value_init(&v_[i], obj, join_attr);
+		if (!v[i]) {
+			errno = ENOMEM;
+			goto err;;
+		}
+		value_size[i] = sos_value_size(v[i]);
+		size += value_size[i];
+	}
+
+	if (size > (sizeof(val->data_) + sizeof(*data))) {
+		data = malloc(sizeof(*data) + size);
+		if (!data) {
+			errno = ENOMEM;
+			return NULL;
+		}
+	} else {
+		data = (sos_array_t)&val->data_;
+	}
+
+	data->count = size;
+	val->attr = attr;
+	val->obj = NULL;
+	val->data = (sos_value_data_t)data;
+
+	dst = data->data.byte_;
+	for (i = 0; i < count; i++) {
+		switch (value_size[i]) {
+		case 8:
+			u64 = htobe64(v[i]->data->prim.uint64_);
+			memcpy(dst, &u64, sizeof(u64));
+			dst += sizeof(u64);
+			break;
+		case 4:
+			u32 = htobe32(v[i]->data->prim.uint32_);
+			memcpy(dst, &u32, sizeof(u32));
+			dst += sizeof(u32);
+			break;
+		case 2:
+			u16 = htobe16(v[i]->data->prim.uint16_);
+			memcpy(dst, &u16, sizeof(u16));
+			dst += sizeof(u16);
+			break;
+		case 16:
+			ld = dst;
+			p64 = (uint64_t *)&v[i]->data->prim.long_double_;
+			ld[0] = htobe64(p64[0]);
+			ld[1] = htobe64(p64[1]);
+			dst += sizeof(long double);
+			break;
+		default:
+			/* No swapping for string/struct types */
+			memcpy(dst, v[i]->data->array.data.byte_, value_size[i]);
+			dst += value_size[i];
+			break;
+		}
+		sos_value_put(v[i]);
+	}
+	if (count > MAX_JOIN_ATTRS) {
+		free(v_);
+		free(v);
+		free(value_size);
+	}
+	return val;
+ err:
+	if (count > MAX_JOIN_ATTRS) {
+		free(v_);
+		free(v);
+		free(value_size);
+	}
+	while (i) {
+		sos_value_put(v[i]);
+		i--;
+	}
+	return NULL;
+}
+
 /**
  * \brief Initialize a value with an object's attribute data
  *
@@ -202,7 +328,8 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 		return mem_value_init(val, attr);
 
 	if (sos_attr_type(attr) == SOS_TYPE_JOIN)
-		sos_attr_join(obj, attr);
+		return __sos_join_value_init(val, obj, attr);
+
 	val->attr = attr;
 	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
 	if (!sos_attr_is_array(attr)) {

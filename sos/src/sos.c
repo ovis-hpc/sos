@@ -1233,6 +1233,7 @@ int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 		if (sos_attr_type(src_attr) != sos_attr_type(dst_attr))
 			return EINVAL;
 		if (sos_attr_type(src_attr) == SOS_TYPE_JOIN) {
+			/* JOIN attrs do not occupy space in the object data */
 			dst_attr = TAILQ_NEXT(dst_attr, entry);
 			continue;
 		}

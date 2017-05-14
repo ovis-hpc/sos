@@ -157,6 +157,52 @@ static size_t obj_array_size_fn(sos_value_t value)
 	return value->data->array.count * sizeof(ods_ref_t);
 }
 
+static size_t join_size_fn(sos_value_t value)
+{
+	struct sos_value_s v_;
+	sos_value_t v;
+	int i, count, join_id;
+	sos_attr_t attr = value->attr;
+	sos_attr_t join_attr;
+	sos_schema_t schema;
+	size_t size;
+
+	if (!attr) {
+		errno = EINVAL;
+		return 0;
+	}
+
+	schema = sos_attr_schema(attr);
+	assert(schema);
+	assert(sos_attr_type(attr) == SOS_TYPE_JOIN);
+
+	count = attr->ext_ptr->count;
+	size = 0;
+	for (i = 0; i < count; i++) {
+		size_t attr_size;
+		join_id = attr->ext_ptr->data.uint32_[i];
+		join_attr = sos_schema_attr_by_id(schema, join_id);
+		if (!join_attr) {
+			errno = EINVAL;
+			return 0;
+		}
+		attr_size = sos_attr_size(join_attr);
+		if (attr_size < 0) {
+			/* Variable lengh */
+			if (!value->obj) {
+				errno = EINVAL;
+				return 0;
+			}
+			v = sos_value_init(&v_, value->obj, join_attr);
+			size += sos_value_size(v);
+			sos_value_put(v);
+		} else {
+			size += attr_size;
+		}
+	}
+	return size;
+}
+
 static sos_value_size_fn_t __attr_size_fn_for_type[] = {
 	[SOS_TYPE_INT16] = int16_size_fn,
 	[SOS_TYPE_INT32] = int32_size_fn,
@@ -170,7 +216,7 @@ static sos_value_size_fn_t __attr_size_fn_for_type[] = {
 	[SOS_TYPE_TIMESTAMP] = timestamp_size_fn,
 	[SOS_TYPE_OBJ] = obj_size_fn,
 	[SOS_TYPE_STRUCT] = struct_size_fn,
-	[SOS_TYPE_JOIN] = struct_size_fn,
+	[SOS_TYPE_JOIN] = join_size_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_size_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_size_fn,
 	[SOS_TYPE_INT16_ARRAY] = int16_array_size_fn,
@@ -293,6 +339,11 @@ static char *byte_array_to_str_fn(sos_value_t v, char *str, size_t len)
 		len -= res_cnt;
 	}
 	return str;
+}
+
+static char *join_to_str_fn(sos_value_t v, char *str, size_t len)
+{
+	return byte_array_to_str_fn(v, str, len);
 }
 
 static char *char_array_to_str_fn(sos_value_t v, char *str, size_t len)
@@ -493,7 +544,7 @@ static sos_value_to_str_fn_t __attr_to_str_fn_for_type[] = {
 	[SOS_TYPE_TIMESTAMP] = timestamp_to_str_fn,
 	[SOS_TYPE_OBJ] = obj_to_str_fn,
 	[SOS_TYPE_STRUCT] = struct_to_str_fn,
-	[SOS_TYPE_JOIN] = struct_to_str_fn,
+	[SOS_TYPE_JOIN] = join_to_str_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_to_str_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_to_str_fn,
 	[SOS_TYPE_INT16_ARRAY] = int16_array_to_str_fn,
@@ -650,6 +701,11 @@ static int byte_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 	if (endptr)
 		*endptr = (char *)str;
 	return 0;
+}
+
+static int join_from_str_fn(sos_value_t v, const char *value, char **endptr)
+{
+	return byte_array_from_str_fn(v, value, endptr);
 }
 
 static int char_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
@@ -894,7 +950,7 @@ static sos_value_from_str_fn_t __str_fn_t[] = {
 	[SOS_TYPE_TIMESTAMP] = timestamp_from_str_fn,
 	[SOS_TYPE_OBJ] = obj_from_str_fn,
 	[SOS_TYPE_STRUCT] = struct_from_str_fn,
-	[SOS_TYPE_JOIN] = struct_from_str_fn,
+	[SOS_TYPE_JOIN] = join_from_str_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_from_str_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_from_str_fn,
 	[SOS_TYPE_INT16_ARRAY] = int16_array_from_str_fn,
@@ -978,6 +1034,11 @@ static void *struct_key_value_fn(sos_value_t val)
 	return val->data->struc.byte_;
 }
 
+static void *join_key_value_fn(sos_value_t val)
+{
+	return val->data->join.data.byte_;
+}
+
 static void *byte_array_key_value_fn(sos_value_t val)
 {
 	return val->data->array.data.byte_;
@@ -1036,7 +1097,7 @@ static sos_value_key_value_fn_t __key_value_fn_t[] = {
 	[SOS_TYPE_TIMESTAMP] = timestamp_key_value_fn,
 	[SOS_TYPE_OBJ] = obj_key_value_fn,
 	[SOS_TYPE_STRUCT] = struct_key_value_fn,
-	[SOS_TYPE_JOIN] = struct_key_value_fn,
+	[SOS_TYPE_JOIN] = join_key_value_fn,
 	[SOS_TYPE_BYTE_ARRAY] = byte_array_key_value_fn,
 	[SOS_TYPE_CHAR_ARRAY] = char_array_key_value_fn,
 	[SOS_TYPE_INT16_ARRAY] = int16_array_key_value_fn,
