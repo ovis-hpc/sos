@@ -186,8 +186,10 @@ int ods_idx_create(const char *path, int mode,
 	strcpy(udata->signature, ODS_IDX_SIGNATURE);
 	strcpy(udata->type_name, type);
 	strcpy(udata->key_name, key);
-	errno = idx_class->prv->init(ods, type, key, args);
 	ods_obj_put(obj);
+	errno = idx_class->prv->init(ods, type, key, args);
+	if (errno)
+		goto err_1;
 	ods_close(ods, ODS_COMMIT_ASYNC);
 	errno = 0;
  out:
