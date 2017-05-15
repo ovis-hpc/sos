@@ -215,7 +215,7 @@ static inline uint64_t ref_to_page_no(ods_ref_t ref)
 
 static inline int size_to_bkt(size_t sz)
 {
-	sz = (sz + (ODS_GRAIN_SIZE - 1)) & ~(ODS_GRAIN_SIZE-1);
+	sz = ODS_ROUNDUP(sz, ODS_GRAIN_SIZE);
 	return (sz >> ODS_GRAIN_SHIFT) - 1;
 }
 
@@ -476,7 +476,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	map_len = ods->obj_map_sz;
 	if ((map_off + map_len) < (loff + sz))
 		/* after rounding the offset down, the default map len is too small */
-		map_len = (loff + sz + (map_len - 1)) & ~(map_len - 1);
+		map_len = ODS_ROUNDUP(loff + sz, map_len);
 
 	if (map_off + map_len > ods->obj_sz)
 		/* Truncate map to file size */
@@ -1578,6 +1578,7 @@ ods_obj_t _ods_obj_alloc_extend(ods_t ods, size_t sz, size_t extend_sz, const ch
 {
 	ods_obj_t obj = _ods_obj_alloc(ods, sz, func, line);
 	if (!obj) {
+		extend_sz = (sz < extend_sz ? extend_sz : ODS_ROUNDUP(sz, ODS_PAGE_SIZE));
 		ods_extend(ods, ods_size(ods) + extend_sz);
 		obj = _ods_obj_alloc(ods, sz, func, line);
 	}
