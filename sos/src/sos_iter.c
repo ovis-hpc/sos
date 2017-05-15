@@ -348,7 +348,7 @@ int sos_iter_pos_set(sos_iter_t iter, const sos_pos_t pos)
 	/* Look up the position */
 	ods_key_set(pos_key, &pos, sizeof(sos_pos_t));
 	rc = ods_idx_find(sos->pos_idx, pos_key, &pos_data);
-	if (!rc)
+	if (rc)
 		/* This position does not exist */
 		goto out_0;
 
