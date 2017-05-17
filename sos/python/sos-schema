@@ -43,7 +43,8 @@ def query_schema(cont, schema_name, verbose=False):
                       format(a.attr_id(), type_name,
                              idx_s.ljust(12,' '), aname))
     if count == 0:
-        print("The schema '{0}' was not found.".format(schema_name))
+        if schema_name != "ALL":
+            print("The schema '{0}' was not found.".format(schema_name))
 
 def add_schema(cont, path):
     try:
