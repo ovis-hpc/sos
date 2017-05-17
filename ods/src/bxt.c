@@ -441,11 +441,12 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 	int i;
 	ods_ref_t head_ref = 0;
 	ods_ref_t tail_ref = 0;
+	ods_ref_t next_ref;
 	bxt_t t = idx->priv;
 	ods_obj_t leaf = leaf_find(t, key);
 	ods_obj_t rec = NULL;
 	if (!leaf)
-		return 0;
+		return NULL;
 	for (i = 0; i < NODE(leaf)->count; i++) {
 		tail_ref = L_ENT(leaf,i).tail_ref;
 		head_ref = L_ENT(leaf,i).head_ref;
@@ -456,8 +457,15 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 			ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 		int rc = t->comparator(key, entry_key);
 		ods_obj_put(entry_key);
-		if (rc <= 0)
+		if (rc <= 0) {
+			if ((flags & ODS_ITER_F_LUB_LAST_DUP)
+			    && (tail_ref != head_ref)) {
+				/* user wants last-dup,  swap head for tail */
+				ods_obj_put(rec);
+				rec = ods_ref_as_obj(t->ods, tail_ref);
+			}
 			goto found;
+		}
 	}
 	/* Our LUB is the first record in the right sibling */
 	ods_obj_put(leaf);
@@ -466,10 +474,21 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 		rec = ods_ref_as_obj(t->ods, tail_ref);
 		assert(rec);
 	}
-	ods_ref_t next_ref = REC(rec)->next_ref;
+
+	next_ref = REC(rec)->next_ref;
 	ods_obj_put(rec);
+	if (!next_ref)
+		return NULL;
+
 	rec = ods_ref_as_obj(t->ods, next_ref);
-	return rec;
+	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
+	leaf = leaf_find(t, key);
+	ods_obj_put(key);
+	if (0 == (flags & ODS_ITER_F_LUB_LAST_DUP))
+		goto found;
+	ods_obj_put(rec);
+	tail_ref = L_ENT(leaf,0).tail_ref;
+	rec = ods_ref_as_obj(t->ods, tail_ref);
  found:
 	if (flags & ODS_ITER_F_UNIQUE) {
 		ods_obj_put(rec);
@@ -513,7 +532,10 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
 		goto out;
 
 	for (i = NODE(leaf)->count - 1; i >= 0; i--) {
-		rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
+		if (flags & ODS_ITER_F_GLB_LAST_DUP)
+			rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).tail_ref);
+		else
+			rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
 		ods_key_t entry_key =
 			ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 		int rc = t->comparator(key, entry_key);

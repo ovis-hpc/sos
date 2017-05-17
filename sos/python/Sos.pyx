@@ -609,7 +609,7 @@ cdef class Schema(SosObject):
             s += "\n"
             s += '    {{ "name" : "{0}", "type" : "{1}", "size" : {2}'.format(
                 sos_attr_name(c_attr), sos_type_strs[sos_attr_type(c_attr)],
-		sos_attr_size(c_attr))
+                sos_attr_size(c_attr))
             c_idx = sos_attr_index(c_attr)
             if c_idx != NULL:
                 s += ', "indexed" : "true"'
@@ -816,21 +816,39 @@ cdef class AttrIter(SosObject):
         self.c_iter = sos_attr_iter_new(attr.c_attr)
         self.attr = attr
 
+    def prop_set(self, prop_name, b):
+        cdef sos_iter_flags_t f = sos_iter_flags_get(self.c_iter)
+        prop_names = {
+            "unique" : SOS_ITER_F_UNIQUE,
+            "inf_last_dup" : SOS_ITER_F_INF_LAST_DUP,
+            "sup_last_dup" : SOS_ITER_F_SUP_LAST_DUP
+        }
+        bit = prop_names[prop_name]
+        if b:
+            f  = f | bit
+        else:
+            f = f & ~bit
+        sos_iter_flags_set(self.c_iter, f)
+
     def item(self):
         """Return the Object at the current iterator position"""
         cdef sos_obj_t c_obj
         c_obj = sos_iter_obj(self.c_iter)
-        o = Object()
-        o.assign(c_obj)
-        return o
+        if c_obj:
+            o = Object()
+            o.assign(c_obj)
+            return o
+        return None
 
     def key(self):
         """Return the Key at the current iterator position"""
         cdef sos_key_t c_key
         c_key = sos_iter_key(self.c_iter)
-        k = Key()
-        k.assign(c_key)
-        return k
+        if c_key:
+            k = Key()
+            k.assign(c_key)
+            return k
+        return None
 
     def begin(self):
         """Position the iterator at the first object in the index"""
@@ -2188,5 +2206,4 @@ class ObjAttrError(NameError):
     def __init__(self, attr, schema):
         NameError.__init__(self,
                            "Object has not attribute with the name '{0}'" \
-			   .format(attr, schema))
-
+                           .format(attr, schema))

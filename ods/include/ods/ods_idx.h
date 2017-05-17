@@ -793,7 +793,9 @@ typedef enum ods_iter_flags_e {
 	ODS_ITER_F_ALL = 0,
 	/** The iterator will skip duplicate keys in the index */
 	ODS_ITER_F_UNIQUE = 1,
-	ODS_ITER_F_MASK = 1
+	ODS_ITER_F_GLB_LAST_DUP = 2,
+	ODS_ITER_F_LUB_LAST_DUP = 4,
+	ODS_ITER_F_MASK = 0x7
 } ods_iter_flags_t;
 
 /**

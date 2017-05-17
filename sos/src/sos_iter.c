@@ -558,6 +558,12 @@ int sos_iter_end(sos_iter_t i)
  * If the supremum is a duplicate key, the cursor is positioned at
  * the first instance of the key.
  *
+ * This behavior can be changed using the sos_iter_flags_set()
+ * function to set the SOS_ITER_F_SUP_LAST_DUP option. This will cause
+ * this function to place the iterator position at the last
+ * duplicate. Note that this _may_ break the axiom that INF(set) <=
+ * SUP(set)
+ *
  * \param i Pointer to the iterator
  * \param key The key.
  *
@@ -577,6 +583,12 @@ int sos_iter_sup(sos_iter_t i, sos_key_t key)
  *
  * If the infininum is a duplicate key, the cursor is positioned at
  * the first instance of the key.
+ *
+ * This behavior can be changed using the sos_iter_flags_set()
+ * function to set the SOS_ITER_F_INF_LAST_DUP option. This will cause
+ * this function to place the iterator position at the last
+ * duplicate. Note that this _may_ break the axiom that INF(set) <=
+ * SUP(set)
  *
  * \param i Pointer to the iterator
  * \param key The key.

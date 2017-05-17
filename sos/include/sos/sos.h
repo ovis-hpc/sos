@@ -628,6 +628,8 @@ typedef enum sos_iter_flags_e {
 	SOS_ITER_F_ALL = ODS_ITER_F_ALL,
 	/** The iterator will skip duplicate keys in the index */
 	SOS_ITER_F_UNIQUE = ODS_ITER_F_UNIQUE,
+	SOS_ITER_F_INF_LAST_DUP = ODS_ITER_F_GLB_LAST_DUP,
+	SOS_ITER_F_SUP_LAST_DUP = ODS_ITER_F_LUB_LAST_DUP,
 	SOS_ITER_F_MASK = ODS_ITER_F_MASK
 } sos_iter_flags_t;
 typedef struct sos_filter_cond_s *sos_filter_cond_t;

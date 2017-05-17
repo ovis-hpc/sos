@@ -528,8 +528,10 @@ cdef extern from "sos/sos.h":
     cdef enum sos_iter_flags_e:
         SOS_ITER_F_ALL,
         SOS_ITER_F_UNIQUE,
+        SOS_ITER_F_INF_LAST_DUP,
+        SOS_ITER_F_SUP_LAST_DUP,
         SOS_ITER_F_MASK,
-    ctypedef sos_iter_flags_e sos_iter_flags_t
+    ctypedef uint64_t sos_iter_flags_t
 
     cdef struct sos_filter_cond_s:
         pass
@@ -582,4 +584,3 @@ cdef extern from "sos/sos.h":
     int sos_filter_pos_get(sos_filter_t filt, sos_pos_t *pos)
     sos_obj_t sos_filter_obj(sos_filter_t filt)
     int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags)
-
