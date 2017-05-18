@@ -373,7 +373,7 @@ int sos_iter_pos_set(sos_iter_t iter, const sos_pos_t pos)
 	ods_obj_delete(pos_obj);
 	ods_obj_put(pos_obj);
  out_1:
-	ods_idx_delete(iter->index->idx, pos_key, &pos_data);
+	ods_idx_delete(sos->pos_idx, pos_key, &pos_data);
  out_0:
 	ods_unlock(sos->pos_ods, 0);
 	return rc;
