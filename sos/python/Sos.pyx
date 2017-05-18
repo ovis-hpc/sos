@@ -845,7 +845,7 @@ cdef class AttrIter(SosObject):
         cdef sos_key_t c_key
         c_key = sos_iter_key(self.c_iter)
         if c_key:
-            k = Key()
+            k = Key(attr=self.attr)
             k.assign(c_key)
             return k
         return None
