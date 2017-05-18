@@ -5,6 +5,7 @@ from shutil import rmtree
 from os import chdir
 from sostestlib import ROOT_DIR, TestContext
 import struct
+import errno
 
 def print_obj(obj):
     print("key : {0}  order : {1}".format(obj['key'], obj['order']))
@@ -12,15 +13,15 @@ def print_obj(obj):
 # Destroy previous test data if present
 try:
     chdir(ROOT_DIR)
-    rmtree('inf_sup', ignore_errors = True)
+    rmtree('iterator', ignore_errors = True)
 except Exception as e:
     print(e)
     pass
 
 # Open the test container
 db = Sos.Container()
-db.create('inf_sup')
-db.open('inf_sup')
+db.create('iterator')
+db.open('iterator')
 
 # Add a partition
 db.part_create("ROOT")
@@ -172,5 +173,27 @@ while rc:
                (exp_order == o['order']))
     exp_order -= 1
     rc = it.prev()
+
+# get_pos() tests
+key.set_value(struct.pack("q", 2))
+rc = it.find(key)
+pos = it.get_pos()
+o1 = it.item()
+tests.test('when iterator is positioned at an entry, get_pos() returns a position string', pos is not None)
+
+key.set_value(struct.pack("q", 3))
+rc = it.find(key)
+nonepos = it.get_pos()
+tests.test('when iterator is NOT positioned at an entry, get_pos() returns None', nonepos is None)
+
+key.set_value(struct.pack("q", 5))
+rc = it.find(key)
+rc = it.set_pos(pos)
+tests.test('The position was found and set_pos() returns success', rc == 0)
+o2 = it.item()
+tests.test('set_pos() sets the iterator to correct position', o1['order'] == o2['order'])
+rc = it.set_pos(pos)
+tests.test('Iterator positions are single use, calling set_pos() a second time will return ENOENT',
+           rc == errno.ENOENT)
 
 tests.summarize()

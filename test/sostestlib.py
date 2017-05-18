@@ -1,4 +1,4 @@
-ROOT_DIR = "/btrfs/testroot"
+ROOT_DIR = "."
 
 class TestContext(object):
     def __init__(self, desc=None, detail=False):
