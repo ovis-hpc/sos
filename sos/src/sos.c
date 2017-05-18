@@ -277,7 +277,7 @@ static int __create_pos_info(char *tmp_path, const char *path, int o_mode)
 
 	/* Create the index to look up positions */
 	sprintf(tmp_path, "%s/.__pos_idx", path);
- 	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "STRING", NULL);
+ 	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "UINT32", NULL);
  	if (rc)
  		goto err_2;
 	return 0;
