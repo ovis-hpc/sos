@@ -1400,9 +1400,11 @@ static uint64_t alloc_pages(ods_t ods, size_t pg_needed)
 	if (p_pg_no)
 		/* Link the previous extent to the tail of this allocation */
 		pgt->pg_pages[p_pg_no].pg_next = n_pg_no;
-	else
+	else if (n_pg_no < pgt->pg_count)
 		/* We used the first extent, update pg_free */
 		pgt->pg_free = n_pg_no;
+	else
+		pgt->pg_free = 0;
 
 	pgt->pg_pages[pg_no].pg_flags = ODS_F_ALLOCATED;
  out:
