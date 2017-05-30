@@ -246,7 +246,8 @@ sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 		rc = sos_schema_attr_add(schema,
 					 t->attrs[i].name,
 					 t->attrs[i].type,
-					 t->attrs[i].size);
+					 t->attrs[i].size,
+					 t->attrs[i].join_list);
 		if (rc)
 			goto err;
 		if (t->attrs[i].indexed) {

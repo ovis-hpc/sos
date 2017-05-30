@@ -198,7 +198,7 @@ void ods_idx_commit(ods_idx_t idx, int flags);
 /**
  * \brief Implements the structure of a key
  *
- * An key is a counted array of bytes with the following format:
+ * A key is a counted array of bytes with the following format:
  * <code>
  * struct ods_key_value {
  *     uint16_t len;

@@ -1134,7 +1134,7 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 		if (join_idx >= 0) {
 			/* Iter attr is SOS_TYPE_JOIN, fill in the bits from this condition */
 			if (join_idx >= min_join_idx) {
-				__sos_key_join(key, filt_attr, join_idx, cond->value);
+				__sos_key_join_value(key, filt_attr, join_idx, cond->value);
 				/* Once the bits of the JOIN key have been set,
 				 * don't overwrite the same index with another
 				 * condition value. The conditions are sorted
@@ -1248,7 +1248,7 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 		if (join_idx >= 0) {
 			/* Iter attr is SOS_TYPE_JOIN, fill in the bits from this condition */
 			if (join_idx >= min_join_idx) {
-				__sos_key_join(key, filt_attr, join_idx, cond->value);
+				__sos_key_join_value(key, filt_attr, join_idx, cond->value);
 				/* Once the bits of the JOIN key have been set,
 				 * don't overwrite the same index with another
 				 * condition value. The conditions are sorted

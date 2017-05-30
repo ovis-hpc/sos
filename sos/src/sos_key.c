@@ -308,7 +308,7 @@ char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_
 	return res_str;
 }
 
-int __sos_key_join(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_t value)
+int __sos_key_join_value(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_t value)
 {
 	uint64_t u64;
 	uint32_t u32;
@@ -334,7 +334,8 @@ int __sos_key_join(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_
 		attr_id = join_ids->data.uint32_[idx];
 		attr = sos_schema_attr_by_id(sos_attr_schema(join_attr), attr_id);
 		if (!attr)
-			/* The join id in the join_attr is invalid. This is probably corruption */
+			/* The join id in the join_attr is
+			 * invalid. This is probably corruption */
 			return E2BIG;
 		if (idx != join_idx) {
 			dst += sos_attr_key_size(attr);
@@ -365,4 +366,132 @@ int __sos_key_join(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_
 	return 0;
 }
 
+int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
+{
+	va_list ap;
+	ods_key_value_t kv;
+	unsigned char *dst, *src;
+	size_t src_len;
+	int attr_id, idx;
+	sos_attr_t attr;
+	sos_array_t join_ids = sos_attr_join_list(join_attr);
+	if (!join_ids)
+		/* This is not a SOS_TYPE_JOIN attribute */
+		return EINVAL;
+
+	va_start(ap, join_attr);
+
+	kv = key->as.ptr;
+	dst = kv->value;
+
+	for (idx = 0; idx < join_ids->count; idx++) {
+		attr_id = join_ids->data.uint32_[idx];
+		attr = sos_schema_attr_by_id(sos_attr_schema(join_attr),
+					     attr_id);
+		if (!attr) {
+			sos_error("Join attr_id %d in attribute %s does "
+				  "not exist.\n", attr_id,
+				  sos_attr_name(join_attr));
+			return E2BIG;
+		}
+		switch (sos_attr_type(attr)) {
+		case SOS_TYPE_UINT64:
+		case SOS_TYPE_INT64:
+		case SOS_TYPE_DOUBLE:
+			*(uint64_t *)dst = htobe64(va_arg(ap, uint64_t));
+			dst += sizeof(uint64_t);
+			break;
+		case SOS_TYPE_INT32:
+		case SOS_TYPE_UINT32:
+		case SOS_TYPE_FLOAT:
+			*(uint32_t *)dst = htobe32(va_arg(ap, uint32_t));
+			dst += sizeof(uint32_t);
+			break;
+		case SOS_TYPE_INT16:
+		case SOS_TYPE_UINT16:
+			*(uint16_t *)dst = htobe16(va_arg(ap, uint16_t));
+			dst += sizeof(uint16_t);
+			break;
+		case SOS_TYPE_LONG_DOUBLE:
+			sos_error("Unsupported type in sos_key_join\n");
+			break;
+		default:
+			src_len = va_arg(ap, size_t);
+			src = va_arg(ap, unsigned char *);
+			memcpy(dst, src, src_len);
+			dst += src_len;
+			break;
+		}
+	}
+	kv->len = dst - kv->value;
+	va_end(ap);
+	return 0;
+}
+
+int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
+{
+	va_list ap;
+	uint64_t *p64;
+	uint32_t *p32;
+	uint16_t *p16;
+	ods_key_value_t kv;
+	unsigned char *dst, *src;
+	size_t src_len;
+	int attr_id, idx;
+	sos_attr_t attr;
+	sos_array_t join_ids = sos_attr_join_list(join_attr);
+	if (!join_ids)
+		/* This is not a SOS_TYPE_JOIN attribute */
+		return EINVAL;
+
+	va_start(ap, join_attr);
+
+	kv = key->as.key;
+	src = kv->value;
+
+	for (idx = 0; idx < join_ids->count; idx++) {
+		attr_id = join_ids->data.uint32_[idx];
+		attr = sos_schema_attr_by_id(sos_attr_schema(join_attr),
+					     attr_id);
+		if (!attr) {
+			sos_error("Join attr_id %d in attribute %s does "
+				  "not exist.\n", attr_id,
+				  sos_attr_name(join_attr));
+			return E2BIG;
+		}
+		switch (sos_attr_type(attr)) {
+		case SOS_TYPE_UINT64:
+		case SOS_TYPE_INT64:
+		case SOS_TYPE_DOUBLE:
+			p64 = va_arg(ap, uint64_t *);
+			*p64 = be64toh(*(uint64_t *)src);
+			src += sizeof(uint64_t);
+			break;
+		case SOS_TYPE_INT32:
+		case SOS_TYPE_UINT32:
+		case SOS_TYPE_FLOAT:
+			p32 = va_arg(ap, uint32_t *);
+			*p32 = be32toh(*(uint32_t *)src);
+			src += sizeof(uint32_t);
+			break;
+		case SOS_TYPE_INT16:
+		case SOS_TYPE_UINT16:
+			p16 = va_arg(ap, uint16_t *);
+			*p16 = be16toh(*(uint16_t *)src);
+			src += sizeof(uint16_t);
+			break;
+		case SOS_TYPE_LONG_DOUBLE:
+			sos_error("Unsupported type in sos_key_join\n");
+			break;
+		default:
+			src_len = va_arg(ap, size_t);
+			dst = va_arg(ap, unsigned char *);
+			memcpy(dst, src, src_len);
+			src += src_len;
+			break;
+		}
+	}
+	va_end(ap);
+	return 0;
+}
 /** @} */

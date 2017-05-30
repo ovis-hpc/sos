@@ -286,7 +286,8 @@ typedef enum sos_cond_e sos_cond_t;
 typedef struct sos_schema_template_attr {
 	const char *name;
 	sos_type_t type;
-	size_t size;		/*! must be specified if the type is SOS_TYPE_STRUCT */
+	size_t size;		/*! must be specified if the type is SOS_TYPE_STRUCT or SOS_TYPE_JOIN */
+	const char **join_list;	/*! Am array of attribute names */
 	int indexed;
 	const char *idx_type;
 	const char *key_type;
@@ -602,6 +603,8 @@ sos_key_t sos_key_new(size_t sz);
 void sos_key_put(sos_key_t key);
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
 char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_sz);
+int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...);
+int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...);
 size_t sos_key_size(sos_key_t key);
 size_t sos_key_len(sos_key_t key);
 unsigned char *sos_key_value(sos_key_t key);
