@@ -588,7 +588,10 @@ static int ht_iter_begin(ods_iter_t oi)
 	ht_tbl_t ht = t->htable;
 	int64_t bkt;
 	ods_obj_t ent;
-
+	if (hi->ent) {
+		ods_obj_put(hi->ent);
+		hi->ent = NULL;
+	}
 	if (ht->first_bkt >= 0) {
 		ent = ods_ref_as_obj(t->ods, ht->table[ht->first_bkt].head_ref);
 		bkt = ht->first_bkt;
@@ -608,6 +611,10 @@ static int ht_iter_end(ods_iter_t oi)
 	int64_t bkt;
 	ods_obj_t ent;
 
+	if (hi->ent) {
+		ods_obj_put(hi->ent);
+		hi->ent = NULL;
+	}
 	if (ht->last_bkt >= 0) {
 		ent = ods_ref_as_obj(t->ods, ht->table[ht->last_bkt].tail_ref);
 		bkt = ht->last_bkt;
@@ -656,7 +663,8 @@ static int ht_iter_find(ods_iter_t oi, ods_key_t key)
 
 	if (!ent)
 		return ENOENT;
-
+	if (hi->ent)
+		ods_obj_put(hi->ent);
 	hi->bkt = bkt;
 	hi->ent = ent;
 	return 0;

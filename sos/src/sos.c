@@ -747,6 +747,8 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		ods_close(sos->schema_ods, flags);
 	if (sos->idx_idx)
 		ods_idx_close(sos->idx_idx, flags);
+	if (sos->idx_udata)
+		ods_obj_put(sos->idx_udata);
 	if (sos->idx_ods)
 		ods_close(sos->idx_ods, flags);
 	if (sos->pos_udata)
@@ -761,7 +763,8 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		TAILQ_REMOVE(&sos->part_list, part, entry);
 		sos_part_put(part); /* the list reference */
 	}
-
+	if (sos->part_udata)
+		ods_obj_put(sos->part_udata);
 	if (sos->part_ods)
 		ods_close(sos->part_ods, flags);
 
