@@ -427,7 +427,7 @@ static void dump_maps()
 	ods_t ods;
 	pthread_mutex_lock(&ods_list_lock);
 	LIST_FOREACH(ods, &ods_list, entry) {
-		ods_info(ods, __ods_log_fp);
+		ods_info(ods, __ods_log_fp, ODS_ALL_INFO);
 	}
 	pthread_mutex_lock(&ods_list_lock);
 }
@@ -608,7 +608,8 @@ static inline void map_put(ods_map_t map)
 				if (obj->map == map) {
 					ods_lfatal("obj %p map %p ods %p\n",
 						   obj, map, map->ods);
-					ods_info(map->ods, __ods_log_fp);
+					ods_info(map->ods, __ods_log_fp,
+						 ODS_ALL_INFO);
 					assert(1);
 				}
 			}
@@ -766,19 +767,19 @@ int ods_lock_info(const char *path, FILE *fp)
 	return rc;
 }
 
-void ods_info(ods_t ods, FILE *fp)
+static void __active_map_info(ods_t ods, FILE *fp)
 {
-	ods_obj_t obj;
-	fprintf(fp, "\nODS: %p path: %s "
-		"obj_fd: %d obj_size: %lu "
-		"pg_fd: %d pg_size: %lu\n\n",
-		ods, ods->path, ods->obj_fd, ods->obj_sz, ods->pg_fd, ods->pg_sz);
 	fprintf(fp, "Active Maps\n");
 	fprintf(fp, "               Ref   Obj     Map            Map            Obj\n");
 	fprintf(fp, "Map            Count GN      Offset         Len            Data\n");
 	fprintf(fp, "-------------- ----- ------- -------------- -------------- --------------\n");
 	rbt_traverse(&ods->map_tree, print_map, fp);
 	fprintf(fp, "\n");
+}
+
+static void __active_object_info(ods_t ods, FILE *fp)
+{
+	ods_obj_t obj;
 
 	fprintf(fp, "Active Objects\n");
 	fprintf(fp, "              Ref            ODS            ODS            ODS                           Alloc Alloc\n");
@@ -793,7 +794,11 @@ void ods_info(ods_t ods, FILE *fp)
 			obj->alloc_line, obj->alloc_func);
 	}
 	fprintf(fp, "\n");
+}
 
+static void __free_object_info(ods_t ods, FILE *fp)
+{
+	ods_obj_t obj;
 	fprintf(fp, "Free Objects\n");
 	fprintf(fp, "                        ODS                           Put   Put\n");
 	fprintf(fp, "Object         Size     Reference      Thread         Line  Func\n");
@@ -811,6 +816,36 @@ void ods_info(ods_t ods, FILE *fp)
 	fprintf(fp, "-------------- --------------\n");
 	rbt_traverse(&ods->dirty_tree, dirty_print_fn, fp);
 	fprintf(fp, "\n");
+}
+
+static void __lock_info(ods_t ods, FILE *fp)
+{
+	pthread_mutex_t *mtx;
+	int do_hdr = 1;
+	int id;
+
+	mtx = &ods->pg_table->pgt_lock.mutex;
+	print_lock(fp, &do_hdr, ods->path, "Global", 0, mtx);
+
+	for (id = 0; id < ODS_LOCK_CNT; id++) {
+		mtx = &ods->pg_table->lck_tbl[id].mutex;
+		print_lock(fp, &do_hdr, ods->path, "User", id, mtx);
+	}
+}
+
+void ods_info(ods_t ods, FILE *fp, int flags)
+{
+	if (!fp)
+		fp = __ods_log_fp;
+	fprintf(fp, "\nODS: %p path: %s "
+		"obj_fd: %d obj_size: %lu "
+		"pg_fd: %d pg_size: %lu\n\n",
+		ods, ods->path, ods->obj_fd, ods->obj_sz,
+		ods->pg_fd, ods->pg_sz);
+	__active_map_info(ods, fp);
+	__active_object_info(ods, fp);
+	__free_object_info(ods, fp);
+	__lock_info(ods, fp);
 	fflush(fp);
 }
 
@@ -1794,6 +1829,8 @@ void ods_close(ods_t ods, int flags)
 	free(ods->path);
 
 	/* Clean up objects left around by poorly behaving apps */
+	if (!LIST_EMPTY(&ods->obj_list))
+		__active_object_info(ods, __ods_log_fp);
 	while (!LIST_EMPTY(&ods->obj_list)) {
 		obj = LIST_FIRST(&ods->obj_list);
 		LIST_REMOVE(obj, entry);

@@ -110,6 +110,9 @@ void usage(int argc, char *argv[])
 	printf("       -S <schema> The schema for objects.\n");
 	printf("       -M <map>    String that maps CSV columns to object attributes.\n");
 	printf("\n");
+	printf("    -L             Show database lock information.\n");
+	printf("    -R             Clean up locks held by dead processes.\n");
+	printf("\n");
 	printf("    -q             Query the container.\n");
 	printf("       -S <schema> Schema of objects to query.\n");
 	printf("       -X <index>  Attribute's index or name to query.\n");

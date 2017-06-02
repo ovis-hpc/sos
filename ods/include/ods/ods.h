@@ -539,9 +539,17 @@ int ods_lock_cleanup(const char *path);
 /**
  * \brief Print debug information about the repository
  * \param ods The ODS handle
- * \param fp A FILE* pointer to receive the output
+ * \param flags A bit mask of which info will be shown
+ * \param fp A FILE* pointer to receive the output.
+ *          If NULL, the output will be written to the
+ *          ODS log file
  */
-void ods_info(ods_t ods, FILE *fp);
+#define ODS_MAP_INFO		1
+#define ODS_ACTIVE_OBJ_INFO	2
+#define ODS_FREE_OBJ_INFO	4
+#define ODS_LOCK_INFO		8
+#define ODS_ALL_INFO		0xff
+void ods_info(ods_t ods, FILE *fp, int flags);
 
 #ifdef __cplusplus
 }

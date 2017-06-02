@@ -300,13 +300,6 @@ struct pos_ent_s {
 static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
 {
 	int rc = 0;
-	int pos_keep_time = 60;
-	char *pos_keep = getenv("SOS_POS_KEEP_TIME");
-	if (pos_keep) {
-		pos_keep_time = atoi(pos_keep);
-		if (pos_keep_time <= 0)
-			pos_keep_time = 60;
-	}
 	sprintf(tmp_path, "%s/.__pos", path);
 	sos->pos_ods = ods_open(tmp_path, ODS_PERM_RW);
 	if (!sos->pos_ods) {
@@ -325,7 +318,6 @@ static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
 	sos->pos_udata = ods_get_user_data(sos->pos_ods);
 	if (SOS_POS_UDATA(sos->pos_udata)->signature != SOS_POS_SIGNATURE) {
 		rc = EINVAL;
-		ods_obj_put(sos->pos_udata);
 		goto err;
 	}
 
@@ -334,71 +326,8 @@ static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
 	sos->pos_idx = ods_idx_open(tmp_path, ODS_PERM_RW);
 	if (!sos->pos_idx) {
 		rc = errno;
-		ods_obj_put(sos->pos_udata);
 		goto err;
 	}
-
-	/* Clean-up any position objects older than 24 hours */
-	ods_iter_t it = ods_iter_new(sos->pos_idx);
-	if (!it) {
-		rc = ENOMEM;
-		goto err;
-	}
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	struct pos_ent_s *pos_ent;
-	LIST_HEAD(pos_ent_list, pos_ent_s) pos_list = LIST_HEAD_INITIALIZER(pos_list);
-	for (rc = ods_iter_begin(it); rc == 0; rc = ods_iter_next(it)) {
-		ods_idx_data_t data;
-		ods_obj_t pos_obj;
-		data = ods_iter_data(it);
-		pos_obj = ods_ref_as_obj(sos->pos_ods, data.uint64_[0]);
-		if (pos_obj) {
-			sos_debug("key %08x secs %d usecs %d\n", SOS_POS(pos_obj)->key,
-				  SOS_POS(pos_obj)->create_secs,
-				  SOS_POS(pos_obj)->create_usecs
-				  );
-			if ((tv.tv_sec - SOS_POS(pos_obj)->create_secs) > pos_keep_time) {
-				sos_debug("key %08x will be deleted\n", SOS_POS(pos_obj)->key);
-				pos_ent = malloc(sizeof *pos_ent);
-				if (!pos_ent) {
-					sos_error("OOM\n");
-				} else {
-					pos_ent->pos = SOS_POS(pos_obj)->key;
-					strncpy(pos_ent->name, SOS_POS(pos_obj)->name,
-						SOS_INDEX_NAME_LEN);
-					LIST_INSERT_HEAD(&pos_list, pos_ent, entry);
-				}
-			}
-			ods_obj_put(pos_obj);
-		}
-	}
-	while (!LIST_EMPTY(&pos_list)) {
-		pos_ent = LIST_FIRST(&pos_list);
-		LIST_REMOVE(pos_ent, entry);
-		/* Get the index this pos entry is for */
-		sos_index_t idx = sos_index_open(sos, pos_ent->name);
-		if (!idx) {
-			sos_error("The index %s for pos %08x could not be opened.\n",
-				  pos_ent->name, pos_ent->pos);
-			free(pos_ent);
-			continue;
-		}
-		sos_iter_t iter = sos_index_iter_new(idx);
-		if (!iter) {
-			sos_error("An iterator for index %s could not be created, errno %d.\n",
-				  pos_ent->name, errno);
-			sos_index_close(idx, SOS_COMMIT_ASYNC);
-			free(pos_ent);
-			continue;
-		}
-		/* Put the SOS position */
-		sos_iter_pos_put(iter, pos_ent->pos);
-		sos_iter_free(iter);
-		sos_index_close(idx, SOS_COMMIT_ASYNC);
-		free(pos_ent);
-	}
-	ods_iter_delete(it);
 	rc = 0;
  err:
 	return rc;
@@ -649,7 +578,7 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 void sos_index_info(sos_index_t index, FILE *fp)
 {
 	ods_idx_info(index->idx, fp);
-	ods_info(ods_idx_ods(index->idx), fp);
+	ods_info(ods_idx_ods(index->idx), fp, ODS_ALL_INFO);
 }
 
 int print_schema(struct rbn *n, void *fp_, int level)
@@ -681,12 +610,12 @@ void sos_container_info(sos_t sos, FILE *fp)
 		fp = stdout;
 	rbt_traverse(&sos->schema_name_rbt, print_schema, fp);
 	ods_idx_info(sos->schema_idx, fp);
-	ods_info(ods_idx_ods(sos->schema_idx), fp);
-	ods_info(sos->schema_ods, fp);
+	ods_info(ods_idx_ods(sos->schema_idx), fp, ODS_ALL_INFO);
+	ods_info(sos->schema_ods, fp, ODS_ALL_INFO);
 	sos_part_t part;
 	TAILQ_FOREACH(part, &sos->part_list, entry) {
 		if (part->obj_ods)
-			ods_info(part->obj_ods, fp);
+			ods_info(part->obj_ods, fp, ODS_ALL_INFO);
 	}
 }
 
@@ -796,7 +725,7 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 
 	/* There should be no objects on the active list */
 	if (!LIST_EMPTY(&sos->obj_list))
-		sos_inuse_obj_info(sos, stderr);
+		sos_inuse_obj_info(sos, __ods_log_fp);
 
 	/* Iterate through the object free list and free all the objects */
 	while (!LIST_EMPTY(&sos->obj_free_list)) {
@@ -820,6 +749,8 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		ods_idx_close(sos->idx_idx, flags);
 	if (sos->idx_ods)
 		ods_close(sos->idx_ods, flags);
+	if (sos->pos_udata)
+		ods_obj_put(sos->pos_udata);
 	if (sos->pos_idx)
 		ods_idx_close(sos->pos_idx, flags);
 	if (sos->pos_ods)
@@ -845,6 +776,88 @@ int __sos_schema_name_cmp(void *a, void *b)
 static int schema_id_cmp(void *a, void *b)
 {
 	return *(uint32_t *)a - *(uint32_t *)b;
+}
+
+
+/* Iterates over pos objects in the container and deletes objects that
+ * are older than the lifetime threshold
+ */
+static void __pos_cleanup(sos_t sos)
+{
+	int rc;
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	struct pos_ent_s *pos_ent;
+	int pos_keep_time = 60;
+	char *pos_keep = getenv("SOS_POS_KEEP_TIME");
+	if (pos_keep) {
+		pos_keep_time = atoi(pos_keep);
+		if (pos_keep_time <= 0)
+			pos_keep_time = 60;
+	}
+
+	/* Best effort clean-up any position objects older than an hour */
+	ods_iter_t it = ods_iter_new(sos->pos_idx);
+	if (!it)
+		return;
+
+	LIST_HEAD(pos_ent_list, pos_ent_s) pos_list =
+		LIST_HEAD_INITIALIZER(pos_list);
+
+	ods_lock(sos->pos_ods, 0, NULL);
+	for (rc = ods_iter_begin(it); rc == 0; rc = ods_iter_next(it)) {
+		ods_idx_data_t data;
+		ods_obj_t pos_obj;
+		data = ods_iter_data(it);
+		pos_obj = ods_ref_as_obj(sos->pos_ods, data.uint64_[0]);
+		if (pos_obj) {
+			sos_debug("key %08x secs %d usecs %d\n",
+				  SOS_POS(pos_obj)->key,
+				  SOS_POS(pos_obj)->create_secs,
+				  SOS_POS(pos_obj)->create_usecs
+				  );
+			if ((tv.tv_sec - SOS_POS(pos_obj)->create_secs) > pos_keep_time) {
+				sos_debug("key %08x will be deleted\n", SOS_POS(pos_obj)->key);
+				pos_ent = malloc(sizeof *pos_ent);
+				if (!pos_ent) {
+					sos_error("OOM\n");
+				} else {
+					pos_ent->pos = SOS_POS(pos_obj)->key;
+					strncpy(pos_ent->name, SOS_POS(pos_obj)->name,
+						SOS_INDEX_NAME_LEN);
+					LIST_INSERT_HEAD(&pos_list, pos_ent, entry);
+				}
+			}
+			ods_obj_put(pos_obj);
+		}
+	}
+	while (!LIST_EMPTY(&pos_list)) {
+		pos_ent = LIST_FIRST(&pos_list);
+		LIST_REMOVE(pos_ent, entry);
+		/* Get the index this pos entry is for */
+		sos_index_t idx = sos_index_open(sos, pos_ent->name);
+		if (!idx) {
+			sos_error("The index %s for pos %08x could not be opened.\n",
+				  pos_ent->name, pos_ent->pos);
+			free(pos_ent);
+			continue;
+		}
+		sos_iter_t iter = sos_index_iter_new(idx);
+		if (!iter) {
+			sos_error("An iterator for index %s could not be created, errno %d.\n",
+				  pos_ent->name, errno);
+			sos_index_close(idx, SOS_COMMIT_ASYNC);
+			free(pos_ent);
+			continue;
+		}
+		/* Put the SOS position */
+		sos_iter_pos_put(iter, pos_ent->pos);
+		sos_iter_free(iter);
+		sos_index_close(idx, SOS_COMMIT_ASYNC);
+		free(pos_ent);
+	}
+	ods_iter_delete(it);
+	ods_unlock(sos->pos_ods, 0);
 }
 
 /**
@@ -988,6 +1001,9 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 		errno = rc;
 		goto err;
 	}
+
+	__pos_cleanup(sos);
+
 	pthread_mutex_lock(&cont_list_lock);
 	LIST_INSERT_HEAD(&cont_list, sos, entry);
 	pthread_mutex_unlock(&cont_list_lock);
@@ -1096,6 +1112,8 @@ int sos_container_stat(sos_t sos, struct stat *sb)
  */
 void sos_container_close(sos_t sos, sos_commit_t flags)
 {
+	__pos_cleanup(sos);
+
 	pthread_mutex_lock(&cont_list_lock);
 	LIST_REMOVE(sos, entry);
 	pthread_mutex_unlock(&cont_list_lock);
