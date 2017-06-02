@@ -2164,7 +2164,9 @@ static void *gc_thread_fn(void *arg)
 static void __attribute__ ((constructor)) ods_lib_init(void)
 {
 	const char *env;
-	pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
+
+	/* Set up the ODS log file pointer */
+	__ods_log_fp = stdout;
 	env = getenv("ODS_LOG_MASK");
 	if (env) {
 		ods_log_mask_set(atoi(env));
@@ -2176,10 +2178,13 @@ static void __attribute__ ((constructor)) ods_lib_init(void)
 				__ods_log_fp = stderr;
 		}
 	}
+
+	/* Instantiate the memory management thread */
 	env = getenv("ODS_GC_TIMEOUT");
 	if (env) {
 		gc_timeout = atoi(env);
 		if (gc_timeout <= 0)
 			gc_timeout = DEFAULT_GC_TIMEOUT;
 	}
+	pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
 }
