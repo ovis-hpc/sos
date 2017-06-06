@@ -190,6 +190,7 @@ static int ht_init(ods_t ods, const char *idx_type, const char *key_type, const 
 	UDATA(udata)->card = 0;
 	UDATA(udata)->dups = 0;
 	ods_obj_put(udata);
+	ods_obj_put(ht);
 	return 0;
 }
 
