@@ -187,6 +187,7 @@ int sos_index_new(sos_t sos, const char *name,
 	rc = ods_idx_create(tmp_path, sos->o_mode, idx_type, key_type, idx_args);
 	if (rc)
 		goto err_1;
+	ods_obj_put(idx_obj);
  out:
 	ods_unlock(sos->idx_ods, 0);
 	return rc;
