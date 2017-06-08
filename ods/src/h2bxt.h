@@ -16,7 +16,6 @@
 #include <ods/rbt.h>
 #include "ods_idx_priv.h"
 #include "fnv_hash.h"
-#include "bxt.h"
 
 #pragma pack(4)
 
@@ -50,9 +49,17 @@ typedef struct h2bxt_iter {
 	ods_iter_t iter_table[0];
 } *h2bxt_iter_t;
 
+typedef struct h2bxt_pos_s {
+	uint32_t dir;
+	uint32_t bxt_iter_idx;	/* index into h2bxt_iter.iter_table */
+	struct ods_pos_s bxt_iter_pos; /* pos in underlying bxt index */
+} *h2bxt_pos_t;
+
+#define H2BXT_EXTEND_SIZE 65536
 #define H2BXT_SIGNATURE "H2BXTREE"
 #pragma pack()
 
 #define H2UDATA(_o_) ODS_PTR(struct h2bxt_udata *, _o_)
+#define POS(_o_) ODS_PTR(h2bxt_pos_t, _o_)
 
 #endif

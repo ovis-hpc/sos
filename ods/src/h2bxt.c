@@ -571,6 +571,24 @@ static int h2bxt_iter_end(ods_iter_t oi)
 
 static ods_idx_data_t NULL_DATA;
 
+static iter_entry_t h2bxt_iter_entry_fwd(ods_iter_t oi)
+{
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	struct rbn *rbn = rbt_min(&iter->next_tree);
+	if (!rbn)
+		return NULL;
+	return container_of(rbn, struct iter_entry_s, rbn);
+}
+
+static iter_entry_t h2bxt_iter_entry_rev(ods_iter_t oi)
+{
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	struct rbn *rbn = rbt_max(&iter->next_tree);
+	if (!rbn)
+		return NULL;
+	return container_of(rbn, struct iter_entry_s, rbn);
+}
+
 /*
  * Return the min valued key in the rbt of the iterator
  */
@@ -736,6 +754,7 @@ static int h2bxt_iter_find_lub(ods_iter_t oi, ods_key_t key)
 	iter->dir = H2BXT_ITER_FWD;
 
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+		ods_iter_flags_set(iter->iter_table[bkt], oi->flags);
 		if (ods_iter_find_lub(iter->iter_table[bkt], key))
 			continue;
 		rv = 0;
@@ -759,6 +778,7 @@ static int h2bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
 	iter->dir = H2BXT_ITER_REV;
 
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+		ods_iter_flags_set(iter->iter_table[bkt], oi->flags);
 		if (ods_iter_find_glb(iter->iter_table[bkt], key))
 			continue;
 		rv = 0;
@@ -890,27 +910,146 @@ static int h2bxt_iter_prev(ods_iter_t oi)
 	return 0;
 }
 
-#define POS_PAD 0x48324258 /* 'H2BX' */
-
-struct h2bxt_pos_s {
-	uint32_t pad;
-	uint32_t ent;
-	ods_ref_t rec_ref;
-};
-
-static int h2bxt_iter_pos_set(ods_iter_t oi, const ods_pos_t pos_)
+static int h2bxt_iter_pos_put(ods_iter_t oi, ods_pos_t pos)
 {
+	h2bxt_t t = oi->idx->priv;
+	uint32_t ht_idx;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	ods_obj_t pos_obj = ods_ref_as_obj(oi->idx->ods, pos->ref);
+	if (!pos_obj)
+		return ENOMEM;
+	ht_idx = POS(pos_obj)->bxt_iter_idx;
+	if (ht_idx < t->udata->table_size)
+		(void)ods_iter_pos_put(iter->iter_table[ht_idx],
+				       &POS(pos_obj)->bxt_iter_pos);
+	ods_obj_delete(pos_obj);
+	ods_obj_put(pos_obj);
 	return 0;
 }
 
-static int h2bxt_iter_pos_get(ods_iter_t oi, ods_pos_t pos_)
+static int h2bxt_iter_pos_set(ods_iter_t oi, const ods_pos_t pos)
 {
+	h2bxt_t t = oi->idx->priv;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	ods_key_t key;
+	iter_entry_t ent;
+	uint32_t ht_idx;
+	int i, rc = EINVAL;
+	ods_obj_t pos_obj;
+	int (*iter_find_fn)(ods_iter_t oi, ods_key_t key);
+
+	pos_obj = ods_ref_as_obj(oi->idx->ods, pos->ref);
+	if (!pos_obj)
+		return rc;
+
+	/* Verify the hash table index */
+	ht_idx = POS(pos_obj)->bxt_iter_idx;
+	if (ht_idx >= t->udata->table_size)
+		goto err_0;
+
+	/* Verify the direction */
+	switch (POS(pos_obj)->dir) {
+	case H2BXT_ITER_FWD:
+		iter_find_fn = ods_iter_find_lub;
+		break;
+	case H2BXT_ITER_REV:
+		iter_find_fn = ods_iter_find_glb;
+		break;
+	default:
+		goto err_0;
+	}
+
+	/* clean-up the rbt and reconstruct it from the given positions */
+	iter_cleanup(t, iter);
+
+	rc = ods_iter_pos_set(iter->iter_table[ht_idx],
+			      &POS(pos_obj)->bxt_iter_pos);
+	if (rc)
+		goto err_0;
+
+	ent = alloc_ent(iter, ht_idx);
+	if (!ent) {
+		rc = ENOMEM;
+		goto err_1;
+	}
+	rbt_ins(&iter->next_tree, &ent->rbn);
+
+	key = ods_iter_key(iter->iter_table[ht_idx]);
+	if (!key) {
+		rc = errno;
+		goto err_1;
+	}
+
+	for (i = 0; i < t->udata->table_size; i++) {
+		if (ht_idx == i)
+			continue;
+		rc = iter_find_fn(iter->iter_table[i], key);
+		if (rc) {
+			if (rc == ENOENT)
+				continue;
+			goto err_2;
+		}
+		ent = alloc_ent(iter, i);
+		if (!ent) {
+			rc = ENOMEM;
+			goto err_2;
+		}
+		rbt_ins(&iter->next_tree, &ent->rbn);
+	}
+	iter->dir = POS(pos_obj)->dir;
+	ods_obj_put(key);
+	ods_obj_delete(pos_obj);
+	ods_obj_put(pos_obj);
 	return 0;
+ err_2:
+	ods_obj_put(key);
+ err_1:
+	iter_cleanup(t, iter);
+ err_0:
+	ods_obj_delete(pos_obj);
+	ods_obj_put(pos_obj);
+	return rc;
 }
 
-static int h2bxt_iter_pos_put(ods_iter_t oi, ods_pos_t pos_)
+static int h2bxt_iter_pos_get(ods_iter_t oi, ods_pos_t pos)
 {
-	return ENOSYS;
+	iter_entry_t ent;
+	ods_obj_t pos_obj;
+	h2bxt_t t = oi->idx->priv;
+	h2bxt_iter_t iter = (typeof(iter))oi;
+	int rc;
+	size_t sz = sizeof(struct h2bxt_pos_s);
+
+	switch (iter->dir) {
+	case H2BXT_ITER_FWD:
+		ent = h2bxt_iter_entry_fwd(oi);
+		break;
+	case H2BXT_ITER_REV:
+		ent = h2bxt_iter_entry_rev(oi);
+		break;
+	default:
+		return EINVAL;
+	}
+	if (!ent)
+		return ENOENT;
+	pos_obj = ods_obj_alloc_extend(t->ods_idx->ods, sz, H2BXT_EXTEND_SIZE);
+	if (!pos_obj)
+		return ENOMEM;
+
+	rc = ods_iter_pos_get(iter->iter_table[ent->bkt],
+			      &POS(pos_obj)->bxt_iter_pos);
+	if (rc)
+		goto err_0;
+
+	POS(pos_obj)->dir = iter->dir;
+	POS(pos_obj)->bxt_iter_idx = ent->bkt;
+	pos->ref = ods_obj_ref(pos_obj);
+	ods_obj_put(pos_obj);
+	return 0;
+ err_0:
+	ods_obj_delete(pos_obj);
+	ods_obj_put(pos_obj);
+	return rc;
 }
 
 static int h2bxt_iter_entry_delete(ods_iter_t oi, ods_idx_data_t *data)
