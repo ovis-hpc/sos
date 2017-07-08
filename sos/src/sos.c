@@ -854,7 +854,7 @@ static void __pos_cleanup(sos_t sos)
 			continue;
 		}
 		/* Put the SOS position */
-		sos_iter_pos_put(iter, pos_ent->pos);
+		sos_iter_pos_put_no_lock(iter, pos_ent->pos);
 		sos_iter_free(iter);
 		sos_index_close(idx, SOS_COMMIT_ASYNC);
 		free(pos_ent);

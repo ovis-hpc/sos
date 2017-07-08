@@ -379,23 +379,13 @@ int sos_iter_pos_set(sos_iter_t iter, const sos_pos_t pos)
 	return rc;
 }
 
-/**
- * \brief Indicates to the iterator that this position is no longer in-use
- *
- * \param i The iterator handle
- * \param pos The iterator cursor position
- * \retval 0 Success
- * \retval ENOENT The iterator position is invalid
- */
-int sos_iter_pos_put(sos_iter_t iter, const sos_pos_t pos)
+int sos_iter_pos_put_no_lock(sos_iter_t iter, const sos_pos_t pos)
 {
 	ods_obj_t pos_obj;
 	sos_t sos = iter->index->sos;
 	int rc;
 	ods_idx_data_t pos_data;
 	SOS_KEY(pos_key);
-
-	ods_lock(sos->pos_ods, 0, NULL);
 
 	/* Look up the position */
 	ods_key_set(pos_key, &pos, sizeof(sos_pos_t));
@@ -427,7 +417,23 @@ int sos_iter_pos_put(sos_iter_t iter, const sos_pos_t pos)
  out_1:
 	ods_idx_delete(sos->pos_idx, pos_key, &pos_data);
  out_0:
-	ods_unlock(sos->pos_ods, 0);
+	return rc;
+}
+
+/**
+ * \brief Indicates to the iterator that this position is no longer in-use
+ *
+ * \param i The iterator handle
+ * \param pos The iterator cursor position
+ * \retval 0 Success
+ * \retval ENOENT The iterator position is invalid
+ */
+int sos_iter_pos_put(sos_iter_t iter, const sos_pos_t pos)
+{
+	int rc;
+	ods_lock(iter->index->sos->pos_ods, 0, NULL);
+	rc = sos_iter_pos_put_no_lock(iter, pos);
+	ods_unlock(iter->index->sos->pos_ods, 0);
 	return rc;
 }
 
