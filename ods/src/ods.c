@@ -429,7 +429,7 @@ static void dump_maps()
 	LIST_FOREACH(ods, &ods_list, entry) {
 		ods_info(ods, __ods_log_fp, ODS_ALL_INFO);
 	}
-	pthread_mutex_lock(&ods_list_lock);
+	pthread_mutex_unlock(&ods_list_lock);
 }
 /*
  * Must be called with the ODS lock held. The loff parameter specifies
