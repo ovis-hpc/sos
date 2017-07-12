@@ -184,7 +184,7 @@ static inline ods_map_t map_get(ods_map_t map)
 
 static void *ref_to_ptr(ods_t ods, uint64_t ref, uint64_t *ref_sz, ods_map_t *map)
 {
-	if (!ref)
+	if (!ref || !ods)
 		return NULL;
 
 	*ref_sz = ref_size(ods, ref);
@@ -466,8 +466,11 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	}
 
 	map = calloc(1, sizeof *map);
-	if (!map)
+	if (!map) {
+		ods_lerror("Memory allocation failure in %s for %d bytes\n",
+			   __func__, sizeof *map);
 		goto err_0;
+	}
 	map->ods = ods;
 	map->refcount = 1;
 
@@ -487,6 +490,8 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 		       MAP_FILE | MAP_SHARED, /* | MAP_POPULATE, */
 		       ods->obj_fd, map_off);
 	if (obj_map == MAP_FAILED) {
+		ods_lerror("Map failure for %zu bytes in %s on fd %d\n",
+			   map_len, ods->path, ods->obj_fd);
 		dump_maps();
 		goto err_1;
 	}
@@ -932,17 +937,12 @@ static ods_obj_t obj_new(ods_t ods)
 		obj = LIST_FIRST(&ods->obj_free_list);
 		LIST_REMOVE(obj, entry);
 	} else {
-		ods_atomic_inc(&ods->obj_count);
-#if 1
 		obj = calloc(1, sizeof *obj);
-#else
-		obj = malloc(sizeof *obj);
-#endif
+		if (obj) {
+			obj->ods = ods;
+			ods_atomic_inc(&ods->obj_count);
+		}
 	}
-#if 0
-	obj->alloc_func = __builtin_return_address(2);
-	obj->alloc_line = 0;
-#endif
 	return obj;
 }
 
@@ -1030,7 +1030,7 @@ static ods_obj_t _ref_as_obj_with_lock(ods_t ods, ods_ref_t ref)
 ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref, const char *func, int line)
 {
 	ods_obj_t obj;
-	if (!ref)
+	if (!ref || !ods)
 		return NULL;
 
 	__ods_lock(ods);
@@ -1048,7 +1048,7 @@ ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref, const char *func, int line)
 	obj->alloc_func = func;
 	return obj;
  err_1:
-	ods_lerror("Newly created object at ref %p could be initialized errno %d",
+	ods_lerror("Newly created object at ref %p could be initialized errno %d\n",
 		   (void *)ref, errno);
 	LIST_INSERT_HEAD(&obj->ods->obj_free_list, obj, entry);
  err_0:
@@ -1824,6 +1824,9 @@ void ods_close(ods_t ods, int flags)
 	LIST_REMOVE(ods, entry);
 
 	ods_commit(ods, flags);
+	pgt_unmap(ods);
+	if (ods->lck_table)
+		munmap(ods->lck_table, ODS_PAGE_SIZE);
 	close(ods->pg_fd);
 	close(ods->obj_fd);
 	free(ods->path);
