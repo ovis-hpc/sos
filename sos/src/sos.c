@@ -925,8 +925,10 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	sos->schema_count = 0;
 
 	rc = __sos_config_init(sos);
-	if (rc)
+	if (rc) {
+		sos_error("Error %d initializing configuration on open of %s\n", errno, path_arg);
 		goto err;
+	}
 
 	/* Open the ODS containing the Index objects */
 	sprintf(tmp_path, "%s/.__index", path);
@@ -938,6 +940,11 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	sos->idx_udata = ods_get_user_data(sos->idx_ods);
 	if (SOS_IDXDIR_UDATA(sos->idx_udata)->signature != SOS_IDXDIR_SIGNATURE) {
 		errno = EINVAL;
+		sos_error("Database %s index directory is not valid. "
+			  "Expected a signature of %llx, got %llx\n",
+			  path_arg,
+			  SOS_IDXDIR_SIGNATURE,
+			  SOS_IDXDIR_UDATA(sos->idx_udata)->signature);
 		ods_obj_put(sos->idx_udata);
 		goto err;
 	}
@@ -946,24 +953,41 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	sprintf(tmp_path, "%s/.__index_idx", path);
 	sos->idx_idx = ods_idx_open(tmp_path, sos->o_perm);
 	if (!sos->idx_idx) {
+		sos_error("Error %d opening index index in open of %s\n", errno, path_arg);
 		ods_obj_put(sos->idx_udata);
 		goto err;
 	}
 
 	/* Open the ODS containing the Position objects */
 	rc = __open_pos_info(sos, tmp_path, path);
-	if (rc)
+	if (rc) {
+		sos_error("Error %d opening the pos container %s\n", rc, path);
 		goto err;
+	}
 
 	/* Open the ODS containing the schema objects */
 	sprintf(tmp_path, "%s/.__schemas", path);
 	sos->schema_ods = ods_open(tmp_path, sos->o_perm);
-	if (!sos->schema_ods)
+	if (!sos->schema_ods) {
+		sos_error("Error %d opening schema ODS in open of %s\n", errno, path_arg);
 		goto err;
+	}
 	ods_obj_t udata = ods_get_user_data(sos->schema_ods);
-	if ((SOS_SCHEMA_UDATA(udata)->signature != SOS_SCHEMA_SIGNATURE)
-	    || (SOS_SCHEMA_UDATA(udata)->version != SOS_LATEST_VERSION)) {
+	if ((SOS_SCHEMA_UDATA(udata)->signature != SOS_SCHEMA_SIGNATURE)) {
+		errno = EINVAL;
+		sos_error("Schema ODS in %s is corrupted expected %llX, got %llx\n", path_arg,
+			  SOS_SCHEMA_SIGNATURE,
+			  SOS_SCHEMA_UDATA(udata)->signature);
+		ods_obj_put(udata);
+		goto err;
+	}
+
+	if (SOS_SCHEMA_UDATA(udata)->version != SOS_LATEST_VERSION) {
 		errno = EPROTO;
+		sos_error("Schema ODS in %s is an unsupported version expected %llX, got %llx\n",
+			  path_arg,
+			  SOS_LATEST_VERSION,
+			  SOS_SCHEMA_UDATA(udata)->version);
 		ods_obj_put(udata);
 		goto err;
 	}
