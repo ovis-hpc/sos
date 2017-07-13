@@ -1616,8 +1616,8 @@ ods_obj_t _ods_obj_alloc_extend(ods_t ods, size_t sz, size_t extend_sz, const ch
 	ods_obj_t obj = _ods_obj_alloc(ods, sz, func, line);
 	if (!obj) {
 		extend_sz = (sz < extend_sz ? extend_sz : ODS_ROUNDUP(sz, ODS_PAGE_SIZE));
-		ods_extend(ods, ods_size(ods) + extend_sz);
-		obj = _ods_obj_alloc(ods, sz, func, line);
+		if (0 == ods_extend(ods, ods_size(ods) + extend_sz))
+			obj = _ods_obj_alloc(ods, sz, func, line);
 	}
 	return obj;
 }
