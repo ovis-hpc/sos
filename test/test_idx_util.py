@@ -4,6 +4,7 @@ import logging
 import unittest
 import shutil
 import struct
+import errno
 from sosdb import Sos as sos
 
 logger = logging.getLogger(__name__)
@@ -255,3 +256,49 @@ class TestIndexBase(object):
             obj2 = itr2.item()
             self.assertIsNotNone(obj2)
             self.assertEqual(obj[:], obj2[:])
+
+    def test_iter_pos_set_cleanup(self):
+        poss = []
+        for count in range(0, 1):
+            for attr in self.schema:
+                itr = sos.AttrIter(attr)
+                self.assertTrue(itr.begin())
+                self.assertTrue(itr.next())
+                self.assertTrue(itr.next())
+                pos = itr.get_pos()
+                self.assertIsNotNone(pos)
+                poss.append([itr, pos])
+
+        # Set the positions
+        for pos in poss:
+            rc = pos[0].set_pos(pos[1])
+            self.assertEqual(rc, 0)
+
+        # Confirm that the positions are now invalid (i.e. single use)
+        for pos in poss:
+            rc = pos[0].set_pos(pos[1])
+            self.assertEqual(rc, errno.ENOENT)
+
+    def test_iter_pos_put_cleanup(self):
+        poss = []
+        for count in range(0, 1):
+            for attr in self.schema:
+                itr = sos.AttrIter(attr)
+                self.assertTrue(itr.begin())
+                self.assertTrue(itr.next())
+                self.assertTrue(itr.next())
+                pos = itr.get_pos()
+                self.assertIsNotNone(pos)
+                poss.append([itr, pos])
+
+        # Put all the positions
+        for pos in poss:
+            rc = pos[0].put_pos(pos[1])
+            self.assertEqual(rc, 0)
+
+        # Confirm that the positions are invalid after put
+        for pos in poss:
+            rc = pos[0].set_pos(pos[1])
+            self.assertEqual(rc, errno.ENOENT)
+
+

@@ -297,6 +297,13 @@ struct pos_ent_s {
 	LIST_ENTRY(pos_ent_s) entry;
 };
 
+struct idx_ent_s {
+	char name[SOS_INDEX_NAME_LEN];
+	sos_index_t idx;
+	sos_iter_t iter;
+	struct rbn rbn;
+};
+
 static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
 {
 	int rc = 0;
@@ -788,9 +795,12 @@ static int schema_id_cmp(void *a, void *b)
 static void __pos_cleanup(sos_t sos)
 {
 	int rc;
+	struct rbt index_rbt;
+	struct rbn *rbn;
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	struct pos_ent_s *pos_ent;
+	struct idx_ent_s *idx_ent;
 	int pos_keep_time = 60;
 	char *pos_keep = getenv("SOS_POS_KEEP_TIME");
 	if (pos_keep) {
@@ -823,7 +833,7 @@ static void __pos_cleanup(sos_t sos)
 				sos_debug("key %08x will be deleted\n", SOS_POS(pos_obj)->key);
 				pos_ent = malloc(sizeof *pos_ent);
 				if (!pos_ent) {
-					sos_error("OOM\n");
+					sos_error("OOM @ %s:%d\n", __func__, __LINE__);
 				} else {
 					pos_ent->pos = SOS_POS(pos_obj)->key;
 					strncpy(pos_ent->name, SOS_POS(pos_obj)->name,
@@ -834,30 +844,54 @@ static void __pos_cleanup(sos_t sos)
 			ods_obj_put(pos_obj);
 		}
 	}
+	rbt_init(&index_rbt, __sos_schema_name_cmp);
 	while (!LIST_EMPTY(&pos_list)) {
 		pos_ent = LIST_FIRST(&pos_list);
 		LIST_REMOVE(pos_ent, entry);
-		/* Get the index this pos entry is for */
-		sos_index_t idx = sos_index_open(sos, pos_ent->name);
-		if (!idx) {
-			sos_error("The index %s for pos %08x could not be opened.\n",
-				  pos_ent->name, pos_ent->pos);
-			free(pos_ent);
-			continue;
+		/* See if we have the index open already */
+		rbn = rbt_find(&index_rbt, pos_ent->name);
+		if (!rbn) {
+			idx_ent = malloc(sizeof *idx_ent);
+			if (!idx_ent) {
+				sos_error("OOM @ %s:%d\n", __func__, __LINE__);
+				continue;
+			}
+			/* Get the index this pos entry is for */
+			sos_index_t idx = sos_index_open(sos, pos_ent->name);
+			if (!idx) {
+				sos_error("The index %s for pos %08x could not be opened.\n",
+					  pos_ent->name, pos_ent->pos);
+				free(pos_ent);
+				continue;
+			}
+			sos_iter_t iter = sos_index_iter_new(idx);
+			if (!iter) {
+				sos_error("An iterator for index %s could not be created, errno %d.\n",
+					  pos_ent->name, errno);
+				sos_index_close(idx, SOS_COMMIT_ASYNC);
+				free(pos_ent);
+				continue;
+			}
+			strcpy(idx_ent->name, pos_ent->name);
+			idx_ent->idx = idx;
+			idx_ent->iter = iter;
+			rbn_init(&idx_ent->rbn, idx_ent->name);
+			rbt_ins(&index_rbt, &idx_ent->rbn);
+			rbn = &idx_ent->rbn;
 		}
-		sos_iter_t iter = sos_index_iter_new(idx);
-		if (!iter) {
-			sos_error("An iterator for index %s could not be created, errno %d.\n",
-				  pos_ent->name, errno);
-			sos_index_close(idx, SOS_COMMIT_ASYNC);
-			free(pos_ent);
-			continue;
-		}
+		idx_ent = container_of(rbn, struct idx_ent_s, rbn);
 		/* Put the SOS position */
-		sos_iter_pos_put_no_lock(iter, pos_ent->pos);
-		sos_iter_free(iter);
-		sos_index_close(idx, SOS_COMMIT_ASYNC);
+		sos_iter_pos_put_no_lock(idx_ent->iter, pos_ent->pos);
 		free(pos_ent);
+	}
+	rbn = rbt_min(&index_rbt);
+	while (rbn) {
+		idx_ent = container_of(rbn, struct idx_ent_s, rbn);
+		sos_iter_free(idx_ent->iter);
+		sos_index_close(idx_ent->idx, SOS_COMMIT_ASYNC);
+		rbt_del(&index_rbt, rbn);
+		free(idx_ent);
+		rbn = rbt_min(&index_rbt);
 	}
 	ods_iter_delete(it);
 	ods_unlock(sos->pos_ods, 0);

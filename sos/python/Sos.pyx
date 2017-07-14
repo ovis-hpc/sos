@@ -973,6 +973,18 @@ cdef class AttrIter(SosObject):
             return sos_iter_pos_set(self.c_iter, c_pos)
         return rc
 
+    def put_pos(self, pos_str):
+        """Puts (deletes) the specified position
+
+        Positional Parameters:
+        -- String representation of the iterator position
+        """
+        cdef sos_pos_t c_pos
+        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
+        if rc == 0:
+            return sos_iter_pos_put(self.c_iter, c_pos)
+        return rc
+
     def __del__(self):
         if self.c_iter != NULL:
             sos_iter_free(self.c_iter)
@@ -1362,6 +1374,18 @@ cdef class Filter(object):
         cdef int rc = sos_pos_from_str(&c_pos, pos_str)
         if rc == 0:
             return sos_filter_pos_set(self.c_filt, c_pos)
+        return rc
+
+    def put_pos(self, pos_str):
+        """Puts the specified position string
+
+        Positional Parameters:
+        -- String representation of the iterator position
+        """
+        cdef sos_pos_t c_pos
+        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
+        if rc == 0:
+            return sos_filter_pos_put(self.c_filt, c_pos)
         return rc
 
     def as_ndarray(self, size_t count, shape=None, order='attribute'):
