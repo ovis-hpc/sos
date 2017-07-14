@@ -287,34 +287,34 @@ int sos_iter_pos_get(sos_iter_t iter, sos_pos_t *pos)
 
 int sos_pos_from_str(sos_pos_t *pos, const char *str)
 {
-        const char *src = str;
+	const char *src = str;
 	unsigned char *dst = (unsigned char *)pos;
-        int i;
-        for (i = 0; i < sizeof(*pos); i++) {
-                int rc = sscanf(src, "%02hhX", dst);
-                if (rc != 1)
-                        return EINVAL;
-                src += 2; dst++;
-        }
-        return 0;
+	int i;
+	for (i = 0; i < sizeof(*pos); i++) {
+		int rc = sscanf(src, "%02hhX", dst);
+		if (rc != 1)
+			return EINVAL;
+		src += 2; dst++;
+	}
+	return 0;
 }
 
 const char *sos_pos_to_str(sos_pos_t pos)
 {
-        int i;
+	int i;
 	char *pos_str;
 	unsigned char *src = (unsigned char *)&pos;
 	char *dst = malloc((2 * sizeof(pos)) + 1);
 	if (!dst)
 		return NULL;
-        pos_str = dst;
-        for (i = 0; i < sizeof(pos); i++) {
-                sprintf(dst, "%02hhX", *src);
+	pos_str = dst;
+	for (i = 0; i < sizeof(pos); i++) {
+		sprintf(dst, "%02hhX", *src);
 		src += 1;
-                dst += 2;
-        }
+		dst += 2;
+	}
 	*dst = '\0';
-        return pos_str;
+	return pos_str;
 }
 
 void sos_pos_str_free(char *str)
