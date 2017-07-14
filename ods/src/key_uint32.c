@@ -66,11 +66,14 @@ static const char *get_doc(void)
 
 static int uint32_comparator(ods_key_t a, ods_key_t b)
 {
-	ods_key_value_t av = ods_key_value(a);
-	ods_key_value_t bv = ods_key_value(b);
-	assert(av->len == 4);
-	assert(bv->len == 4);
-	return (*(uint32_t*)av->value) - (*(uint32_t*)bv->value);
+	uint32_t av = *((uint32_t *)ods_key_value(a)->value);
+	uint32_t bv = *((uint32_t *)ods_key_value(b)->value);
+	if (av < bv)
+		return -1;
+	else if (av > bv)
+		return 1;
+	else
+		return 0;
 }
 
 static const char *to_str(ods_key_t key, char *sbuf, size_t len)
