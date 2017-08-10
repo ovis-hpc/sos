@@ -45,6 +45,7 @@
 
 #ifndef _ODS_IDX_PRIV_H_
 #define _ODS_IDX_PRIV_H_
+#include <stdarg.h>
 #include <stdlib.h>
 #include <ods/rbt.h>
 #include <ods/ods.h>
@@ -54,6 +55,10 @@ struct ods_idx_provider {
 	int (*init)(ods_t ods, const char *idx_type, const char *key_type, const char *args);
 	int (*open)(ods_idx_t idx);
 	void (*close)(ods_idx_t idx);
+	int (*lock)(ods_idx_t idx, struct timespec *wait);
+	void (*unlock)(ods_idx_t idx);
+	int (*rt_opts_set)(ods_idx_t idx, ods_idx_rt_opts_t opt, va_list ap);
+	ods_idx_rt_opts_t (*rt_opts_get)(ods_idx_t idx);
 	void (*commit)(ods_idx_t idx);
 	int (*insert)(ods_idx_t idx, ods_key_t uk, ods_idx_data_t data);
 	int (*visit)(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *ctxt);

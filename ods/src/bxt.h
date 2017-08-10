@@ -76,6 +76,7 @@ typedef struct bxt_s {
 	ods_obj_t udata_obj;
 	bxt_udata_t udata;
 	ods_idx_compare_fn_t comparator;
+	ods_idx_rt_opts_t rt_opts;	/* Run-time flags */
 	/*
 	 * The node_q keeps a Q of nodes for allocation.
 	 */

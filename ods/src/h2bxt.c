@@ -7,6 +7,7 @@
 /*
  * Author: Tom Tucker tom at ogc dot us
  */
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <limits.h>
@@ -17,15 +18,13 @@
 #include <assert.h>
 #include <libgen.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <ods/ods.h>
 #include <string.h>
 #include <time.h>
 #include "h2bxt.h"
 
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
-
-#define H2BXT_DEFAULT_ORDER		5
-#define H2BXT_DEFAULT_TABLE_SIZE	19
 
 #if 0
 void dump_node(h2bxt_t t, ods_idx_t idx, ods_obj_t n, int ent, int indent, FILE *fp)
@@ -149,7 +148,7 @@ static void print_info(ods_idx_t idx, FILE *fp)
 	fprintf(fp, "%*s : %d\n", 12, "Duplicates", 0);
 	fflush(fp);
 }
-
+static void *hash_root_fn(void *);
 static int h2bxt_open(ods_idx_t idx)
 {
 	char path_buf[PATH_MAX];
@@ -186,8 +185,13 @@ static int h2bxt_open(ods_idx_t idx)
 	/* Open each hash root */
 	for (i = 0; i < t->udata->table_size; i++) {
 		sprintf(path_buf, "%s/bkt_%d/%s", path, i, base);
-		t->idx_table[i] = ods_idx_open(path_buf, ODS_PERM_RW);
-		if (!t->idx_table[i]) {
+		t->idx_table[i].idx = ods_idx_open(path_buf, ODS_PERM_RW);
+		if (!t->idx_table[i].idx) {
+			rc = errno;
+			goto out;
+		}
+		t->idx_table[i].mq = mq_new(H2BXT_QUEUE_DEPTH, H2BXT_MAX_MSG_SIZE, 1);
+		if (!t->idx_table[i].mq) {
 			rc = errno;
 			goto out;
 		}
@@ -305,60 +309,143 @@ static void h2bxt_close(ods_idx_t idx)
 	int bkt;
 	assert(t);
 	idx->priv = NULL;
-	for (bkt = 0; bkt < t->udata->table_size; bkt++)
-		ods_idx_close(t->idx_table[bkt], ODS_COMMIT_ASYNC);
+	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+		t->idx_table[bkt].state = H2BXT_STATE_STOPPED;
+		if (t->idx_table[bkt].thread)
+			pthread_cancel(t->idx_table[bkt].thread);
+	}
+	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
+		if (t->idx_table[bkt].thread)
+			pthread_join(t->idx_table[bkt].thread, NULL);
+	}
 	ods_obj_put(t->udata_obj);
 	ods_idx_close(t->ods_idx, ODS_COMMIT_ASYNC);
 	free(t->idx_table);
 	free(t);
 }
 
+
+/** a - b */
+static double tv_diff(struct timeval *tv_a, struct timeval *tv_b)
+{
+	double a, b;
+	a = ((double)tv_a->tv_sec * 1000000.0) + (double)tv_a->tv_usec;
+	b = ((double)tv_b->tv_sec * 1000000.0) + (double)tv_b->tv_usec;
+	return a - b;
+}
+
+void *hash_root_fn(void *arg)
+{
+	struct h2bxt_idx_s *root = arg;
+	struct timeval tv_start, tv_end;
+	mq_t mq = root->mq;
+	mq_msg_t msg;
+
+	msg = mq_get_cons_msg(mq);
+ running:
+	if (!msg)
+		goto wait;
+
+	ods_idx_lock(root->idx, NULL);
+	gettimeofday(&tv_start, NULL);
+	while (msg) {
+		int rc = msg->msg_work_fn(mq, msg);
+		if (rc)
+			ods_lerror("Error %d processing work element.\n", rc);
+		mq_post_cons_msg(mq);
+		gettimeofday(&tv_end, NULL);
+		if (tv_diff(&tv_end, &tv_start) > H2BXT_DUTY_CYCLE)
+			break;
+		msg = mq_get_cons_msg(mq);
+	}
+	ods_idx_unlock(root->idx);
+	usleep(0);
+ wait:
+	msg = mq_get_cons_msg_wait(mq);
+	if (root->state == H2BXT_STATE_RUNNING)
+		goto running;
+
+	return NULL;
+}
+
 static uint64_t hash_key(h2bxt_t t, ods_key_t key)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	return t->hash_fn((const char *)kv->value, kv->len, t->udata->hash_seed) % t->udata->table_size;
+	return t->hash_fn((const char *)kv->value,
+			  kv->len,
+			  t->udata->hash_seed) % t->udata->table_size;
 }
 
-static int h2bxt_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *ctxt)
+int visit_fn(struct mq_s *mq, struct mq_msg_s *_msg)
 {
+	visit_msg_t msg = (visit_msg_t)_msg;
+	int rc = ods_idx_visit(msg->idx->idx, msg->key, msg->cb_fn, msg->ctxt);
+	if (msg->key->as.ptr != &msg->key_)
+		ods_obj_put(msg->key);
+	return rc;
+}
+
+static int h2bxt_visit(ods_idx_t idx, ods_key_t key,
+		       ods_visit_cb_fn_t cb_fn, void *ctxt)
+{
+	visit_msg_t visit_msg;
 	h2bxt_t t = idx->priv;
-	uint64_t hash = hash_key(t, key);
-	return ods_idx_visit(t->idx_table[hash], key, cb_fn, ctxt);
+	uint64_t bkt = hash_key(t, key);
+	size_t key_sz = ods_key_len(key);
+
+	if (0 == (t->rt_opts & ODS_IDX_OPT_VISIT_ASYNC))
+		return ods_idx_visit(t->idx_table[bkt].idx, key, cb_fn, ctxt);
+
+	visit_msg = (visit_msg_t)mq_get_prod_msg_wait(t->idx_table[bkt].mq);
+	visit_msg->hdr.msg_type = WQE_VISIT;
+	visit_msg->hdr.msg_work_fn = visit_fn;
+	visit_msg->hdr.msg_size = sizeof(*visit_msg);
+	visit_msg->idx = &t->idx_table[bkt];
+	if (key_sz > VISIT_KEY_SIZE) {
+		visit_msg->key = ods_key_malloc(key_sz);
+	} else {
+		visit_msg->key = ODS_OBJ_INIT(visit_msg->key_obj_, &visit_msg->key_, sizeof(visit_msg->key_));
+	}
+	ods_key_set(visit_msg->key, key->as.key->value, key->as.key->len);
+	visit_msg->cb_fn = cb_fn;
+	visit_msg->ctxt = ctxt;
+	mq_post_prod_msg(t->idx_table[bkt].mq);
+	return EINPROGRESS;
 }
 
 static int h2bxt_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 {
 	h2bxt_t t = idx->priv;
-	uint64_t hash = hash_key(t, key);
-	return ods_idx_update(t->idx_table[hash], key, data);
+	uint64_t bkt = hash_key(t, key);
+	return ods_idx_update(t->idx_table[bkt].idx, key, data);
 }
 
 static int h2bxt_find(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	h2bxt_t t = idx->priv;
 	uint64_t hash = hash_key(t, key);
-	return ods_idx_find(t->idx_table[hash], key, data);
+	return ods_idx_find(t->idx_table[hash].idx, key, data);
 }
 
 static int h2bxt_find_lub(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	h2bxt_t t = idx->priv;
 	uint64_t hash = hash_key(t, key);
-	return ods_idx_find_lub(t->idx_table[hash], key, data);
+	return ods_idx_find_lub(t->idx_table[hash].idx, key, data);
 }
 
 static int h2bxt_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	h2bxt_t t = idx->priv;
 	uint64_t hash = hash_key(t, key);
-	return ods_idx_find_glb(t->idx_table[hash], key, data);
+	return ods_idx_find_glb(t->idx_table[hash].idx, key, data);
 }
 
 static int h2bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 {
 	h2bxt_t t = idx->priv;
-	uint64_t hash = hash_key(t, new_key);
-	return ods_idx_insert(t->idx_table[hash], new_key, data);
+	uint64_t bkt = hash_key(t, new_key);
+	return ods_idx_insert(t->idx_table[bkt].idx, new_key, data);
 }
 
 static int h2bxt_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
@@ -371,12 +458,12 @@ static int h2bxt_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 	int rc = ENOENT;
 
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
-		rc = ods_idx_max(t->idx_table[bkt], &idx_key, &idx_data);
+		rc = ods_idx_max(t->idx_table[bkt].idx, &idx_key, &idx_data);
 		if (rc)
 			continue;
 		rc = 0;
 		if (max_key) {
-			if (ods_key_cmp(t->idx_table[bkt], idx_key, max_key) > 0) {
+			if (ods_key_cmp(t->idx_table[bkt].idx, idx_key, max_key) > 0) {
 				ods_obj_put(max_key);
 				max_key = idx_key;
 			} else {
@@ -405,12 +492,12 @@ static int h2bxt_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 	int rc = ENOENT;
 
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
-		rc = ods_idx_min(t->idx_table[bkt], &idx_key, &idx_data);
+		rc = ods_idx_min(t->idx_table[bkt].idx, &idx_key, &idx_data);
 		if (rc)
 			continue;
 		rc = 0;
 		if (min_key) {
-			if (ods_key_cmp(t->idx_table[bkt], idx_key, min_key) > 0) {
+			if (ods_key_cmp(t->idx_table[bkt].idx, idx_key, min_key) > 0) {
 				ods_obj_put(min_key);
 				min_key = idx_key;
 			} else {
@@ -433,7 +520,7 @@ static int h2bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	h2bxt_t t = idx->priv;
 	uint64_t hash = hash_key(t, key);
-	return ods_idx_delete(t->idx_table[hash], key, data);
+	return ods_idx_delete(t->idx_table[hash].idx, key, data);
 }
 
 typedef struct iter_entry_s {
@@ -491,7 +578,7 @@ static ods_iter_t h2bxt_iter_new(ods_idx_t idx)
 		return NULL;
 	rbt_init(&iter->next_tree, entry_cmp);
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
-		iter->iter_table[bkt] = ods_iter_new(t->idx_table[bkt]);
+		iter->iter_table[bkt] = ods_iter_new(t->idx_table[bkt].idx);
 		if (!iter->iter_table[bkt]) {
 			h2bxt_iter_delete((ods_iter_t)iter);
 			return NULL;
@@ -1068,7 +1155,7 @@ static void h2bxt_commit(ods_idx_t idx)
 	int bkt;
 	ods_idx_commit(t->ods_idx, ODS_COMMIT_SYNC);
 	for (bkt = 0; bkt < t->udata->table_size; bkt++)
-		ods_idx_commit(t->idx_table[bkt], ODS_COMMIT_SYNC);
+		ods_idx_commit(t->idx_table[bkt].idx, ODS_COMMIT_SYNC);
 }
 
 int h2bxt_stat(ods_idx_t idx, ods_idx_stat_t idx_sb)
@@ -1078,7 +1165,7 @@ int h2bxt_stat(ods_idx_t idx, ods_idx_stat_t idx_sb)
 	int bkt;
 	memset(idx_sb, 0, sizeof(*idx_sb));
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
-		ods_idx_stat(t->idx_table[bkt], &bkt_sb);
+		ods_idx_stat(t->idx_table[bkt].idx, &bkt_sb);
 		idx_sb->cardinality += bkt_sb.cardinality;
 		idx_sb->duplicates += bkt_sb.duplicates;
 		idx_sb->size += bkt_sb.size;
@@ -1086,11 +1173,59 @@ int h2bxt_stat(ods_idx_t idx, ods_idx_stat_t idx_sb)
 	return 0;
 }
 
+int h2bxt_rt_opts_set(ods_idx_t idx, ods_idx_rt_opts_t opt, va_list ap)
+{
+	h2bxt_t t = idx->priv;
+	int i, rc;
+
+	switch (opt) {
+	case ODS_IDX_OPT_MP_UNSAFE:
+		t->rt_opts |= opt;
+		for (i = 0; i < t->udata->table_size; i++)
+			ods_idx_rt_opts_set(t->idx_table[i].idx, opt);
+		break;
+	case ODS_IDX_OPT_VISIT_ASYNC:
+		t->rt_opts |= opt;
+		for (i = 0; i < t->udata->table_size; i++) {
+			ods_idx_rt_opts_set(t->idx_table[i].idx, opt);
+			t->idx_table[i].state = H2BXT_STATE_RUNNING;
+			rc = pthread_create(&t->idx_table[i].thread, NULL,
+					    hash_root_fn, &t->idx_table[i]);
+			if (rc) {
+				ods_lerror("Error %d creating async completion thread %d\n",
+					   errno, i);
+				goto err_0;
+			}
+		}
+		break;
+	default:
+		return EINVAL;
+	}
+	return 0;
+ err_0:
+	/* Kill all the threads and join */
+	for (i = 0; i < t->udata->table_size; i++)
+		t->idx_table[i].state = H2BXT_STATE_STOPPED;
+	for (i = 0; i < t->udata->table_size; i++) {
+		if (t->idx_table[i].thread)
+			pthread_join(t->idx_table[i].thread, NULL);
+	}
+	return ENOMEM;
+}
+
+ods_idx_rt_opts_t h2bxt_rt_opts_get(ods_idx_t idx)
+{
+	h2bxt_t t = idx->priv;
+	return t->rt_opts;
+}
+
 static struct ods_idx_provider h2bxt_provider = {
 	.get_type = h2bxt_get_type,
 	.init = h2bxt_init,
 	.open = h2bxt_open,
 	.close = h2bxt_close,
+	.rt_opts_set = h2bxt_rt_opts_set,
+	.rt_opts_get = h2bxt_rt_opts_get,
 	.commit = h2bxt_commit,
 	.insert = h2bxt_insert,
 	.visit = h2bxt_visit,

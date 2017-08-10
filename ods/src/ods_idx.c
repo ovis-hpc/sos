@@ -56,7 +56,7 @@
 #include <ods/ods_atomic.h>
 #include "ods_idx_priv.h"
 
-static pthread_spinlock_t ods_idx_lock;
+static pthread_spinlock_t __ods_idx_lock;
 
 struct ods_idx_type {
 	struct ods_idx_provider *provider;
@@ -110,7 +110,7 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 		return NULL;
 	sprintf(idx_classname, "%s:%s", type, key);
 
-	pthread_spin_lock(&ods_idx_lock);
+	pthread_spin_lock(&__ods_idx_lock);
 	rbn = rbt_find(&dylib_tree, (void *)idx_classname);
 	if (rbn) {
 		idx_class = container_of(rbn, struct ods_idx_class, rb_node);
@@ -146,7 +146,7 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 	rbt_ins(&dylib_tree, &idx_class->rb_node);
  out:
 	free(idx_classname);
-	pthread_spin_unlock(&ods_idx_lock);
+	pthread_spin_unlock(&__ods_idx_lock);
 	return idx_class;
 }
 
@@ -265,6 +265,36 @@ void ods_idx_close(ods_idx_t idx, int flags)
 		free(idx);
 	} else
 		ods_commit(idx->ods, flags);
+}
+
+int ods_idx_lock(ods_idx_t idx, struct timespec *wait)
+{
+	if (idx->idx_class->prv->lock)
+		return idx->idx_class->prv->lock(idx, wait);
+	return 0;
+
+}
+
+void ods_idx_unlock(ods_idx_t idx)
+{
+	if (idx->idx_class->prv->unlock)
+		return idx->idx_class->prv->unlock(idx);
+}
+
+int ods_idx_rt_opts_set(ods_idx_t idx, ods_idx_rt_opts_t opt, ...)
+{
+	va_list ap;
+	va_start(ap, opt);
+	if (idx->idx_class->prv->rt_opts_set)
+		return idx->idx_class->prv->rt_opts_set(idx, opt, ap);
+	return EINVAL;
+}
+
+ods_idx_rt_opts_t ods_idx_rt_opts_get(ods_idx_t idx)
+{
+	if (idx->idx_class->prv->rt_opts_get)
+		return idx->idx_class->prv->rt_opts_get(idx);
+	return (ods_idx_rt_opts_t)-1;
 }
 
 void ods_idx_commit(ods_idx_t idx, int flags)
@@ -527,7 +557,7 @@ void ods_idx_info(ods_idx_t idx, FILE *fp)
 
 static void __attribute__ ((constructor)) ods_idx_init(void)
 {
-	pthread_spin_init(&ods_idx_lock, 1);
+	pthread_spin_init(&__ods_idx_lock, 1);
 }
 
 static void __attribute__ ((destructor)) ods_idx_term(void)

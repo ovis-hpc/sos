@@ -26,14 +26,14 @@ lib_LTLIBRARIES += libidx_HTBL.la
 
 libidx_BXTREE_la_SOURCES = bxt.c bxt.h
 # libidx_BXTREE_la_CFLAGS = $(AM_CFLAGS)
-libidx_BXTREE_la_CFLAGS = $(AM_CFLAGS) -DBXT_THREAD_SAFE
+libidx_BXTREE_la_CFLAGS = $(AM_CFLAGS)
 # libidx_BXTREE_la_LDFLAGS = -pg
 libidx_BXTREE_la_LIBADD = libods.la
 lib_LTLIBRARIES += libidx_BXTREE.la
 
-libidx_H2BXT_la_SOURCES = h2bxt.c h2bxt.h
+libidx_H2BXT_la_SOURCES = h2bxt.c h2bxt.h mq.c mq.h
 #libidx_H2BXT_la_CFLAGS = $(AM_CFLAGS)
-libidx_H2BXT_la_CFLAGS = $(AM_CFLAGS) -DH2BXT_THREAD_SAFE
+libidx_H2BXT_la_CFLAGS = $(AM_CFLAGS)
 # libidx_H2BXT_la_LDFLAGS = -pg
 libidx_H2BXT_la_LIBADD = libods.la
 lib_LTLIBRARIES += libidx_H2BXT.la

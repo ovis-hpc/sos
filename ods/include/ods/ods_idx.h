@@ -152,6 +152,63 @@ int ods_idx_destroy(const char *path);
 ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm);
 
 /**
+ * \brief Set run-time index option
+ *
+ * Set options that affect the behavior of the index API.  Run-time
+ * options must be set one at a time after each call to
+ * ods_idx_open(), i.e. options are not persistent.  Some options have
+ * additional arguments.
+ *
+ * Set the ODS_IDX_OPT_MP_UNSAFE option to indicate that the
+ * application is responsible for ensuring that the index is
+ * multi-process safe (see the ods_idx_lock() function). By default,
+ * indices are MP Safe.
+ *
+ * \param idx The index handle
+ * \param opt The option id
+ * \param ... Some options have additional arguments
+ * \retval 0 The option was set successfully
+ * \retval EINVAL An invalid runtime option was specified
+ */
+#define ODS_IDX_OPT_MP_UNSAFE	1 /*! Index not multi-process safe */
+#define ODS_IDX_OPT_VISIT_ASYNC	2 /*! Make ods_idx_visit() asynchronous */
+typedef uint32_t ods_idx_rt_opts_t;
+int ods_idx_rt_opts_set(ods_idx_t idx, ods_idx_rt_opts_t opt, ...);
+
+/**
+ * \brief Return the index run-time property flags
+ * \param idx The index handle
+ * \returns A bitmask of runtime options that were set
+ */
+ods_idx_rt_opts_t ods_idx_rt_opts_get(ods_idx_t idx);
+
+/**
+ * \brief Lock the index
+ *
+ * Application call to explicitly lock an Index. This call should only
+ * be used if ODS_IDX_F_MP_SAFE has been set to False (0). If called
+ * and ODS_IDX_F_MP_SAFE is True (1), calls to ods_idx_ functions will
+ * deadlock.
+ *
+ * \param idx The index handle
+ * \param wait A timeout interval
+ * \retval 0 The lock is held
+ * \retval ETIMEDOUT The timeout period expired
+ * \retval EINVAL One or more of the arguments are invalid
+ */
+int ods_idx_lock(ods_idx_t idx, struct timespec *wait);
+
+/**
+ * \brief Unlock the index
+ *
+ * Application call to explicitly unlock an Index. This call should only
+ * be used if ODS_IDX_F_MP_SAFE has been set to False (0).
+ *
+ * \param idx The index handle
+ */
+void ods_idx_unlock(ods_idx_t idx);
+
+/**
  * \brief Close an index
  *
  * Close the ODS index store. If flags includes ODS_COMMIT_SYNC,
