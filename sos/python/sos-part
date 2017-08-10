@@ -47,6 +47,9 @@ if __name__ == "__main__":
     actions.add_argument("--export", metavar="DB-PATH",
                          help="Export a partitions contents to another database.")
 
+    parser.add_argument("--reindex", action="store_true",
+                         help="Add exported objects to all indices.")
+
     parser.add_argument("--location", metavar="PART-PATH",
                         help="Specifies the location of the partition. " \
                         "Used by the create and move actions.")
@@ -152,7 +155,7 @@ if __name__ == "__main__":
     if args.export:
         try:
             dst_sos = Sos.Container(args.export)
-            count = part.export(dst_sos)
+            count = part.export(dst_sos, reindex=args.reindex)
             if count < 0:
                 print("Error {0} encountered exporting objects".format(count))
             else:
