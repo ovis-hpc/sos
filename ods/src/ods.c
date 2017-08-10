@@ -379,7 +379,7 @@ int ods_lock(ods_t ods, int lock_id, struct timespec *wait)
 	assert(pgt);
 
 	if (lock_id < 0 || lock_id >= ODS_LOCK_CNT)
-		return -1;
+		return EINVAL;
 
 	lock = &pgt->lck_tbl[lock_id];
 	return __take_lock(lock, wait);
@@ -395,7 +395,7 @@ void ods_unlock(ods_t ods, int lock_id)
 		return;
 
 	lock = &pgt->lck_tbl[lock_id];
-	return __release_lock(lock);
+	__release_lock(lock);
 }
 
 static int __pgt_lock(ods_t ods)
@@ -431,6 +431,7 @@ static void dump_maps()
 	}
 	pthread_mutex_unlock(&ods_list_lock);
 }
+
 /*
  * Must be called with the ODS lock held. The loff parameter specifies
  * the offset in the file the map must include.
