@@ -280,7 +280,7 @@ cdef class Container(SosObject):
         return None
 
     def schema_by_id(self, id_):
-        cdef sos_schema_t c_schema = sos_schema_by_name(self.c_cont, id_)
+        cdef sos_schema_t c_schema = sos_schema_by_id(self.c_cont, id_)
         if c_schema != NULL:
             s = Schema()
             s.assign(c_schema)
@@ -1235,6 +1235,8 @@ cdef class Attr(SosObject):
             return 0
 
         c_iter = sos_attr_iter_new(self.c_attr)
+        if c_iter == NULL:
+            raise NotImplementedError("The attribute does not have an index")
         c_rc = sos_iter_end(c_iter)
         if c_rc:
             return None
@@ -1256,6 +1258,8 @@ cdef class Attr(SosObject):
             return 0
 
         c_iter = sos_attr_iter_new(self.c_attr)
+        if c_iter == NULL:
+            raise NotImplementedError("The attribute does not have an index")
         c_rc = sos_iter_begin(c_iter)
         if c_rc:
             return None
