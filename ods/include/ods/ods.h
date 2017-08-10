@@ -242,6 +242,21 @@ extern ods_obj_t _ods_obj_alloc_extend(ods_t ods, size_t sz, size_t extend_sz,
 extern ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line);
 #define ods_obj_malloc(sz) ods_obj_malloc(sz, __func__, __LINE__)
 
+#define ODS_OBJ_INIT(_o_, _data_, _sz_)		\
+	(					\
+	 (_o_).refcount = 0,			\
+	 (_o_).ods = NULL,			\
+	 (_o_).size = _sz_,			\
+	 (_o_).ref = 0,				\
+	 (_o_).as.ptr = _data_,			\
+	 (_o_).map = NULL,			\
+	 (_o_).thread = pthread_self(),		\
+	 (_o_).alloc_func = __func__,		\
+	 (_o_).alloc_line = __LINE__,		\
+	 (_o_).put_line = 0,			\
+	 (_o_).put_func = NULL,			\
+	 &(_o_))
+
 #define ODS_OBJ(_name_, _data_, _sz_)		\
 	struct ods_obj_s _name_ = {		\
 		.refcount = 0,			\
