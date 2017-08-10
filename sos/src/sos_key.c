@@ -196,7 +196,26 @@ int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
  */
 size_t sos_attr_key_size(sos_attr_t attr)
 {
-	return sos_index_key_size(attr->index);
+	sos_array_t join_ids;
+	sos_schema_t schema;
+	size_t size;
+	int i;
+
+	switch (sos_attr_type(attr)) {
+	case SOS_TYPE_JOIN:
+		schema = sos_attr_schema(attr);
+		join_ids = sos_attr_join_list(attr);
+		for (size = i = 0; i < join_ids->count; i++) {
+			sos_attr_t ja =
+				sos_schema_attr_by_id(schema, join_ids->data.uint32_[i]);
+			size += sos_attr_key_size(ja);
+		}
+		return size;
+	default:
+		if (attr->index)
+			return sos_index_key_size(attr->index);
+		return sos_attr_size(attr);
+	}
 }
 
 /**
@@ -327,7 +346,6 @@ int __sos_key_join_value(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_
 		return EINVAL;
 
 	kv = key->as.ptr;
-	kv->len = sos_attr_size(join_attr); /* join attr is a struct */
 	dst = kv->value;
 
 	for (idx = 0; idx <= join_idx; idx++) {
@@ -342,6 +360,7 @@ int __sos_key_join_value(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_
 			continue;
 		}
 		switch (sos_attr_type(attr)) {
+		case SOS_TYPE_TIMESTAMP:
 		case SOS_TYPE_UINT64:
 		case SOS_TYPE_INT64:
 		case SOS_TYPE_DOUBLE:

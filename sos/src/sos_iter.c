@@ -1122,6 +1122,7 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 	sos_attr_t filt_attr = sos_iter_attr(filt->iter);
 	int filt_attr_id = sos_attr_id(filt_attr);
 	int sup = 0;
+	size_t key_size;
 	SOS_KEY(key);
 
 	__sort_filter_conds_fwd(filt);
@@ -1132,7 +1133,8 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 		 * partially set inside the condition loop below
 		 */
 		ods_key_value_t kv = key->as.ptr;
-		memset(kv->value, 0, sos_attr_size(filt_attr));
+		kv->len = sos_attr_key_size(filt_attr);
+		memset(kv->value, 0, kv->len);
 	}
 
 	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
@@ -1246,7 +1248,8 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 		 * partially set inside the condition loop below
 		 */
 		ods_key_value_t kv = key->as.ptr;
-		memset(kv->value, 0xFF, sos_attr_size(filt_attr));
+		kv->len = sos_attr_key_size(filt_attr);
+		memset(kv->value, 0xFF, kv->len);
 	}
 
 	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
