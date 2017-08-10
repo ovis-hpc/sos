@@ -500,7 +500,78 @@ cdef class Schema(SosObject):
         self.c_next_attr = sos_schema_attr_next(self.c_next_attr)
         return a
 
-    def from_template(self, name, schema_def):
+    def from_template(self, name, template):
+        """Create a schema from a template specification
+
+        The template parameter is a python array of attribute
+        definitions. An attribute definition is a Python dictionary
+        object as follows:
+
+        {
+            "name" : <attribute-name-str>,
+            "type" : <type-str>,
+            "index" : <index-dict>
+        }
+
+        For example:
+
+        [
+            { "name" : "timestamp", "type" : "timestamp", "index" = {} },
+            { "name" : "component_id", "type" : "uint64" },
+            { "name" : "flits", "type" : "double" },
+            { "name" : "stalls", "type" : "double" },
+            { "name" : "comp_time", "type" : "join",
+              "join_attrs" : [ "component_id", "timestamp" ],
+              "index" : {} }
+        ]
+
+        The name entry specifies the name of the attribute in the
+        schema and must be unique within the schema.  The valid type
+        names are as follows:
+            - "INT16"
+            - "INT32"
+            - "INT64"
+            - "UINT16"
+            - "UINT32"
+            - "UINT64"
+            - "FLOAT"
+            - "DOUBLE",
+            - "LONG_DOUBLE"
+            - "TIMESTAMP"
+            - "OBJ"
+            - "STRUCT"
+            - "JOIN"
+            - "BYTE_ARRAY"
+            - "CHAR_ARRAY"
+            - "STRING"
+            - "INT16_ARRAY"
+            - "INT32_ARRAY"
+            - "INT64_ARRAY"
+            - "UINT16_ARRAY"
+            - "UINT32_ARRAY"
+            - "UINT64_ARRAY"
+            - "FLOAT_ARRAY"
+            - "DOUBLE_ARRAY"
+            - "LONG_DOUBLE_ARRAY"
+            - "OBJ_ARRAY"
+        Type names are not case sensitive.
+
+        If the type name is "JOIN", an additional attribute
+        "join_attrs" must be specified that indicates which attributes
+        are going to be joined. Attributes that are to be joined must
+        have been previously defined in the template.
+
+        The index entry is optional but if present, an index will be
+        associated with the attribute value. The contents of the
+        dictionary object argument to the index attribute specifies
+        optional features of the index. If it is empty, i.e. {}, the
+        defaults are used for the index.
+
+        Positional Arguments:
+        -- The schema name
+        -- The schema template
+
+        """
         cdef int rc
         cdef const char *idx_type = NULL
         cdef const char *idx_key = NULL
@@ -511,7 +582,7 @@ cdef class Schema(SosObject):
         self.c_schema = sos_schema_new(name)
         if self.c_schema == NULL:
             self.abort(ENOMEM)
-        for attr in schema_def:
+        for attr in template:
             if 'name' not in attr:
                 raise ValueError("The 'name' is missing from the attribute")
 
@@ -532,7 +603,8 @@ cdef class Schema(SosObject):
                 for attr_name in join_attrs:
                     join_args[rc] = <char *>attr_name
                     rc += 1
-                rc = sos_schema_attr_add(self.c_schema, attr['name'], t, <size_t>join_count, join_args)
+                rc = sos_schema_attr_add(self.c_schema, attr['name'],
+                                         t, <size_t>join_count, join_args)
             elif t == SOS_TYPE_STRUCT:
                 if 'size' not in attr:
                     raise ValueError("The type {0} must have a 'size'.".format(n))
@@ -542,7 +614,8 @@ cdef class Schema(SosObject):
                 rc = sos_schema_attr_add(self.c_schema, attr['name'], t, 0)
 
             if rc != 0:
-                raise ValueError("The attribute named {0} resulted in error {1}".format(attr['name'], rc))
+                raise ValueError("The attribute named {0} resulted in error {1}". \
+                                 format(attr['name'], rc))
 
             if 'index' in attr:
                 rc = sos_schema_index_add(self.c_schema, attr['name'])
@@ -567,30 +640,46 @@ cdef class Schema(SosObject):
                     self.abort(rc)
 
     def add(self, Container cont):
+        """Add the schema to the container
+
+        Positional Arguments:
+        -- The container handle
+        """
         cdef int rc
         rc = sos_schema_add(cont.c_cont, self.c_schema)
         if rc != 0:
             self.abort(rc)
 
     def attr_by_name(self, name):
+        """Returns the attribute from the schema
+
+        Positional Arguments:
+        -- The name of the attribute
+        """
         return Attr(self, attr_name=name)
 
     def attr_by_id(self, attr_id):
+        """Returns the attribute from the schema
+
+        Positional Arguments:
+        -- The attribute id
+        """
         return Attr(self, attr_id=attr_id)
 
     def attr_count(self):
+        """Returns the number of attributes in the schema"""
         return sos_schema_attr_count(self.c_schema)
 
     def schema_id(self):
+        """Returns the unique schema id"""
         return sos_schema_id(self.c_schema)
 
     def name(self):
+        """Returns the name of the schema"""
         return sos_schema_name(self.c_schema)
 
     def alloc(self):
-        """
-        Allocate a new object of this type in the container
-        """
+        """Allocate a new object of this type in the container"""
         cdef sos_obj_t c_obj = sos_obj_new(self.c_schema)
         if c_obj == NULL:
             self.abort()
@@ -1077,6 +1166,7 @@ cdef class Attr(SosObject):
             return self.attr_id() >= b.attr_id()
 
     def schema(self):
+        """Returns the schema for which this attribute is a member"""
         s = Schema()
         return s.assign(sos_attr_schema(self.c_attr))
 
@@ -1093,6 +1183,7 @@ cdef class Attr(SosObject):
         return sos_attr_type(self.c_attr)
 
     def type_name(self):
+        """Returns the type name of this attribute"""
         return sos_type_strs[sos_attr_type(self.c_attr)]
 
     def indexed(self):
@@ -1197,7 +1288,7 @@ cdef class Filter(object):
     it = Sos.Filter(ts)
     ```
 
-    An Filter iterates through an index and will skip objects that do
+    A Filter iterates through an index and will skip objects that do
     not match the conditions specified by the add_condition() method.
 
     ```python
@@ -1244,6 +1335,18 @@ cdef class Filter(object):
         that do not match all of the conditions are skipped by the
         iterator.
 
+        Conditions are evaluated in order based on the comparison type
+        as follows: FIRST, LAST, GT, GE, NE, EQ, LE, LT. This is
+        because objects are ordered from smallest to largest on the
+        specified index attribute.
+
+        The first condition on the index attribute is used to set the
+        initial position for the iteration.  Note that if SOS_COND_EQ,
+        SOS_COND_LT or SOS_COND_LE is specified alone, iteration is
+        only possible backwards. If the intent is to return all
+        objects less than a particular value, then
+        SOS_COND_GT/SOS_COND_GE with the desired start value.
+
         Positional parameters:
         -- The attribute whose value is being compared
         -- The condition:
@@ -1254,6 +1357,7 @@ cdef class Filter(object):
            SOS_COND_GE    greater-or-equal
            SOS_COND_GT    greater-than
         -- A string representation of the value
+
         """
         cdef int rc
         cdef sos_value_t cond_v
@@ -1282,10 +1386,16 @@ cdef class Filter(object):
             raise ValueError("Invalid filter condition, error {0}".format(rc))
 
     def unique(self):
+        """Return unique values
+
+        If there are duplicate keys, the first matching object will be
+        returned for each unique key.
+
+        """
         sos_filter_flags_set(self.c_filt, SOS_ITER_F_UNIQUE)
 
     def attr_iter(self):
-        """Return the Attriter for the primary attribute underlying this Filter"""
+        """Return the AttrIter for the primary attribute underlying this Filter"""
         return AttrIter(self.attr)
 
     def begin(self):
@@ -1340,6 +1450,7 @@ cdef class Filter(object):
         return count
 
     def obj(self):
+        """Return the object at the currrent filter position"""
         cdef sos_obj_t c_obj = sos_filter_obj(self.c_filt)
         if c_obj:
             o = Object()
@@ -1388,7 +1499,7 @@ cdef class Filter(object):
             return sos_filter_pos_put(self.c_filt, c_pos)
         return rc
 
-    def as_ndarray(self, size_t count, shape=None, order='attribute'):
+    def as_ndarray(self, size_t count, shape=None, order='attribute', cont=False):
         """Return filter data as a Numpy array
 
         The keyword parameter 'shape' is used to specify the object attributes
@@ -1431,10 +1542,11 @@ cdef class Filter(object):
            the array, where an entry may have n-dimensions.
 
         Keyword Parameters:
-        shape  -- A dictionary object that specifies each attribute in the
-                  the output array.
-        order  -- Specifies how data is ordered in the result array and is one
-                  of 'depth_first' (default), or 'breadth_first'
+        shape  -- A tuple that specifies the attribute name of each
+                  column in the output array.
+        order  -- One of 'attribute' (default) or 'index' as described above
+        cont   -- If true, the filter will continue where it left off, i.e.
+                  processing will not begin at the first matching key
         """
         cdef sos_obj_t c_o
         cdef sos_value_s v_
@@ -1485,7 +1597,10 @@ cdef class Filter(object):
                 free(res_type)
                 raise ValueError("The attribute {0} does not exist in the schema {1}".format(aname, schema.name()))
 
-        c_o = sos_filter_begin(self.c_filt)
+        if cont:
+            c_o = sos_filter_next(self.c_filt)
+        else:
+            c_o = sos_filter_begin(self.c_filt)
         idx = 0
         if nattr == 1:
             c_attr = res_attr[0]
@@ -1549,7 +1664,6 @@ cdef class Index(object):
         return self
 
     def find(self, Key key):
-
         """Positions the index at the first matching key
 
         Return the object at the key that matches the specified key.
