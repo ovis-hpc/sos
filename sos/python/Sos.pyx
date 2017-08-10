@@ -171,6 +171,9 @@ cdef class PartIter(SosObject):
         self.c_part = sos_part_next(self.c_iter)
         return p
 
+    def __del__(self):
+        self.__dealloc__()
+
     def __dealloc__(self):
         if self.c_iter != NULL:
             sos_part_iter_free(self.c_iter)
@@ -196,6 +199,9 @@ cdef class IndexIter(SosObject):
         idx.assign(self.c_idx)
         self.c_idx = sos_container_index_iter_next(self.c_iter)
         return idx
+
+    def __del__(self):
+        self.__dealloc__()
 
     def __dealloc__(self):
         if self.c_iter != NULL:
@@ -409,9 +415,13 @@ cdef class Partition(SosObject):
         """Index the contents of this partition"""
         return sos_part_index(self.c_part)
 
+    def __del__(self):
+        self.__dealloc__()
+
     def __dealloc__(self):
         if self.c_part:
             sos_part_put(self.c_part)
+            self.c_part = NULL
 
 sos_type_strs = {
      SOS_TYPE_INT16 : "INT16",
@@ -1645,13 +1655,19 @@ cdef class Filter(object):
         free(res_type)
         return (idx, result)
 
+    def __del__(self):
+        self.__dealloc__()
+
     def __dealloc__(self):
         if self.c_obj:
             sos_obj_put(self.c_obj)
+            self.c_obj = NULL
         if self.c_iter:
             sos_iter_free(self.c_iter)
+            self.c_iter = NULL
         if self.c_filt:
             sos_filter_free(self.c_filt)
+            self.c_filt = NULL
 
 cdef class Index(object):
     cdef sos_index_t c_index
@@ -1765,6 +1781,9 @@ cdef class OAArray:
         ndarray = np.PyArray_SimpleNewFromData(1, shape,
                                                self.c_type, self.c_ptr)
         return ndarray
+
+    def __del__(self):
+        self.__dealloc__()
 
     def __dealloc__(self):
         if self.c_obj:
@@ -2156,11 +2175,16 @@ cdef class Value(object):
     def name(self):
         return sos_attr_name(self.c_attr)
 
+    def __del__(self):
+        self.__dealloc__()
+
     def __dealloc__(self):
         if self.c_v:
             sos_value_put(self.c_v)
+            self.c_v = NULL
         if self.c_obj:
             sos_obj_put(self.c_obj)
+            self.c_obj = NULL
 
 cdef class Object(object):
     """
@@ -2181,6 +2205,9 @@ cdef class Object(object):
     def __init__(self):
         self.c_obj = NULL
         self.c_schema = NULL
+
+    def __del__(self):
+        self.__dealloc__()
 
     def __dealloc__(self):
         if self.c_obj:

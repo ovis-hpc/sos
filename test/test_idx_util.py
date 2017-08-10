@@ -67,15 +67,20 @@ class TestIndexBase(object):
         # purge existing store
         shutil.rmtree(cls.STORE_PATH, ignore_errors=True)
 
-        # create new store
-        cls.cont = cont = sos.Container()
-        cont.create(cls.STORE_PATH)
-        cont.open(cls.STORE_PATH)
+        try:
+            # create new store
+            cls.cont = sos.Container()
+            cls.cont.create(cls.STORE_PATH)
+            cls.cont.open(cls.STORE_PATH)
 
-        # new partition
-        cont.part_create(cls.PART_NAME)
-        cls.part = part = cont.part_by_name(cls.PART_NAME)
-        part.state_set("PRIMARY")
+            # new partition
+            cls.cont.part_create(cls.PART_NAME)
+            part = cls.cont.part_by_name(cls.PART_NAME)
+            part.state_set("PRIMARY")
+            del part
+        except Exception as e:
+            raise StandardError("The test container could not be created.".
+                                format(cls.STORE_PATH))
 
         # new schema
         cls.schema = schema = sos.Schema()
@@ -111,7 +116,7 @@ class TestIndexBase(object):
             attr_key_half_prev_STRUCT,
         ]
 
-        schema.add(cont)
+        schema.add(cls.cont)
 
         cls.input_data = [ (i, struct.pack("!LLLL", i, i, i, i)) \
                                     for i in range(10, 500, 10) \
@@ -259,7 +264,7 @@ class TestIndexBase(object):
 
     def test_iter_pos_set_cleanup(self):
         poss = []
-        for count in range(0, 1):
+        for count in range(0, 128):
             for attr in self.schema:
                 itr = sos.AttrIter(attr)
                 self.assertTrue(itr.begin())
@@ -281,7 +286,7 @@ class TestIndexBase(object):
 
     def test_iter_pos_put_cleanup(self):
         poss = []
-        for count in range(0, 1):
+        for count in range(0, 128):
             for attr in self.schema:
                 itr = sos.AttrIter(attr)
                 self.assertTrue(itr.begin())
@@ -301,4 +306,13 @@ class TestIndexBase(object):
             rc = pos[0].set_pos(pos[1])
             self.assertEqual(rc, errno.ENOENT)
 
-
+    def test_iter_pos_cleanup(self):
+        poss = []
+        for count in range(0, 1024):
+            for attr in self.schema:
+                itr = sos.AttrIter(attr)
+                self.assertTrue(itr.begin())
+                self.assertTrue(itr.next())
+                pos = itr.get_pos()
+                self.assertIsNotNone(pos)
+                poss.append([itr, pos])

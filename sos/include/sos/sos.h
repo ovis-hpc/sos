@@ -538,6 +538,10 @@ int sos_index_new(sos_t sos, const char *name,
 		  const char *idx_type, const char *key_type,
 		  const char *args);
 sos_index_t sos_index_open(sos_t sos, const char *name);
+typedef uint32_t sos_index_rt_opt_t;
+#define SOS_INDEX_RT_OPT_MP_UNSAFE	1
+#define SOS_INDEX_RT_OPT_VISIT_ASYNC	2
+int sos_index_rt_opt_set(sos_index_t index, sos_index_rt_opt_t opt, ...);
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, void *arg);

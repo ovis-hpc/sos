@@ -270,6 +270,12 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 	return NULL;
 }
 
+
+int sos_index_rt_opt_set(sos_index_t idx, sos_index_rt_opt_t opt, ...)
+{
+	return ods_idx_rt_opts_set(idx->idx, opt);
+}
+
 struct sos_visit_cb_ctxt_s {
 	sos_index_t index;
 	sos_visit_cb_fn_t cb_fn;
@@ -279,9 +285,11 @@ struct sos_visit_cb_ctxt_s {
 static ods_visit_action_t visit_cb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data, int found, void *arg)
 {
 	struct sos_visit_cb_ctxt_s *visit_arg = arg;
-	return (ods_visit_action_t)visit_arg->cb_fn(visit_arg->index,
-				key, (sos_idx_data_t *)data,
-				found, visit_arg->arg);
+	int rc = (ods_visit_action_t)visit_arg->cb_fn(visit_arg->index,
+						      key, (sos_idx_data_t *)data,
+						      found, visit_arg->arg);
+	free(arg);
+	return rc;
 }
 /**
  * \brief Visit the key entry in the index
@@ -311,12 +319,11 @@ static ods_visit_action_t visit_cb(ods_idx_t idx, ods_key_t key, ods_idx_data_t 
  */
 int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, void *arg)
 {
-	struct sos_visit_cb_ctxt_s ctxt = {
-		.index = index,
-		.cb_fn = cb_fn,
-		.arg = arg
-	};
-	return ods_idx_visit(index->idx, key, visit_cb, &ctxt);
+	struct sos_visit_cb_ctxt_s *ctxt = malloc(sizeof(*ctxt));
+	ctxt->index = index;
+	ctxt->cb_fn = cb_fn;
+	ctxt->arg = arg;
+	return ods_idx_visit(index->idx, key, visit_cb, ctxt);
 }
 
 /**
