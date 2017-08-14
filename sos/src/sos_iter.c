@@ -1122,7 +1122,6 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 	sos_attr_t filt_attr = sos_iter_attr(filt->iter);
 	int filt_attr_id = sos_attr_id(filt_attr);
 	int sup = 0;
-	size_t key_size;
 	SOS_KEY(key);
 
 	__sort_filter_conds_fwd(filt);
