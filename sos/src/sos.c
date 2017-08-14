@@ -366,6 +366,7 @@ static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
 int sos_container_new(const char *path, int o_mode)
 {
 	char tmp_path[PATH_MAX];
+	char real_path[PATH_MAX];
 	int rc;
 	int x_mode;
 	struct stat sb;
@@ -387,6 +388,11 @@ int sos_container_new(const char *path, int o_mode)
 	if (rc) {
 		rc = errno;
 		goto err_0;
+	}
+	path = realpath(path, real_path);
+	if (!path) {
+		rc = errno;
+		goto err_1;
 	}
 
 	/* Create the ODS to contain configuration objects */

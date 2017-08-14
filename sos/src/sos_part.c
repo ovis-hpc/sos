@@ -181,6 +181,7 @@ static int __refresh_part_list(sos_t sos);
 static ods_obj_t __sos_part_create(sos_t sos, char *tmp_path,
 				   const char *part_name, const char *part_path)
 {
+	char real_path[PATH_MAX];
 	int rc;
 	struct stat sb;
 	ods_ref_t head_ref, tail_ref;
@@ -192,6 +193,9 @@ static ods_obj_t __sos_part_create(sos_t sos, char *tmp_path,
 	/* See if the specified name already exists in the filesystem */
 	if (part_path == NULL)
 		part_path = sos->path;
+	else
+		part_path = realpath(part_path, real_path);
+
 	if (strlen(part_path) >= SOS_PART_PATH_LEN) {
 		errno = E2BIG;
 		goto err_1;
@@ -271,6 +275,7 @@ static int __sos_open_partition(sos_t sos, sos_part_t part)
 	ods_t ods;
 
 	sprintf(tmp_path, "%s/%s", sos_part_path(part), sos_part_name(part));
+	assert(tmp_path[0] == '/');
 	rc = __sos_make_all_dir(tmp_path, sos->o_mode);
 	if (rc) {
 		rc = errno;
