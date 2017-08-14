@@ -428,7 +428,7 @@ int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 			break;
 		case SOS_TYPE_INT16:
 		case SOS_TYPE_UINT16:
-			*(uint16_t *)dst = htobe16(va_arg(ap, uint16_t));
+			*(uint16_t *)dst = htobe16((short)va_arg(ap, int));
 			dst += sizeof(uint16_t);
 			break;
 		case SOS_TYPE_LONG_DOUBLE:
