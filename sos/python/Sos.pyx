@@ -1330,6 +1330,8 @@ cdef class Filter(object):
     cdef sos_iter_t c_iter
     cdef sos_filter_t c_filt
     cdef sos_obj_t c_obj
+    cdef double start_us
+    cdef double end_us
 
     def __init__(self, Attr attr):
         """Positional Parameters:
@@ -1341,6 +1343,8 @@ cdef class Filter(object):
             raise ValueError("The attribute {0} must be indexed.".format(attr.name()))
 
         self.c_filt = sos_filter_new(self.c_iter)
+        self.start_us = 0.0
+        self.end_us = 0.0
 
     def add_condition(self, Attr cond_attr, cond, value_str):
         """Add a filter condition on the iterator
@@ -1391,6 +1395,14 @@ cdef class Filter(object):
         if rc != 0:
             raise ValueError("The value {0} is invalid for the {1} attribute."
                              .format(value_str, cond_attr.name()))
+
+        if sos_attr_type(cond_attr.c_attr) == SOS_TYPE_TIMESTAMP:
+            if cond == SOS_COND_GT or cond == SOS_COND_GE:
+                self.start_us = <double>cond_v.data.prim.timestamp_.fine.secs * 1.0e6 \
+                                + <double>cond_v.data.prim.timestamp_.fine.usecs
+            elif cond == SOS_COND_LE or cond == SOS_COND_LT:
+                self.end_us = <double>cond_v.data.prim.timestamp_.fine.secs * 1.0e6 \
+                              + <double>cond_v.data.prim.timestamp_.fine.usecs
 
         rc = sos_filter_cond_add(self.c_filt, cond_attr.c_attr,
                                  cond, cond_v)
@@ -1513,7 +1525,8 @@ cdef class Filter(object):
             return sos_filter_pos_put(self.c_filt, c_pos)
         return rc
 
-    def as_ndarray(self, size_t count, shape=None, order='attribute', cont=False):
+    def as_ndarray(self, size_t count, shape=None, order='attribute', cont=False,
+                   timestamp='timestamp', interval_ms=None):
         """Return filter data as a Numpy array
 
         The keyword parameter 'shape' is used to specify the object attributes
@@ -1552,43 +1565,54 @@ cdef class Filter(object):
              [ [ 1425362400.0, 62453912.0 ], [ 1425362460.0, 6553912.0 ], ... ]
 
         Positional Parameters:
-        -- A size_t count that specifies the maximum number of 'entries' in
-           the array, where an entry may have n-dimensions.
+        -- The maximum number of rows in the output array. If this parameter is zero,
+           the output size will computed to the size necessary to hold all matching
+           data.
 
         Keyword Parameters:
-        shape  -- A tuple that specifies the attribute name of each
-                  column in the output array.
-        order  -- One of 'attribute' (default) or 'index' as described above
-        cont   -- If true, the filter will continue where it left off, i.e.
-                  processing will not begin at the first matching key
+        shape       -- A tuple that specifies the attribute name of each
+                       column in the output array.
+        order       -- One of 'attribute' (default) or 'index' as described
+                       above
+        cont        -- If true, the filter will continue where it left off,
+                       i.e. processing will not begin at the first matching
+                       key.
+        interval_us -- The number of milliseconds represented by each sample.
+                       The default is None.
+        timestamp   -- The name of the attribute containing a
+                       SOS_TYPE_TYPESTAMP. The default is 'timestamp'
+
+        Returns:
+        -- A two element tuple containing the number of samples written to
+           the array and the array itself as follows: (count, array)
         """
         cdef sos_obj_t c_o
-        cdef sos_value_s v_
-        cdef sos_value_t v
+        cdef sos_value_s v_, t_
+        cdef sos_value_t v, t
         cdef int idx
+        cdef int last_idx
         cdef int el_idx
         cdef int atype
         cdef int nattr
+        cdef int assign
         cdef Schema schema = self.attr.schema()
         cdef Attr attr
-        cdef sos_attr_t c_attr
+        cdef sos_attr_t c_attr, t_attr
         cdef sos_attr_t *res_attr
         cdef int *res_type
+        cdef int type_id
+        cdef double interval_us
+        cdef double obj_time, prev_time
+        cdef double bin_width, bin_time, bin_value, bin_samples
+        cdef double *tmp_res;
+        cdef double temp_a, temp_b
 
         if shape == None:
             shape = [ self.attr.name() ]
-
         nattr = len(shape)
-        if nattr > 1:
-            if order == 'index':
-                ndshape = [ count, nattr ]
-            elif order == 'attribute':
-                ndshape = [ nattr, count ]
-            else:
-                raise ValueError("The 'order' keyword parameter must be one of 'index' or 'attribute'")
-        else:
-            ndshape = [ count ]
-
+        tmp_res = <double *>malloc(nattr *sizeof(double))
+        if tmp_res == NULL:
+            raise MemoryError("Insufficient memroy to allocate temporary result array")
         res_attr = <sos_attr_t *>malloc(sizeof(sos_attr_t) * nattr)
         if res_attr == NULL:
             raise MemoryError("Insufficient memroy to allocate dimension array")
@@ -1597,9 +1621,14 @@ cdef class Filter(object):
             free(res_attr)
             raise MemoryError("Insufficient memory to allocate type array")
 
-        result = np.zeros(ndshape, dtype=np.float64, order='C')
 
         idx = 0
+        t_attr = sos_schema_attr_by_name(schema.c_schema, timestamp)
+        if t_attr == NULL:
+            raise ValueError("The timestamp attribute was not found in the schema. " +\
+                             "Consider specifying the timestamp keyword parameter")
+        if sos_attr_type(t_attr) != SOS_TYPE_TIMESTAMP:
+            raise ValueError("The timestamp attribute {0} is not a SOS_TYPE_TIMESTAMP".format(timestamp))
         for aname in shape:
             try:
                 attr = schema.attr_by_name(aname)
@@ -1615,42 +1644,113 @@ cdef class Filter(object):
             c_o = sos_filter_next(self.c_filt)
         else:
             c_o = sos_filter_begin(self.c_filt)
-        idx = 0
+
+        if c_o != NULL:
+            t = sos_value_init(&t_, c_o, t_attr)
+            obj_time = <double>t.data.prim.timestamp_.fine.secs * 1.0e6 \
+                       + <double>t.data.prim.timestamp_.fine.usecs
+            sos_value_put(t)
+            self.start_us = obj_time
+
+        if interval_ms is not None and self.start_us != 0 and self.end_us != 0:
+            bin_width = interval_ms * 1.0e3
+            bin_count = self.end_us - self.start_us
+            bin_count = bin_count / bin_width
+            if count == 0:
+                count = int(bin_count)
+        else:
+            bin_width = 0.0
+
+        if nattr > 1:
+            if order == 'index':
+                ndshape = [ count, nattr ]
+            elif order == 'attribute':
+                ndshape = [ nattr, count ]
+            else:
+                raise ValueError("The 'order' keyword parameter must be one of 'index' or 'attribute'")
+        else:
+            ndshape = [ count ]
+        result = np.zeros(ndshape, dtype=np.float64, order='C')
+
+        bin_samples = 0.0
+        bin_dur = 0.0
+        bin_time = 0.0
+        prev_time = obj_time
+
         if nattr == 1:
-            c_attr = res_attr[0]
-            atype = sos_attr_type(c_attr)
-            while c_o != NULL:
-                v = sos_value_init(&v_, c_o, c_attr)
-                result[idx] = <object>type_getters[atype](c_o, v.data)
-                sos_value_put(v)
-                sos_obj_put(c_o)
-                idx = idx + 1
-                if idx >= count:
-                    break
-                c_o = sos_filter_next(self.c_filt)
+            assign = 0
         else:
             if order == 'index':
-                while c_o != NULL:
-                    for el_idx in range(0, nattr):
-                        v = sos_value_init(&v_, c_o, res_attr[el_idx])
-                        result[idx][el_idx] = <object>type_getters[res_type[el_idx]](c_o, v.data)
-                        sos_value_put(v)
-                        sos_obj_put(c_o)
-                    idx = idx + 1
-                    if idx >= count:
-                        break
-                    c_o = sos_filter_next(self.c_filt)
-            elif order == 'attribute':
-                while c_o != NULL:
-                    for el_idx in range(0, nattr):
-                        v = sos_value_init(&v_, c_o, res_attr[el_idx])
-                        result[el_idx][idx] = <object>type_getters[res_type[el_idx]](c_o, v.data)
-                        sos_value_put(v)
-                        sos_obj_put(c_o)
-                    idx = idx + 1
-                    if idx >= count:
-                        break
-                    c_o = sos_filter_next(self.c_filt)
+                assign = 2
+            else:
+                assign = 3
+
+        idx = 0
+        last_idx = 0
+        for el_idx in range(0, nattr):
+            tmp_res[el_idx] = 0.0
+
+        while c_o != NULL:
+
+            if bin_width > 0.0:
+                idx = int((obj_time - self.start_us) / bin_width)
+            if idx != last_idx:
+                if assign == 2:
+                    while last_idx < idx:
+                        for el_idx in range(0, nattr):
+                            result[last_idx][el_idx] = tmp_res[el_idx]
+                        last_idx += 1
+                elif assign == 3:
+                    while last_idx < idx:
+                        for el_idx in range(0, nattr):
+                            result[el_idx][last_idx] = tmp_res[el_idx]
+                        last_idx += 1
+                else:
+                    while last_idx < idx:
+                        for el_idx in range(0, nattr):
+                            result[last_idx] = tmp_res[el_idx]
+                        last_idx += 1
+                for el_idx in range(0, nattr):
+                    tmp_res[el_idx] = 0.0
+                if idx >= count:
+                    sos_obj_put(c_o)
+                    break
+                bin_samples = 0.0
+
+            for el_idx in range(0, nattr):
+                v = sos_value_init(&v_, c_o, res_attr[el_idx])
+                temp_a = tmp_res[el_idx]
+                type_id = res_type[el_idx]
+                if type_id == SOS_TYPE_UINT64:
+                    temp_b = <double>v.data.prim.uint64_
+                elif type_id == SOS_TYPE_UINT32:
+                    temp_b = <double>v.data.prim.uint32_
+                elif type_id == SOS_TYPE_TIMESTAMP:
+                    temp_b = <double>v.data.prim.timestamp_.fine.secs + \
+                             (<double>v.data.prim.timestamp_.fine.usecs / 1.0e6)
+                elif type_id == SOS_TYPE_INT64:
+                    temp_b = <double>v.data.prim.int64_
+                elif type_id == SOS_TYPE_INT32:
+                    temp_b = <double>v.data.prim.int32_
+                elif type_id == SOS_TYPE_DOUBLE:
+                    temp_b = v.data.prim.double_
+                else:
+                    raise TypeError("bad result type")
+                temp_a = ((temp_a * bin_samples) + temp_b) / (bin_samples + 1.0)
+                tmp_res[el_idx] = temp_a
+                sos_value_put(v)
+            if bin_width == 0.0:
+                idx += 1
+            bin_samples += 1.0
+            sos_obj_put(c_o)
+            c_o = sos_filter_next(self.c_filt)
+            prev_time = obj_time
+            t = sos_value_init(&t_, c_o, t_attr)
+            obj_time = <double>t.data.prim.timestamp_.fine.secs * 1.0e6 \
+                       + <double>t.data.prim.timestamp_.fine.usecs
+            sos_value_put(t)
+
+        free(tmp_res)
         free(res_attr)
         free(res_type)
         return (idx, result)
@@ -1686,7 +1786,7 @@ cdef class Index(object):
     def find(self, Key key):
         """Positions the index at the first matching key
 
-        Return the object at the key that matches the specified key.
+        Return the object that matches the specified key.
         If no match was found, None is returned.
 
         Positional Arguments:
