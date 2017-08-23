@@ -675,8 +675,7 @@ static int release_locks(const char *path, const struct stat *sb,
 int sos_container_lock_info(const char *path, FILE *fp)
 {
 	int rc;
-
-	rc = nftw(path, show_locks, 1024, FTW_DEPTH|FTW_PHYS);
+	rc = nftw(path, show_locks, 1024, FTW_DEPTH);
 	return rc;
 }
 
