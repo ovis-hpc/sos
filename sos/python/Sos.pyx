@@ -1749,7 +1749,8 @@ cdef class Filter(object):
             obj_time = <double>t.data.prim.timestamp_.fine.secs * 1.0e6 \
                        + <double>t.data.prim.timestamp_.fine.usecs
             sos_value_put(t)
-
+        if bin_width == 0.0:
+            idx = last_idx
         free(tmp_res)
         free(res_attr)
         free(res_type)
