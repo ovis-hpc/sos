@@ -63,7 +63,7 @@ def make_cast(attr):
     elif t == Sos.TYPE_LONG_DOUBLE:
         return lambda s : float(s)
     elif t == Sos.TYPE_TIMESTAMP:
-        return lambda s : int(s)
+        return lambda s : float(s)
     elif t == Sos.TYPE_CHAR_ARRAY:
         return lambda s : str(s)
     raise ValueError("{0} is an unsupported cast".format(repr(t)))
