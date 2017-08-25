@@ -1070,7 +1070,7 @@ static sos_obj_t next_match(sos_filter_t filt)
 			if (
 			    (cond->attr->index == filt->iter->index)
 			    ||
-			    (0 <= __attr_join_idx(sos_iter_attr(filt->iter), cond->attr))
+			    (0 == __attr_join_idx(sos_iter_attr(filt->iter), cond->attr))
 			    ) {
 				/* On ordered index and the condition doesn't match */
 				break;
@@ -1094,7 +1094,7 @@ static sos_obj_t prev_match(sos_filter_t filt)
 			if (
 			    (cond->attr->index == filt->iter->index)
 			    ||
-			    (0 <= __attr_join_idx(sos_iter_attr(filt->iter), cond->attr))
+			    (0 == __attr_join_idx(sos_iter_attr(filt->iter), cond->attr))
 			    ) {
 				/* On ordered index and the condition doesn't match */
 				break;
@@ -1147,7 +1147,7 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 				 * condition value. The conditions are sorted
 				 * so that this works correctly, i.e. GE comes
 				 * before LE */
-				min_join_idx += 1;
+				min_join_idx = join_idx + 1;
 				sup = 1;
 				continue;
 			}
@@ -1262,7 +1262,7 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 				 * condition value. The conditions are sorted
 				 * so that this works correctly, i.e. GE comes
 				 * before LE */
-				min_join_idx += 1;
+				min_join_idx = join_idx + 1;
 				inf = 1;
 				continue;
 			}
