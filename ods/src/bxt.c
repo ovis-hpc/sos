@@ -503,12 +503,13 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 		return NULL;
 
 	rec = ods_ref_as_obj(t->ods, next_ref);
-	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
-	leaf = leaf_find(t, key);
-	ods_obj_put(key);
 	if (0 == (flags & ODS_ITER_F_LUB_LAST_DUP))
 		goto found;
+	/* Get the parent of next_ref and return it's last_dup */
+	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 	ods_obj_put(rec);
+	leaf = leaf_find(t, key);
+	ods_obj_put(key);
 	tail_ref = L_ENT(leaf,0).tail_ref;
 	rec = ods_ref_as_obj(t->ods, tail_ref);
  found:
