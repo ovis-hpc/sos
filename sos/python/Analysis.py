@@ -177,8 +177,20 @@ class Pipeline(object):
     def set_window(self, window):
         self.window = window
 
-    def set_select(self, start, end, comp_list,
-                   index="comp_time", count=None, order=None):
+    def cvt_dt(self, dt):
+        if type(dt) == str:
+            if dt.upper() == "FIRST":
+                return dt.datetime.fromtimestamp(0)
+            elif dt.find('/') >= 0:
+                return dt.datetime.strptime(dt, self.time_fmt)
+            else:
+                return dt.datetime.fromtimestamp(float(start))
+        elif type(dt) == float or type(dt) == int:
+            return dt.datetime.fromtimestamp(dt)
+
+    def set_select(self, start, end,
+                   comp_list=None, job_id=None, index=None,
+                   order=None):
         """Set the database selection criteria
 
         Positional Arguments:
@@ -189,8 +201,9 @@ class Pipeline(object):
         -- An array of strings specifying the metrics in the schema to return
 
         Keyword Arguments:
-        index -- The name of the attribute to use as an indx. By default
-                 this is the "comp_time" attribute.
+        comp_list -- A list of component ids to select
+        job_id    -- A job id to select
+        index     -- The name of the attribute to use as an index.
         """
         if not self.in_cont:
             raise IOError("set_input() must be called before calling set_select()\n")
@@ -198,20 +211,31 @@ class Pipeline(object):
         self.in_schema = self.in_cont.schema_by_name(self.inp_schema_name)
         if self.in_schema is None:
             raise ValueError("The schema {0} was not found.".format(inp_schema_name))
+        if comp_list is not None and type(comp_list) != list:
+            raise ValueError("The the comp_list keyword must be []")
+        if type(job_id) != int:
+            raise ValueError("The the job_id_keyword must be an int")
 
         self.start = start
         self.end = end
         self.comp_list = comp_list
+        self.job_id = job_id
         self.index = index
-        self.count = count
         if order:
             self.order = order
 
     def get_input_schema(self):
         return self.in_schema
 
-    def select(self, comp_id):
+    def select(self, comp_id=None, job_id=None):
         self.timestamp = self.in_schema.attr_by_name("timestamp")
+        if self.index is None:
+            if job_id is not None:
+                self.index = "job_comp_time"
+            elif comp_id is not None:
+                self.index = "comp_time"
+            else:
+                self.index = "timestamp"
         self.filter = Sos.Filter(self.in_schema.attr_by_name(self.index))
         self.filter.add_condition(self.timestamp,
                                   Sos.COND_GE,
@@ -219,10 +243,12 @@ class Pipeline(object):
         self.filter.add_condition(self.timestamp,
                                   Sos.COND_LE,
                                   self.end.strftime(self.dt_fmt))
-        self.comp_id = self.in_schema.attr_by_name("component_id")
-        self.filter.add_condition(self.comp_id,
-                                  Sos.COND_EQ,
-                                  str(comp_id))
+        if job_id is not None:
+            self.job_id = self.in_schema.attr_by_name("job_id")
+            self.filter.add_condition(self.job_id, Sos.COND_EQ, str(job_id))
+        if comp_id is not None:
+            self.comp_id = self.in_schema.attr_by_name("component_id")
+            self.filter.add_condition(self.comp_id, Sos.COND_EQ, str(comp_id))
 
     def transform(self, cnt, nda, cont=False):
         """Perform the desired transform on the input data
@@ -258,29 +284,21 @@ class Pipeline(object):
         # return a result spec for the input
         return (cnt, [[nda,i] for i in range(0, len(nda[0]))])
 
-    def process(self):
-        """Run the analysis pipeline
-
-        The analysis pipe line calls select(), and then query(),
-        transform() and output() in a loop until all samples matching
-        the select criteria have been processed.
-        """
-        for comp_id in self.comp_list:
-            self.select(comp_id)
-            first = True
-            last = False
-            cont = False
-            while True:
-                cnt, data = self.query(cont=cont)
-                if cnt == 0:
-                    break
-                if cnt < self.window:
-                    last = True
-                cont = True
-                (res_cnt, res) = self.transform(cnt, data, first=first, last=last)
-                self.output(res_cnt, res)
-                if cnt < self.window:
-                    break
+    def __process_window(self):
+        first = True
+        last = False
+        cont = False
+        while True:
+            cnt, data = self.query(cont=cont)
+            if cnt == 0:
+                break
+            if cnt < self.window:
+                last = True
+            cont = True
+            (res_cnt, res) = self.transform(cnt, data, first=first, last=last)
+            self.output(res_cnt, res)
+            if cnt < self.window:
+                break
 
     def query(self, cont=False, order='index', window=None):
         """Get the next window of data to process from SosDB
@@ -296,6 +314,21 @@ class Pipeline(object):
                                           shape=self.inp_query_attrs,
                                           cont=cont, order=order)
         return cnt, nda
+
+    def process(self):
+        """Run the analysis pipeline
+
+        The analysis pipe line calls select(), and then query(),
+        transform() and output() in a loop until all samples matching
+        the select criteria have been processed.
+        """
+        if self.comp_list:
+            for comp_id in self.comp_list:
+                self.select(comp_id=comp_id, job_id=self.job_id)
+                self.__process_window()
+        else:
+            self.select(job_id=self.job_id)
+            self.__process_window()
 
     def output(self, cnt, res):
         if self.out_cont:

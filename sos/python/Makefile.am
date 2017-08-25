@@ -21,7 +21,7 @@ Array_la_LIBADD = $(top_builddir)/sos/src/libsos.la
 
 pkgpyexecdir = $(pkgpythondir)
 
-pkgpython_PYTHON = __init__.py bollinger.py
+pkgpython_PYTHON = __init__.py bollinger.py Analysis.py
 
 dist_bin_SCRIPTS = sos-db sos-part sos-schema sos-import-csv sos-monitor lmq
 
