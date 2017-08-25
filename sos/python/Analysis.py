@@ -250,7 +250,7 @@ class Pipeline(object):
             self.comp_id = self.in_schema.attr_by_name("component_id")
             self.filter.add_condition(self.comp_id, Sos.COND_EQ, str(comp_id))
 
-    def transform(self, cnt, nda, cont=False):
+    def transform(self, cnt, nda, cont=False, first=True, last=True):
         """Perform the desired transform on the input data
 
         This method should be overloaded by analysis sub-classes.
