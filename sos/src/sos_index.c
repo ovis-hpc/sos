@@ -244,7 +244,9 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		if (idx_obj)
 			/* Already failed once, err out */
 			goto err_3;
-		/* Attempt to create it */
+		/* Attempt to create if it does not exist. */
+		if (errno != ENOENT)
+			goto err_2;
 		idx_obj = ods_ref_as_obj(sos->idx_ods, idx_ref.ref.obj);
 		if (!idx_obj) {
 			errno = EINVAL;
