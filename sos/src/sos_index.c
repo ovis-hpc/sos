@@ -232,8 +232,10 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 	ods_key_set(idx_key, name, strlen(name)+1);
 	ods_lock(sos->idx_ods, 0, NULL);
 	rc = ods_idx_find(sos->idx_idx, idx_key, &idx_ref.idx_data);
-	if (rc)
+	if (rc) {
+		errno = rc;
 		goto err_2;
+	}
 
 	sprintf(tmp_path, "%s/%s_idx", sos->path, name);
  retry:
@@ -245,7 +247,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		/* Attempt to create it */
 		idx_obj = ods_ref_as_obj(sos->idx_ods, idx_ref.ref.obj);
 		if (!idx_obj) {
-			rc = EINVAL;
+			errno = EINVAL;
 			goto err_2;
 		}
 		rc = ods_idx_create(tmp_path,
@@ -255,6 +257,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 				    SOS_IDX(idx_obj)->args);
 		if (!rc)
 			goto retry;
+		errno = rc;
 		goto err_3;
 	}
 	ods_obj_put(idx_obj);
