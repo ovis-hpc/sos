@@ -248,7 +248,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 			rc = EINVAL;
 			goto err_2;
 		}
-		rc = ods_idx_create(SOS_IDX(idx_obj)->name,
+		rc = ods_idx_create(tmp_path,
 				    SOS_IDX(idx_obj)->mode,
 				    SOS_IDX(idx_obj)->idx_type,
 				    SOS_IDX(idx_obj)->key_type,
