@@ -1472,8 +1472,7 @@ void sos_obj_delete(sos_obj_t obj)
 		value = sos_value_init(&v_, obj, attr);
 		if (!value)
 			continue;
-		ods_t ods = __sos_ods_from_ref(obj->sos, value->data->prim.ref_.ref.ods);
-		ods_ref_delete(ods, value->data->prim.ref_.ref.obj);
+		ods_obj_delete(value->obj->obj);
 		sos_value_put(value);
 	}
 	ods_obj_delete(obj->obj);
