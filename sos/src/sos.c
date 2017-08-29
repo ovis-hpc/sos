@@ -1476,7 +1476,6 @@ void sos_obj_delete(sos_obj_t obj)
 		sos_value_put(value);
 	}
 	ods_obj_delete(obj->obj);
-	obj->obj = NULL;
 }
 
 /**
