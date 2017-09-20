@@ -1537,7 +1537,7 @@ cdef class Filter(object):
              [ self.attr.name() ]
 
         If the len(shape) is 1, the array will be simplified to a singly
-        dimensioned array of the 'attr' attribute of the each object.
+        dimensioned array of the 'attr' attribute of each object.
 
         If the number of objects defined by the Filter is less than 'count',
         the array will be padded with zeroes.
@@ -1564,6 +1564,26 @@ cdef class Filter(object):
 
              [ [ 1425362400.0, 62453912.0 ], [ 1425362460.0, 6553912.0 ], ... ]
 
+        The output array contains additional values for each array
+        element in the attribute value. Assume that
+                    shape = [ 'timestamp', 'a_array', 'b_array' ]
+        and that a_array has a length of 2, and the b_array a length of 4.
+        Further assume  that order = 'index', then the output array would
+        contain the following:
+
+        [ [ t0,
+            a_array[0], a_array[1],
+            b_array[0], b_array[1], b_array[2], b_array[3] ],
+          ...
+        ]
+
+        Note that if there are more than two attributes in the output,
+        this can make processing the data more difficult to handle
+        properly because the code needs to compute where the start of
+        each array is in the row. It is therefore recommended that a
+        pattern like, [ 'timestamp', 'array_type' ] be observed to
+        make analysis of output data easier to handle.
+
         Positional Parameters:
         -- The maximum number of rows in the output array. If this parameter is zero,
            the output size will computed to the size necessary to hold all matching
@@ -1585,13 +1605,16 @@ cdef class Filter(object):
         Returns:
         -- A two element tuple containing the number of samples written to
            the array and the array itself as follows: (count, array)
+
         """
         cdef sos_obj_t c_o
         cdef sos_value_s v_, t_
         cdef sos_value_t v, t
         cdef int idx
         cdef int last_idx
-        cdef int el_idx
+        cdef int attr_idx
+        cdef int res_idx
+        cdef int val_idx
         cdef int atype
         cdef int nattr
         cdef int assign
@@ -1599,6 +1622,8 @@ cdef class Filter(object):
         cdef Attr attr
         cdef sos_attr_t c_attr, t_attr
         cdef sos_attr_t *res_attr
+        cdef int *res_dim
+        cdef int dim
         cdef int *res_type
         cdef int type_id
         cdef double interval_us
@@ -1610,9 +1635,7 @@ cdef class Filter(object):
         if shape == None:
             shape = [ self.attr.name() ]
         nattr = len(shape)
-        tmp_res = <double *>malloc(nattr *sizeof(double))
-        if tmp_res == NULL:
-            raise MemoryError("Insufficient memroy to allocate temporary result array")
+
         res_attr = <sos_attr_t *>malloc(sizeof(sos_attr_t) * nattr)
         if res_attr == NULL:
             raise MemoryError("Insufficient memroy to allocate dimension array")
@@ -1620,7 +1643,11 @@ cdef class Filter(object):
         if res_type == NULL:
             free(res_attr)
             raise MemoryError("Insufficient memory to allocate type array")
-
+        res_dim = <int *>malloc(sizeof(uint64_t) * nattr)
+        if res_dim == NULL:
+            free(res_attr)
+            free(res_type)
+            raise MemoryError("Insufficient memory to allocate type array")
 
         idx = 0
         t_attr = sos_schema_attr_by_name(schema.c_schema, timestamp)
@@ -1638,6 +1665,7 @@ cdef class Filter(object):
             except:
                 free(res_attr)
                 free(res_type)
+                free(res_dim)
                 raise ValueError("The attribute {0} does not exist in the schema {1}".format(aname, schema.name()))
 
         if cont:
@@ -1645,12 +1673,26 @@ cdef class Filter(object):
         else:
             c_o = sos_filter_begin(self.c_filt)
 
+        # determine the result depth in the 'attribute' dimension
+        dim = 0
         if c_o != NULL:
             t = sos_value_init(&t_, c_o, t_attr)
             obj_time = <double>t.data.prim.timestamp_.fine.secs * 1.0e6 \
                        + <double>t.data.prim.timestamp_.fine.usecs
             sos_value_put(t)
             self.start_us = obj_time
+            for attr_idx in range(0, nattr):
+                # expand the attribute dimension if there are arrays
+                if sos_attr_is_array(res_attr[attr_idx]):
+                    v = sos_value_init(&v_, c_o, res_attr[attr_idx])
+                    res_dim[attr_idx] = sos_array_count(v)
+                    sos_value_put(v)
+                else:
+                    res_dim[attr_idx] = 1
+                dim += res_dim[attr_idx]
+        tmp_res = <double *>malloc(dim *sizeof(double))
+        if tmp_res == NULL:
+            raise MemoryError("Insufficient memroy to allocate temporary result array")
 
         if interval_ms is not None and self.start_us != 0 and self.end_us != 0:
             bin_width = interval_ms * 1.0e3
@@ -1663,13 +1705,19 @@ cdef class Filter(object):
 
         if nattr > 1:
             if order == 'index':
-                ndshape = [ count, nattr ]
+                ndshape = [ count, dim ]
             elif order == 'attribute':
-                ndshape = [ nattr, count ]
+                ndshape = [ dim, count ]
             else:
-                raise ValueError("The 'order' keyword parameter must be one of 'index' or 'attribute'")
+                raise ValueError("The 'order' keyword parameter must be one " \
+                                 "of 'index' or 'attribute'")
         else:
-            ndshape = [ count ]
+            # if dim == nattr, there are no arrays in the result
+            if dim > nattr:
+                ndshape = [ count, dim ]
+            else:
+                ndshape = [ count ]
+
         result = np.zeros(ndshape, dtype=np.float64, order='C')
 
         bin_samples = 0.0
@@ -1677,7 +1725,7 @@ cdef class Filter(object):
         bin_time = 0.0
         prev_time = obj_time
 
-        if nattr == 1:
+        if nattr == 1 and dim == nattr:
             assign = 0
         else:
             if order == 'index':
@@ -1687,8 +1735,8 @@ cdef class Filter(object):
 
         idx = 0
         last_idx = 0
-        for el_idx in range(0, nattr):
-            tmp_res[el_idx] = 0.0
+        for res_idx in range(0, dim):
+            tmp_res[res_idx] = 0.0
 
         while c_o != NULL:
 
@@ -1697,47 +1745,68 @@ cdef class Filter(object):
             if idx != last_idx:
                 if assign == 2:
                     while last_idx < idx:
-                        for el_idx in range(0, nattr):
-                            result[last_idx][el_idx] = tmp_res[el_idx]
+                        for res_idx in range(0, dim):
+                            result[last_idx][res_idx] = tmp_res[res_idx]
                         last_idx += 1
                 elif assign == 3:
                     while last_idx < idx:
-                        for el_idx in range(0, nattr):
-                            result[el_idx][last_idx] = tmp_res[el_idx]
+                        for res_idx in range(0, dim):
+                            result[res_idx][last_idx] = tmp_res[res_idx]
                         last_idx += 1
                 else:
                     while last_idx < idx:
-                        for el_idx in range(0, nattr):
-                            result[last_idx] = tmp_res[el_idx]
+                        for res_idx in range(0, dim):
+                            result[last_idx] = tmp_res[res_idx]
                         last_idx += 1
-                for el_idx in range(0, nattr):
-                    tmp_res[el_idx] = 0.0
+                for res_idx in range(0, dim):
+                    tmp_res[res_idx] = 0.0
                 if idx >= count:
                     sos_obj_put(c_o)
                     break
                 bin_samples = 0.0
 
-            for el_idx in range(0, nattr):
-                v = sos_value_init(&v_, c_o, res_attr[el_idx])
-                temp_a = tmp_res[el_idx]
-                type_id = res_type[el_idx]
-                if type_id == SOS_TYPE_UINT64:
-                    temp_b = <double>v.data.prim.uint64_
-                elif type_id == SOS_TYPE_UINT32:
-                    temp_b = <double>v.data.prim.uint32_
-                elif type_id == SOS_TYPE_TIMESTAMP:
-                    temp_b = <double>v.data.prim.timestamp_.fine.secs + \
-                             (<double>v.data.prim.timestamp_.fine.usecs / 1.0e6)
-                elif type_id == SOS_TYPE_INT64:
-                    temp_b = <double>v.data.prim.int64_
-                elif type_id == SOS_TYPE_INT32:
-                    temp_b = <double>v.data.prim.int32_
-                elif type_id == SOS_TYPE_DOUBLE:
-                    temp_b = v.data.prim.double_
-                else:
-                    raise TypeError("bad result type")
-                temp_a = ((temp_a * bin_samples) + temp_b) / (bin_samples + 1.0)
-                tmp_res[el_idx] = temp_a
+            res_idx = 0
+            for attr_idx in range(0, nattr):
+                v = sos_value_init(&v_, c_o, res_attr[attr_idx])
+                type_id = res_type[attr_idx]
+                for el_idx in range(0, res_dim[attr_idx]):
+                    temp_a = tmp_res[res_idx]
+                    if type_id == SOS_TYPE_UINT64:
+                        temp_b = <double>v.data.prim.uint64_
+                    elif type_id == SOS_TYPE_UINT64_ARRAY:
+                        temp_b = <double>v.data.array.data.uint64_[el_idx]
+                    elif type_id == SOS_TYPE_UINT32:
+                        temp_b = <double>v.data.prim.uint32_
+                    elif type_id == SOS_TYPE_UINT32_ARRAY:
+                        temp_b = <double>v.data.array.data.uint32_[el_idx]
+                    elif type_id == SOS_TYPE_DOUBLE:
+                        temp_b = v.data.prim.double_
+                    elif type_id == SOS_TYPE_DOUBLE_ARRAY:
+                        temp_b = v.data.array.data.double_[el_idx]
+                    elif type_id == SOS_TYPE_UINT16:
+                        temp_b = <double>v.data.prim.uint16_
+                    elif type_id == SOS_TYPE_UINT32_ARRAY:
+                        temp_b = <double>v.data.array.data.uint32_[el_idx]
+                    elif type_id == SOS_TYPE_TIMESTAMP:
+                        temp_b = <double>v.data.prim.timestamp_.fine.secs + \
+                                 (<double>v.data.prim.timestamp_.fine.usecs / 1.0e6)
+                    elif type_id == SOS_TYPE_INT64:
+                        temp_b = <double>v.data.prim.int64_
+                    elif type_id == SOS_TYPE_INT64_ARRAY:
+                        temp_b = <double>v.data.array.data.int64_[el_idx]
+                    elif type_id == SOS_TYPE_INT32:
+                        temp_b = <double>v.data.prim.int32_
+                    elif type_id == SOS_TYPE_INT32_ARRAY:
+                        temp_b = <double>v.data.array.data.int32_[el_idx]
+                    elif type_id == SOS_TYPE_FLOAT:
+                        temp_b = v.data.prim.float_
+                    elif type_id == SOS_TYPE_FLOAT_ARRAY:
+                        temp_b = v.data.array.data.float_[el_idx]
+                    else:
+                        raise TypeError("bad result type")
+                    temp_a = ((temp_a * bin_samples) + temp_b) / (bin_samples + 1.0)
+                    tmp_res[res_idx] = temp_a
+                    res_idx += 1
                 sos_value_put(v)
             if bin_width == 0.0:
                 idx += 1
