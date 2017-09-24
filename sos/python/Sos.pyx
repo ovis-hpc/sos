@@ -1597,7 +1597,7 @@ cdef class Filter(object):
         cont        -- If true, the filter will continue where it left off,
                        i.e. processing will not begin at the first matching
                        key.
-        interval_us -- The number of milliseconds represented by each sample.
+        interval_ms -- The number of milliseconds represented by each sample.
                        The default is None.
         timestamp   -- The name of the attribute containing a
                        SOS_TYPE_TYPESTAMP. The default is 'timestamp'
@@ -1626,7 +1626,6 @@ cdef class Filter(object):
         cdef int dim
         cdef int *res_type
         cdef int type_id
-        cdef double interval_us
         cdef double obj_time, prev_time
         cdef double bin_width, bin_time, bin_value, bin_samples
         cdef double *tmp_res;
@@ -1724,6 +1723,7 @@ cdef class Filter(object):
         bin_dur = 0.0
         bin_time = 0.0
         prev_time = obj_time
+        self.start_us = obj_time # This make idx_0 == start_time
 
         if nattr == 1 and dim == nattr:
             assign = 0
@@ -1742,7 +1742,13 @@ cdef class Filter(object):
 
             if bin_width > 0.0:
                 idx = int((obj_time - self.start_us) / bin_width)
+            if idx >= count or last_idx >= count:
+                break
             if idx != last_idx:
+                if last_idx == 0 and idx - last_idx > 2:
+                    # The code supports down-sampling, but not up-sampling.
+                    bin_width = 0.0
+                    idx = last_idx + 1
                 if assign == 2:
                     while last_idx < idx:
                         for res_idx in range(0, dim):
@@ -1764,7 +1770,6 @@ cdef class Filter(object):
                     sos_obj_put(c_o)
                     break
                 bin_samples = 0.0
-
             res_idx = 0
             for attr_idx in range(0, nattr):
                 v = sos_value_init(&v_, c_o, res_attr[attr_idx])
@@ -1802,8 +1807,10 @@ cdef class Filter(object):
                         temp_b = v.data.prim.float_
                     elif type_id == SOS_TYPE_FLOAT_ARRAY:
                         temp_b = v.data.array.data.float_[el_idx]
+                    elif type_id == SOS_TYPE_BYTE_ARRAY:
+                        temp_b = v.data.array.data.byte_[el_idx]
                     else:
-                        raise TypeError("bad result type")
+                        raise TypeError("type_id {0} is not a recognized result type".format(type_id))
                     temp_a = ((temp_a * bin_samples) + temp_b) / (bin_samples + 1.0)
                     tmp_res[res_idx] = temp_a
                     res_idx += 1
@@ -1812,12 +1819,13 @@ cdef class Filter(object):
                 idx += 1
             bin_samples += 1.0
             sos_obj_put(c_o)
-            c_o = sos_filter_next(self.c_filt)
             prev_time = obj_time
-            t = sos_value_init(&t_, c_o, t_attr)
-            obj_time = <double>t.data.prim.timestamp_.fine.secs * 1.0e6 \
-                       + <double>t.data.prim.timestamp_.fine.usecs
-            sos_value_put(t)
+            c_o = sos_filter_next(self.c_filt)
+            if c_o != NULL:
+                t = sos_value_init(&t_, c_o, t_attr)
+                obj_time = <double>t.data.prim.timestamp_.fine.secs * 1.0e6 \
+                           + <double>t.data.prim.timestamp_.fine.usecs
+                sos_value_put(t)
         if bin_width == 0.0:
             idx = last_idx
         free(tmp_res)
