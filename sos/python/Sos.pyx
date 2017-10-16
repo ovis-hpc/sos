@@ -955,14 +955,14 @@ cdef class AttrIter(SosObject):
 
     def begin(self):
         """Position the iterator at the first object in the index"""
-        cdef int rc = sos_iter_begin(self.c_iter);
+        cdef int rc = sos_iter_begin(self.c_iter)
         if rc == 0:
             return True
         return False
 
     def end(self):
         """Position the iterator at the last object in the index"""
-        cdef int rc = sos_iter_end(self.c_iter);
+        cdef int rc = sos_iter_end(self.c_iter)
         if rc == 0:
             return True
         return False
@@ -1288,6 +1288,540 @@ COND_GE = SOS_COND_GE
 COND_GT = SOS_COND_GT
 COND_NE = SOS_COND_NE
 
+cdef double uint64_acc(sos_value_t v, int idx):
+    return <double>v.data.prim.uint64_
+
+cdef double uint32_acc(sos_value_t v, int idx):
+    return <double>v.data.prim.uint32_
+
+cdef double uint16_acc(sos_value_t v, int idx):
+    return <double>v.data.prim.uint16_
+
+cdef double int64_acc(sos_value_t v, int idx):
+    return <double>v.data.prim.uint64_
+
+cdef double int32_acc(sos_value_t v, int idx):
+    return <double>v.data.prim.uint32_
+
+cdef double int16_acc(sos_value_t v, int idx):
+    return <double>v.data.prim.uint16_
+
+cdef double double_acc(sos_value_t v, int idx):
+    return <double>v.data.prim.double_
+
+cdef double float_acc(sos_value_t v, int idx):
+    return <double>v.data.prim.float_
+
+cdef double timestamp_acc(sos_value_t v, int idx):
+    return <double>v.data.prim.timestamp_.fine.secs + \
+        (<double>v.data.prim.timestamp_.fine.usecs / 1.0e6)
+
+# uint64 array ops
+cdef double uint64_inline_array_acc(sos_value_t v, int idx):
+    return <double>v.data.array.data.uint64_[idx]
+
+cdef double uint64_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = v.data.array.data.uint64_[0]
+    for idx in range(1, v.data.array.count):
+        if max_ < v.data.array.data.uint64_[idx]:
+            max_ = v.data.array.data.uint64_[idx]
+    return max_
+
+cdef double uint64_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = v.data.array.data.uint64_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.uint64_[idx]:
+            min_ = v.data.array.data.uint64_[idx]
+    return min_
+
+cdef double uint64_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += v.data.array.data.uint64_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double uint64_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += v.data.array.data.uint64_[idx]
+    return sum_
+
+cdef double uint64_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.uint64_[idx]
+
+# int64 array ops
+cdef double int64_inline_array_acc(sos_value_t v, int idx):
+    return <double>v.data.array.data.int64_[idx]
+
+cdef double int64_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = v.data.array.data.int64_[0]
+    for idx in range(1, v.data.array.count):
+        if max_ < v.data.array.data.int64_[idx]:
+            max_ = v.data.array.data.int64_[idx]
+        first = 0
+    return max_
+
+cdef double int64_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = v.data.array.data.int64_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.int64_[idx]:
+            min_ = v.data.array.data.int64_[idx]
+    return min_
+
+cdef double int64_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += v.data.array.data.int64_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double int64_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += v.data.array.data.int64_[idx]
+    return sum_
+
+cdef double int64_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.int64_[idx]
+
+# uint32 array ops
+cdef double uint32_inline_array_acc(sos_value_t v, int idx):
+    return <double>v.data.array.data.uint32_[idx]
+
+cdef double uint32_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = v.data.array.data.uint32_[0]
+    for idx in range(1, v.data.array.count):
+        if max_ < v.data.array.data.uint32_[idx]:
+            max_ = v.data.array.data.uint32_[idx]
+        first = 0
+    return max_
+
+cdef double uint32_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = v.data.array.data.uint32_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.uint32_[idx]:
+            min_ = v.data.array.data.uint32_[idx]
+        first = 0
+    return min_
+
+cdef double uint32_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += v.data.array.data.uint32_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double uint32_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += <double>v.data.array.data.uint32_[idx]
+    return sum_
+
+cdef double uint32_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.uint32_[idx]
+
+# int32 array ops
+cdef double int32_inline_array_acc(sos_value_t v, int idx):
+    return <double>v.data.array.data.int32_[idx]
+
+cdef double int32_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = <double>v.data.array.data.int32_[0]
+    for idx in range(1, v.data.array.count):
+        if first == 1 or max_ < v.data.array.data.int32_[idx]:
+            max_ = <double>v.data.array.data.int32_[idx]
+        first = 0
+    return max_
+
+cdef double int32_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = <double>v.data.array.data.int32_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.int32_[idx]:
+            min_ = <double>v.data.array.data.int32_[idx]
+        first = 0
+    return min_
+
+cdef double int32_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += <double>v.data.array.data.int32_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double int32_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += <double>v.data.array.data.int32_[idx]
+    return sum_
+
+cdef double int32_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.int32_[idx]
+
+# uint16 array ops
+cdef double uint16_inline_array_acc(sos_value_t v, int idx):
+    return <double>v.data.array.data.uint16_[idx]
+
+cdef double uint16_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = v.data.array.data.uint16_[0]
+    for idx in range(1, v.data.array.count):
+        if max_ < v.data.array.data.uint16_[idx]:
+            max_ = v.data.array.data.uint16_[idx]
+    return max_
+
+cdef double uint16_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = v.data.array.data.uint16_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.uint16_[idx]:
+            min_ = v.data.array.data.uint16_[idx]
+        first = 0
+    return min_
+
+cdef double uint16_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += v.data.array.data.uint16_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double uint16_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += v.data.array.data.uint16_[idx]
+    return sum_
+
+cdef double uint16_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.uint16_[idx]
+
+# int16 array ops
+cdef double int16_inline_array_acc(sos_value_t v, int idx):
+    return <double>v.data.array.data.int16_[idx]
+
+cdef double int16_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = v.data.array.data.int16_[0]
+    for idx in range(1, v.data.array.count):
+        if max_ < v.data.array.data.int16_[idx]:
+            max_ = v.data.array.data.int16_[idx]
+    return max_
+
+cdef double int16_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = v.data.array.data.int16_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.int16_[idx]:
+            min_ = v.data.array.data.int16_[idx]
+    return min_
+
+cdef double int16_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += v.data.array.data.int16_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double int16_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += v.data.array.data.int16_[idx]
+    return sum_
+
+cdef double int16_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.int16_[idx]
+
+# uint8 array ops
+cdef double uint8_inline_array_acc(sos_value_t v, int idx):
+    return <double>v.data.array.data.byte_[idx]
+
+cdef double uint8_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = v.data.array.data.byte_[0]
+    for idx in range(1, v.data.array.count):
+        if max_ < v.data.array.data.byte_[idx]:
+            max_ = v.data.array.data.byte_[idx]
+    return max_
+
+cdef double uint8_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = v.data.array.data.byte_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.byte_[idx]:
+            min_ = v.data.array.data.byte_[idx]
+    return min_
+
+cdef double uint8_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += <double>v.data.array.data.byte_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double uint8_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += v.data.array.data.byte_[idx]
+    return sum_
+
+cdef double uint8_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.uint8_[idx]
+
+# int8 array ops
+cdef double int8_inline_array_acc(sos_value_t v, int idx):
+    return <double>v.data.array.data.char_[idx]
+
+cdef double int8_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = v.data.array.data.char_[0]
+    for idx in range(1, v.data.array.count):
+        if max_ < v.data.array.data.char_[idx]:
+            max_ = v.data.array.data.char_[idx]
+    return max_
+
+cdef double int8_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = v.data.array.data.char_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.char_[idx]:
+            min_ = v.data.array.data.char_[idx]
+    return min_
+
+cdef double int8_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += <double>v.data.array.data.char_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double int8_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += v.data.array.data.char_[idx]
+    return sum_
+
+cdef double int8_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.int8_[idx]
+
+# double array ops
+cdef double double_inline_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.double_[idx]
+
+cdef double double_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = v.data.array.data.double_[0]
+    for idx in range(1, v.data.array.count):
+        if max_ < v.data.array.data.double_[idx]:
+            max_ = v.data.array.data.double_[idx]
+    return max_
+
+cdef double double_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = v.data.array.data.double_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.double_[idx]:
+            min_ = v.data.array.data.double_[idx]
+    return min_
+
+cdef double double_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += v.data.array.data.double_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double double_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += v.data.array.data.double_[idx]
+    return sum_
+
+cdef double double_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.double_[idx]
+
+# float array ops
+cdef double float_inline_array_acc(sos_value_t v, int idx):
+    return <double>v.data.array.data.float_[idx]
+
+cdef double float_max_array_acc(sos_value_t v, int idx):
+    cdef double max_ = v.data.array.data.float_[0]
+    for idx in range(1, v.data.array.count):
+        if max_ < v.data.array.data.float_[idx]:
+            max_ = v.data.array.data.float_[idx]
+    return max_
+
+cdef double float_min_array_acc(sos_value_t v, int idx):
+    cdef double min_ = v.data.array.data.float_[0]
+    for idx in range(1, v.data.array.count):
+        if min_ < v.data.array.data.float_[idx]:
+            min_ = v.data.array.data.float_[idx]
+    return min_
+
+cdef double float_avg_array_acc(sos_value_t v, int idx):
+    cdef double avg_ = 0
+    for idx in range(0, v.data.array.count):
+        avg_ += v.data.array.data.float_[idx]
+    return avg_ / <double>v.data.array.count
+
+cdef double float_sum_array_acc(sos_value_t v, int idx):
+    cdef double sum_ = 0
+    for idx in range(0, v.data.array.count):
+        sum_ += v.data.array.data.float_[idx]
+    return sum_
+
+cdef double float_pick_array_acc(sos_value_t v, int idx):
+    return v.data.array.data.float_[idx]
+
+ctypedef double (*accessor_fn_t)(sos_value_t v, int idx)
+cdef struct shape_opt_s:
+    accessor_fn_t acc_fn
+    int op                      # array handling op
+    int idx                     # index if the acc_fn is 'pick'
+    int len                     # truncate the len of the array
+
+ctypedef shape_opt_s *shape_opt
+
+cdef accessor_fn_t *accessors = [
+    int16_acc,
+    int32_acc,
+    int64_acc,
+    uint16_acc,
+    uint32_acc,
+    uint64_acc,
+    float_acc,
+    double_acc,
+    NULL,                       # long double
+    timestamp_acc,
+    NULL,                       # obj
+    NULL,                       # struct
+    NULL,                       # join
+    NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL,     # twenty zeroes to get to 32, i.e. SOS_TYPE_BYTE_ARRAY
+    uint8_inline_array_acc,     # byte_array
+    int8_inline_array_acc,      # char_array
+    int16_inline_array_acc,
+    int32_inline_array_acc,
+    int64_inline_array_acc,
+    uint16_inline_array_acc,
+    uint32_inline_array_acc,
+    uint64_inline_array_acc,
+    float_inline_array_acc,
+    double_inline_array_acc,
+    NULL,                       # long double
+    NULL,                       # obj array
+    # min
+    uint8_min_array_acc,
+    int8_min_array_acc,
+    int16_min_array_acc,
+    int32_min_array_acc,
+    int64_min_array_acc,
+    uint16_min_array_acc,
+    uint32_min_array_acc,
+    uint64_min_array_acc,
+    float_min_array_acc,
+    double_min_array_acc,
+    # max
+    uint8_max_array_acc,
+    int8_max_array_acc,
+    int16_max_array_acc,
+    int32_max_array_acc,
+    int64_max_array_acc,
+    uint16_max_array_acc,
+    uint32_max_array_acc,
+    uint64_max_array_acc,
+    float_max_array_acc,
+    double_max_array_acc,
+    # avg
+    uint8_avg_array_acc,
+    int8_avg_array_acc,
+    int16_avg_array_acc,
+    int32_avg_array_acc,
+    int64_avg_array_acc,
+    uint16_avg_array_acc,
+    uint32_avg_array_acc,
+    uint64_avg_array_acc,
+    float_avg_array_acc,
+    double_avg_array_acc,
+    # sum
+    uint8_sum_array_acc,
+    int8_sum_array_acc,
+    int16_sum_array_acc,
+    int32_sum_array_acc,
+    int64_sum_array_acc,
+    uint16_sum_array_acc,
+    uint32_sum_array_acc,
+    uint64_sum_array_acc,
+    float_sum_array_acc,
+    double_sum_array_acc,
+    # pick
+    uint8_pick_array_acc,
+    int8_pick_array_acc,
+    int16_pick_array_acc,
+    int32_pick_array_acc,
+    int64_pick_array_acc,
+    uint16_pick_array_acc,
+    uint32_pick_array_acc,
+    uint64_pick_array_acc,
+    float_pick_array_acc,
+    double_pick_array_acc,
+]
+
+#min
+cdef int UINT8_MIN_ARRAY_ACC  = SOS_TYPE_LAST + 1
+cdef int INT8_MIN_ARRAY_ACC   = SOS_TYPE_LAST + 2
+cdef int INT16_MIN_ARRAY_ACC  = SOS_TYPE_LAST + 3
+cdef int INT32_MIN_ARRAY_ACC  = SOS_TYPE_LAST + 4
+cdef int INT64_MIN_ARRAY_ACC  = SOS_TYPE_LAST + 5
+cdef int UINT16_MIN_ARRAY_ACC = SOS_TYPE_LAST + 6
+cdef int UINT32_MIN_ARRAY_ACC = SOS_TYPE_LAST + 7
+cdef int UINT64_MIN_ARRAY_ACC = SOS_TYPE_LAST + 8
+cdef int FLOAT_MIN_ARRAY_ACC  = SOS_TYPE_LAST + 9
+cdef int DOUBLE_MIN_ARRAY_ACC = SOS_TYPE_LAST + 10
+# max
+cdef int UINT8_MAX_ARRAY_ACC  = SOS_TYPE_LAST + 11
+cdef int INT8_MAX_ARRAY_ACC   = SOS_TYPE_LAST + 12
+cdef int INT16_MAX_ARRAY_ACC  = SOS_TYPE_LAST + 13
+cdef int INT32_MAX_ARRAY_ACC  = SOS_TYPE_LAST + 14
+cdef int INT64_MAX_ARRAY_ACC  = SOS_TYPE_LAST + 15
+cdef int UINT16_MAX_ARRAY_ACC = SOS_TYPE_LAST + 16
+cdef int UINT32_MAX_ARRAY_ACC = SOS_TYPE_LAST + 17
+cdef int UINT64_MAX_ARRAY_ACC = SOS_TYPE_LAST + 18
+cdef int FLOAT_MAX_ARRAY_ACC  = SOS_TYPE_LAST + 19
+cdef int DOUBLE_MAX_ARRAY_ACC = SOS_TYPE_LAST + 20
+# avg
+cdef int UINT8_AVG_ARRAY_ACC  = SOS_TYPE_LAST + 21
+cdef int INT8_AVG_ARRAY_ACC   = SOS_TYPE_LAST + 22
+cdef int INT16_AVG_ARRAY_ACC  = SOS_TYPE_LAST + 23
+cdef int INT32_AVG_ARRAY_ACC  = SOS_TYPE_LAST + 24
+cdef int INT64_AVG_ARRAY_ACC  = SOS_TYPE_LAST + 25
+cdef int UINT16_AVG_ARRAY_ACC = SOS_TYPE_LAST + 26
+cdef int UINT32_AVG_ARRAY_ACC = SOS_TYPE_LAST + 27
+cdef int UINT64_AVG_ARRAY_ACC = SOS_TYPE_LAST + 28
+cdef int FLOAT_AVG_ARRAY_ACC  = SOS_TYPE_LAST + 29
+cdef int DOUBLE_AVG_ARRAY_ACC = SOS_TYPE_LAST + 30
+# sum
+cdef int UINT8_SUM_ARRAY_ACC  = SOS_TYPE_LAST + 31
+cdef int INT8_SUM_ARRAY_ACC   = SOS_TYPE_LAST + 32
+cdef int INT16_SUM_ARRAY_ACC  = SOS_TYPE_LAST + 33
+cdef int INT32_SUM_ARRAY_ACC  = SOS_TYPE_LAST + 34
+cdef int INT64_SUM_ARRAY_ACC  = SOS_TYPE_LAST + 35
+cdef int UINT16_SUM_ARRAY_ACC = SOS_TYPE_LAST + 36
+cdef int UINT32_SUM_ARRAY_ACC = SOS_TYPE_LAST + 37
+cdef int UINT64_SUM_ARRAY_ACC = SOS_TYPE_LAST + 38
+cdef int FLOAT_SUM_ARRAY_ACC  = SOS_TYPE_LAST + 39
+cdef int DOUBLE_SUM_ARRAY_ACC = SOS_TYPE_LAST + 40
+
+cdef int INLINE_ARRAY = 0
+cdef int MIN_ARRAY    = 1
+cdef int MAX_ARRAY    = 11
+cdef int AVG_ARRAY    = 21
+cdef int SUM_ARRAY    = 31
+cdef int PICK_ARRAY   = 41
+
+cdef accessor_fn_t get_accessor_for_type(int sos_type, int arr_op):
+    cdef int idx
+    if sos_type < SOS_TYPE_ARRAY or arr_op == INLINE_ARRAY:
+        return accessors[sos_type]
+    idx = SOS_TYPE_LAST + (sos_type - SOS_TYPE_ARRAY) + arr_op
+    return accessors[idx]
+
+cdef int array_op_to_offset(name):
+    if name == "inline":
+        return MIN_ARRAY
+    if name == "min":
+        return MIN_ARRAY
+    if name == "max":
+        return MAX_ARRAY
+    if name == "avg":
+        return AVG_ARRAY
+    if name == "sum":
+        return SUM_ARRAY
+    if name == "pick":
+        return PICK_ARRAY
+    raise ValueError("{0} is an invalid 'op' value.".format(name))
+
 cdef class Filter(object):
     """Implements a non-Python iterator on a Schema object
 
@@ -1529,10 +2063,19 @@ cdef class Filter(object):
                    timestamp='timestamp', interval_ms=None):
         """Return filter data as a Numpy array
 
-        The keyword parameter 'shape' is used to specify the object attributes
-        that will comprise the returned array. Each element of the array should
-        be the name of an object attribute in the same schema that the positional
-        'attr' argument is a member of. The default value of 'shape' is:
+        The keyword parameter 'shape' is used to specify the object
+        attributes that will comprise the returned array. Each element
+        of the array should be either a string or a dictionary object
+        as follows:
+
+            {
+                "name" : <str attr-name>,
+                "op" : <int>,
+                "idx" : <int>
+            }
+
+        where name is the name of the object attribute and "op", and
+        "idx" are used to control how attray attributes are handles.
 
              [ self.attr.name() ]
 
@@ -1548,7 +2091,8 @@ cdef class Filter(object):
              schema = db.schema_by_name('Sample')
              tstamp = schema.attr_by_name('timestamp')
              f = Filter(tstamp)
-             count, array = f.as_ndarray(1024, shape=['timestamp', 'current_freemem'], order=['attribute'])
+             count, array = f.as_ndarray(1024, shape=['timestamp', 'current_freemem'],
+                                         order=['attribute'])
 
         will return the number of elements actually written to 'array' of
         size 1024 elements. The array is an Numpy.ndarray as follows:
@@ -1564,25 +2108,42 @@ cdef class Filter(object):
 
              [ [ 1425362400.0, 62453912.0 ], [ 1425362460.0, 6553912.0 ], ... ]
 
-        The output array contains additional values for each array
-        element in the attribute value. Assume that
-                    shape = [ 'timestamp', 'a_array', 'b_array' ]
-        and that a_array has a length of 2, and the b_array a length of 4.
-        Further assume  that order = 'index', then the output array would
-        contain the following:
+        Columns in an ndarray must all be the same order, therefore
+        when mixing scalars with arrays in the output, additional
+        fields in the shape column argument are used to specify how
+        the array should be handled;
 
-        [ [ t0,
-            a_array[0], a_array[1],
-            b_array[0], b_array[1], b_array[2], b_array[3] ],
-          ...
-        ]
+        - If the 'op' attribute equals the string 'inline', or the
+          shape argument is only a string containing the name of the
+          array attribute, the output array contains additional columns
+          for each array element in the attribute value. Assume that
+          shape = [ 'timestamp', 'a_array', 'b_array' ] and that
+          a_array has a length of 2, and the b_array a length of 4.
+          Further assume that order = 'index', then the output array
+          would contain the following:
 
-        Note that if there are more than two attributes in the output,
-        this can make processing the data more difficult to handle
-        properly because the code needs to compute where the start of
-        each array is in the row. It is therefore recommended that a
-        pattern like, [ 'timestamp', 'array_type' ] be observed to
-        make analysis of output data easier to handle.
+          [ [ t0,
+              a_array[0], a_array[1],
+              b_array[0], b_array[1], b_array[2], b_array[3] ],
+            ...
+          ]
+
+          Note that if there are more than two attributes in the output,
+          this can make processing the data more difficult to handle
+          properly because the code needs to compute where the start of
+          each array is in the row. It is therefore recommended that a
+          pattern like, [ 'timestamp', 'array_type' ] be observed to
+          make analysis of output data easier to handle.
+
+        - If the shape array element dictionary keyword "op" equals 'sum',
+          'avg', 'max', or 'min', the output is a single scalar value
+          that is either the sum, average, maximum, or minimum of the
+          array elements for that column.
+
+        - If the shape array element dictionary keyword "op" equals
+          'pick', the output is a single scalar value that is chosen
+          from the array based on the value of the element dictionary
+          keyword "idx" in the shape array element dictionary.
 
         Positional Parameters:
         -- The maximum number of rows in the output array. If this parameter is zero,
@@ -1590,8 +2151,8 @@ cdef class Filter(object):
            data.
 
         Keyword Parameters:
-        shape       -- A tuple that specifies the attribute name of each
-                       column in the output array.
+        shape       -- Shape is an array/tuple specifies the contents of each column
+                       in the output.
         order       -- One of 'attribute' (default) or 'index' as described
                        above
         cont        -- If true, the filter will continue where it left off,
@@ -1601,7 +2162,10 @@ cdef class Filter(object):
                        The default is None.
         timestamp   -- The name of the attribute containing a
                        SOS_TYPE_TYPESTAMP. The default is 'timestamp'
-
+        array       -- If specified, one of INLINE_ARRAY, MAX_ARRAY, MIN_ARRAY, AVG_ARRAY,
+                       or SUM_ARRAY
+        array_idx   -- If array=='pick', used to specify which element of the
+                       array is returned in the result.
         Returns:
         -- A two element tuple containing the number of samples written to
            the array and the array itself as follows: (count, array)
@@ -1610,6 +2174,8 @@ cdef class Filter(object):
         cdef sos_obj_t c_o
         cdef sos_value_s v_, t_
         cdef sos_value_t v, t
+        cdef int el_idx
+        cdef int el_count
         cdef int idx
         cdef int last_idx
         cdef int attr_idx
@@ -1618,6 +2184,7 @@ cdef class Filter(object):
         cdef int atype
         cdef int nattr
         cdef int assign
+        cdef int array_op
         cdef Schema schema = self.attr.schema()
         cdef Attr attr
         cdef sos_attr_t c_attr, t_attr
@@ -1625,10 +2192,11 @@ cdef class Filter(object):
         cdef int *res_dim
         cdef int dim
         cdef int *res_type
+        cdef shape_opt *res_acc
         cdef int type_id
         cdef double obj_time, prev_time
         cdef double bin_width, bin_time, bin_value, bin_samples
-        cdef double *tmp_res;
+        cdef double *tmp_res
         cdef double temp_a, temp_b
 
         if shape == None:
@@ -1642,30 +2210,56 @@ cdef class Filter(object):
         if res_type == NULL:
             free(res_attr)
             raise MemoryError("Insufficient memory to allocate type array")
+        res_acc = <shape_opt>malloc(sizeof(shape_opt_s) * nattr)
+        if res_acc == NULL:
+            free(res_attr)
+            free(res_type)
+            raise MemoryError("Insufficient memory to allocate type array")
         res_dim = <int *>malloc(sizeof(uint64_t) * nattr)
         if res_dim == NULL:
             free(res_attr)
             free(res_type)
+            free(res_acc)
             raise MemoryError("Insufficient memory to allocate type array")
 
-        idx = 0
         t_attr = sos_schema_attr_by_name(schema.c_schema, timestamp)
         if t_attr == NULL:
             raise ValueError("The timestamp attribute was not found in the schema. " +\
                              "Consider specifying the timestamp keyword parameter")
         if sos_attr_type(t_attr) != SOS_TYPE_TIMESTAMP:
             raise ValueError("The timestamp attribute {0} is not a SOS_TYPE_TIMESTAMP".format(timestamp))
-        for aname in shape:
-            try:
+
+        try:
+            idx = 0
+            for opt in shape:
+                if type(opt) == str:
+                    aname = opt
+                elif type(opt) == dict:
+                    aname = opt['name']
+                else:
+                    raise ValueError("shape elements must be either <str> or <dict.")
                 attr = schema.attr_by_name(aname)
                 res_attr[idx] = attr.c_attr
                 res_type[idx] = sos_attr_type(attr.c_attr)
+                # set access defaults
+                res_acc[idx].idx = 0
+                res_acc[idx].len = 0
+                res_acc[idx].op = INLINE_ARRAY
+                if type(opt) == dict:
+                    # override defaults
+                    res_acc[idx].op = array_op_to_offset(opt['op'])
+                    if 'idx' in opt:
+                        res_acc[idx].idx = <int>opt['idx']
+                    if 'len' in opt:
+                        res_acc[idx].len = <int>opt['len']
+                res_acc[idx].acc_fn = get_accessor_for_type(res_type[idx], res_acc[idx].op)
                 idx += 1
-            except:
+        except Exception as e:
                 free(res_attr)
                 free(res_type)
+                free(res_acc)
                 free(res_dim)
-                raise ValueError("The attribute {0} does not exist in the schema {1}".format(aname, schema.name()))
+                raise ValueError("Error '{0}' processing the shape keyword parameter".format(str(e)))
 
         if cont:
             c_o = sos_filter_next(self.c_filt)
@@ -1688,10 +2282,14 @@ cdef class Filter(object):
                     sos_value_put(v)
                 else:
                     res_dim[attr_idx] = 1
-                dim += res_dim[attr_idx]
+                if array_op == INLINE_ARRAY:
+                    dim += res_dim[attr_idx]
+                else:
+                    dim += 1
+
         tmp_res = <double *>malloc(dim *sizeof(double))
         if tmp_res == NULL:
-            raise MemoryError("Insufficient memroy to allocate temporary result array")
+            raise MemoryError("Insufficient memory to allocate temporary result array")
 
         if interval_ms is not None and self.start_us != 0 and self.end_us != 0:
             bin_width = interval_ms * 1.0e3
@@ -1738,87 +2336,32 @@ cdef class Filter(object):
         for res_idx in range(0, dim):
             tmp_res[res_idx] = 0.0
 
-        while c_o != NULL:
+        if bin_width > 0.0:
+            idx = int((obj_time - self.start_us) / bin_width)
 
-            if bin_width > 0.0:
-                idx = int((obj_time - self.start_us) / bin_width)
-            if idx >= count or last_idx >= count:
-                break
-            if idx != last_idx:
-                if last_idx == 0 and idx - last_idx > 2:
-                    # The code supports down-sampling, but not up-sampling.
-                    bin_width = 0.0
-                    idx = last_idx + 1
-                if assign == 2:
-                    while last_idx < idx:
-                        for res_idx in range(0, dim):
-                            result[last_idx][res_idx] = tmp_res[res_idx]
-                        last_idx += 1
-                elif assign == 3:
-                    while last_idx < idx:
-                        for res_idx in range(0, dim):
-                            result[res_idx][last_idx] = tmp_res[res_idx]
-                        last_idx += 1
-                else:
-                    while last_idx < idx:
-                        for res_idx in range(0, dim):
-                            result[last_idx] = tmp_res[res_idx]
-                        last_idx += 1
-                for res_idx in range(0, dim):
-                    tmp_res[res_idx] = 0.0
-                if idx >= count:
-                    sos_obj_put(c_o)
-                    break
-                bin_samples = 0.0
+        while c_o != NULL and idx < count and last_idx < count:
+
             res_idx = 0
             for attr_idx in range(0, nattr):
                 v = sos_value_init(&v_, c_o, res_attr[attr_idx])
                 type_id = res_type[attr_idx]
-                for el_idx in range(0, res_dim[attr_idx]):
+
+                if array_op == INLINE_ARRAY:
+                    el_count = res_dim[attr_idx]
+                else:
+                    el_count = 1
+
+                for el_idx in range(0, el_count):
                     temp_a = tmp_res[res_idx]
-                    if type_id == SOS_TYPE_UINT64:
-                        temp_b = <double>v.data.prim.uint64_
-                    elif type_id == SOS_TYPE_UINT64_ARRAY:
-                        temp_b = <double>v.data.array.data.uint64_[el_idx]
-                    elif type_id == SOS_TYPE_UINT32:
-                        temp_b = <double>v.data.prim.uint32_
-                    elif type_id == SOS_TYPE_UINT32_ARRAY:
-                        temp_b = <double>v.data.array.data.uint32_[el_idx]
-                    elif type_id == SOS_TYPE_DOUBLE:
-                        temp_b = v.data.prim.double_
-                    elif type_id == SOS_TYPE_DOUBLE_ARRAY:
-                        temp_b = v.data.array.data.double_[el_idx]
-                    elif type_id == SOS_TYPE_UINT16:
-                        temp_b = <double>v.data.prim.uint16_
-                    elif type_id == SOS_TYPE_UINT32_ARRAY:
-                        temp_b = <double>v.data.array.data.uint32_[el_idx]
-                    elif type_id == SOS_TYPE_TIMESTAMP:
-                        temp_b = <double>v.data.prim.timestamp_.fine.secs + \
-                                 (<double>v.data.prim.timestamp_.fine.usecs / 1.0e6)
-                    elif type_id == SOS_TYPE_INT64:
-                        temp_b = <double>v.data.prim.int64_
-                    elif type_id == SOS_TYPE_INT64_ARRAY:
-                        temp_b = <double>v.data.array.data.int64_[el_idx]
-                    elif type_id == SOS_TYPE_INT32:
-                        temp_b = <double>v.data.prim.int32_
-                    elif type_id == SOS_TYPE_INT32_ARRAY:
-                        temp_b = <double>v.data.array.data.int32_[el_idx]
-                    elif type_id == SOS_TYPE_FLOAT:
-                        temp_b = v.data.prim.float_
-                    elif type_id == SOS_TYPE_FLOAT_ARRAY:
-                        temp_b = v.data.array.data.float_[el_idx]
-                    elif type_id == SOS_TYPE_BYTE_ARRAY:
-                        temp_b = v.data.array.data.byte_[el_idx]
-                    else:
-                        raise TypeError("type_id {0} is not a recognized result type".format(type_id))
+                    temp_b = res_acc[attr_idx](v, &res_acc[idx])
                     temp_a = ((temp_a * bin_samples) + temp_b) / (bin_samples + 1.0)
                     tmp_res[res_idx] = temp_a
                     res_idx += 1
+
                 sos_value_put(v)
-            if bin_width == 0.0:
-                idx += 1
-            bin_samples += 1.0
             sos_obj_put(c_o)
+
+            # Get the next sample
             prev_time = obj_time
             c_o = sos_filter_next(self.c_filt)
             if c_o != NULL:
@@ -1826,12 +2369,48 @@ cdef class Filter(object):
                 obj_time = <double>t.data.prim.timestamp_.fine.secs * 1.0e6 \
                            + <double>t.data.prim.timestamp_.fine.usecs
                 sos_value_put(t)
-        if bin_width == 0.0:
-            idx = last_idx
+
+            # compute the next bin index
+            if bin_width > 0.0:
+                idx = int((obj_time - self.start_us) / bin_width)
+            else:
+                idx += 1
+
+            # If the next object is not in the same bin, save this result
+            if idx != last_idx:
+                if last_idx == 0 and idx - last_idx > 2:
+                    # The code supports down-sampling, but not up-sampling.
+                    bin_width = 0.0
+                    idx = last_idx + 1
+                if assign == 2:
+                    while last_idx < idx and last_idx < count:
+                        for res_idx in range(0, dim):
+                            result[last_idx][res_idx] = tmp_res[res_idx]
+                        last_idx += 1
+                elif assign == 3:
+                    while last_idx < idx and last_idx < count:
+                        for res_idx in range(0, dim):
+                            result[res_idx][last_idx] = tmp_res[res_idx]
+                        last_idx += 1
+                else:
+                    while last_idx < idx and last_idx < count:
+                        for res_idx in range(0, dim):
+                            result[last_idx] = tmp_res[res_idx]
+                        last_idx += 1
+                for res_idx in range(0, dim):
+                    tmp_res[res_idx] = 0.0
+                bin_samples = 0.0
+            else:
+                bin_samples += 1.0
+
+            if idx >= count:
+                sos_obj_put(c_o)
+                break
+
         free(tmp_res)
         free(res_attr)
         free(res_type)
-        return (idx, result)
+        return (last_idx, result)
 
     def __del__(self):
         self.__dealloc__()

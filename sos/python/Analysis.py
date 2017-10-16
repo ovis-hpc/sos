@@ -146,9 +146,11 @@ class Pipeline(object):
         self.out_cont = None
         self.window = 1024
         self.order = 'index'
+        self.done = False
 
     def set_input(self, path):
         self.in_cont = Sos.Container(path, Sos.PERM_RO)
+
     def get_input(self):
         return self.in_cont
 
@@ -213,7 +215,7 @@ class Pipeline(object):
             raise ValueError("The schema {0} was not found.".format(inp_schema_name))
         if comp_list is not None and type(comp_list) != list:
             raise ValueError("The the comp_list keyword must be []")
-        if type(job_id) != int:
+        if job_id is not None and type(job_id) != int:
             raise ValueError("The the job_id_keyword must be an int")
 
         self.start = start
@@ -297,7 +299,7 @@ class Pipeline(object):
             cont = True
             (res_cnt, res) = self.transform(cnt, data, first=first, last=last)
             self.output(res_cnt, res)
-            if cnt < self.window:
+            if self.done:
                 break
 
     def query(self, cont=False, order='index', window=None):
@@ -326,8 +328,11 @@ class Pipeline(object):
             for comp_id in self.comp_list:
                 self.select(comp_id=comp_id, job_id=self.job_id)
                 self.__process_window()
-        else:
+        elif self.job_id is not None:
             self.select(job_id=self.job_id)
+            self.__process_window()
+        else:
+            self.select()
             self.__process_window()
 
     def output(self, cnt, res):
