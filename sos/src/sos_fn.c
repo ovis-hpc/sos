@@ -238,59 +238,157 @@ sos_value_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type)
 	return NULL;
 }
 
-static char *int16_to_str_fn(sos_value_t v, char *str, size_t len)
+
+#define PRIMITIVE_STRLEN_FN(_name_, _fmt_, _member_)			\
+	static size_t _name_ ## _strlen_fn(sos_value_t v)		\
+	{								\
+		return snprintf(NULL, 0, _fmt_, v->data->array.data. _member_); \
+	}
+
+PRIMITIVE_STRLEN_FN(int16, "%hd", int16_)
+PRIMITIVE_STRLEN_FN(int32, "%"PRId32"", int32_)
+PRIMITIVE_STRLEN_FN(int64, "%"PRId64"", int64_)
+PRIMITIVE_STRLEN_FN(uint16, "%hu", uint16_)
+PRIMITIVE_STRLEN_FN(uint32, "%"PRIu32"", uint32_)
+PRIMITIVE_STRLEN_FN(uint64, "%"PRIu64"", uint64_)
+PRIMITIVE_STRLEN_FN(float, "%f", float_)
+PRIMITIVE_STRLEN_FN(double, "%lf", double_)
+PRIMITIVE_STRLEN_FN(long_double, "%Lf", long_double_)
+
+static size_t timestamp_strlen_fn(sos_value_t v)
 {
-	snprintf(str, len, "%hd", v->data->prim.int16_);
-	return str;
+	double t= (double)v->data->prim.timestamp_.fine.secs +
+		((double)v->data->prim.timestamp_.fine.usecs) / 1.0e6;
+	return snprintf(NULL, 0, "%.6f", t) + 1;
 }
 
-static char *int32_to_str_fn(sos_value_t v, char *str, size_t len)
+static size_t obj_strlen_fn(sos_value_t v)
 {
-	snprintf(str, len, "%"PRId32"", v->data->prim.int32_);
-	return str;
+	return snprintf(NULL, 0, "%lu@%lx",
+			v->data->prim.ref_.ref.ods,
+			v->data->prim.ref_.ref.obj) + 1;
 }
 
-static char *int64_to_str_fn(sos_value_t v, char *str, size_t len)
+/* Value is formatted as %02X%02X...%02X\0 */
+static size_t struct_strlen_fn(sos_value_t v)
 {
-	snprintf(str, len, "%"PRId64, v->data->prim.int64_);
-	return str;
+	return (v->attr->data->size * 2) + 1;
 }
 
-static char *uint16_to_str_fn(sos_value_t v, char *str, size_t len)
+/* Value is formatted as %02X:%02X:...%02X\0 */
+static size_t byte_array_strlen_fn(sos_value_t v)
 {
-	snprintf(str, len, "%hu", v->data->prim.uint16_);
-	return str;
+	return v ? v->data->array.count * 3 : 1;
 }
 
-static char *uint32_to_str_fn(sos_value_t v, char *str, size_t len)
+static size_t join_strlen_fn(sos_value_t v)
 {
-	snprintf(str, len, "%"PRIu32, v->data->prim.uint32_);
-	return str;
+	return byte_array_strlen_fn(v);
 }
 
-static char *uint64_to_str_fn(sos_value_t v, char *str, size_t len)
+static size_t char_array_strlen_fn(sos_value_t v)
 {
-	snprintf(str, len, "%"PRIu64, v->data->prim.uint64_);
-	return str;
+	return v ? v->data->array.count + 1 : 1;
 }
 
-static char *float_to_str_fn(sos_value_t v, char *str, size_t len)
+#define PRIMITIVE_ARRAY_STRLEN_FN(_name_, _fmt_, _member_)		\
+	static size_t _name_ ## _array_strlen_fn(sos_value_t v)		\
+	{								\
+		size_t i, count = 1;					\
+		if (!v)							\
+			goto out;					\
+		for (i = 0; i < v->data->array.count; i++) {		\
+			if (i)						\
+				count += snprintf(NULL, 0, ",");	\
+			count += snprintf(NULL, 0, _fmt_, v->data->array.data. _member_ [i]); \
+		}							\
+	out:								\
+		return count;						\
+	}
+
+
+PRIMITIVE_ARRAY_STRLEN_FN(int16, "%hd", int16_)
+PRIMITIVE_ARRAY_STRLEN_FN(uint16, "0x%04hx", uint16_)
+
+PRIMITIVE_ARRAY_STRLEN_FN(int32, "%"PRId32"", int32_)
+PRIMITIVE_ARRAY_STRLEN_FN(uint32, "%"PRIu32"", uint32_)
+
+PRIMITIVE_ARRAY_STRLEN_FN(int64, "%"PRId64"", int64_)
+PRIMITIVE_ARRAY_STRLEN_FN(uint64, "%"PRIu64"", uint64_)
+
+PRIMITIVE_ARRAY_STRLEN_FN(float, "%f", double_)
+PRIMITIVE_ARRAY_STRLEN_FN(double, "%lf", double_)
+PRIMITIVE_ARRAY_STRLEN_FN(long_double, "%Lf", long_double_)
+
+static size_t obj_array_strlen_fn(sos_value_t v)
 {
-	snprintf(str, len, "%f", v->data->prim.float_);
-	return str;
+	size_t i, count = 1;
+	if (!v)
+		goto out;
+	for (i = 0; i < v->data->array.count; i++) {
+		if (i)
+			count += snprintf(NULL, 0, ",");
+		count += snprintf(NULL, 0, "%lu@%lx",
+				  v->data->array.data.ref_[i].ref.ods,
+				  v->data->array.data.ref_[i].ref.obj);
+	}
+ out:
+	return count;
 }
 
-static char *double_to_str_fn(sos_value_t v, char *str, size_t len)
+static sos_value_strlen_fn_t __attr_strlen_fn_for_type[] = {
+	[SOS_TYPE_INT16] = int16_strlen_fn,
+	[SOS_TYPE_INT32] = int32_strlen_fn,
+	[SOS_TYPE_INT64] = int64_strlen_fn,
+	[SOS_TYPE_UINT16] = uint16_strlen_fn,
+	[SOS_TYPE_UINT32] = uint32_strlen_fn,
+	[SOS_TYPE_UINT64] = uint64_strlen_fn,
+	[SOS_TYPE_FLOAT] = float_strlen_fn,
+	[SOS_TYPE_DOUBLE] = double_strlen_fn,
+	[SOS_TYPE_LONG_DOUBLE] = long_double_strlen_fn,
+	[SOS_TYPE_TIMESTAMP] = timestamp_strlen_fn,
+	[SOS_TYPE_OBJ] = obj_strlen_fn,
+	[SOS_TYPE_STRUCT] = struct_strlen_fn,
+	[SOS_TYPE_JOIN] = join_strlen_fn,
+	[SOS_TYPE_BYTE_ARRAY] = byte_array_strlen_fn,
+	[SOS_TYPE_CHAR_ARRAY] = char_array_strlen_fn,
+	[SOS_TYPE_INT16_ARRAY] = int16_array_strlen_fn,
+	[SOS_TYPE_INT32_ARRAY] = int32_array_strlen_fn,
+	[SOS_TYPE_INT64_ARRAY] = int64_array_strlen_fn,
+	[SOS_TYPE_UINT16_ARRAY] = uint16_array_strlen_fn,
+	[SOS_TYPE_UINT32_ARRAY] = uint32_array_strlen_fn,
+	[SOS_TYPE_UINT64_ARRAY] = uint64_array_strlen_fn,
+	[SOS_TYPE_FLOAT_ARRAY] = float_array_strlen_fn,
+	[SOS_TYPE_DOUBLE_ARRAY] = double_array_strlen_fn,
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = long_double_array_strlen_fn,
+	[SOS_TYPE_OBJ_ARRAY] = obj_array_strlen_fn,
+};
+
+sos_value_strlen_fn_t __sos_attr_strlen_fn_for_type(sos_type_t type)
 {
-	snprintf(str, len, "%f", v->data->prim.double_);
-	return str;
+	if (type >= SOS_TYPE_FIRST && type <= SOS_TYPE_LAST)
+		return __attr_strlen_fn_for_type[type];
+	return NULL;
 }
 
-static char *long_double_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	snprintf(str, len, "%Lf", v->data->prim.long_double_);
-	return str;
-}
+#define PRIMITIVE_TO_STR_FN(_name_, _fmt_, _member_) \
+	static char *_name_ ## _to_str_fn(sos_value_t v, char *str, size_t len) \
+	{ \
+		snprintf(str, len, _fmt_, v->data->prim. _member_); \
+		return str; \
+	}
+
+PRIMITIVE_TO_STR_FN(int16, "%hd", int16_)
+PRIMITIVE_TO_STR_FN(int32, "%"PRId32"", int32_)
+PRIMITIVE_TO_STR_FN(int64, "%"PRId64"", int64_)
+
+PRIMITIVE_TO_STR_FN(uint16, "%hu", uint16_)
+PRIMITIVE_TO_STR_FN(uint32, "%"PRIu32"", uint32_)
+PRIMITIVE_TO_STR_FN(uint64, "%"PRIu64"", uint64_)
+
+PRIMITIVE_TO_STR_FN(float, "%f", float_)
+PRIMITIVE_TO_STR_FN(double, "%lf", double_)
+PRIMITIVE_TO_STR_FN(long_double, "%Lf", long_double_)
 
 static char *timestamp_to_str_fn(sos_value_t v, char *str, size_t len)
 {
@@ -314,8 +412,10 @@ static char *struct_to_str_fn(sos_value_t v, char *str, size_t len)
 	char *p = str;
 	if (!v)
 		return "";
-	for (i = 0; i < v->attr->data->size; i++) {
+	for (i = 0; i < v->attr->data->size && len > 0; i++) {
 		res_cnt = snprintf(p, len, "%02X", v->data->struc.byte_[i]);
+		if (res_cnt > len)
+			break;
 		p += res_cnt;
 		len -= res_cnt;
 	}
@@ -329,12 +429,14 @@ static char *byte_array_to_str_fn(sos_value_t v, char *str, size_t len)
 	char *p = str;
 	if (!v)
 		return "";
-	for (i = 0; i < v->data->array.count; i++) {
+	for (i = 0; i < v->data->array.count && len > 0; i++) {
 		if (p == str)
 			fmt = "%02x";
 		else
 			fmt = ":%02x";
 		res_cnt = snprintf(p, len, fmt, v->data->array.data.byte_[i]);
+		if (res_cnt > len)
+			break;
 		p += res_cnt;
 		len -= res_cnt;
 	}
@@ -355,162 +457,41 @@ static char *char_array_to_str_fn(sos_value_t v, char *str, size_t len)
 	return str;
 }
 
-static char *int32_array_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	char *p = str;
-	size_t count;
-	int i;
-	if (!v)
-		return "";
-	for (i = 0; i < v->data->array.count; i++) {
-		if (i) {
-			count = snprintf(p, len, ",");
-			p++; len--;
-		}
-		count = snprintf(p, len, "%d", v->data->array.data.int32_[i]);
-		p += count; len -= count;
+#define PRIMITIVE_ARRAY_TO_STR_FN(_name_, _fmt_, _member_)		\
+	static char * _name_ ## _array_to_str_fn(sos_value_t v, char *str, size_t len) \
+	{								\
+		char *p = str;						\
+		size_t count;						\
+		int i;							\
+		if (!v)							\
+			return "";					\
+		for (i = 0; i < v->data->array.count && len > 0; i++) { \
+			if (i) {					\
+				count = snprintf(p, len, ",");		\
+				p++; len--;				\
+				if (!len)				\
+					break;				\
+			}						\
+			count = snprintf(p, len, _fmt_, v->data->array.data. _member_ [i]); \
+			if (count > len)				\
+				break;					\
+			p += count; len -= count;			\
+		}							\
+		return str;						\
 	}
-	return str;
-}
 
-static char *uint16_array_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	char *p = str;
-	size_t count;
-	int i;
-	if (!v)
-		return "";
-	for (i = 0; i < v->data->array.count; i++) {
-		if (i) {
-			count = snprintf(p, len, ",");
-			p++; len--;
-		}
-		count = snprintf(p, len, "0x%04hx", v->data->array.data.uint16_[i]);
-		p += count; len -= count;
-	}
-	return str;
-}
 
-static char *int16_array_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	char *p = str;
-	size_t count;
-	int i;
-	if (!v)
-		return "";
-	for (i = 0; i < v->data->array.count; i++) {
-		if (i) {
-			count = snprintf(p, len, ",");
-			p++; len--;
-		}
-		count = snprintf(p, len, "%hd", v->data->array.data.int16_[i]);
-		p += count; len -= count;
-	}
-	return str;
-}
+PRIMITIVE_ARRAY_TO_STR_FN(int16, "%hd", int16_)
+PRIMITIVE_ARRAY_TO_STR_FN(int32, "%"PRId32"", int32_)
+PRIMITIVE_ARRAY_TO_STR_FN(int64, "%"PRId64"", int64_)
 
-static char *uint32_array_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	char *p = str;
-	size_t count;
-	int i;
-	if (!v)
-		return "";
-	for (i = 0; i < v->data->array.count; i++) {
-		if (i) {
-			count = snprintf(p, len, ",");
-			p++; len--;
-		}
-		count = snprintf(p, len, "%x", v->data->array.data.uint32_[i]);
-		p += count; len -= count;
-	}
-	return str;
-}
+PRIMITIVE_ARRAY_TO_STR_FN(uint16, "%hu", uint16_)
+PRIMITIVE_ARRAY_TO_STR_FN(uint32, "%"PRIu32"", uint32_)
+PRIMITIVE_ARRAY_TO_STR_FN(uint64, "%"PRIu64"", uint64_)
 
-static char *int64_array_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	char *p = str;
-	size_t count;
-	int i;
-
-	for (i = 0; i < v->data->array.count; i++) {
-		if (i) {
-			count = snprintf(p, len, ",");
-			p++; len--;
-		}
-		count = snprintf(p, len, "%"PRId64"", v->data->array.data.int64_[i]);
-		p += count; len -= count;
-	}
-	return str;
-}
-
-static char *uint64_array_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	char *p = str;
-	size_t count;
-	int i;
-
-	for (i = 0; i < v->data->array.count; i++) {
-		if (i) {
-			count = snprintf(p, len, ",");
-			p++; len--;
-		}
-		count = snprintf(p, len, "%"PRIu64"", v->data->array.data.uint64_[i]);
-		p += count; len -= count;
-	}
-	return str;
-}
-
-static char *float_array_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	char *p = str;
-	size_t count;
-	int i;
-
-	for (i = 0; i < v->data->array.count; i++) {
-		if (i) {
-			count = snprintf(p, len, ",");
-			p++; len--;
-		}
-		count = snprintf(p, len, "%f", v->data->array.data.float_[i]);
-		p += count; len -= count;
-	}
-	return str;
-}
-
-static char *double_array_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	char *p = str;
-	size_t count;
-	int i;
-
-	for (i = 0; i < v->data->array.count; i++) {
-		if (i) {
-			count = snprintf(p, len, ",");
-			p++; len--;
-		}
-		count = snprintf(p, len, "%lf", v->data->array.data.double_[i]);
-		p += count; len -= count;
-	}
-	return str;
-}
-
-static char *long_double_array_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	char *p = str;
-	size_t count;
-	int i;
-
-	for (i = 0; i < v->data->array.count; i++) {
-		if (i) {
-			count = snprintf(p, len, ",");
-			p++; len--;
-		}
-		count = snprintf(p, len, "%Lf", v->data->array.data.long_double_[i]);
-		p += count; len -= count;
-	}
-	return str;
-}
+PRIMITIVE_ARRAY_TO_STR_FN(float, "%f", float_)
+PRIMITIVE_ARRAY_TO_STR_FN(double, "%lf", double_)
+PRIMITIVE_ARRAY_TO_STR_FN(long_double, "%Lf", long_double_)
 
 static char *obj_array_to_str_fn(sos_value_t v, char *str, size_t len)
 {
@@ -518,14 +499,18 @@ static char *obj_array_to_str_fn(sos_value_t v, char *str, size_t len)
 	size_t count;
 	int i;
 
-	for (i = 0; i < v->data->array.count; i++) {
+	for (i = 0; i < v->data->array.count && len > 0; i++) {
 		if (i) {
 			count = snprintf(p, len, ",");
 			p++; len--;
+			if (!len)
+				break;
 		}
 		count = snprintf(p, len, "%lu@%lx",
 				 v->data->array.data.ref_[i].ref.ods,
 				 v->data->array.data.ref_[i].ref.obj);
+		if (count > len)
+			break;
 		p += count; len -= count;
 	}
 	return str;
@@ -716,203 +701,41 @@ static int char_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 	return 0;
 }
 
-static int int16_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
-{
-	int i, cnt, match;
-	const char *str;
-	int16_t c;
-
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%hd%n", &c, &cnt);
-		if (match < 1) {
-			match = sscanf(str, "%hx%n", &c, &cnt);
-			if (match < 1)
-				return EINVAL;
-		}
-		v->data->array.data.int16_[i] = c;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
+#define PRIMITIVE_ARRAY_FROM_STR_FN(_name_, _fmt_, _member_)		\
+	static int _name_ ## _array_from_str_fn(sos_value_t v, const char *value, char **endptr) \
+	{								\
+		int i, cnt, match;					\
+		const char *str;					\
+		int16_t c;						\
+									\
+		for (i = 0, str = value; i < v->data->array.count && *str != '\0'; \
+		     i++, str += cnt) {					\
+			match = sscanf(str, _fmt_ "%n", &c, &cnt);		\
+			if (match < 1) {				\
+				match = sscanf(str, _fmt_ "%n", &c, &cnt); \
+				if (match < 1)				\
+					return EINVAL;			\
+			}						\
+			v->data->array.data. _member_ [i] = c;		\
+			if (str[cnt] != '\0')				\
+				cnt ++;	/* skip delimiter */		\
+		}							\
+		if (endptr)						\
+			*endptr = (char *)str;				\
+		return 0;						\
 	}
-	if (endptr)
-		*endptr = (char *)str;
-	return 0;
-}
 
-static int int32_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
-{
-	int i, cnt, match;
-	const char *str;
-	int32_t c;
+PRIMITIVE_ARRAY_FROM_STR_FN(int16, "%hd", int16_)
+PRIMITIVE_ARRAY_FROM_STR_FN(int32, "%"PRId32"", int32_)
+PRIMITIVE_ARRAY_FROM_STR_FN(int64, "%"PRId64"", int64_)
 
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%d%n", &c, &cnt);
-		if (match < 1) {
-			match = sscanf(str, "%x%n", &c, &cnt);
-			if (match < 1)
-				return EINVAL;
-		}
-		v->data->array.data.int32_[i] = c;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
-	}
-	if (endptr)
-		*endptr = (char *)str;
-	return 0;
-}
+PRIMITIVE_ARRAY_FROM_STR_FN(uint16, "%hu", uint16_)
+PRIMITIVE_ARRAY_FROM_STR_FN(uint32, "%"PRIu32"", uint32_)
+PRIMITIVE_ARRAY_FROM_STR_FN(uint64, "%"PRIu64"", uint64_)
 
-static int int64_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
-{
-	int i, cnt, match;
-	const char *str;
-	int64_t c;
-
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%ld%n", &c, &cnt);
-		if (match < 1) {
-			match = sscanf(str, "%lx%n", &c, &cnt);
-			if (match < 1)
-				return EINVAL;
-		}
-		v->data->array.data.int64_[i] = c;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
-	}
-	if (endptr)
-		*endptr = (char *)str;
-	return 0;
-}
-
-static int uint16_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
-{
-	int i, cnt, match;
-	const char *str;
-	uint16_t c;
-
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%hx%n", &c, &cnt);
-		if (match < 1) {
-			match = sscanf(str, "%hu%n", &c, &cnt);
-			if (match < 1)
-				return EINVAL;
-		}
-		v->data->array.data.uint16_[i] = c;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
-	}
-	if (endptr)
-		*endptr = (char *)str;
-	return 0;
-}
-
-static int uint32_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
-{
-	int i, cnt, match;
-	const char *str;
-	uint32_t c;
-
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%x%n", &c, &cnt);
-		if (match < 1) {
-			match = sscanf(str, "%u%n", &c, &cnt);
-			if (match < 1)
-				return EINVAL;
-		}
-		v->data->array.data.uint32_[i] = c;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
-	}
-	if (endptr)
-		*endptr = (char *)str;
-	return 0;
-}
-
-static int uint64_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
-{
-	int i, cnt, match;
-	const char *str;
-	uint64_t c;
-
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%lx%n", &c, &cnt);
-		if (match < 1) {
-			match = sscanf(str, "%lu%n", &c, &cnt);
-			if (match < 1)
-				return EINVAL;
-		}
-		v->data->array.data.uint64_[i] = c;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
-	}
-	if (endptr)
-		*endptr = (char *)str;
-	return 0;
-}
-
-static int float_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
-{
-	int i, cnt, match;
-	const char *str;
-	float c;
-
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%f%n", &c, &cnt);
-		if (match < 1)
-			return EINVAL;
-		v->data->array.data.float_[i] = c;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
-	}
-	if (endptr)
-		*endptr = (char *)str;
-	return 0;
-}
-
-static int double_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
-{
-	int i, cnt, match;
-	const char *str;
-	double c;
-
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%lf%n", &c, &cnt);
-		if (match < 1)
-			return EINVAL;
-		v->data->array.data.double_[i] = c;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
-	}
-	if (endptr)
-		*endptr = (char *)str;
-	return 0;
-}
-
-static int long_double_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
-{
-	int i, cnt, match;
-	const char *str;
-	long double c;
-
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%Lf%n", &c, &cnt);
-		if (match < 1)
-			return EINVAL;
-		v->data->array.data.long_double_[i] = c;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
-	}
-	if (endptr)
-		*endptr = (char *)str;
-	return 0;
-}
+PRIMITIVE_ARRAY_FROM_STR_FN(float, "%f", float_)
+PRIMITIVE_ARRAY_FROM_STR_FN(double, "%lf", double_)
+PRIMITIVE_ARRAY_FROM_STR_FN(long_double, "%Lf", long_double_)
 
 static int obj_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
@@ -936,8 +759,7 @@ static int obj_array_from_str_fn(sos_value_t v, const char *value, char **endptr
 	return 0;
 }
 
-
-static sos_value_from_str_fn_t __str_fn_t[] = {
+static sos_value_from_str_fn_t __from_str_fn_t[] = {
 	[SOS_TYPE_INT16] = int16_from_str_fn,
 	[SOS_TYPE_INT32] = int32_from_str_fn,
 	[SOS_TYPE_INT64] = int64_from_str_fn,
@@ -968,7 +790,7 @@ static sos_value_from_str_fn_t __str_fn_t[] = {
 sos_value_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type)
 {
 	if (type >= SOS_TYPE_FIRST && type <= SOS_TYPE_LAST)
-		return __str_fn_t[type];
+		return __from_str_fn_t[type];
 	return NULL;
 }
 

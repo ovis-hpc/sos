@@ -365,6 +365,7 @@ static sos_attr_t attr_new(sos_schema_t schema, sos_type_t type, int size)
 	attr->size_fn = __sos_attr_size_fn_for_type(type);
 	attr->to_str_fn = __sos_attr_to_str_fn_for_type(type);
 	attr->from_str_fn = __sos_attr_from_str_fn_for_type(type);
+	attr->strlen_fn = __sos_attr_strlen_fn_for_type(type);
 	attr->key_value_fn = __sos_attr_key_value_fn_for_type(type);
 	attr->idx_type = strdup("BXTREE");
 	attr->key_type = strdup(key_types[type]);
@@ -900,6 +901,30 @@ size_t sos_value_size(sos_value_t value)
 void *sos_value_as_key(sos_value_t value)
 {
 	return value->attr->key_value_fn(value);
+}
+
+/**
+ * \brief Return the length of the string required for the value
+ *
+ * This function returns the size of the buffer required to hold the
+ * object attribute value if formatted as a string. This function is
+ * useful when allocating buffers used with the sos_obj_attr_to_str()
+ * function.
+
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \returns The size of the string in bytes.
+ */
+size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
+{
+	size_t size;
+	struct sos_value_s v_;
+	sos_value_t v = sos_value_init(&v_, obj, attr);
+	if (!v)
+		return 1;
+	size = v->attr->strlen_fn(v);
+	sos_value_put(v);
+	return size;
 }
 
 /**

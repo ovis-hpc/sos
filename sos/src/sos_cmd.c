@@ -122,6 +122,7 @@ void usage(int argc, char *argv[])
 	printf("                   json   - JSON Objects.\n");
 	printf("       [-F <rule>] Add a filter rule to the index.\n");
 	printf("       [-V <col>]  Add an object attribute (i.e. column) to the output.\n");
+	printf("                   If not specified, all attributes in the object are output.\n");
 	printf("                   Use '<col>[width]' to specify the desired column width\n");
 	exit(1);
 }
@@ -178,18 +179,18 @@ int col_widths[] = {
 	[SOS_TYPE_OBJ] = 8,
 	[SOS_TYPE_STRUCT] = 32,
 	[SOS_TYPE_JOIN] = 32,
-	[SOS_TYPE_BYTE_ARRAY] = 32,
-	[SOS_TYPE_CHAR_ARRAY] = 32,
- 	[SOS_TYPE_INT16_ARRAY] = 6,
- 	[SOS_TYPE_INT32_ARRAY] = 8,
-	[SOS_TYPE_INT64_ARRAY] = 8,
-	[SOS_TYPE_UINT16_ARRAY] = 6,
-	[SOS_TYPE_UINT32_ARRAY] = 8,
-	[SOS_TYPE_UINT64_ARRAY] = 8,
-	[SOS_TYPE_FLOAT_ARRAY] = 8,
-	[SOS_TYPE_DOUBLE_ARRAY] = 8,
-	[SOS_TYPE_LONG_DOUBLE_ARRAY] = 8,
-	[SOS_TYPE_OBJ_ARRAY] = 8,
+	[SOS_TYPE_BYTE_ARRAY] = -1,
+	[SOS_TYPE_CHAR_ARRAY] = -1,
+ 	[SOS_TYPE_INT16_ARRAY] = -1,
+ 	[SOS_TYPE_INT32_ARRAY] = -1,
+	[SOS_TYPE_INT64_ARRAY] = -1,
+	[SOS_TYPE_UINT16_ARRAY] = -1,
+	[SOS_TYPE_UINT32_ARRAY] = -1,
+	[SOS_TYPE_UINT64_ARRAY] = -1,
+	[SOS_TYPE_FLOAT_ARRAY] = -1,
+	[SOS_TYPE_DOUBLE_ARRAY] = -1,
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = -1,
+	[SOS_TYPE_OBJ_ARRAY] = -1,
 };
 
 int schema_dir(sos_t sos)
@@ -287,15 +288,23 @@ void table_header(FILE *outp)
 {
 	struct col_s *col;
 	/* Print the header labels */
-	TAILQ_FOREACH(col, &col_list, entry)
-		fprintf(outp, "%-*s ", col->width, col->name);
+	TAILQ_FOREACH(col, &col_list, entry) {
+		if (col->width > 0)
+			fprintf(outp, "%-*s ", col->width, col->name);
+		else
+			fprintf(outp, "%-s ", col->name);
+	}
 	fprintf(outp, "\n");
 
 	/* Print the header separators */
 	TAILQ_FOREACH(col, &col_list, entry) {
 		int i;
-		for (i = 0; i < col->width; i++)
-			fprintf(outp, "-");
+		if (col->width > 0)
+			for (i = 0; i < col->width; i++)
+				fprintf(outp, "-");
+		else
+			for (i = 0; i < strlen(col->name); i++)
+				fprintf(outp, "-");
 		fprintf(outp, " ");
 	}
 	fprintf(outp, "\n");
@@ -324,12 +333,34 @@ void json_header(FILE *outp)
 void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 {
 	struct col_s *col;
+	size_t col_len;
 	sos_attr_t attr;
-	static char str[80];
+	char *col_str;
+	char str[80];
 	TAILQ_FOREACH(col, &col_list, entry) {
 		attr = sos_schema_attr_by_id(schema, col->id);
-		fprintf(outp, "%*s ", col->width,
-			sos_obj_attr_to_str(obj, attr, str, 80));
+		if (col->width > 0 && col->width < sizeof(str)) {
+			col_len = col->width;
+			col_str = str;
+		} else {
+			if (col->width > 0)
+				col_len = col->width;
+			else
+				col_len = sos_obj_attr_strlen(obj, attr);
+			if (col_len < sizeof(str))
+				col_str = str;
+			else
+				col_str = malloc(col_len);
+		}
+		if (col->width > 0) {
+			fprintf(outp, "%*s ", col->width,
+				sos_obj_attr_to_str(obj, attr, col_str, col_len));
+		} else {
+			fprintf(outp, "%s ",
+				sos_obj_attr_to_str(obj, attr, col_str, col_len));
+		}
+		if (col_str != str)
+			free(col_str);
 	}
 	fprintf(outp, "\n");
 }
@@ -339,12 +370,23 @@ void csv_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 	struct col_s *col;
 	int first = 1;
 	sos_attr_t attr;
-	static char str[80];
+	size_t col_len;
+	char *col_str;
+	char str[80];
 	TAILQ_FOREACH(col, &col_list, entry) {
 		attr = sos_schema_attr_by_id(schema, col->id);
 		if (!first)
 			fprintf(outp, ",");
-		fprintf(outp, "%s", sos_obj_attr_to_str(obj, attr, str, 80));
+		col_len = sos_obj_attr_strlen(obj, attr);
+		if (col_len < sizeof(str)) {
+			col_str = str;
+			col_len = sizeof(str);
+		} else {
+			col_str = malloc(col_len);
+		}
+		fprintf(outp, "%s", sos_obj_attr_to_str(obj, attr, col_str, col_len));
+		if (col_str != str)
+			free(col_str);
 		first = 0;
 	}
 	fprintf(outp, "\n");
@@ -356,6 +398,8 @@ void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 	static int first_row = 1;
 	int first = 1;
 	sos_attr_t attr;
+	size_t col_len;
+	char *col_str;
 	static char str[80];
 	if (!first_row)
 		fprintf(outp, ",\n");
@@ -365,7 +409,16 @@ void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 		attr = sos_schema_attr_by_id(schema, col->id);
 		if (!first)
 			fprintf(outp, ",");
-		fprintf(outp, "\"%s\" : \"%s\"", col->name, sos_obj_attr_to_str(obj, attr, str, 80));
+		col_len = sos_obj_attr_strlen(obj, attr);
+		if (col_len < sizeof(str)) {
+			col_str = str;
+			col_len = sizeof(str);
+		} else {
+			col_str = malloc(col_len);
+		}
+		fprintf(outp, "\"%s\" : \"%s\"", col->name, sos_obj_attr_to_str(obj, attr, col_str, col_len));
+		if (col_str != str)
+			free(col_str);
 		first = 0;
 	}
 	fprintf(outp, "}");

@@ -440,6 +440,7 @@ cdef extern from "sos/sos.h":
     int sos_value_cmp(sos_value_t a, sos_value_t b)
     size_t sos_value_size(sos_value_t value)
     size_t sos_value_memcpy(sos_value_t value, void *buf, size_t buflen)
+    size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr)
     char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
     int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char **endptr)
     const char *sos_value_to_str(sos_value_t value, char *str, size_t len)

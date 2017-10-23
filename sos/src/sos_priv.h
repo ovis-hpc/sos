@@ -216,6 +216,7 @@ typedef struct sos_attr_data_s {
 } *sos_attr_data_t;
 
 typedef size_t (*sos_value_size_fn_t)(sos_value_t);
+typedef size_t (*sos_value_strlen_fn_t)(sos_value_t);
 typedef char *(*sos_value_to_str_fn_t)(sos_value_t, char *, size_t);
 typedef int (*sos_value_from_str_fn_t)(sos_value_t, const char *, char **);
 typedef void *(*sos_value_key_value_fn_t)(sos_value_t);
@@ -239,6 +240,7 @@ struct sos_attr_s {
 	sos_value_size_fn_t size_fn;
 	sos_value_from_str_fn_t from_str_fn;
 	sos_value_to_str_fn_t to_str_fn;
+	sos_value_strlen_fn_t strlen_fn;
 	sos_value_key_value_fn_t key_value_fn;
 
 	TAILQ_ENTRY(sos_attr_s) idx_entry;
@@ -417,6 +419,7 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 void __sos_obj_put_no_lock(sos_obj_t obj);
 int sos_iter_pos_put_no_lock(sos_iter_t iter, const sos_pos_t pos);
 sos_value_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type);
+sos_value_strlen_fn_t __sos_attr_strlen_fn_for_type(sos_type_t type);
 sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type);
 sos_value_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type);
 sos_value_key_value_fn_t __sos_attr_key_value_fn_for_type(sos_type_t type);
