@@ -315,8 +315,10 @@ static void h2bxt_close(ods_idx_t idx)
 			pthread_cancel(t->idx_table[bkt].thread);
 	}
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
-		if (t->idx_table[bkt].thread)
+		if (t->idx_table[bkt].thread) {
 			pthread_join(t->idx_table[bkt].thread, NULL);
+		}
+		ods_idx_close(t->idx_table[bkt].idx, ODS_COMMIT_ASYNC);
 	}
 	ods_obj_put(t->udata_obj);
 	ods_idx_close(t->ods_idx, ODS_COMMIT_ASYNC);
@@ -1207,8 +1209,9 @@ int h2bxt_rt_opts_set(ods_idx_t idx, ods_idx_rt_opts_t opt, va_list ap)
 	for (i = 0; i < t->udata->table_size; i++)
 		t->idx_table[i].state = H2BXT_STATE_STOPPED;
 	for (i = 0; i < t->udata->table_size; i++) {
-		if (t->idx_table[i].thread)
+		if (t->idx_table[i].thread) {
 			pthread_join(t->idx_table[i].thread, NULL);
+		}
 	}
 	return ENOMEM;
 }
