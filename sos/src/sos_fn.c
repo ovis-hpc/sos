@@ -159,48 +159,8 @@ static size_t obj_array_size_fn(sos_value_t value)
 
 static size_t join_size_fn(sos_value_t value)
 {
-	struct sos_value_s v_;
-	sos_value_t v;
-	int i, count, join_id;
-	sos_attr_t attr = value->attr;
-	sos_attr_t join_attr;
-	sos_schema_t schema;
-	size_t size;
-
-	if (!attr) {
-		errno = EINVAL;
-		return 0;
-	}
-
-	schema = sos_attr_schema(attr);
-	assert(schema);
-	assert(sos_attr_type(attr) == SOS_TYPE_JOIN);
-
-	count = attr->ext_ptr->count;
-	size = 0;
-	for (i = 0; i < count; i++) {
-		size_t attr_size;
-		join_id = attr->ext_ptr->data.uint32_[i];
-		join_attr = sos_schema_attr_by_id(schema, join_id);
-		if (!join_attr) {
-			errno = EINVAL;
-			return 0;
-		}
-		attr_size = sos_attr_size(join_attr);
-		if (attr_size < 0) {
-			/* Variable lengh */
-			if (!value->obj) {
-				errno = EINVAL;
-				return 0;
-			}
-			v = sos_value_init(&v_, value->obj, join_attr);
-			size += sos_value_size(v);
-			sos_value_put(v);
-		} else {
-			size += attr_size;
-		}
-	}
-	return size;
+	/* join value is a byte array */
+	return value->data->array.count;
 }
 
 static sos_value_size_fn_t __attr_size_fn_for_type[] = {
