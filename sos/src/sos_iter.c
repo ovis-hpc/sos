@@ -1045,7 +1045,7 @@ int sos_filter_cond_add(sos_filter_t filt,
 	return 0;
 }
 
-sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt)
+sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt, int *ret)
 {
 	sos_filter_cond_t cond;
 	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
@@ -1053,8 +1053,10 @@ sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt)
 		sos_value_t obj_value = sos_value_init(&v_, obj, cond->attr);
 		int rc = cond->cmp_fn(obj_value, cond->value);
 		sos_value_put(obj_value);
-		if (!rc)
+		if (!rc) {
+			*ret = rc;
 			return cond;
+		}
 	}
 	return NULL;
 }
@@ -1064,45 +1066,60 @@ static sos_obj_t next_match(sos_filter_t filt)
 	int rc;
 	do {
 		sos_obj_t obj = sos_iter_obj(filt->iter);
-		sos_filter_cond_t cond = sos_filter_eval(obj, filt);
-		if (cond) {
-			sos_obj_put(obj);
-			if (
-			    (cond->attr->index == filt->iter->index)
-			    ||
-			    (0 == __attr_join_idx(sos_iter_attr(filt->iter), cond->attr))
-			    ) {
-				/* On ordered index and the condition doesn't match */
-				break;
-			}
-			rc = sos_iter_next(filt->iter);
-		} else {
+		sos_filter_cond_t cond = sos_filter_eval(obj, filt, &rc);
+		int join;
+		if (!cond)
 			return obj;
+
+		sos_obj_put(obj);
+		join = __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
+		/* We can't assume anything about not-equal */
+		if (cond->cond != SOS_COND_NE) {
+			/* Is the condition on the filter's index attribute,
+			 * or the first member of a join on the filter's index */
+			if (cond->attr->index == filt->iter->index || join == 0) {
+				/* We can assume key[n+1] >= key[n] */
+				/* Conditions LT, and LE cannot follow */
+				if (cond->cond < SOS_COND_EQ)
+					break;
+				/* The condition is EQ and the key was LT the cond */
+				if (cond->cond == SOS_COND_EQ && rc < 0)
+					break;
+			}
 		}
+		rc = sos_iter_next(filt->iter);
 	} while (rc == 0);
+ out:
 	return NULL;
 }
 
 static sos_obj_t prev_match(sos_filter_t filt)
 {
-	int rc;
+	int rc, join;
+	sos_obj_t obj;
+	sos_filter_cond_t cond;
 	do {
-		sos_obj_t obj = sos_iter_obj(filt->iter);
-		sos_filter_cond_t cond = sos_filter_eval(obj, filt);
-		if (cond) {
-			sos_obj_put(obj);
-			if (
-			    (cond->attr->index == filt->iter->index)
-			    ||
-			    (0 == __attr_join_idx(sos_iter_attr(filt->iter), cond->attr))
-			    ) {
-				/* On ordered index and the condition doesn't match */
-				break;
-			}
-			rc = sos_iter_prev(filt->iter);
-		} else {
+		obj = sos_iter_obj(filt->iter);
+		cond = sos_filter_eval(obj, filt, &rc);
+		if (!cond)
 			return obj;
-		}
+
+		sos_obj_put(obj);
+		join == __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
+		/* We can't assume anything about not-equal */
+		if (cond->cond != SOS_COND_NE) {
+			/* Is the condition on the filter's index attribute */
+			if (cond->attr->index == filt->iter->index || join == 0) {
+				/* We can assume key[n-1] <= key[n] */
+				/* Conditions GE and GT cannot follow */
+				if (cond->cond > SOS_COND_EQ)
+					break;
+				/* The condition is EQ and the key was GT the cond */
+				if (cond->cond == SOS_COND_EQ && rc > 0)
+					break;
+			}
+ 		}
+		rc = sos_iter_prev(filt->iter);
 	} while (rc == 0);
 	return NULL;
 }
@@ -1148,13 +1165,15 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 				 * so that this works correctly, i.e. GE comes
 				 * before LE */
 				min_join_idx = join_idx + 1;
-				sup = 1;
+				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
+					sup = 1;
 				continue;
 			}
 		} else if (sos_attr_id(cond->attr) == filt_attr_id) {
 			sos_key_set(key, sos_value_as_key(cond->value),
 				    sos_value_size(cond->value));
-			sup = 1;
+			if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
+				sup = 1;
 			break;
 		}
 		/*
