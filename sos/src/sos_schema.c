@@ -732,11 +732,17 @@ sos_schema_t __sos_get_ischema(sos_type_t type)
 	return ischema_dir[type];
 }
 
+/**
+ * \brief Return !0 if the attribute is a reference
+ */
 int sos_attr_is_ref(sos_attr_t attr)
 {
 	return attr->data->type >= SOS_TYPE_OBJ;
 }
 
+/**
+ * \brief Return !0 if the attribute is an array
+ */
 int sos_attr_is_array(sos_attr_t attr)
 {
 	return attr->data->type >= SOS_TYPE_ARRAY;
@@ -884,6 +890,23 @@ sos_index_t sos_attr_index(sos_attr_t attr)
 size_t sos_attr_size(sos_attr_t attr)
 {
 	return attr->data->size;
+}
+
+/**
+ * \brief Return !0 if the value is an array
+ */
+int sos_value_is_array(sos_value_t v)
+{
+	return v->attr->data->type >= SOS_TYPE_ARRAY;
+}
+
+/**
+ * \brief Return the value's type
+ * \returns The type
+ */
+sos_type_t sos_value_type(sos_value_t v)
+{
+	return v->attr->data->type;
 }
 
 /**
