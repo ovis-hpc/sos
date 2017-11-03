@@ -359,6 +359,13 @@ int __sos_key_join_value(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_
 			dst += sos_attr_key_size(attr);
 			continue;
 		}
+		/* Array types are memcpy'd as part of the key */
+		size_t sz = sos_value_size(value);
+		if (sos_attr_is_array(attr)) {
+			memcpy(dst, value->data->array.data.byte_, sz);
+			dst += sz;
+			continue;
+		}
 		switch (sos_attr_type(attr)) {
 		case SOS_TYPE_TIMESTAMP:
 		case SOS_TYPE_UINT64:
@@ -378,8 +385,13 @@ int __sos_key_join_value(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_
 			u16 = htobe16(value->data->prim.uint16_);
 			memcpy(dst, &u16, sizeof(u16));
 			break;
+		case SOS_TYPE_STRUCT:
+			/* No swapping for struct types */
+			memcpy(dst, value->data->prim.struc_, sz);
+			dst += sz;
+			break;
 		default:
-			return E2BIG;
+			return EINVAL;
 		}
 	}
 	return 0;
