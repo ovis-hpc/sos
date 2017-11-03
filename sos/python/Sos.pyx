@@ -918,6 +918,8 @@ cdef class AttrIter(SosObject):
         """
         self.c_iter = sos_attr_iter_new(attr.c_attr)
         self.attr = attr
+        if self.c_iter == NULL:
+            raise ValueError("The {0} attribute is not indexed".format(self.attr.name()))
 
     def prop_set(self, prop_name, b):
         cdef sos_iter_flags_t f = sos_iter_flags_get(self.c_iter)
@@ -1183,6 +1185,10 @@ cdef class Attr(SosObject):
     def attr_id(self):
         """Returns the attribute id"""
         return sos_attr_id(self.c_attr)
+
+    def is_array(self):
+        """Return True if the attribute is an array"""
+        return (0 != sos_attr_is_array(self.c_attr))
 
     def name(self):
         """Returns the attribute name"""
@@ -2593,6 +2599,10 @@ cdef object get_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_FLOAT64)
 
+cdef object get_LONG_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+    array = OAArray()
+    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_LONGDOUBLE)
+
 cdef object get_FLOAT_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_FLOAT32)
@@ -2636,6 +2646,9 @@ cdef object get_TIMESTAMP(sos_obj_t c_obj, sos_value_data_t c_data):
 cdef object get_DOUBLE(sos_obj_t c_obj, sos_value_data_t c_data):
     return c_data.prim.double_
 
+cdef object get_LONG_DOUBLE(sos_obj_t c_obj, sos_value_data_t c_data):
+    return c_data.prim.long_double_
+
 cdef object get_FLOAT(sos_obj_t c_obj, sos_value_data_t c_data):
     return c_data.prim.float_
 
@@ -2673,6 +2686,7 @@ type_getters[<int>SOS_TYPE_UINT32] = get_UINT32
 type_getters[<int>SOS_TYPE_UINT64] = get_UINT64
 type_getters[<int>SOS_TYPE_FLOAT] = get_FLOAT
 type_getters[<int>SOS_TYPE_DOUBLE] = get_DOUBLE
+type_getters[<int>SOS_TYPE_LONG_DOUBLE] = get_LONG_DOUBLE
 type_getters[<int>SOS_TYPE_TIMESTAMP] = get_TIMESTAMP
 type_getters[<int>SOS_TYPE_OBJ] = get_ERROR
 type_getters[<int>SOS_TYPE_STRUCT] = get_STRUCT
@@ -2687,11 +2701,25 @@ type_getters[<int>SOS_TYPE_UINT32_ARRAY] = get_UINT32_ARRAY
 type_getters[<int>SOS_TYPE_UINT64_ARRAY] = get_UINT64_ARRAY
 type_getters[<int>SOS_TYPE_FLOAT_ARRAY] = get_FLOAT_ARRAY
 type_getters[<int>SOS_TYPE_DOUBLE_ARRAY] = get_DOUBLE_ARRAY
+type_getters[<int>SOS_TYPE_LONG_DOUBLE_ARRAY] = get_LONG_DOUBLE_ARRAY
 type_getters[<int>SOS_TYPE_OBJ_ARRAY] = get_ERROR
 
 ################################
 # Object setter functions
 ################################
+cdef object set_LONG_DOUBLE_ARRAY(sos_obj_t c_obj,
+                                  sos_attr_t c_attr,
+                                  sos_value_data_t c_data,
+                                  val):
+    cdef int i, sz
+    cdef sos_value_s v_
+    cdef sos_value_s *v
+    sz = len(val)
+    v = sos_array_new(&v_, c_attr, c_obj, sz)
+    for i in range(sz):
+        v.data.array.data.long_double_[i] = val[i]
+    sos_value_put(v)
+
 cdef object set_DOUBLE_ARRAY(sos_obj_t c_obj,
                              sos_attr_t c_attr,
                              sos_value_data_t c_data,
@@ -2835,6 +2863,12 @@ cdef object set_TIMESTAMP(sos_obj_t c_obj,
     c_data.prim.timestamp_.fine.secs = secs
     c_data.prim.timestamp_.fine.usecs = usecs
 
+cdef object set_LONG_DOUBLE(sos_obj_t c_obj,
+                       sos_attr_t c_attr,
+                       sos_value_data_t c_data,
+                       val):
+    c_data.prim.long_double_ = <long double>val
+
 cdef object set_DOUBLE(sos_obj_t c_obj,
                        sos_attr_t c_attr,
                        sos_value_data_t c_data,
@@ -2906,6 +2940,7 @@ type_setters[<int>SOS_TYPE_UINT32] = set_UINT32
 type_setters[<int>SOS_TYPE_UINT64] = set_UINT64
 type_setters[<int>SOS_TYPE_FLOAT] = set_FLOAT
 type_setters[<int>SOS_TYPE_DOUBLE] = set_DOUBLE
+type_setters[<int>SOS_TYPE_LONG_DOUBLE] = set_LONG_DOUBLE
 type_setters[<int>SOS_TYPE_TIMESTAMP] = set_TIMESTAMP
 type_setters[<int>SOS_TYPE_OBJ] = set_ERROR
 type_setters[<int>SOS_TYPE_JOIN] = set_ERROR
@@ -2920,6 +2955,7 @@ type_setters[<int>SOS_TYPE_UINT32_ARRAY] = set_UINT32_ARRAY
 type_setters[<int>SOS_TYPE_UINT64_ARRAY] = set_UINT64_ARRAY
 type_setters[<int>SOS_TYPE_FLOAT_ARRAY] = set_FLOAT_ARRAY
 type_setters[<int>SOS_TYPE_DOUBLE_ARRAY] = set_DOUBLE_ARRAY
+type_setters[<int>SOS_TYPE_LONG_DOUBLE_ARRAY] = set_LONG_DOUBLE_ARRAY
 type_setters[<int>SOS_TYPE_OBJ_ARRAY] = set_ERROR
 
 cdef class Value(object):
@@ -3053,16 +3089,21 @@ cdef class Object(object):
                 arr_obj = NULL
                 c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
                 ret.append(self.get_py_value(arr_obj, c_attr, c_data))
+                if arr_obj != NULL:
+                    sos_obj_put(arr_obj);
             return ret
         if int == type(idx):
             c_attr = sos_schema_attr_by_id(sos_obj_schema(self.c_obj), idx)
         else:
             c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), idx)
         if c_attr == NULL:
-            raise ValueError("Object has no attribute with id '{0}'".format(idx))
+            raise StopIteration("Object has no attribute with id '{0}'".format(idx))
         arr_obj = NULL
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
-        return self.get_py_value(arr_obj, c_attr, c_data)
+        res = self.get_py_value(arr_obj, c_attr, c_data)
+        if arr_obj != NULL:
+            sos_obj_put(arr_obj)
+        return res
 
     def __getattr__(self, name):
         cdef sos_obj_t arr_obj
@@ -3075,7 +3116,10 @@ cdef class Object(object):
             raise ValueError("Object has no attribute with name '{0}'".format(name))
         arr_obj = NULL
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
-        return self.get_py_value(arr_obj, c_attr, c_data)
+        res = self.get_py_value(arr_obj, c_attr, c_data)
+        if arr_obj != NULL:
+            sos_obj_put(arr_obj);
+        return res
 
     def __setitem__(self, idx, val):
         cdef sos_obj_t arr_obj
@@ -3095,13 +3139,18 @@ cdef class Object(object):
                     raise ValueError("Object has no attribute with id '{0}'".format(_i))
                 c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
                 self.set_py_value(c_attr, c_data, _v)
+                if arr_obj != NULL:
+                    sos_obj_put(arr_obj)
             return
+
         # single index assignment
         c_attr = sos_schema_attr_by_id(self.c_schema, idx)
         if c_attr == NULL:
             raise ValueError("Object has no attribute with id '{0}'".format(idx))
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
         self.set_py_value(c_attr, c_data, val)
+        if arr_obj != NULL:
+            sos_obj_put(arr_obj)
 
     def __setattr__(self, name, val):
         cdef sos_obj_t arr_obj
@@ -3114,6 +3163,8 @@ cdef class Object(object):
             raise ObjAttrError(name)
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
         self.set_py_value(c_attr, c_data, val)
+        if arr_obj != NULL:
+            sos_obj_put(arr_obj);
 
     def set_array_size(self, name, size):
         """
@@ -3199,8 +3250,12 @@ cdef class Object(object):
         # convert size in bytes to array count
         size = size / np.dtype(eltype).itemsize
         shape[0] = size
-        return np.PyArray_SimpleNewFromData(1, shape, np.dtype(eltype).num,
-                                            c_data.array.data.byte_)
+        res = np.PyArray_SimpleNewFromData(1, shape, np.dtype(eltype).num,
+                                           c_data.array.data.byte_)
+        if arr_obj != NULL:
+            sos_obj_put(arr_obj)
+        return res
+
 class SchemaAttrError(NameError):
     def __init__(self, attr, schema):
         NameError.__init__(self,
