@@ -391,9 +391,9 @@ static char *byte_array_to_str_fn(sos_value_t v, char *str, size_t len)
 		return "";
 	for (i = 0; i < v->data->array.count && len > 0; i++) {
 		if (p == str)
-			fmt = "%02x";
+			fmt = "0x%02x";
 		else
-			fmt = ":%02x";
+			fmt = ",0x%02x";
 		res_cnt = snprintf(p, len, fmt, v->data->array.data.byte_[i]);
 		if (res_cnt > len)
 			break;
@@ -655,6 +655,21 @@ static int join_from_str_fn(sos_value_t v, const char *value, char **endptr)
 
 static int char_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
+	/* If there is an object associated with this value, honor
+	 * that array length, otherwise, alloate memory sufficient to
+	 * encode the array */
+	if (!v->obj) {
+		size_t sz, cnt = strlen(value);
+		sz = cnt + sizeof(v->data_.array);
+		if (sz > sizeof(v->data_)) {
+			v->data = malloc(sz);
+			if (!v->data)
+				return ENOMEM;
+		} else {
+			v->data = &v->data_;
+		}
+		v->data->array.count = cnt;
+	}
 	strncpy(v->data->array.data.char_, value, v->data->array.count);
 	if (endptr)
 		*endptr = (char *)(value + strlen(value));
@@ -668,13 +683,33 @@ static int char_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 		const char *str;					\
 		int16_t c;						\
 									\
+		if (!v->obj) {						\
+			size_t sz, cnt;					\
+			const char *p = value;				\
+			char *q;					\
+			const char *delim = ",:_";			\
+			for (cnt = 1, q = strpbrk(p, delim);		\
+			     q; q = strpbrk(p, delim)) {		\
+				cnt += 1;				\
+				p = q + 1;				\
+			}						\
+			sz = cnt * sizeof(v->data->array.data._member_[0]) \
+				+ sizeof(v->data_.array);		\
+			if (sz > sizeof(v->data_)) {			\
+				v->data = malloc(sz);			\
+				if (!v->data)				\
+					return ENOMEM;			\
+			} else {					\
+				v->data = &v->data_;			\
+			}						\
+			v->data->array.count = cnt;			\
+		}							\
+									\
 		for (i = 0, str = value; i < v->data->array.count && *str != '\0'; \
 		     i++, str += cnt) {					\
-			match = sscanf(str, _fmt_ "%n", &c, &cnt);		\
+			match = sscanf(str, _fmt_ "%n", &c, &cnt);	\
 			if (match < 1) {				\
-				match = sscanf(str, _fmt_ "%n", &c, &cnt); \
-				if (match < 1)				\
-					return EINVAL;			\
+				return EINVAL;				\
 			}						\
 			v->data->array.data. _member_ [i] = c;		\
 			if (str[cnt] != '\0')				\
@@ -870,7 +905,7 @@ static sos_value_key_value_fn_t __key_value_fn_t[] = {
 	[SOS_TYPE_INT16] = int16_key_value_fn,
 	[SOS_TYPE_INT32] = int32_key_value_fn,
 	[SOS_TYPE_INT64] = int64_key_value_fn,
-	[SOS_TYPE_UINT32] = uint16_key_value_fn,
+	[SOS_TYPE_UINT16] = uint16_key_value_fn,
 	[SOS_TYPE_UINT32] = uint32_key_value_fn,
 	[SOS_TYPE_UINT64] = uint64_key_value_fn,
 	[SOS_TYPE_FLOAT] = float_key_value_fn,
