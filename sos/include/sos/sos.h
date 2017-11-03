@@ -491,6 +491,8 @@ sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr);
 void sos_value_put(sos_value_t value);
 sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *arr_obj);
 int sos_value_cmp(sos_value_t a, sos_value_t b);
+int sos_value_is_array(sos_value_t value);
+sos_type_t sos_value_type(sos_value_t value);
 size_t sos_value_size(sos_value_t value);
 size_t sos_value_memcpy(sos_value_t value, void *buf, size_t buflen);
 char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len);
@@ -680,7 +682,7 @@ sos_filter_t sos_filter_new(sos_iter_t iter);
 void sos_filter_free(sos_filter_t f);
 int sos_filter_cond_add(sos_filter_t f, sos_attr_t attr,
 			enum sos_cond_e cond_e, sos_value_t value);
-sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt);
+sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt, int *ret);
 sos_obj_t sos_filter_begin(sos_filter_t filt);
 sos_obj_t sos_filter_next(sos_filter_t filt);
 sos_obj_t sos_filter_skip(sos_filter_t filt, int count);
