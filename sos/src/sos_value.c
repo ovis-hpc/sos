@@ -63,9 +63,28 @@
 
 typedef int (*cmp_fn_t)(sos_value_t a, sos_value_t b);
 
+static int INT16_cmp(sos_value_t a, sos_value_t b)
+{
+	return a->data->prim.int16_ - b->data->prim.int16_;
+}
+
 static int INT32_cmp(sos_value_t a, sos_value_t b)
 {
 	return a->data->prim.int32_ - b->data->prim.int32_;
+}
+
+static int INT64_cmp(sos_value_t a, sos_value_t b)
+{
+	if (a->data->prim.int64_ < b->data->prim.int64_)
+		return -1;
+	if (a->data->prim.int64_ > b->data->prim.int64_)
+		return 1;
+	return 0;
+}
+
+static int UINT16_cmp(sos_value_t a, sos_value_t b)
+{
+	return a->data->prim.uint16_ - b->data->prim.uint16_;
 }
 
 static int UINT32_cmp(sos_value_t a, sos_value_t b)
@@ -73,14 +92,13 @@ static int UINT32_cmp(sos_value_t a, sos_value_t b)
 	return a->data->prim.uint32_ - b->data->prim.uint32_;
 }
 
-static int INT64_cmp(sos_value_t a, sos_value_t b)
-{
-	return a->data->prim.int64_ - b->data->prim.int64_;
-}
-
 static int UINT64_cmp(sos_value_t a, sos_value_t b)
 {
-	return a->data->prim.uint64_ - b->data->prim.uint64_;
+	if (a->data->prim.uint64_ < b->data->prim.uint64_)
+		return -1;
+	if (a->data->prim.uint64_ > b->data->prim.uint64_)
+		return 1;
+	return 0;
 }
 
 static int FLOAT_cmp(sos_value_t a, sos_value_t b)
@@ -105,10 +123,9 @@ static int DOUBLE_cmp(sos_value_t a, sos_value_t b)
 
 static int LONG_DOUBLE_cmp(sos_value_t a, sos_value_t b)
 {
-	long double res = a->data->prim.long_double_ - b->data->prim.long_double_;
-	if (res > 0)
+	if (a->data->prim.long_double_ > b->data->prim.long_double_)
 		return 1;
-	else if (res < 0)
+	if (a->data->prim.long_double_ < b->data->prim.long_double_)
 		return -1;
 	return 0;
 }
@@ -122,15 +139,60 @@ static int TIMESTAMP_cmp(sos_value_t a, sos_value_t b)
 	return 0;
 }
 
+static int BYTE_ARRAY_cmp(sos_value_t a, sos_value_t b)
+{
+	int cmp_len = a->data->array.count;
+	if (cmp_len > b->data->array.count)
+		cmp_len = b->data->array.count;
+	int res = memcmp(a->data->array.data.byte_, b->data->array.data.byte_, cmp_len);
+	if (res == 0)
+		return a->data->array.count - b->data->array.count;
+	return res;
+}
+
+static int CHAR_ARRAY_cmp(sos_value_t a, sos_value_t b)
+{
+	return BYTE_ARRAY_cmp(a, b);
+}
+
+static int ARRAY_cmp(sos_value_t a, sos_value_t b)
+{
+	size_t a_len = sos_value_size(a);
+	size_t b_len = sos_value_size(b);
+	size_t cmp_len;
+	if (a_len > b_len)
+		cmp_len = b_len;
+	else
+		cmp_len = a_len;
+	int res = memcmp(a->data->array.data.byte_, b->data->array.data.byte_, cmp_len);
+	if (res == 0)
+		return a_len - b_len;
+	return res;
+}
+
 static cmp_fn_t cmp_fn_table[] = {
+	[SOS_TYPE_INT16] = INT16_cmp,
 	[SOS_TYPE_INT32] = INT32_cmp,
 	[SOS_TYPE_INT64] = INT64_cmp,
+	[SOS_TYPE_UINT16] = UINT16_cmp,
 	[SOS_TYPE_UINT32] = UINT32_cmp,
 	[SOS_TYPE_UINT64] = UINT64_cmp,
 	[SOS_TYPE_FLOAT] = FLOAT_cmp,
 	[SOS_TYPE_DOUBLE] = DOUBLE_cmp,
 	[SOS_TYPE_LONG_DOUBLE] = LONG_DOUBLE_cmp,
 	[SOS_TYPE_TIMESTAMP] = TIMESTAMP_cmp,
+	[SOS_TYPE_CHAR_ARRAY] = CHAR_ARRAY_cmp,
+	[SOS_TYPE_BYTE_ARRAY] = BYTE_ARRAY_cmp,
+	[SOS_TYPE_INT16_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_INT32_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_INT64_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_UINT16_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_UINT32_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_UINT64_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_FLOAT_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_DOUBLE_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_OBJ_ARRAY] = ARRAY_cmp,
 };
 
 /**
@@ -189,10 +251,8 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 {
 	struct sos_value_s *v_;
 	sos_value_t *v;
-	size_t *value_size;
 	struct sos_value_s _v_[MAX_JOIN_ATTRS];
 	sos_value_t _v[MAX_JOIN_ATTRS];
-	size_t _value_size[MAX_JOIN_ATTRS];
 	void *dst;
 	struct sos_array_s *data;
 	long double *ld;
@@ -212,16 +272,12 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 	if (count <= MAX_JOIN_ATTRS) {
 		v_ = _v_;
 		v = _v;
-		value_size = _value_size;
 	} else {
 		v_ = calloc(count, sizeof *v_);
 		if (!v_)
 			return NULL;
 		v = calloc(count, sizeof *v);
 		if (!v)
-			return NULL;
-		value_size = calloc(count, sizeof *value_size);
-		if (!value_size)
 			return NULL;
 	}
 
@@ -238,8 +294,7 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 			errno = ENOMEM;
 			goto err;;
 		}
-		value_size[i] = sos_value_size(v[i]);
-		size += value_size[i];
+		size += sos_value_size(v[i]);
 	}
 
 	if (size > (sizeof(val->data_) + sizeof(*data))) {
@@ -259,7 +314,18 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 
 	dst = data->data.byte_;
 	for (i = 0; i < count; i++) {
-		switch (value_size[i]) {
+		size_t sz = sos_value_size(v[i]);
+
+		/* Array types are memcpy'd as part of the key */
+		if (sos_value_is_array(v[i])) {
+			memcpy(dst, v[i]->data->array.data.byte_, sz);
+			dst += sz;
+			sos_value_put(v[i]);
+			continue;
+		}
+
+		/* Primitive types are byte swapped */
+		switch (sz) {
 		case 8:
 			u64 = htobe64(v[i]->data->prim.uint64_);
 			memcpy(dst, &u64, sizeof(u64));
@@ -282,29 +348,30 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 			ld[1] = htobe64(p64[1]);
 			dst += sizeof(long double);
 			break;
-		default:
-			/* No swapping for string/struct types */
-			memcpy(dst, v[i]->data->array.data.byte_, value_size[i]);
-			dst += value_size[i];
+		case SOS_TYPE_STRUCT:
+			/* No swapping for struct types */
+			memcpy(dst, v[i]->data->prim.struc_, sz);
+			dst += sz;
 			break;
+		default:
+			errno = EINVAL;
+			goto err;
 		}
 		sos_value_put(v[i]);
 	}
 	if (count > MAX_JOIN_ATTRS) {
 		free(v_);
 		free(v);
-		free(value_size);
 	}
 	return val;
  err:
-	if (count > MAX_JOIN_ATTRS) {
-		free(v_);
-		free(v);
-		free(value_size);
-	}
 	while (i) {
 		sos_value_put(v[i]);
 		i--;
+	}
+	if (count > MAX_JOIN_ATTRS) {
+		free(v_);
+		free(v);
 	}
 	return NULL;
 }
@@ -354,10 +421,23 @@ sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
 	if (src->obj) {
 		dst->obj = sos_obj_get(dst->obj);
 		dst->data = src->data;
-	} else {
+		return dst;
+	}
+	if (!sos_value_is_array(src)) {
 		memcpy(&dst->data_, &src->data_, sizeof(src->data_));
 		dst->data = &dst->data_;
+		return dst;
 	}
+	size_t sz = sos_value_size(src);
+	if (sz > sizeof(union sos_value_data_u) - sizeof(struct sos_array_s)) {
+		dst->data = malloc(sz + sizeof(struct sos_array_s));
+		if (!dst->data)
+			return NULL;
+	} else {
+		dst->data = &dst->data_;
+	}
+	dst->data->array.count = src->data->array.count;
+	memcpy(dst->data->array.data.byte_, src->data->array.data.byte_, sz);
 	return dst;
 }
 
