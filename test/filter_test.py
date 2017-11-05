@@ -6,41 +6,30 @@ import numpy as np
 import logging
 import os
 from sosdb import Sos
+from sosunittest import SosTestCase
 
 class Debug(object): pass
 
 logger = logging.getLogger(__name__)
-db_path = os.getenv("TEST_DATA_DIR")
-if db_path is None:
-    db_path = "."
 
-class FilterTestJoin3xU64(unittest.TestCase):
+class FilterTestJoin3xU64(SosTestCase):
     @classmethod
-    def setUpClass(self):
-        self.db = Sos.Container()
-        self.path = db_path + "/" + "join_test_3x_u64_cont"
-        shutil.rmtree(self.path, ignore_errors=True)
-        self.db.create(self.path)
-        self.db.open(self.path)
-        self.db.part_create("ROOT")
-        root = self.db.part_by_name("ROOT")
-        root.state_set("PRIMARY")
-        self.schema = Sos.Schema()
-        self.schema.from_template('3x_u64',
-                             [ { "name" : "a_1", "type" : "uint64" },
-                               { "name" : "a_2", "type" : "uint64" },
-                               { "name" : "a_3", "type" : "uint64" },
-                               { "name" : "join_key", "type" : "join",
-                                 "join_attrs" : [ "a_1", "a_2", "a_3" ],
-                                 "index" : {}}
-                             ])
-        self.schema.add(self.db)
+    def setUpClass(cls):
+        cls.setUpDb('join_test_3x_u64_cont')
+        cls.schema = Sos.Schema()
+        cls.schema.from_template('3x_u64',
+                                 [ { "name" : "a_1", "type" : "uint64" },
+                                   { "name" : "a_2", "type" : "uint64" },
+                                   { "name" : "a_3", "type" : "uint64" },
+                                   { "name" : "join_key", "type" : "join",
+                                     "join_attrs" : [ "a_1", "a_2", "a_3" ],
+                                     "index" : {}}
+                               ])
+        cls.schema.add(cls.db)
 
     @classmethod
-    def tearDownClass(self):
-        self.db.close()
-        del self.db
-        shutil.rmtree(self.path, ignore_errors=True)
+    def tearDownClass(cls):
+        cls.tearDownDb()
 
     def setUp(self):
         self.min_a_1 = 1000

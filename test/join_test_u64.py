@@ -4,32 +4,18 @@ import shutil
 import logging
 import os
 from sosdb import Sos
+from sosunittest import SosTestCase
 
 class Debug(object): pass
 
 logger = logging.getLogger(__name__)
 
-class JoinTestU64(unittest.TestCase):
+class JoinTestU64(SosTestCase):
     @classmethod
-    def setUpClass(self):
-        self.db = Sos.Container()
-        self.path = "join_test_u64_cont"
-        shutil.rmtree(self.path, ignore_errors=True)
-        self.db.create(self.path)
-        self.db.open(self.path)
-        self.db.part_create("ROOT")
-        root = self.db.part_by_name("ROOT")
-        root.state_set("PRIMARY")
-
-    @classmethod
-    def tearDownClass(self):
-        self.db.close()
-        del self.db
-        shutil.rmtree(self.path, ignore_errors=True)
-
-    def test_u64_add_objects(self):
-        schema = Sos.Schema()
-        schema.from_template('test_u64',
+    def setUpClass(cls):
+        cls.setUpDb("join_test_u64_cont")
+        cls.schema = Sos.Schema()
+        cls.schema.from_template('test_u64',
                              [ { "name" : "a_1", "type" : "uint64" },
                                { "name" : "a_2", "type" : "uint64" },
                                { "name" : "a_3", "type" : "uint64" },
@@ -37,17 +23,23 @@ class JoinTestU64(unittest.TestCase):
                                  "join_attrs" : [ "a_1", "a_2", "a_3" ],
                                  "index" : {}}
                            ])
-        schema.add(self.db)
+        cls.schema.add(cls.db)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tearDownDb()
+
+    def test_u64_add_objects(self):
         data = [ (1, 2, 3), (2, 3, 4), (3, 4, 5) ]
         objs = []
         for seq in data:
-            o = schema.alloc()
+            o = self.schema.alloc()
             objs.append(o)
             o[:] = seq
             o.index_add()
 
         # Check expected order
-        a_join = schema.attr_by_name('a_join')
+        a_join = self.schema.attr_by_name('a_join')
         it = a_join.attr_iter()
         i = 0
         b = it.begin()
@@ -63,9 +55,8 @@ class JoinTestU64(unittest.TestCase):
         self.assertEqual(count, 3)
 
     def u64_fwd_col(self, cond, cmp_fn, idx, expect, counts):
-        schema = self.db.schema_by_name('test_u64')
-        a_join = schema.attr_by_name('a_join')
-        attr = schema.attr_by_id(idx)
+        a_join = self.schema.attr_by_name('a_join')
+        attr = self.schema.attr_by_id(idx)
 
         f = a_join.filter()
         f.add_condition(attr, cond, expect[0])

@@ -4,6 +4,7 @@ import shutil
 import logging
 import os
 from sosdb import Sos
+from sosunittest import SosTestCase
 
 class Debug(object): pass
 
@@ -11,27 +12,12 @@ logger = logging.getLogger(__name__)
 
 col_1_arg = ("A-two", "B-three", "C-four", "D-five")
 
-class JoinTestU32_Str_U32(unittest.TestCase):
+class JoinTestU32_Str_U32(SosTestCase):
     @classmethod
-    def setUpClass(self):
-        self.db = Sos.Container()
-        self.path = "join_test_u32_str_u32_cont"
-        shutil.rmtree(self.path, ignore_errors=True)
-        self.db.create(self.path)
-        self.db.open(self.path)
-        self.db.part_create("ROOT")
-        root = self.db.part_by_name("ROOT")
-        root.state_set("PRIMARY")
-
-    @classmethod
-    def tearDownClass(self):
-        self.db.close()
-        del self.db
-        shutil.rmtree(self.path, ignore_errors=True)
-
-    def test_u32_str_u32_add_objects(self):
-        schema = Sos.Schema()
-        schema.from_template('test_u32_str_u32',
+    def setUpClass(cls):
+        cls.setUpDb("join_test_u32_str_u32_cont")
+        cls.schema = Sos.Schema()
+        cls.schema.from_template('test_u32_str_u32',
                              [ { "name" : "a_1", "type" : "uint32" },
                                { "name" : "a_2", "type" : "string" },
                                { "name" : "a_3", "type" : "uint32" },
@@ -39,17 +25,23 @@ class JoinTestU32_Str_U32(unittest.TestCase):
                                  "join_attrs" : [ "a_1", "a_2", "a_3" ],
                                  "index" : {}}
                            ])
-        schema.add(self.db)
+        cls.schema.add(cls.db)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tearDownDb()
+
+    def test_u32_str_u32_add_objects(self):
         data = [ (1, "A-two", 3), (2, "B-three", 4), (3, "C-four", 5) ]
         objs = []
         for seq in data:
-            o = schema.alloc()
+            o = self.schema.alloc()
             objs.append(o)
             o[:] = seq
             o.index_add()
 
         # Check expected order
-        a_join = schema.attr_by_name('a_join')
+        a_join = self.schema.attr_by_name('a_join')
         it = a_join.attr_iter()
         i = 0
         b = it.begin()
@@ -65,9 +57,8 @@ class JoinTestU32_Str_U32(unittest.TestCase):
         self.assertEqual(count, 3)
 
     def u32_str_u32_fwd_col(self, cond, cmp_fn, idx, expect, counts):
-        schema = self.db.schema_by_name('test_u32_str_u32')
-        a_join = schema.attr_by_name('a_join')
-        attr = schema.attr_by_id(idx)
+        a_join = self.schema.attr_by_name('a_join')
+        attr = self.schema.attr_by_id(idx)
 
         f = a_join.filter()
         f.add_condition(attr, cond, expect[0])
