@@ -6,6 +6,7 @@ import sys
 
 logger = logging.getLogger(__name__)
 
+from schema_test import SchemaTest
 from join_test_u16 import JoinTestU16
 from join_test_u32 import JoinTestU32
 from join_test_u64 import JoinTestU64
@@ -14,7 +15,8 @@ from join_test_u32_str_u32 import JoinTestU32_Str_U32
 from join_test_u32_str_str import JoinTestU32_Str_Str
 from filter_test import FilterTestJoin3xU64
 
-tests = [ JoinTestU16,
+tests = [ SchemaTest,
+          JoinTestU16,
           JoinTestU32,
           JoinTestU64,
           JoinTestU32_Str_Str,

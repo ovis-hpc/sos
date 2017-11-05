@@ -696,6 +696,13 @@ cdef class Schema(SosObject):
         o = Object()
         return o.assign(c_obj)
 
+    def __getitem__(self, attr_id):
+        if type(attr_id) == int:
+            return Attr(self, attr_id=attr_id)
+        elif type(attr_id) == str:
+            return Attr(self, attr_name=attr_id)
+        raise ValueError("The index must be a string or an integer.")
+
     def __str__(self):
         cdef int i
         cdef sos_attr_t c_attr
@@ -1202,7 +1209,7 @@ cdef class Attr(SosObject):
         """Returns the type name of this attribute"""
         return sos_type_strs[sos_attr_type(self.c_attr)]
 
-    def indexed(self):
+    def is_indexed(self):
         """Returns True if the attribute has an index"""
         if sos_attr_index(self.c_attr) != NULL:
             return True
