@@ -1105,7 +1105,7 @@ static sos_obj_t prev_match(sos_filter_t filt)
 			return obj;
 
 		sos_obj_put(obj);
-		join == __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
+		join = __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
 		/* We can't assume anything about not-equal */
 		if (cond->cond != SOS_COND_NE) {
 			/* Is the condition on the filter's index attribute */
@@ -1167,8 +1167,8 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 				min_join_idx = join_idx + 1;
 				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
 					sup = 1;
-				continue;
 			}
+			continue;
 		} else if (sos_attr_id(cond->attr) == filt_attr_id) {
 			sos_key_set(key, sos_value_as_key(cond->value),
 				    sos_value_size(cond->value));
@@ -1177,8 +1177,8 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 			break;
 		}
 		/*
-		 * None of the filter conditions affect the iterator
-		 * attribute, start at the beginning of the index
+		 * This and subsequent filter conditions don't affect
+		 * the iterator
 		 */
 		break;
 	}
@@ -1282,18 +1282,20 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 				 * so that this works correctly, i.e. GE comes
 				 * before LE */
 				min_join_idx = join_idx + 1;
-				inf = 1;
-				continue;
+				if (cond->cond != SOS_COND_NE && (cond->cond <= SOS_COND_EQ))
+					inf = 1;
 			}
+			continue;
 		} else if (sos_attr_id(cond->attr) == filt_attr_id) {
 			sos_key_set(key, sos_value_as_key(cond->value),
 				    sos_value_size(cond->value));
-			inf = 1;
+			if (cond->cond != SOS_COND_NE && (cond->cond <= SOS_COND_EQ))
+				inf = 1;
 			break;
 		}
 		/*
-		 * None of the filter conditions affect the iterator
-		 * attribute, start at the end of the index
+		 * This and subsequent filter conditions don't affect
+		 * the iterator
 		 */
 		break;
 	}
