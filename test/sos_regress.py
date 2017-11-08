@@ -15,6 +15,7 @@ from join_test_u32_str_u32 import JoinTestU32_Str_U32
 from join_test_u32_str_str import JoinTestU32_Str_Str
 from filter_test import FilterTestJoin3xU64
 from pos_test import FilterPosTest
+from filt_count_test import FilterCountTest
 
 tests = [ SchemaTest,
           JoinTestU16,
@@ -23,7 +24,8 @@ tests = [ SchemaTest,
           JoinTestU32_Str_Str,
           JoinTestU32_Str_U32,
           FilterTestJoin3xU64,
-          FilterPosTest
+          FilterPosTest,
+          FilterCountTest
           ]
 
 if __name__ == "__main__":
