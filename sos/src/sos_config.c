@@ -59,19 +59,13 @@
 #include <sos/sos.h>
 #include "sos_priv.h"
 
-int handle_partition_enable(sos_t sos, sos_config_t config);
-int handle_partition_size(sos_t sos, sos_config_t config);
-int handle_partition_period(sos_t sos,sos_config_t config);
-int handle_partition_extend(sos_t sos, sos_config_t config);
+int handle_pos_keep_time(sos_t sos, sos_config_t config);
 
 static struct config_opt {
 	const char *opt_name;
 	int (*opt_handler)(sos_t sos, sos_config_t config);
 } config_opts[] = {
-	{ SOS_CONTAINER_PARTITION_ENABLE, handle_partition_enable },
-	{ SOS_CONTAINER_PARTITION_SIZE, handle_partition_size },
-	{ SOS_CONTAINER_PARTITION_PERIOD, handle_partition_period },
-	{ SOS_CONTAINER_PARTITION_EXTEND, handle_partition_extend }
+	{ SOS_POS_KEEP_TIME, handle_pos_keep_time },
 };
 
 static int compare_opt(const void *a, const void *b)
@@ -119,28 +113,13 @@ static void normalize_option_name(char *name)
  * \brief Set a container configuration option
  *
  * Container configuration options are used to manage the storage
- * management features of SOS, e.g. partitions, and partition
- * conditions. Container configuration options are persistent and only
- * need to be specified once.
+ * management features of SOS
+ *
+ * SOS_POS_KEEP_TIME
+ *    Determines how long iterator positions are kept before being
+ *    destroyed. The time is specified in seconds.
  *
  * Sets the value of a SOS container option. Options include:
- * SOS_CONTAINER_PARTITION_ENABLE:
- *     Specifies if partition rotation is enabled. If enabled, and one
- *     of the conditions are met (size, period), a new partition is
- *     created and all new objects are placed in the new container. If
- *     partition rotate is disabled, and a size or duration condition
- *     is met, new object creation will fail.
- * SOS_CONTAINER_PARTITION_SIZE:
- *     Specifies the maximum size of a partition. When a partition
- *     reaches this size, new data overflow into the next partition.
- * SOS_CONTAINER_PARTITION_PERIOD:
- *     Specifies the duration in seconds of a partition. When the
- *     current time plus the 'start time' is reached, new data will
- *     overflow into the next partition. The 'star time' for a
- *     partition is Midnight.
- * SOS_CONTAINER_PARTITION_EXTEND_SIZE:
- *     When a partition must grow to accomodate new objects, this
- *     value specifies how much space to add.
  */
 int sos_container_config_set(const char *path, const char *opt_name, const char *opt_value)
 {
@@ -300,17 +279,6 @@ char *sos_container_config_get(const char *path, const char *opt_name)
 	return NULL;
 }
 
-int handle_partition_enable(sos_t sos, sos_config_t config)
-{
-	if (0 == strcasecmp(config->value, "yes"))
-		sos->config.options |= SOS_OPTIONS_PARTITION_ENABLE;
-	else if (0 == strcasecmp(config->value, "true"))
-		sos->config.options |= SOS_OPTIONS_PARTITION_ENABLE;
-	else
-		sos->config.options &= ~SOS_OPTIONS_PARTITION_ENABLE;
-	return 0;
-}
-
 long convert_time_units(const char *str)
 {
 	char *units;
@@ -355,22 +323,12 @@ long convert_size_units(const char *str)
 	return value;
 }
 
-int handle_partition_size(sos_t sos, sos_config_t config)
+int handle_pos_keep_time(sos_t sos, sos_config_t config)
 {
-	sos->config.max_partition_size = convert_size_units(config->value);
-	return 0;
-}
-
-int handle_partition_period(sos_t sos, sos_config_t config)
-{
-	sos->config.partition_period = convert_time_units(config->value);
-	return 0;
-}
-
-
-int handle_partition_extend(sos_t sos, sos_config_t config)
-{
-	sos->config.partition_extend = convert_size_units(config->value);
+	int keep_time = atoi(config->value);
+	if (keep_time <= 0)
+		keep_time = SOS_POS_KEEP_TIME_DEFAULT;
+	sos->config.pos_keep_time = keep_time;
 	return 0;
 }
 

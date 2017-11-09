@@ -172,6 +172,9 @@ typedef struct sos_pos_data_s {
 	struct ods_pos_s ods_pos;
 } *sos_pos_data_t;
 #define SOS_POS(_o_) ODS_PTR(sos_pos_data_t, _o_)
+#define SOS_POS_KEEP_TIME_DEFAULT 3600
+#define _stringify_(_x_) #_x_
+#define stringify(_x_) _stringify_(_x_)
 
 /*
  * An object is counted array of bytes. Everything in the ODS store is an object.
@@ -293,10 +296,7 @@ typedef struct sos_idx_data_s {
 #define SOS_OPTIONS_PARTITION_ENABLE	1
 struct sos_container_config {
 	unsigned int options;
-	uint64_t partition_extend;
-	uint64_t max_partition_size;
-	uint32_t partition_period; /* Number of seconds in partition */
-	time_t partition_timestamp;
+	int pos_keep_time;
 };
 
 /*

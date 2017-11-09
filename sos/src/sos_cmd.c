@@ -64,13 +64,14 @@
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
-const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:icqlLR";
+const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:idcqlLR";
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
 	{"locks",	no_argument,	    0,  'L'},
 	{"cleanup",	no_argument,	    0,  'R'},
 	{"info",	no_argument,	    0,  'i'},
+	{"debug",	no_argument,	    0,  'd'},
 	{"move",	no_argument,	    0,  'm'},
 	{"create",	no_argument,	    0,  'c'},
 	{"query",	no_argument,        0,  'q'},
@@ -100,7 +101,8 @@ void usage(int argc, char *argv[])
 	printf("\n");
 	printf("    -l             Print a directory of the schemas.\n");
 	printf("\n");
-	printf("    -i		   Show debug information for the container.\n");
+	printf("    -i		   Show config information for the container.\n");
+	printf("    -d		   Show debug data for the container.\n");
 	printf("\n");
 	printf("    -c             Create the container.\n");
 	printf("       -O <mode>   The file mode bits for the container files,\n"
@@ -808,15 +810,16 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 	return 0;
 }
 
-#define INFO		0x001
-#define CREATE		0x002
-#define QUERY		0x010
-#define SCHEMA_DIR	0x020
-#define CSV		0x080
-#define CONFIG  	0x100
-#define LOCKS		0x200
-#define CLEANUP		0x400
-#define MOVE		0x800
+#define INFO		0x0001
+#define CREATE		0x0002
+#define QUERY		0x0010
+#define SCHEMA_DIR	0x0020
+#define CSV		0x0080
+#define CONFIG  	0x0100
+#define LOCKS		0x0200
+#define CLEANUP		0x0400
+#define MOVE		0x0800
+#define DEBUG		0x1000
 
 struct cond_key_s {
 	char *name;
@@ -924,6 +927,9 @@ int main(int argc, char **argv)
 			break;
 		case 'i':
 			action |= INFO;
+			break;
+		case 'd':
+			action |= DEBUG;
 			break;
 		case 'L':
 			action |= LOCKS;
@@ -1059,6 +1065,9 @@ int main(int argc, char **argv)
 	}
 
 	if (action & INFO)
+		sos_config_print(path, stdout);
+
+	if (action & DEBUG)
 		sos_container_info(sos, stdout);
 
 	if (action & QUERY) {

@@ -435,7 +435,8 @@ int sos_container_new(const char *path, int o_mode)
 	ods_close(part_ods, ODS_COMMIT_SYNC);
 
 	/* Default configuration is to disable partition rotation */
-	rc = sos_container_config_set(path, "PARTITION_ENABLE", "false");
+	rc = sos_container_config_set(path, "POS_KEEP_TIME",
+				      stringify(SOS_POS_KEEP_TIME_DEFAULT));
 	if (rc)
 		goto err_4;
 
@@ -793,7 +794,6 @@ static int schema_id_cmp(void *a, void *b)
 	return *(uint32_t *)a - *(uint32_t *)b;
 }
 
-
 /* Iterates over pos objects in the container and deletes objects that
  * are older than the lifetime threshold
  */
@@ -806,13 +806,6 @@ static void __pos_cleanup(sos_t sos)
 	gettimeofday(&tv, NULL);
 	struct pos_ent_s *pos_ent;
 	struct idx_ent_s *idx_ent;
-	int pos_keep_time = 60;
-	char *pos_keep = getenv("SOS_POS_KEEP_TIME");
-	if (pos_keep) {
-		pos_keep_time = atoi(pos_keep);
-		if (pos_keep_time <= 0)
-			pos_keep_time = 60;
-	}
 
 	/* Best effort clean-up any position objects older than an hour */
 	ods_iter_t it = ods_iter_new(sos->pos_idx);
@@ -834,7 +827,8 @@ static void __pos_cleanup(sos_t sos)
 				  SOS_POS(pos_obj)->create_secs,
 				  SOS_POS(pos_obj)->create_usecs
 				  );
-			if ((tv.tv_sec - SOS_POS(pos_obj)->create_secs) > pos_keep_time) {
+			if ((tv.tv_sec - SOS_POS(pos_obj)->create_secs)
+			    > sos->config.pos_keep_time) {
 				sos_debug("key %08x will be deleted\n", SOS_POS(pos_obj)->key);
 				pos_ent = malloc(sizeof *pos_ent);
 				if (!pos_ent) {

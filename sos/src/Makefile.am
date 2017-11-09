@@ -1,7 +1,7 @@
 lib_LTLIBRARIES =
 bin_PROGRAMS =
 
-AM_CFLAGS = -I$(srcdir)/../include -I$(top_srcdir)/ods/include
+AM_CFLAGS = -I$(srcdir)/../include -I$(top_srcdir)/ods/include -I$(top_srcdir)/sos/include
 if ENABLE_DEBUG
 AM_CFLAGS += -DODS_DEBUG
 endif
