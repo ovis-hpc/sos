@@ -524,6 +524,7 @@ int sos_container_new(const char *path, int o_mode)
 	ods_destroy(tmp_path);
  err_1:
 	rmdir(path);
+	errno = rc;		/* rmdir will stomp errno */
  err_0:
 	return rc;
 }
