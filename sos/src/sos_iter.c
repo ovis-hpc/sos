@@ -1089,8 +1089,7 @@ static sos_obj_t next_match(sos_filter_t filt)
 		}
 		rc = sos_iter_next(filt->iter);
 	} while (rc == 0);
- out:
-	return NULL;
+ 	return NULL;
 }
 
 static sos_obj_t prev_match(sos_filter_t filt)
