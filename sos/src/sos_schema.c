@@ -938,7 +938,7 @@ void *sos_value_as_key(sos_value_t value)
  * \param attr The attribute handle
  * \returns The size of the string in bytes.
  */
-size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
+size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr)
 {
 	size_t size;
 	struct sos_value_s v_;
