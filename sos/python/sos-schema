@@ -20,7 +20,7 @@ def query_schema(cont, schema_name, verbose=False):
                   format('-'.ljust(4, '-'), '-'.ljust(16,'-'),
                          '-'.ljust(12,'-'), '-'.ljust(32,'-')))
             for a in s:
-                if a.indexed():
+                if a.is_indexed():
                     idx_s = "True"
                 else:
                     idx_s = ""
