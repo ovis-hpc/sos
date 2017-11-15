@@ -207,10 +207,10 @@ static inline void sos_ref_reset(sos_obj_ref_t ref)
 union sos_array_element_u {
 	char char_[0];
 	uint8_t byte_[0];
-	uint32_t uint16_[0];
+	uint16_t uint16_[0];
 	uint32_t uint32_[0];
 	uint64_t uint64_[0];
-	int32_t int16_[0];
+	int16_t int16_[0];
 	int32_t int32_[0];
 	int64_t int64_[0];
 	float float_[0];
@@ -340,6 +340,7 @@ sos_array_t sos_attr_join_list(sos_attr_t attr);
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
 				  char **endptr);
+size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr);
 
 /** @} */
 /** @} */
