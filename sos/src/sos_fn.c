@@ -202,7 +202,7 @@ sos_value_size_fn_t __sos_attr_size_fn_for_type(sos_type_t type)
 #define PRIMITIVE_STRLEN_FN(_name_, _fmt_, _member_)			\
 	static size_t _name_ ## _strlen_fn(sos_value_t v)		\
 	{								\
-		return snprintf(NULL, 0, _fmt_, v->data->array.data. _member_); \
+		return snprintf(NULL, 0, _fmt_, v->data->prim. _member_); \
 	}
 
 PRIMITIVE_STRLEN_FN(int16, "%hd", int16_)
@@ -681,7 +681,6 @@ static int char_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 	{								\
 		int i, cnt, match;					\
 		const char *str;					\
-		int16_t c;						\
 									\
 		if (!v->obj) {						\
 			size_t sz, cnt;					\
@@ -707,11 +706,12 @@ static int char_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 									\
 		for (i = 0, str = value; i < v->data->array.count && *str != '\0'; \
 		     i++, str += cnt) {					\
-			match = sscanf(str, _fmt_ "%n", &c, &cnt);	\
+			match = sscanf(str, _fmt_ "%n",			\
+				       &v->data->array.data. _member_ [i], \
+				       &cnt);				\
 			if (match < 1) {				\
 				return EINVAL;				\
 			}						\
-			v->data->array.data. _member_ [i] = c;		\
 			if (str[cnt] != '\0')				\
 				cnt ++;	/* skip delimiter */		\
 		}							\
