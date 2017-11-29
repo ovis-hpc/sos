@@ -1507,7 +1507,7 @@ sos_obj_t sos_obj_get(sos_obj_t obj)
  * to exist in persistent storage. See the sos_obj_delete() function
  * for information on removing an object from persistent storage.
  *
- * \param obj	The object handle
+ * \param obj	The object handle. If NULL, this function is a no-op.
  */
 void sos_obj_put(sos_obj_t obj)
 {
