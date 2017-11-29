@@ -11,3 +11,4 @@ build*/
 autom4te.cache/
 config.h.in
 *.swp
+*.pyc

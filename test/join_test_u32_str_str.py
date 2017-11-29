@@ -54,8 +54,8 @@ class JoinTestU32_Str_Str(SosTestCase):
             count += 1
             o = it.item()
             self.assertEqual(o.a_1, data[i][0])
-            self.assertEqual(o.a_2.tostring(), data[i][1])
-            self.assertEqual(o.a_3.tostring(), data[i][2])
+            self.assertEqual(o.a_2, data[i][1])
+            self.assertEqual(o.a_3, data[i][2])
             b = it.next()
             i += 1
         self.assertEqual(count, 3)
@@ -113,60 +113,60 @@ class JoinTestU32_Str_Str(SosTestCase):
         self.u32_str_str_fwd_col(Sos.COND_LT, lambda a, b : a < b, 0, col_0_arg, (0, 1, 2, 3))
 
     def test_u32_str_str_fwd_col_1_lt(self):
-        self.u32_str_str_fwd_col(Sos.COND_LT, lambda a, b : a.tostring() < b, 1, col_1_arg, (0, 1, 2, 3))
+        self.u32_str_str_fwd_col(Sos.COND_LT, lambda a, b : a < b, 1, col_1_arg, (0, 1, 2, 3))
 
     def test_u32_str_str_fwd_col_2_lt(self):
-        self.u32_str_str_fwd_col(Sos.COND_LT, lambda a, b : a.tostring() < b, 2, col_2_arg, (0, 1, 2, 3))
+        self.u32_str_str_fwd_col(Sos.COND_LT, lambda a, b : a < b, 2, col_2_arg, (0, 1, 2, 3))
 
     # SOS_COND_LE
     def test_u32_str_str_fwd_col_0_le(self):
         self.u32_str_str_fwd_col(Sos.COND_LE, lambda a, b : a <= b, 0, col_0_arg, (1, 2, 3, 3))
 
     def test_u32_str_str_fwd_col_1_le(self):
-        self.u32_str_str_fwd_col(Sos.COND_LE, lambda a, b : a.tostring() <= b, 1, col_1_arg, (1, 2, 3, 3))
+        self.u32_str_str_fwd_col(Sos.COND_LE, lambda a, b : a <= b, 1, col_1_arg, (1, 2, 3, 3))
 
     def test_u32_str_str_fwd_col_2_le(self):
-        self.u32_str_str_fwd_col(Sos.COND_LE, lambda a, b : a.tostring() <= b, 2, col_2_arg, (1, 2, 3, 3))
+        self.u32_str_str_fwd_col(Sos.COND_LE, lambda a, b : a <= b, 2, col_2_arg, (1, 2, 3, 3))
 
     # SOS_COND_EQ
     def test_u32_str_str_fwd_col_0_eq(self):
         self.u32_str_str_fwd_col(Sos.COND_EQ, lambda a, b : a == b, 0, col_0_arg, (1, 1, 1, 0))
 
     def test_u32_str_str_fwd_col_1_eq(self):
-        self.u32_str_str_fwd_col(Sos.COND_EQ, lambda a, b : a.tostring() == b, 1, col_1_arg, (1, 1, 1, 0))
+        self.u32_str_str_fwd_col(Sos.COND_EQ, lambda a, b : a == b, 1, col_1_arg, (1, 1, 1, 0))
 
     def test_u32_str_str_fwd_col_2_eq(self):
-        self.u32_str_str_fwd_col(Sos.COND_EQ, lambda a, b : a.tostring() == b, 2, col_2_arg, (1, 1, 1, 0))
+        self.u32_str_str_fwd_col(Sos.COND_EQ, lambda a, b : a == b, 2, col_2_arg, (1, 1, 1, 0))
 
     # SOS_COND_GE
     def test_u32_str_str_fwd_col_0_ge(self):
         self.u32_str_str_fwd_col(Sos.COND_GE, lambda a, b : a >= b, 0, col_0_arg, (3, 2, 1, 0))
 
     def test_u32_str_str_fwd_col_1_ge(self):
-        self.u32_str_str_fwd_col(Sos.COND_GE, lambda a, b : a.tostring() >= b, 1, col_1_arg, (3, 2, 1, 0))
+        self.u32_str_str_fwd_col(Sos.COND_GE, lambda a, b : a >= b, 1, col_1_arg, (3, 2, 1, 0))
 
     def test_u32_str_str_fwd_col_2_ge(self):
-        self.u32_str_str_fwd_col(Sos.COND_GE, lambda a, b : a.tostring() >= b, 2, col_2_arg, (3, 2, 1, 0))
+        self.u32_str_str_fwd_col(Sos.COND_GE, lambda a, b : a >= b, 2, col_2_arg, (3, 2, 1, 0))
 
     # SOS_COND_GT
     def test_u32_str_str_fwd_col_0_gt(self):
         self.u32_str_str_fwd_col(Sos.COND_GT, lambda a, b : a > b, 0, col_0_arg, (2, 1, 0, 0))
 
     def test_u32_str_str_fwd_col_1_gt(self):
-        self.u32_str_str_fwd_col(Sos.COND_GT, lambda a, b : a.tostring() > b, 1, col_1_arg, (2, 1, 0, 0))
+        self.u32_str_str_fwd_col(Sos.COND_GT, lambda a, b : a > b, 1, col_1_arg, (2, 1, 0, 0))
 
     def test_u32_str_str_fwd_col_2_gt(self):
-        self.u32_str_str_fwd_col(Sos.COND_GT, lambda a, b : a.tostring() > b, 2, col_2_arg, (2, 1, 0, 0))
+        self.u32_str_str_fwd_col(Sos.COND_GT, lambda a, b : a > b, 2, col_2_arg, (2, 1, 0, 0))
 
     # SOS_COND_NE
     def test_u32_str_str_fwd_col_0_ne(self):
         self.u32_str_str_fwd_col(Sos.COND_NE, lambda a, b : a != b, 0, col_0_arg, (2, 2, 2, 3))
 
     def test_u32_str_str_fwd_col_1_ne(self):
-        self.u32_str_str_fwd_col(Sos.COND_NE, lambda a, b : a.tostring() != b, 1, col_1_arg, (2, 2, 2, 3))
+        self.u32_str_str_fwd_col(Sos.COND_NE, lambda a, b : a != b, 1, col_1_arg, (2, 2, 2, 3))
 
     def test_u32_str_str_fwd_col_2_ne(self):
-        self.u32_str_str_fwd_col(Sos.COND_NE, lambda a, b : a.tostring() != b, 2, col_2_arg, (2, 2, 2, 3))
+        self.u32_str_str_fwd_col(Sos.COND_NE, lambda a, b : a != b, 2, col_2_arg, (2, 2, 2, 3))
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'

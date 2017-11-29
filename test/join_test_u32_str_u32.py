@@ -50,7 +50,7 @@ class JoinTestU32_Str_U32(SosTestCase):
             count += 1
             o = it.item()
             self.assertEqual(o.a_1, data[i][0])
-            self.assertEqual(o.a_2.tostring(), data[i][1])
+            self.assertEqual(o.a_2, data[i][1])
             self.assertEqual(o.a_3, data[i][2])
             b = it.next()
             i += 1
@@ -109,7 +109,7 @@ class JoinTestU32_Str_U32(SosTestCase):
         self.u32_str_u32_fwd_col(Sos.COND_LT, lambda a, b : a < b, 0, (1, 2, 3, 4), (0, 1, 2, 3))
 
     def test_u32_str_u32_fwd_col_1_lt(self):
-        self.u32_str_u32_fwd_col(Sos.COND_LT, lambda a, b : a.tostring() < b, 1, col_1_arg, (0, 1, 2, 3))
+        self.u32_str_u32_fwd_col(Sos.COND_LT, lambda a, b : a < b, 1, col_1_arg, (0, 1, 2, 3))
 
     def test_u32_str_u32_fwd_col_2_lt(self):
         self.u32_str_u32_fwd_col(Sos.COND_LT, lambda a, b : a < b, 2, (3, 4, 5, 6), (0, 1, 2, 3))
@@ -119,7 +119,7 @@ class JoinTestU32_Str_U32(SosTestCase):
         self.u32_str_u32_fwd_col(Sos.COND_LE, lambda a, b : a <= b, 0, (1, 2, 3, 4), (1, 2, 3, 3))
 
     def test_u32_str_u32_fwd_col_1_le(self):
-        self.u32_str_u32_fwd_col(Sos.COND_LE, lambda a, b : a.tostring() <= b, 1, col_1_arg, (1, 2, 3, 3))
+        self.u32_str_u32_fwd_col(Sos.COND_LE, lambda a, b : a <= b, 1, col_1_arg, (1, 2, 3, 3))
 
     def test_u32_str_u32_fwd_col_2_le(self):
         self.u32_str_u32_fwd_col(Sos.COND_LE, lambda a, b : a <= b, 2, (3, 4, 5, 6), (1, 2, 3, 3))
@@ -129,7 +129,7 @@ class JoinTestU32_Str_U32(SosTestCase):
         self.u32_str_u32_fwd_col(Sos.COND_EQ, lambda a, b : a == b, 0, (1, 2, 3, 4), (1, 1, 1, 0))
 
     def test_u32_str_u32_fwd_col_1_eq(self):
-        self.u32_str_u32_fwd_col(Sos.COND_EQ, lambda a, b : a.tostring() == b, 1, col_1_arg, (1, 1, 1, 0))
+        self.u32_str_u32_fwd_col(Sos.COND_EQ, lambda a, b : a == b, 1, col_1_arg, (1, 1, 1, 0))
 
     def test_u32_str_u32_fwd_col_2_eq(self):
         self.u32_str_u32_fwd_col(Sos.COND_EQ, lambda a, b : a == b, 2, (3, 4, 5, 6), (1, 1, 1, 0))
@@ -139,7 +139,7 @@ class JoinTestU32_Str_U32(SosTestCase):
         self.u32_str_u32_fwd_col(Sos.COND_GE, lambda a, b : a >= b, 0, (1, 2, 3, 4), (3, 2, 1, 0))
 
     def test_u32_str_u32_fwd_col_1_ge(self):
-        self.u32_str_u32_fwd_col(Sos.COND_GE, lambda a, b : a.tostring() >= b, 1, col_1_arg, (3, 2, 1, 0))
+        self.u32_str_u32_fwd_col(Sos.COND_GE, lambda a, b : a >= b, 1, col_1_arg, (3, 2, 1, 0))
 
     def test_u32_str_u32_fwd_col_2_ge(self):
         self.u32_str_u32_fwd_col(Sos.COND_GE, lambda a, b : a >= b, 2, (3, 4, 5, 6), (3, 2, 1, 0))
@@ -149,7 +149,7 @@ class JoinTestU32_Str_U32(SosTestCase):
         self.u32_str_u32_fwd_col(Sos.COND_GT, lambda a, b : a > b, 0, (1, 2, 3, 4), (2, 1, 0, 0))
 
     def test_u32_str_u32_fwd_col_1_gt(self):
-        self.u32_str_u32_fwd_col(Sos.COND_GT, lambda a, b : a.tostring() > b, 1, col_1_arg, (2, 1, 0, 0))
+        self.u32_str_u32_fwd_col(Sos.COND_GT, lambda a, b : a > b, 1, col_1_arg, (2, 1, 0, 0))
 
     def test_u32_str_u32_fwd_col_2_gt(self):
         self.u32_str_u32_fwd_col(Sos.COND_GT, lambda a, b : a > b, 2, (3, 4, 5, 6), (2, 1, 0, 0))
@@ -159,7 +159,7 @@ class JoinTestU32_Str_U32(SosTestCase):
         self.u32_str_u32_fwd_col(Sos.COND_NE, lambda a, b : a != b, 0, (1, 2, 3, 4), (2, 2, 2, 3))
 
     def test_u32_str_u32_fwd_col_1_ne(self):
-        self.u32_str_u32_fwd_col(Sos.COND_NE, lambda a, b : a.tostring() != b, 1, col_1_arg, (2, 2, 2, 3))
+        self.u32_str_u32_fwd_col(Sos.COND_NE, lambda a, b : a != b, 1, col_1_arg, (2, 2, 2, 3))
 
     def test_u32_str_u32_fwd_col_2_ne(self):
         self.u32_str_u32_fwd_col(Sos.COND_NE, lambda a, b : a != b, 2, (3, 4, 5, 6), (2, 2, 2, 3))
