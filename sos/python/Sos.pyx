@@ -2634,8 +2634,6 @@ cdef object get_BYTE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
 
 cdef object get_CHAR_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
     return c_data.array.data.char_
-    # array = OAArray()
-    # return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT8)
 
 cdef object get_INT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
     array = OAArray()
