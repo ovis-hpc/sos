@@ -229,16 +229,15 @@ static size_t obj_strlen_fn(sos_value_t v)
 			v->data->prim.ref_.ref.obj) + 1;
 }
 
-/* Value is formatted as %02X%02X...%02X\0 */
-static size_t struct_strlen_fn(sos_value_t v)
-{
-	return (v->attr->data->size * 2) + 1;
-}
-
 /* Value is formatted as %02X:%02X:...%02X\0 */
 static size_t byte_array_strlen_fn(sos_value_t v)
 {
 	return v ? v->data->array.count * 3 : 1;
+}
+
+static size_t struct_strlen_fn(sos_value_t v)
+{
+	return byte_array_strlen_fn(v);
 }
 
 static size_t join_strlen_fn(sos_value_t v)
@@ -276,7 +275,7 @@ PRIMITIVE_ARRAY_STRLEN_FN(uint32, "%"PRIu32"", uint32_)
 PRIMITIVE_ARRAY_STRLEN_FN(int64, "%"PRId64"", int64_)
 PRIMITIVE_ARRAY_STRLEN_FN(uint64, "%"PRIu64"", uint64_)
 
-PRIMITIVE_ARRAY_STRLEN_FN(float, "%f", double_)
+PRIMITIVE_ARRAY_STRLEN_FN(float, "%f", float_)
 PRIMITIVE_ARRAY_STRLEN_FN(double, "%lf", double_)
 PRIMITIVE_ARRAY_STRLEN_FN(long_double, "%Lf", long_double_)
 
@@ -366,22 +365,6 @@ static char *obj_to_str_fn(sos_value_t v, char *str, size_t len)
 	return str;
 }
 
-static char *struct_to_str_fn(sos_value_t v, char *str, size_t len)
-{
-	int i, res_cnt;
-	char *p = str;
-	if (!v)
-		return "";
-	for (i = 0; i < v->attr->data->size && len > 0; i++) {
-		res_cnt = snprintf(p, len, "%02X", v->data->struc.byte_[i]);
-		if (res_cnt > len)
-			break;
-		p += res_cnt;
-		len -= res_cnt;
-	}
-	return str;
-}
-
 static char *byte_array_to_str_fn(sos_value_t v, char *str, size_t len)
 {
 	int i, res_cnt;
@@ -391,9 +374,9 @@ static char *byte_array_to_str_fn(sos_value_t v, char *str, size_t len)
 		return "";
 	for (i = 0; i < v->data->array.count && len > 0; i++) {
 		if (p == str)
-			fmt = "0x%02x";
+			fmt = "%02X";
 		else
-			fmt = ",0x%02x";
+			fmt = ":%02X";
 		res_cnt = snprintf(p, len, fmt, v->data->array.data.byte_[i]);
 		if (res_cnt > len)
 			break;
@@ -401,6 +384,11 @@ static char *byte_array_to_str_fn(sos_value_t v, char *str, size_t len)
 		len -= res_cnt;
 	}
 	return str;
+}
+
+static char *struct_to_str_fn(sos_value_t v, char *str, size_t len)
+{
+	return byte_array_to_str_fn(v, str, len);
 }
 
 static char *join_to_str_fn(sos_value_t v, char *str, size_t len)

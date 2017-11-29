@@ -213,6 +213,7 @@ int sos_value_cmp(sos_value_t a, sos_value_t b)
 }
 static sos_value_t mem_value_init(sos_value_t val, sos_attr_t attr)
 {
+	memset(val, 0, sizeof(*val));
 	val->attr = attr;
 	val->data = &val->data_;
 	return val;
@@ -441,6 +442,26 @@ sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
 	return dst;
 }
 
+/**
+ * \brief Returns a pointer into the memory of an object
+ *
+ * This function returns a pointer directly into the memory of an
+ * object. The \t attr parameter specifies which attribute in the
+ * object is to be accessed.
+ *
+ * If the attribute is an array, the array object to which the
+ * attribute refers is returned in the arr_obj parameter if
+ * provided. This is because the memory pointed to by the return value
+ * has a reference on the array object and the caller is responsible
+ * for releasing that reference when the memory is no longer in use.
+ *
+ * If the \t arr_obj pointer is NULL and the \t attr parameter is an
+ * array, this function will assert.
+ *
+ * \param obj The object handle
+ * \param attr The attribute handle
+ * \param arr_obj Pointer to a sos_obj_t handle.
+ */
 sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *arr_obj)
 {
 	sos_obj_t ref_obj;
@@ -455,8 +476,11 @@ sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *ar
 
 	ref_obj = sos_ref_as_obj(obj->sos, ref_val->prim.ref_);
 	if (ref_obj) {
-		if (arr_obj)
-			*arr_obj = ref_obj; /* ref from sos_ref_as_obj */
+		/* If this is an array object and the caller did not
+		 * provide the arr_obj parameter, the object will be
+		 * leaked */
+		assert(arr_obj);
+		*arr_obj = ref_obj; /* ref from sos_ref_as_obj */
 		ref_val = (sos_value_data_t)&SOS_OBJ(ref_obj->obj)->data[0];
 	}
 
@@ -488,7 +512,7 @@ size_t sos_value_memcpy(sos_value_t val, void *buf, size_t buflen)
 }
 
 /**
- * \brief Drop a reference on a value
+ * \brief Drop a reference on a value object
  *
  * \param value The value handle.
  */
@@ -498,9 +522,13 @@ void sos_value_put(sos_value_t value)
 		return;
 	if (value->obj) {
 		sos_obj_put(value->obj);
+		value->obj = NULL;
 	} else {
-		if (value->data != &value->data_)
+		assert(value->data);
+		if (value->data != &value->data_) {
 			free(value->data);
+			value->data = NULL;
+		}
 	}
 }
 
@@ -578,4 +606,20 @@ int sos_value_from_str(sos_value_t v, const char *str, char **endptr)
 	return v->attr->from_str_fn(v, str, endptr);
 }
 
+/**
+ * \brief Return the length of the string required for the value
+ *
+ * This function returns the size of the string required to hold the
+ * attribute value if formatted as a string. This function is useful
+ * when allocating buffers used with the sos_obj_attr_to_str()
+ * function. The returned value does not include the byte required
+ * to contain the terminating '\0'.
+ *
+ * \param v The value handle
+ * \returns The size of the string in bytes.
+ */
+size_t sos_value_strlen(sos_value_t v)
+{
+	return v->attr->strlen_fn(v);
+}
 

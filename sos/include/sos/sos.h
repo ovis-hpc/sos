@@ -448,6 +448,7 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
  * - sos_value_by_name() Get the value handle by name
  * - sos_value_by_id()   Get the value handle by id
  * - sos_value_to_str()	 Get the value as a string
+ * - sos_value_strlen()  Get the size of the buffer required by sos_value_to_str()
  * - sos_value_from_str() Set the value from a string
  * - sos_value_init()	 Initializes a stack variable as a value.
  */
@@ -495,6 +496,7 @@ size_t sos_value_size(sos_value_t value);
 size_t sos_value_memcpy(sos_value_t value, void *buf, size_t buflen);
 char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len);
 int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char **endptr);
+size_t sos_value_strlen(sos_value_t v);
 const char *sos_value_to_str(sos_value_t value, char *str, size_t len);
 int sos_value_from_str(sos_value_t value, const char *str, char **endptr);
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,

@@ -798,6 +798,8 @@ ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock)
 
 sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count)
 {
+	size_t size;
+	struct sos_array_s *array;
 	ods_obj_t array_obj;
 	sos_schema_t schema;
 	if (!sos_attr_is_array(attr)) {
@@ -805,11 +807,19 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 		return NULL;
 	}
 	schema = __sos_get_ischema(attr->data->type);
-	size_t size =
-		sizeof(struct sos_obj_data_s)
+	size = sizeof(struct sos_obj_data_s)
 		+ sizeof(uint32_t) /* element count */
 		+ (count * schema->data->el_sz); /* array elements */
 
+	if (!obj) {
+		array = calloc(1, size);
+		if (!array)
+			goto err;
+		array->count = count;
+		val->data = (sos_value_data_t)array;
+		val->obj = NULL;
+		return val;
+	}
 	array_obj = __sos_obj_new(ods_obj_ods(obj->obj), size, &obj->sos->lock);
 	if (!array_obj)
 		goto err;
@@ -817,7 +827,7 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 	val->attr = attr;
 	val->data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
 
-	struct sos_array_s *array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
+	array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
 	array->count = count;
 
 	/* Free the old array contents if present */
@@ -927,7 +937,7 @@ void *sos_value_as_key(sos_value_t value)
 }
 
 /**
- * \brief Return the length of the string required for the value
+ * \brief Return the length of the string required for the object value
  *
  * This function returns the size of the buffer required to hold the
  * object attribute value if formatted as a string. This function is
@@ -945,7 +955,7 @@ size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr)
 	sos_value_t v = sos_value_init(&v_, obj, attr);
 	if (!v)
 		return 1;
-	size = v->attr->strlen_fn(v);
+	size = sos_value_strlen(v);
 	sos_value_put(v);
 	return size;
 }

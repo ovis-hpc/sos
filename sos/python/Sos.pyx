@@ -773,7 +773,7 @@ cdef class Key(object):
         if not self.attr:
             raise TypeError("Key is not bound to any attribute.")
         typ = self.attr.type()
-        type_setters[<int>typ](NULL, self.attr.c_attr, data, py_val)
+        type_setters[<int>typ](data, py_val)
 
     def __int__(self):
         cdef int typ
@@ -2579,6 +2579,8 @@ cdef class OAArray:
     cdef set_data(self, sos_obj_t obj, void *data_ptr, int size, int el_type):
         cdef np.ndarray ndarray
         self.c_obj = obj
+        if self.c_obj != NULL:
+            sos_obj_get(obj)
         self.c_ptr = data_ptr
         self.c_size = size
         self.c_type = el_type
@@ -2631,8 +2633,9 @@ cdef object get_BYTE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT8)
 
 cdef object get_CHAR_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT8)
+    return c_data.array.data.char_
+    # array = OAArray()
+    # return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT8)
 
 cdef object get_INT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
     array = OAArray()
@@ -2714,230 +2717,121 @@ type_getters[<int>SOS_TYPE_OBJ_ARRAY] = get_ERROR
 ################################
 # Object setter functions
 ################################
-cdef object set_LONG_DOUBLE_ARRAY(sos_obj_t c_obj,
-                                  sos_attr_t c_attr,
-                                  sos_value_data_t c_data,
-                                  val):
+cdef set_LONG_DOUBLE_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.long_double_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.long_double_[i] = val[i]
 
-cdef object set_DOUBLE_ARRAY(sos_obj_t c_obj,
-                             sos_attr_t c_attr,
-                             sos_value_data_t c_data,
-                             val):
+cdef set_DOUBLE_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.double_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.double_[i] = val[i]
 
-cdef object set_FLOAT_ARRAY(sos_obj_t c_obj,
-                            sos_attr_t c_attr,
-                            sos_value_data_t c_data,
-                            val):
+cdef set_FLOAT_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.float_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.float_[i] = val[i]
 
-cdef object set_UINT64_ARRAY(sos_obj_t c_obj,
-                             sos_attr_t c_attr,
-                             sos_value_data_t c_data,
-                             val):
+cdef set_UINT64_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.uint64_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.uint64_[i] = val[i]
 
-cdef object set_UINT32_ARRAY(sos_obj_t c_obj,
-                             sos_attr_t c_attr,
-                             sos_value_data_t c_data,
-                             val):
+cdef set_UINT32_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.uint64_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.uint32_[i] = val[i]
 
-cdef object set_UINT16_ARRAY(sos_obj_t c_obj,
-                             sos_attr_t c_attr,
-                             sos_value_data_t c_data,
-                             val):
+cdef set_UINT16_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.uint64_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.uint16_[i] = val[i]
 
-cdef object set_BYTE_ARRAY(sos_obj_t c_obj,
-                           sos_attr_t c_attr,
-                           sos_value_data_t c_data,
-                           val):
+cdef set_BYTE_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.uint64_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.byte_[i] = <uint8_t>val[i]
 
-cdef object set_INT64_ARRAY(sos_obj_t c_obj,
-                            sos_attr_t c_attr,
-                            sos_value_data_t c_data,
-                            val):
+cdef set_INT64_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.uint64_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.int64_[i] = <int64_t>val[i]
 
-cdef object set_INT32_ARRAY(sos_obj_t c_obj,
-                            sos_attr_t c_attr,
-                            sos_value_data_t c_data,
-                            val):
+cdef set_INT32_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.uint64_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.int32_[i] = val[i]
 
-cdef object set_INT16_ARRAY(sos_obj_t c_obj,
-                            sos_attr_t c_attr,
-                            sos_value_data_t c_data,
-                            val):
+cdef set_INT16_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     for i in range(sz):
-        v.data.array.data.uint64_[i] = val[i]
-    sos_value_put(v)
+        c_data.array.data.int16_[i] = val[i]
 
-cdef object set_CHAR_ARRAY(sos_obj_t c_obj,
-                            sos_attr_t c_attr,
-                            sos_value_data_t c_data,
-                            val):
+cdef set_CHAR_ARRAY(sos_value_data_t c_data, val):
     cdef char *s
     cdef int i, sz
-    cdef sos_value_s v_
-    cdef sos_value_s *v
     sz = len(val)
-    v = sos_array_new(&v_, c_attr, c_obj, sz)
     s = val
     for i in range(sz):
-        v.data.array.data.char_[i] = s[i]
-    sos_value_put(v)
+        c_data.array.data.char_[i] = s[i]
 
-cdef object set_TIMESTAMP(sos_obj_t c_obj,
-                          sos_attr_t c_attr,
-                          sos_value_data_t c_data,
-                          val):
+cdef set_TIMESTAMP(sos_value_data_t c_data, val):
     cdef int secs
     cdef int usecs
-    secs = <int>val
-    usecs = (val - secs) * 1000000
-    c_data.prim.timestamp_.fine.secs = secs
-    c_data.prim.timestamp_.fine.usecs = usecs
+    try:
+        secs = val
+        usecs = (val - secs) * 1000000
+        c_data.prim.timestamp_.fine.secs = secs
+        c_data.prim.timestamp_.fine.usecs = usecs
+    except Exception as e:
+        raise ValueError("The time value is a floating point number representing "
+                         "seconds since the epoch")
 
-cdef object set_LONG_DOUBLE(sos_obj_t c_obj,
-                       sos_attr_t c_attr,
-                       sos_value_data_t c_data,
-                       val):
+cdef set_LONG_DOUBLE(sos_value_data_t c_data, val):
     c_data.prim.long_double_ = <long double>val
 
-cdef object set_DOUBLE(sos_obj_t c_obj,
-                       sos_attr_t c_attr,
-                       sos_value_data_t c_data,
-                       val):
+cdef set_DOUBLE(sos_value_data_t c_data, val):
     c_data.prim.double_ = <double>val
 
-cdef object set_FLOAT(sos_obj_t c_obj,
-                      sos_attr_t c_attr,
-                      sos_value_data_t c_data,
-                      val):
+cdef set_FLOAT(sos_value_data_t c_data, val):
     c_data.prim.float_ = <float>val
 
-cdef object set_UINT64(sos_obj_t c_obj,
-                       sos_attr_t c_attr,
-                       sos_value_data_t c_data,
-                       val):
+cdef set_UINT64(sos_value_data_t c_data, val):
     c_data.prim.uint64_ = <uint64_t>val
 
-cdef object set_UINT32(sos_obj_t c_obj,
-                          sos_attr_t c_attr,
-                          sos_value_data_t c_data,
-                          val):
+cdef set_UINT32(sos_value_data_t c_data, val):
     c_data.prim.uint32_ = <uint32_t>val
 
-cdef object set_UINT16(sos_obj_t c_obj,
-                       sos_attr_t c_attr,
-                       sos_value_data_t c_data,
-                       val):
+cdef set_UINT16(sos_value_data_t c_data, val):
     c_data.prim.uint16_ = <uint16_t>val
 
-cdef object set_INT64(sos_obj_t c_obj,
-                      sos_attr_t c_attr,
-                      sos_value_data_t c_data,
-                      val):
+cdef set_INT64(sos_value_data_t c_data, val):
     c_data.prim.int64_ = <int64_t>val
 
-cdef object set_INT32(sos_obj_t c_obj,
-                      sos_attr_t c_attr,
-                      sos_value_data_t c_data,
-                      val):
+cdef set_INT32(sos_value_data_t c_data, val):
     c_data.prim.int32_ = <int32_t>val
 
-cdef object set_INT16(sos_obj_t c_obj,
-                      sos_attr_t c_attr,
-                      sos_value_data_t c_data,
-                      val):
+cdef set_INT16(sos_value_data_t c_data, val):
     c_data.prim.int16_ = <int16_t>val
 
-cdef object set_STRUCT(sos_obj_t c_obj,
-                       sos_attr_t c_attr,
-                       sos_value_data_t c_data,
-                       val):
+cdef set_STRUCT(sos_value_data_t c_data, val):
     cdef char *s = val
-    memcpy(&c_data.prim.byte_, s, sos_attr_size(c_attr))
+    memcpy(&c_data.prim.byte_, s, len(val))
 
-cdef object set_ERROR(sos_obj_t c_obj,
-                      sos_attr_t c_attr,
-                      sos_value_data_t c_data,
-                      val):
+cdef set_ERROR(sos_value_data_t c_data, val):
     raise ValueError("Set is not supported on this attribute type")
 
-ctypedef object (*type_setter_fn_t)(sos_obj_t, sos_attr_t, sos_value_data_t, val)
+ctypedef object (*type_setter_fn_t)(sos_value_data_t c_data, val)
 cdef type_setter_fn_t type_setters[SOS_TYPE_LAST+1]
 type_setters[<int>SOS_TYPE_INT16] = set_INT16
 type_setters[<int>SOS_TYPE_INT32] = set_INT32
@@ -2970,8 +2864,13 @@ cdef class Value(object):
     cdef sos_value_t c_v
     cdef sos_attr_t c_attr
     cdef sos_obj_t c_obj
+    cdef int c_str_sz
+    cdef char *c_str
+    cdef type_setter_fn_t set_fn
+    cdef type_getter_fn_t get_fn
 
     def __init__(self, Attr attr, Object obj=None):
+        cdef int typ
         if obj is not None:
             self.c_obj = sos_obj_get(obj.c_obj)
         else:
@@ -2979,25 +2878,36 @@ cdef class Value(object):
         self.c_attr = attr.c_attr
         self.c_v = sos_value_init(&self.c_v_, self.c_obj, self.c_attr)
         if self.c_v == NULL:
-            raise ValueError()
+            raise ValueError("The value could not be initialized from {0}".format(attr.name()))
+        typ = sos_attr_type(self.c_attr)
+        self.set_fn = type_setters[typ]
+        self.get_fn = type_getters[typ]
 
     @property
     def value(self):
-        return type_getters[<int>sos_attr_type(self.c_attr)](self.c_obj,
-                                                             self.c_v.data)
+        return self.get_fn(self.c_obj, self.c_v.data)
 
     @value.setter
     def value(self, v):
-        type_setters[<int>sos_attr_type(self.c_attr)](self.c_obj,
-                                                      self.c_attr,
-                                                      self.c_v.data,
-                                                      v)
+        cdef int sz
+        if 0 == sos_attr_is_array(self.c_attr):
+            self.set_fn(self.c_v.data, v)
+        else:
+            sz = len(v)
+            self.c_v = sos_array_new(&self.c_v_, self.c_attr, self.c_obj, sz)
+            self.set_fn(self.c_v.data, v)
 
     cdef assign(self, sos_obj_t c_obj):
+        cdef int typ
         if self.c_obj:
             sos_obj_put(self.c_obj)
         self.c_obj = c_obj
         self.c_v = sos_value_init(&self.c_v_, self.c_obj, self.c_attr)
+        if self.c_v == NULL:
+            raise ValueError("The c_obj could not be assigned to the value")
+        typ = sos_attr_type(self.c_attr)
+        self.set_fn = type_setters[typ]
+        self.get_fn = type_getters[typ]
         return self
 
     @property
@@ -3015,12 +2925,47 @@ cdef class Value(object):
         self._set_obj_(o)
 
     def name(self):
+        """Return the value's attribute name"""
         return sos_attr_name(self.c_attr)
+
+    def strlen(self):
+        """
+        Return the length of the string if the value
+        were formatted as a string
+        """
+        return sos_value_strlen(self.c_v)
+
+    def from_str(self, string):
+        """Set the value from the string"""
+        return sos_value_from_str(self.c_v, string, NULL)
+
+    def to_str(self):
+        """Return the value as a formatted string"""
+        cdef int rc
+        cdef int sz = sos_value_strlen(self.c_v)
+        if self.c_str == NULL:
+            self.c_str_sz = sz
+            self.c_str = <char *>malloc(self.c_str_sz + 1)
+            if self.c_str == NULL:
+                raise MemoryError("Insufficient memory to allocate {0} bytes.".format(sz))
+        else:
+            if self.c_str_sz < sz:
+                self.c_str_sz = sz
+                free(self.c_str)
+                self.c_str = <char *>malloc(self.c_str_sz + 1)
+                if self.c_str == NULL:
+                    raise MemoryError("Insufficient memory to allocate {0} bytes.".format(sz))
+        return sos_value_to_str(self.c_v, self.c_str, sz)
+
+    def __str__(self):
+        return self.to_str()
 
     def __del__(self):
         self.__dealloc__()
 
     def __dealloc__(self):
+        if self.c_str:
+            free(self.c_str)
         if self.c_v:
             sos_value_put(self.c_v)
             self.c_v = NULL
@@ -3071,9 +3016,19 @@ cdef class Object(object):
         else:
             return <object>type_getters[<int>t](c_obj, c_data)
 
-    cdef set_py_value(self, sos_attr_t c_attr, sos_value_data_t c_data, val):
+    cdef set_py_array_value(self, sos_attr_t c_attr, val):
+        cdef sos_value_s v_
+        cdef sos_value_s *v
         cdef int t = sos_attr_type(c_attr)
-        return <object>type_setters[<int>t](self.c_obj, c_attr, c_data, val)
+        v = sos_array_new(&v_, c_attr, self.c_obj, len(val))
+        <object>type_setters[<int>t](v.data, val)
+        sos_value_put(v)
+
+    cdef set_py_value(self, sos_attr_t c_attr, val):
+        cdef sos_value_data_t c_data
+        cdef int t = sos_attr_type(c_attr)
+        c_data = sos_obj_attr_data(self.c_obj, c_attr, NULL)
+        <object>type_setters[<int>t](c_data, val)
 
     def __getitem__(self, idx):
         cdef sos_obj_t arr_obj
@@ -3129,9 +3084,7 @@ cdef class Object(object):
         return res
 
     def __setitem__(self, idx, val):
-        cdef sos_obj_t arr_obj
         cdef sos_attr_t c_attr
-        cdef sos_value_data_t c_data
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
         if type(idx) == slice:
@@ -3144,34 +3097,35 @@ cdef class Object(object):
                 c_attr = sos_schema_attr_by_id(self.c_schema, _i)
                 if c_attr == NULL:
                     raise ValueError("Object has no attribute with id '{0}'".format(_i))
-                c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
-                self.set_py_value(c_attr, c_data, _v)
-                if arr_obj != NULL:
-                    sos_obj_put(arr_obj)
+                if 0 == sos_attr_is_array(c_attr):
+                    self.set_py_value(c_attr, _v)
+                else:
+                    self.set_py_array_value(c_attr, _v)
             return
 
         # single index assignment
-        c_attr = sos_schema_attr_by_id(self.c_schema, idx)
-        if c_attr == NULL:
+        if type(idx) == int:
+            c_attr = sos_schema_attr_by_id(self.c_schema, idx)
+        elif type(idx) == str:
+            c_attr = sos_schema_attr_by_name(self.c_schema, idx)
+        else:
             raise ValueError("Object has no attribute with id '{0}'".format(idx))
-        c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
-        self.set_py_value(c_attr, c_data, val)
-        if arr_obj != NULL:
-            sos_obj_put(arr_obj)
+        if 0 == sos_attr_is_array(c_attr):
+            self.set_py_value(c_attr, val)
+        else:
+            self.set_py_array_value(c_attr, val)
 
     def __setattr__(self, name, val):
-        cdef sos_obj_t arr_obj
         cdef sos_attr_t c_attr
-        cdef sos_value_data_t c_data
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
         c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name)
         if c_attr == NULL:
             raise ObjAttrError(name)
-        c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
-        self.set_py_value(c_attr, c_data, val)
-        if arr_obj != NULL:
-            sos_obj_put(arr_obj);
+        if 0 == sos_attr_is_array(c_attr):
+            self.set_py_value(c_attr, val)
+        else:
+            self.set_py_array_value(c_attr, val)
 
     def set_array_size(self, name, size):
         """

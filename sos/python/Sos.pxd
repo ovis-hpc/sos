@@ -443,6 +443,7 @@ cdef extern from "sos/sos.h":
     size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr)
     char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
     int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char **endptr)
+    size_t sos_value_strlen(sos_value_t v)
     const char *sos_value_to_str(sos_value_t value, char *str, size_t len)
     int sos_value_from_str(sos_value_t value, const char *str, char **endptr)
     int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
