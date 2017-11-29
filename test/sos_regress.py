@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 from schema_test import SchemaTest
 from value_test_from_str import ValueTestFromStr
+from obj_test_set_get import ObjTestSetGet
 from join_test_u16 import JoinTestU16
 from join_test_u32 import JoinTestU32
 from join_test_u64 import JoinTestU64
@@ -19,6 +20,7 @@ from pos_test import FilterPosTest
 from filt_count_test import FilterCountTest
 
 tests = [ SchemaTest,
+          ObjTestSetGet,
           ValueTestFromStr,
           JoinTestU16,
           JoinTestU32,
