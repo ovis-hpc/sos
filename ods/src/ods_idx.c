@@ -560,6 +560,15 @@ static void __attribute__ ((constructor)) ods_idx_init(void)
 	pthread_spin_init(&__ods_idx_lock, 1);
 }
 
+/*
+ * This code cleans up index providers. There is an issue, however,
+ * with dlopen()/dlclose() and library destructor invocation. In
+ * particular, dependent libraries such as libsos may have pointers to
+ * the idx_class structures. Dependening on the order in which the
+ * library destructors are called, it is possible to have sos
+ * containers pointing to idx_class memory after this destructor is
+ * called. For this reason, the class memory is not freed.
+ */
 static void __attribute__ ((destructor)) ods_idx_term(void)
 {
 	struct rbn *rbn;
@@ -568,7 +577,7 @@ static void __attribute__ ((destructor)) ods_idx_term(void)
 			container_of(rbn, struct ods_idx_class, rb_node);
 		rbt_del(&dylib_tree, rbn);
 		free(rbn->key);
-		free(class);
+		/* free(class); */
 	}
 }
 
