@@ -8,9 +8,8 @@ on persistent media.
 A **schema** is a collection of named, typed attributes. An **object**
 is an instance of attribute values conforming to the object **schema**.
 
-A SOS **container** is a place where SOS users can insert or retrieve objects. A
-SOS container comprises one or more **partitions**, in which objects are stored.
-Users can then easily manage a collection of objects by partition.
+A SOS **container** is a place where SOS users can insert, query, update
+and iterate over collections of objects objects.
 
 `sos_cmd` is the CLI program to:
 * Create SOS containers.
@@ -19,13 +18,6 @@ Users can then easily manage a collection of objects by partition.
 * Query objects from the container.
 
 Please see `sos_cmd -h` for more information about how to use `sos_cmd`.
-
-The following list of programs are for partition management:
-* `sos_part_create` for creating a partition in a container.
-* `sos_part_modify` for modifying partition status (`PRIMARY`, `ACTIVE`,
-  `OFFLINE`).
-* `sos_part_query` for listing partitions and their statuses in a container.
-* `sos_part_delete` for deleting a partition from a container.
 
 For more details about SOS documentation, please see [SOS
 doc](http://www.opengridcomputing.com/sos_doc/index.html), which also contains
@@ -46,7 +38,8 @@ Installation
 ./autogen.sh # this will call autoreconf to generate `configure` script
 mkdir build
 cd build
-../configure --prefix=/SOS/INSTALL/PATH [--enable-swig]
-# add `--enable-swig` for SOS python interface
+../configure --prefix=/SOS/INSTALL/PATH [--disable-python] [--enable-debug]
+# add `--enable-debug` to turn on debugging logic inside the SOS libraries
+# add `--disable-python` to disable the Python commands and interface libraries
 make && make install
 ```
