@@ -38,6 +38,9 @@ libidx_H2BXT_la_CFLAGS = $(AM_CFLAGS)
 libidx_H2BXT_la_LIBADD = libods.la
 lib_LTLIBRARIES += libidx_H2BXT.la
 
+libkey_COMPOUND_la_SOURCES = key_compound.c
+lib_LTLIBRARIES += libkey_COMPOUND.la
+
 libkey_BLKMAP_la_SOURCES = key_blkmap.c
 lib_LTLIBRARIES += libkey_BLKMAP.la
 

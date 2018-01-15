@@ -219,7 +219,7 @@ static int64_t hash_bkt(ht_t t, const char *key, size_t key_len)
 
 static ods_obj_t find_entry(ht_t t, ods_key_t key, int64_t *p_bkt)
 {
-	int c;
+	int64_t c;
 	ods_key_t entry_key;
 	ods_obj_t ent;
 	ods_ref_t ref;

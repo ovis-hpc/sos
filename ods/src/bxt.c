@@ -299,7 +299,7 @@ ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 
 	n = ods_ref_as_obj(t->ods, t->udata->root_ref);
 	while (!NODE(n)->is_leaf) {
-		int rc;
+		int64_t rc;
 		for (i = 1; i < NODE(n)->count; i++) {
 			ods_obj_t entry_key =
 				ods_ref_as_obj(t->ods, N_ENT(n,i).key_ref);
@@ -320,7 +320,7 @@ ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 static ods_obj_t rec_find(bxt_t t, ods_key_t key, int first)
 {
 	int i;
-	int rc;
+	int64_t rc;
 	ods_obj_t rec;
 	ods_key_t entry_key;
 	ods_obj_t leaf = leaf_find(t, key);
@@ -477,7 +477,7 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 		rec = ods_ref_as_obj(t->ods, head_ref);
 		ods_key_t entry_key =
 			ods_ref_as_obj(t->ods, REC(rec)->key_ref);
-		int rc = t->comparator(key, entry_key);
+		int64_t rc = t->comparator(key, entry_key);
 		ods_obj_put(entry_key);
 		if (rc <= 0) {
 			if ((flags & ODS_ITER_F_LUB_LAST_DUP)
@@ -560,7 +560,7 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
 			rec = ods_ref_as_obj(t->ods, L_ENT(leaf,i).head_ref);
 		ods_key_t entry_key =
 			ods_ref_as_obj(t->ods, REC(rec)->key_ref);
-		int rc = t->comparator(key, entry_key);
+		int64_t rc = t->comparator(key, entry_key);
 		ods_obj_put(entry_key);
 		if (rc < 0) {
 			ods_obj_put(rec);
@@ -731,7 +731,7 @@ static int find_ref_idx(ods_obj_t node, ods_ref_t ref)
 
 static int find_key_idx(bxt_t t, ods_obj_t leaf, ods_key_t key, int *found)
 {
-	int rc = ENOENT;
+	int64_t rc = ENOENT;
 	int i;
 	assert(NODE(leaf)->is_leaf);
 	for (i = 0; i < NODE(leaf)->count; i++) {

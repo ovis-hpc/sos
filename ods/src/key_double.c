@@ -64,18 +64,11 @@ static const char *get_doc(void)
 		"                The comparator returns -1,1,0 if a <,>,= b respectively.\n";
 }
 
-static int double_comparator(ods_key_t a, ods_key_t b)
+static int64_t double_comparator(ods_key_t a, ods_key_t b)
 {
-	ods_key_value_t av = ods_key_value(a);
-	ods_key_value_t bv = ods_key_value(b);
-	assert(av->len == 8);
-	assert(bv->len == 8);
-	double res = *(double *)av->value - *(double *)bv->value;
-	if (res < 0)
-		return -1;
-	else if (res > 0)
-		return 1;
-	return 0;
+	double av = *((double *)ods_key_value(a)->value);
+	double bv = *((double *)ods_key_value(b)->value);
+	return av - bv;
 }
 
 static const char *to_str(ods_key_t key, char *sbuf, size_t len)

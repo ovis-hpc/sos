@@ -64,20 +64,11 @@ static const char *get_doc(void)
 		"               The comparator returns -1,1,0 if a <,>,= b respectively.\n";
 }
 
-static int int64_comparator(ods_key_t a, ods_key_t b)
+static int64_t int64_comparator(ods_key_t a, ods_key_t b)
 {
-	ods_key_value_t av = ods_key_value(a);
-	ods_key_value_t bv = ods_key_value(b);
-	int64_t aa = *(int64_t*)av->value;
-	int64_t bb = *(int64_t*)bv->value;
-	assert(av->len == 8);
-	assert(bv->len == 8);
-	if (aa < bb)
-		return -1;
-	if (aa > bb)
-		return 1;
-
-	return 0;
+	int64_t av = *((int64_t *)ods_key_value(a)->value);
+	int64_t bv = *((int64_t *)ods_key_value(b)->value);
+	return av - bv;
 }
 
 static const char *to_str(ods_key_t key, char *buf, size_t len)

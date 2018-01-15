@@ -64,16 +64,11 @@ static const char *get_doc(void)
 		"                The comparator returns -1,0,1 for a <,=,> b respectively.\n";
 }
 
-static int uint32_comparator(ods_key_t a, ods_key_t b)
+static int64_t uint32_comparator(ods_key_t a, ods_key_t b)
 {
-	uint32_t av = *((uint32_t *)ods_key_value(a)->value);
-	uint32_t bv = *((uint32_t *)ods_key_value(b)->value);
-	if (av < bv)
-		return -1;
-	else if (av > bv)
-		return 1;
-	else
-		return 0;
+	int64_t av = *((uint32_t *)ods_key_value(a)->value);
+	int64_t bv = *((uint32_t *)ods_key_value(b)->value);
+	return av - bv;
 }
 
 static const char *to_str(ods_key_t key, char *sbuf, size_t len)

@@ -298,6 +298,61 @@ typedef struct ods_key_value_s {
 typedef ods_obj_t ods_key_t;
 
 /**
+ * A compound key is comprised of multiple values as follows:
+ * primary_key, secondary_key, tertiary_key, etc... Each key has a
+ * prefix that includes a type and (if needed) a length.
+ */
+#pragma pack(1)
+typedef struct ods_key_comp_val_str_s {
+	/**
+	 * The number of bytes in the \c str field below
+	 */
+	uint16_t len;
+	/**
+	 * The string/byte data. This array is not NULL terminated.
+	 */
+	char str[0];
+} ods_key_comp_val_str_t;
+
+typedef union ods_key_comp_val_u {
+	unsigned char byte_;
+	uint16_t uint16_;
+	uint32_t uint32_;
+	uint64_t uint64_;
+	int16_t int16_;
+	int32_t int32_;
+	int64_t int64_;
+	float float_;
+	double double_;
+	long double long_double_;
+	ods_key_comp_val_str_t str;
+} ods_key_comp_val_t;
+
+typedef struct ods_key_comp_s {
+	/**
+	 * The type of this key component. By convention, these values
+	 * mirror the sos_type_e enumeration
+	 */
+	uint16_t type;
+	/**
+	 * The value data for this key component
+	 */
+	ods_key_comp_val_t value;
+} *ods_key_comp_t;
+
+typedef struct ods_comp_key_s {	/* overloads the ods_key_value_t */
+	/**
+	 * The length of the entire key in bytes
+	 */
+	uint16_t len;
+	/**
+	 * An array of key components
+	 */
+	struct ods_key_comp_s value[0];	/* array of key components */
+} *ods_comp_key_t;
+#pragma pack()
+
+/**
  * \brief Create an key in the ODS store
  *
  * A key is a counted byte array with a set of convenience routines to
@@ -430,7 +485,7 @@ const char *ods_key_to_str(ods_idx_t idx, ods_key_t key, char *buf, size_t len);
  * \return 0	a == b
  * \return >0	a > b
  */
-int ods_key_cmp(ods_idx_t idx, ods_key_t a, ods_key_t b);
+int64_t ods_key_cmp(ods_idx_t idx, ods_key_t a, ods_key_t b);
 
 /**
  * \brief Return the size of the index's key
@@ -489,7 +544,7 @@ size_t ods_key_len(ods_key_t key);
  * \param b	The second key
  * \param len_b	The length of the key b
  */
-typedef int (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
+typedef int64_t (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
 
 /**
  * \brief Insert a key and associated value into the index

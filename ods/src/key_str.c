@@ -60,11 +60,11 @@ static const char *get_doc(void)
 		"                returns the difference in length between the two keys.\n";
 }
 
-static int string_comparator(ods_key_t a, ods_key_t b)
+static int64_t string_comparator(ods_key_t a, ods_key_t b)
 {
 	ods_key_value_t av = ods_key_value(a);
 	ods_key_value_t bv = ods_key_value(b);
-	int res;
+	int64_t res;
 	int cmp_len = av->len;
 	if (cmp_len > bv->len)
 		cmp_len = bv->len;

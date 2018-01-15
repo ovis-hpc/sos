@@ -78,7 +78,7 @@ static const char *get_doc(void)
  * 
  *
  */
-static int blkmap_comparator(ods_key_t a, ods_key_t b)
+static int64_t blkmap_comparator(ods_key_t a, ods_key_t b)
 {
 	ods_key_value_t av = ods_key_value(a);
 	ods_key_value_t bv = ods_key_value(b);

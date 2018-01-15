@@ -515,7 +515,7 @@ int ods_key_from_str(ods_idx_t idx, ods_key_t key, const char *str)
 	return idx->idx_class->cmp->from_str(key, str);
 }
 
-int ods_key_cmp(ods_idx_t idx, ods_key_t a, ods_key_t b)
+int64_t ods_key_cmp(ods_idx_t idx, ods_key_t a, ods_key_t b)
 {
 	return idx->idx_class->cmp->compare_fn(a, b);
 }
@@ -573,11 +573,8 @@ static void __attribute__ ((destructor)) ods_idx_term(void)
 {
 	struct rbn *rbn;
 	while ((rbn = rbt_min(&dylib_tree))) {
-		struct ods_idx_class *class =
-			container_of(rbn, struct ods_idx_class, rb_node);
 		rbt_del(&dylib_tree, rbn);
 		free(rbn->key);
-		/* free(class); */
 	}
 }
 

@@ -61,11 +61,11 @@ static const char *get_doc(void)
 		"                between the two keys.\n";
 }
 
-static int cmp(ods_key_t a, ods_key_t b)
+static int64_t cmp(ods_key_t a, ods_key_t b)
 {
 	ods_key_value_t av = ods_key_value(a);
 	ods_key_value_t bv = ods_key_value(b);
-	int res;
+	int64_t res;
 	int cmp_len = av->len;
 	if (cmp_len > bv->len)
 		cmp_len = bv->len;
