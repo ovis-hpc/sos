@@ -58,6 +58,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <assert.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -66,6 +67,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <limits.h>
+#include <float.h>
 #include <errno.h>
 
 #include <sos/sos.h>
@@ -327,13 +329,35 @@ char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_
 	return res_str;
 }
 
+static uint64_t comp_type_size[] = {
+	[SOS_TYPE_LONG_DOUBLE] = sizeof(long double) + sizeof(uint16_t),
+	[SOS_TYPE_DOUBLE] = sizeof(double) + sizeof(uint16_t),
+	[SOS_TYPE_FLOAT] = sizeof(float) + sizeof(uint16_t),
+	[SOS_TYPE_UINT64] = sizeof(uint64_t) + sizeof(uint16_t),
+	[SOS_TYPE_TIMESTAMP] = sizeof(uint64_t) + sizeof(uint16_t),
+	[SOS_TYPE_INT64] = sizeof(int64_t) + sizeof(uint16_t),
+	[SOS_TYPE_UINT32] = sizeof(uint32_t) + sizeof(uint16_t),
+	[SOS_TYPE_INT32] = sizeof(int32_t) + sizeof(uint16_t),
+	[SOS_TYPE_UINT16] = sizeof(uint16_t) + sizeof(uint16_t),
+	[SOS_TYPE_INT16] = sizeof(int16_t) + sizeof(uint16_t),
+};
+
+ods_key_comp_t __sos_next_key_comp(ods_key_comp_t comp)
+{
+	off_t koff;
+	if (comp->type <= SOS_TYPE_TIMESTAMP) {
+		koff = comp_type_size[comp->type];
+	} else {
+		koff = comp->value.str.len + sizeof(uint16_t) + sizeof(uint16_t);
+	}
+	assert(koff != 0);
+	return (ods_key_comp_t)&((char *)comp)[koff];
+}
+
 int __sos_key_join_value(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_t value)
 {
-	uint64_t u64;
-	uint32_t u32;
-	uint16_t u16;
-	ods_key_value_t kv;
-	unsigned char *dst;
+	ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
+	ods_key_comp_t comp;
 	int attr_id, idx;
 	sos_attr_t attr;
 	sos_array_t join_ids = sos_attr_join_list(join_attr);
@@ -345,8 +369,7 @@ int __sos_key_join_value(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_
 		/* The specified join index is invalid */
 		return EINVAL;
 
-	kv = key->as.ptr;
-	dst = kv->value;
+	comp = comp_key->value;
 
 	for (idx = 0; idx <= join_idx; idx++) {
 		attr_id = join_ids->data.uint32_[idx];
@@ -356,52 +379,185 @@ int __sos_key_join_value(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_
 			 * invalid. This is probably corruption */
 			return E2BIG;
 		if (idx != join_idx) {
-			dst += sos_attr_key_size(attr);
+			/* Skip this component of the key */
+			comp = __sos_next_key_comp(comp);
 			continue;
 		}
+		/* The key component gets it's type from the attribute */
+		comp->type = sos_attr_type(attr);
+
 		/* Array types are memcpy'd as part of the key */
 		size_t sz = sos_value_size(value);
-		if (sos_attr_is_array(attr)) {
-			memcpy(dst, value->data->array.data.byte_, sz);
-			dst += sz;
-			continue;
+		if (sos_attr_is_array(attr) || comp->type == SOS_TYPE_STRUCT) {
+			memcpy(comp->value.str.str, value->data->array.data.byte_, sz);
+			comp->value.str.len = sz;
+			comp_key->len += sz + sizeof(uint16_t) + sizeof(uint16_t);
+			break;
 		}
+
+		/* Assign primitive types directly */
+		comp_key->len += comp_type_size[comp->type];
 		switch (sos_attr_type(attr)) {
 		case SOS_TYPE_TIMESTAMP:
 		case SOS_TYPE_UINT64:
 		case SOS_TYPE_INT64:
 		case SOS_TYPE_DOUBLE:
-			u64 = htobe64(value->data->prim.uint64_);
-			memcpy(dst, &u64, sizeof(u64));
+			comp->value.uint64_ = value->data->prim.uint64_;
 			break;
 		case SOS_TYPE_INT32:
 		case SOS_TYPE_UINT32:
 		case SOS_TYPE_FLOAT:
-			u32 = htobe32(value->data->prim.uint32_);
-			memcpy(dst, &u32, sizeof(u32));
+			comp->value.uint32_ = value->data->prim.uint32_;
 			break;
 		case SOS_TYPE_INT16:
 		case SOS_TYPE_UINT16:
-			u16 = htobe16(value->data->prim.uint16_);
-			memcpy(dst, &u16, sizeof(u16));
-			break;
-		case SOS_TYPE_STRUCT:
-			/* No swapping for struct types */
-			memcpy(dst, value->data->prim.struc_, sz);
-			dst += sz;
+			value->data->prim.uint16_ = value->data->prim.uint16_;
 			break;
 		default:
 			return EINVAL;
 		}
+		break;
 	}
 	return 0;
+}
+
+ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size_t *comp_len)
+{
+	comp->type = sos_attr_type(a);
+	switch (comp->type) {
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_UINT64:
+		comp->value.uint64_ = 0;
+		*comp_len = sizeof(uint64_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_INT64:
+		comp->value.int64_ = LONG_MIN;
+		*comp_len = sizeof(int64_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_UINT32:
+		comp->value.uint32_ = 0;
+		*comp_len = sizeof(uint32_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_INT32:
+		comp->value.int32_ = INT_MIN;
+		*comp_len = sizeof(int32_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_DOUBLE:
+		comp->value.double_ = DBL_MIN;
+		*comp_len = sizeof(double) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_FLOAT:
+		comp->value.float_ = FLT_MIN;
+		*comp_len = sizeof(float) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_INT16:
+		comp->value.int16_ = SHRT_MIN;
+		*comp_len = sizeof(int16_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_UINT16:
+		comp->value.uint16_ = 0;
+		*comp_len = sizeof(uint16_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		sos_error("Unsupported type in sos_key_join\n");
+		break;
+	default:
+		assert(0 == "unsupported type for function");
+		break;
+	}
+	return __sos_next_key_comp(comp);
+}
+
+ods_key_comp_t __sos_set_key_comp_to_max(ods_key_comp_t comp, sos_attr_t a, size_t *comp_len)
+{
+	comp->type = sos_attr_type(a);
+	switch (comp->type) {
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_UINT64:
+		comp->value.uint64_ = ULONG_MAX;
+		*comp_len = sizeof(uint64_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_INT64:
+		comp->value.int64_ = LONG_MAX;
+		*comp_len = sizeof(int64_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_UINT32:
+		comp->value.uint32_ = UINT_MAX;
+		*comp_len = sizeof(uint32_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_INT32:
+		comp->value.int32_ = INT_MAX;
+		*comp_len = sizeof(int32_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_DOUBLE:
+		comp->value.double_ = DBL_MAX;
+		*comp_len = sizeof(double) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_FLOAT:
+		comp->value.float_ = FLT_MAX;
+		*comp_len = sizeof(float) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_INT16:
+		comp->value.int16_ = SHRT_MAX;
+		*comp_len = sizeof(int16_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_UINT16:
+		comp->value.uint16_ = USHRT_MAX;
+		*comp_len = sizeof(uint16_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		sos_error("Unsupported type in sos_key_join\n");
+		break;
+	default:
+		assert(0 == "unsupported type for function");
+		break;
+	}
+	return __sos_next_key_comp(comp);
+}
+
+ods_key_comp_t __sos_set_key_comp(ods_key_comp_t comp, sos_value_t v, size_t *comp_len)
+{
+	size_t sz;
+
+	comp->type = sos_value_type(v);
+	switch (comp->type) {
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_UINT64:
+	case SOS_TYPE_INT64:
+	case SOS_TYPE_DOUBLE:
+		comp->value.uint64_ = v->data->prim.uint64_;
+		*comp_len = sizeof(uint64_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_INT32:
+	case SOS_TYPE_UINT32:
+	case SOS_TYPE_FLOAT:
+		comp->value.uint32_ = v->data->prim.uint32_;
+		*comp_len = sizeof(uint32_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_INT16:
+	case SOS_TYPE_UINT16:
+		comp->value.uint16_ = v->data->prim.uint16_;
+		*comp_len = sizeof(uint16_t) + sizeof(uint16_t);
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		sos_error("Unsupported type in sos_key_join\n");
+		break;
+	default:
+		sz = sos_value_size(v);
+		memcpy(comp->value.str.str, v->data->array.data.char_, sz);
+		comp->value.str.len = sz;
+		*comp_len = sz + sizeof(uint16_t) + sizeof(uint16_t);
+		break;
+	}
+	return __sos_next_key_comp(comp);
 }
 
 int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 {
 	va_list ap;
-	ods_key_value_t kv;
-	unsigned char *dst, *src;
+	unsigned char *src;
+	ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
+	ods_key_comp_t comp;
 	size_t src_len;
 	int attr_id, idx;
 	sos_attr_t attr;
@@ -411,9 +567,8 @@ int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 		return EINVAL;
 
 	va_start(ap, join_attr);
-
-	kv = key->as.ptr;
-	dst = kv->value;
+	comp = comp_key->value;
+	comp_key->len = 0;
 
 	for (idx = 0; idx < join_ids->count; idx++) {
 		attr_id = join_ids->data.uint32_[idx];
@@ -425,23 +580,24 @@ int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 				  sos_attr_name(join_attr));
 			return E2BIG;
 		}
-		switch (sos_attr_type(attr)) {
+		comp->type = sos_attr_type(attr);
+		switch (comp->type) {
 		case SOS_TYPE_UINT64:
 		case SOS_TYPE_INT64:
 		case SOS_TYPE_DOUBLE:
-			*(uint64_t *)dst = htobe64(va_arg(ap, uint64_t));
-			dst += sizeof(uint64_t);
+			comp->value.uint64_ = va_arg(ap, uint64_t);
+			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_INT32:
 		case SOS_TYPE_UINT32:
 		case SOS_TYPE_FLOAT:
-			*(uint32_t *)dst = htobe32(va_arg(ap, uint32_t));
-			dst += sizeof(uint32_t);
+			comp->value.uint32_ = va_arg(ap, uint32_t);
+			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_INT16:
 		case SOS_TYPE_UINT16:
-			*(uint16_t *)dst = htobe16((short)va_arg(ap, int));
-			dst += sizeof(uint16_t);
+			comp->value.uint16_ = (short)va_arg(ap, int);
+			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_LONG_DOUBLE:
 			sos_error("Unsupported type in sos_key_join\n");
@@ -449,12 +605,13 @@ int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 		default:
 			src_len = va_arg(ap, size_t);
 			src = va_arg(ap, unsigned char *);
-			memcpy(dst, src, src_len);
-			dst += src_len;
+			memcpy(comp->value.str.str, src, src_len);
+			comp->value.str.len = src_len;
+			comp_key->len += src_len + sizeof(uint16_t) + sizeof(uint16_t);
 			break;
 		}
+		comp = __sos_next_key_comp(comp);
 	}
-	kv->len = dst - kv->value;
 	va_end(ap);
 	return 0;
 }
@@ -465,9 +622,9 @@ int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
 	uint64_t *p64;
 	uint32_t *p32;
 	uint16_t *p16;
-	ods_key_value_t kv;
-	unsigned char *dst, *src;
-	size_t src_len;
+	unsigned char *dst;
+	ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
+	ods_key_comp_t comp;
 	int attr_id, idx;
 	sos_attr_t attr;
 	sos_array_t join_ids = sos_attr_join_list(join_attr);
@@ -477,8 +634,7 @@ int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
 
 	va_start(ap, join_attr);
 
-	kv = key->as.key;
-	src = kv->value;
+	comp = comp_key->value;
 
 	for (idx = 0; idx < join_ids->count; idx++) {
 		attr_id = join_ids->data.uint32_[idx];
@@ -495,32 +651,28 @@ int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
 		case SOS_TYPE_INT64:
 		case SOS_TYPE_DOUBLE:
 			p64 = va_arg(ap, uint64_t *);
-			*p64 = be64toh(*(uint64_t *)src);
-			src += sizeof(uint64_t);
+			*p64 = comp->value.uint64_;
 			break;
 		case SOS_TYPE_INT32:
 		case SOS_TYPE_UINT32:
 		case SOS_TYPE_FLOAT:
 			p32 = va_arg(ap, uint32_t *);
-			*p32 = be32toh(*(uint32_t *)src);
-			src += sizeof(uint32_t);
+			*p32 = comp->value.uint32_;
 			break;
 		case SOS_TYPE_INT16:
 		case SOS_TYPE_UINT16:
 			p16 = va_arg(ap, uint16_t *);
-			*p16 = be16toh(*(uint16_t *)src);
-			src += sizeof(uint16_t);
+			*p16 = comp->value.uint16_;
 			break;
 		case SOS_TYPE_LONG_DOUBLE:
 			sos_error("Unsupported type in sos_key_join\n");
 			break;
 		default:
-			src_len = va_arg(ap, size_t);
 			dst = va_arg(ap, unsigned char *);
-			memcpy(dst, src, src_len);
-			src += src_len;
+			memcpy(dst, comp->value.str.str, comp->value.str.len);
 			break;
 		}
+		comp = __sos_next_key_comp(comp);
 	}
 	va_end(ap);
 	return 0;

@@ -58,6 +58,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -1123,6 +1124,72 @@ static sos_obj_t prev_match(sos_filter_t filt)
 	return NULL;
 }
 
+static sos_filter_cond_t __sos_find_filter_condition(sos_filter_t filt, int attr_id)
+{
+	sos_filter_cond_t cond;
+	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
+		if (attr_id == sos_attr_id(cond->attr))
+			return cond;
+	}
+	return NULL;
+}
+
+static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_max)
+{
+	sos_filter_cond_t cond;
+	int join_idx;
+	sos_attr_t filt_attr = sos_iter_attr(filt->iter);
+	int filt_attr_id = sos_attr_id(filt_attr);
+	int search = 0;
+	sos_array_t attr_ids = sos_attr_join_list(filt_attr);
+
+	if (sos_attr_type(filt_attr) == SOS_TYPE_JOIN) {
+		ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
+		ods_key_comp_t key_comp = comp_key->value;
+		comp_key->len = 0;
+		for (join_idx = 0; join_idx < attr_ids->count; join_idx++) {
+			int join_attr_id = attr_ids->data.uint32_[join_idx];
+			size_t comp_len;
+			/* Search the condition list for this attribute */
+			cond = __sos_find_filter_condition(filt, join_attr_id);
+			if (cond) {
+				key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+				comp_key->len += comp_len;
+				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
+					search = ESRCH;
+			} else {
+				sos_attr_t attr = sos_schema_attr_by_id(sos_attr_schema(filt_attr),
+									join_attr_id);
+				if (sos_attr_is_array(attr) || sos_attr_is_ref(attr)) {
+					/* There is no condition for this key component and the
+					 * attribute has a variable length. The key order after the
+					 * previous components will be determined by length.
+					 */
+					goto out;
+				}
+				if (min_not_max)
+					key_comp = __sos_set_key_comp_to_min(key_comp, attr, &comp_len);
+				else
+					key_comp = __sos_set_key_comp_to_max(key_comp, attr, &comp_len);
+				comp_key->len += comp_len;
+			}
+		}
+	} else {
+		/* Find the first condition that matches the filter attr */
+		TAILQ_FOREACH(cond, &filt->cond_list, entry) {
+			if (filt_attr_id == sos_attr_id(cond->attr)) {
+				sos_key_set(key, sos_value_as_key(cond->value),
+					    sos_value_size(cond->value));
+				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
+					search = ESRCH;
+				break;
+			}
+		}
+	}
+ out:
+	return search;
+}
+
 /**
  * \brief Return the first matching object.
  *
@@ -1132,59 +1199,19 @@ static sos_obj_t prev_match(sos_filter_t filt)
  */
 sos_obj_t sos_filter_begin(sos_filter_t filt)
 {
-	sos_filter_cond_t cond;
 	int rc;
-	int join_idx, min_join_idx = 0;
-	sos_attr_t filt_attr = sos_iter_attr(filt->iter);
-	int filt_attr_id = sos_attr_id(filt_attr);
-	int sup = 0;
 	SOS_KEY(key);
 
 	__sort_filter_conds_fwd(filt);
-
-	if (sos_attr_type(filt_attr) == SOS_TYPE_JOIN) {
-		/*
-		 * Initialize the key to zero, because it may only be
-		 * partially set inside the condition loop below
-		 */
-		ods_key_value_t kv = key->as.ptr;
-		kv->len = sos_attr_key_size(filt_attr);
-		memset(kv->value, 0, kv->len);
-	}
-
-	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
-		join_idx = __attr_join_idx(filt_attr, cond->attr);
-		if (join_idx >= 0) {
-			/* Iter attr is SOS_TYPE_JOIN, fill in the bits from this condition */
-			if (join_idx >= min_join_idx) {
-				__sos_key_join_value(key, filt_attr, join_idx, cond->value);
-				/* Once the bits of the JOIN key have been set,
-				 * don't overwrite the same index with another
-				 * condition value. The conditions are sorted
-				 * so that this works correctly, i.e. GE comes
-				 * before LE */
-				min_join_idx = join_idx + 1;
-				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
-					sup = 1;
-			}
-			continue;
-		} else if (sos_attr_id(cond->attr) == filt_attr_id) {
-			sos_key_set(key, sos_value_as_key(cond->value),
-				    sos_value_size(cond->value));
-			if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
-				sup = 1;
-			break;
-		}
-		/*
-		 * This and subsequent filter conditions don't affect
-		 * the iterator
-		 */
-		break;
-	}
-	if (sup)
+	rc = __sos_filter_key_set(filt, key, 1);
+	if (rc == EINVAL) {
+		errno = rc;
+		return NULL;
+	} else if (rc) {
 		rc = sos_iter_sup(filt->iter, key);
-	else
+	} else {
 		rc = sos_iter_begin(filt->iter);
+	}
 	if (!rc)
 		return next_match(filt);
 	return NULL;
@@ -1249,61 +1276,21 @@ sos_obj_t sos_filter_prev(sos_filter_t filt)
 
 sos_obj_t sos_filter_end(sos_filter_t filt)
 {
-	sos_filter_cond_t cond;
 	int rc;
-	int join_idx, min_join_idx = 0;
-	sos_attr_t filt_attr = sos_iter_attr(filt->iter);
-	int filt_attr_id = sos_attr_id(filt_attr);
-	int inf = 0;
 	SOS_KEY(key);
 
 	__sort_filter_conds_bkwd(filt);
-
-	if (sos_attr_type(filt_attr) == SOS_TYPE_JOIN) {
-		/*
-		 * Initialize the key to 0xFF, because it may only be
-		 * partially set inside the condition loop below
-		 */
-		ods_key_value_t kv = key->as.ptr;
-		kv->len = sos_attr_key_size(filt_attr);
-		memset(kv->value, 0xFF, kv->len);
-	}
-
-	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
-		join_idx = __attr_join_idx(filt_attr, cond->attr);
-		if (join_idx >= 0) {
-			/* Iter attr is SOS_TYPE_JOIN, fill in the bits from this condition */
-			if (join_idx >= min_join_idx) {
-				__sos_key_join_value(key, filt_attr, join_idx, cond->value);
-				/* Once the bits of the JOIN key have been set,
-				 * don't overwrite the same index with another
-				 * condition value. The conditions are sorted
-				 * so that this works correctly, i.e. GE comes
-				 * before LE */
-				min_join_idx = join_idx + 1;
-				if (cond->cond != SOS_COND_NE && (cond->cond <= SOS_COND_EQ))
-					inf = 1;
-			}
-			continue;
-		} else if (sos_attr_id(cond->attr) == filt_attr_id) {
-			sos_key_set(key, sos_value_as_key(cond->value),
-				    sos_value_size(cond->value));
-			if (cond->cond != SOS_COND_NE && (cond->cond <= SOS_COND_EQ))
-				inf = 1;
-			break;
-		}
-		/*
-		 * This and subsequent filter conditions don't affect
-		 * the iterator
-		 */
-		break;
-	}
-	if (inf)
+	rc = __sos_filter_key_set(filt, key, 0);
+	if (rc == EINVAL) {
+		errno = rc;
+		return NULL;
+	} else if (rc) {
 		rc = sos_iter_inf(filt->iter, key);
-	else
+	} else {
 		rc = sos_iter_end(filt->iter);
-	if (!rc)
-		return prev_match(filt);
+	}
+ 	if (!rc)
+ 		return prev_match(filt);
 	return NULL;
 }
 

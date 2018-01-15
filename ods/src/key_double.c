@@ -68,7 +68,11 @@ static int64_t double_comparator(ods_key_t a, ods_key_t b)
 {
 	double av = *((double *)ods_key_value(a)->value);
 	double bv = *((double *)ods_key_value(b)->value);
-	return av - bv;
+	if (av < bv)
+		return -1;
+	if (av > bv)
+		return 1;
+	return 0;
 }
 
 static const char *to_str(ods_key_t key, char *sbuf, size_t len)

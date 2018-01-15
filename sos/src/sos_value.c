@@ -254,13 +254,9 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 	sos_value_t *v;
 	struct sos_value_s _v_[MAX_JOIN_ATTRS];
 	sos_value_t _v[MAX_JOIN_ATTRS];
-	void *dst;
+	ods_key_comp_t comp;
+	size_t comp_len;
 	struct sos_array_s *data;
-	long double *ld;
-	uint64_t *p64;
-	uint64_t u64;
-	uint32_t u32;
-	uint16_t u16;
 	int i, count, join_id;
 	sos_schema_t schema = sos_attr_schema(attr);
 	size_t size;
@@ -295,7 +291,7 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 			errno = ENOMEM;
 			goto err;;
 		}
-		size += sos_value_size(v[i]);
+		size += sos_value_size(v[i]) + sizeof(comp->value.str);
 	}
 
 	if (size > (sizeof(val->data_) + sizeof(*data))) {
@@ -313,51 +309,10 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 	val->obj = NULL;
 	val->data = (sos_value_data_t)data;
 
-	dst = data->data.byte_;
+	comp = (ods_key_comp_t)data->data.byte_;
+
 	for (i = 0; i < count; i++) {
-		size_t sz = sos_value_size(v[i]);
-
-		/* Array types are memcpy'd as part of the key */
-		if (sos_value_is_array(v[i])) {
-			memcpy(dst, v[i]->data->array.data.byte_, sz);
-			dst += sz;
-			sos_value_put(v[i]);
-			continue;
-		}
-
-		/* Primitive types are byte swapped */
-		switch (sz) {
-		case 8:
-			u64 = htobe64(v[i]->data->prim.uint64_);
-			memcpy(dst, &u64, sizeof(u64));
-			dst += sizeof(u64);
-			break;
-		case 4:
-			u32 = htobe32(v[i]->data->prim.uint32_);
-			memcpy(dst, &u32, sizeof(u32));
-			dst += sizeof(u32);
-			break;
-		case 2:
-			u16 = htobe16(v[i]->data->prim.uint16_);
-			memcpy(dst, &u16, sizeof(u16));
-			dst += sizeof(u16);
-			break;
-		case 16:
-			ld = dst;
-			p64 = (uint64_t *)&v[i]->data->prim.long_double_;
-			ld[0] = htobe64(p64[0]);
-			ld[1] = htobe64(p64[1]);
-			dst += sizeof(long double);
-			break;
-		case SOS_TYPE_STRUCT:
-			/* No swapping for struct types */
-			memcpy(dst, v[i]->data->prim.struc_, sz);
-			dst += sz;
-			break;
-		default:
-			errno = EINVAL;
-			goto err;
-		}
+		comp = __sos_set_key_comp(comp, v[i], &comp_len);
 		sos_value_put(v[i]);
 	}
 	if (count > MAX_JOIN_ATTRS) {
