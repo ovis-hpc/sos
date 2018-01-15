@@ -12,6 +12,9 @@ from obj_test_set_get import ObjTestSetGet
 from join_test_u16 import JoinTestU16
 from join_test_u32 import JoinTestU32
 from join_test_u64 import JoinTestU64
+from join_test_i16 import JoinTestI16
+from join_test_i32 import JoinTestI32
+from join_test_i64 import JoinTestI64
 from join_test_u32_str_str import JoinTestU32_Str_Str
 from join_test_u32_str_u32 import JoinTestU32_Str_U32
 from join_test_u32_str_str import JoinTestU32_Str_Str
@@ -25,6 +28,9 @@ tests = [ SchemaTest,
           JoinTestU16,
           JoinTestU32,
           JoinTestU64,
+          JoinTestI16,
+          JoinTestI32,
+          JoinTestI64,
           JoinTestU32_Str_Str,
           JoinTestU32_Str_U32,
           FilterTestJoin3xU64,

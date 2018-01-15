@@ -25,7 +25,7 @@ class FilterPosTest(SosTestCase):
                                  [ { "name" : "job_id", "type" : "uint64" },
                                    { "name" : "timestamp", "type" : "timestamp" },
                                    { "name" : "component_id", "type" : "uint64" },
-                                   { "name" : "job_time_cond", "type" : "join",
+                                   { "name" : "job_time_comp", "type" : "join",
                                      "join_attrs" : [ "job_id", "timestamp", "component_id" ],
                                      "index" : {}}
                                ])
@@ -36,7 +36,7 @@ class FilterPosTest(SosTestCase):
         cls.tearDownDb()
 
     def setUp(self):
-        self.filt = Sos.Filter(self.schema['job_time_cond'])
+        self.filt = Sos.Filter(self.schema['job_time_comp'])
 
     def tearDown(self):
         del self.filt
