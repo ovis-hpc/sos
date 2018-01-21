@@ -29,9 +29,6 @@ Sos.c: Sos.pyx Sos.pxd
 	echo PYTHON_LDFLAGS are "$(PYTHON_LDFLAGS)"
 	cython --gdb $< -o $@
 
-Ldms.c: Ldms.pyx Sos.pxd
-	cython --gdb $< -o $@
-
 Array.c : Array.pyx
 	cython --gdb $< -o $@
 
