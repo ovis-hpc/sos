@@ -128,6 +128,152 @@ sos_key_t sos_key_new(size_t sz)
 	return k;
 }
 
+sos_key_t __sos_key_maybe_new(sos_key_t key, int required_size)
+{
+	if (key && (ods_obj_size(key) >= required_size + sizeof(struct ods_key_value_s)))
+		return key;
+
+	return sos_key_new(required_size + sizeof(struct ods_key_value_s));
+}
+
+/**
+ * \brief Create a key for an attribute and values
+ *
+ * Create a key of sufficient size given the provided schema attribute
+ * and values. If the \c key parameter is not NULL, it will be used
+ * unless the key is not large enough. If this is the case, the
+ * function will return NULL, and errno will be set to ETOOBIG.
+ *
+ * If \c key is NULL, a key of sufficient size will be allocated.
+ *
+ * If the attribute type is an array, the associated value provided in
+ * the arguement list must be followed by the length of the array.
+ * For example:
+ *
+ * int int_array[] = { 1, 2, 3, 4 };
+ * sos_key_t key = sos_key_for_attr(NULL, array_attr, 4, int_array);
+ *
+ * \param key A key to use or NULL if one is to be allocated.
+ * \param attr The schema attribute describing the value of the key
+ * \param va_list An argument list of values
+ * \retval !NULL A pointer to the key
+ * \retval NULL Refer to \c errno for the reason for failure
+ */
+sos_key_t sos_key_for_attr(sos_key_t key, sos_attr_t attr, ...)
+{
+	va_list ap;
+	va_start(ap, attr);
+	int len;
+	char *data;
+
+	switch (sos_attr_type(attr)) {
+	case SOS_TYPE_JOIN:
+		len = sos_key_join_size_va(attr, ap);
+		va_end(ap);
+		va_start(ap, attr);
+		key = __sos_key_maybe_new(key, len);
+		if (key) {
+			int rc = sos_key_join_va(key, attr, ap);
+			if (rc) {
+				if (key != key)
+					sos_key_put(key);
+				errno = rc;
+				key = NULL;
+			}
+		}
+		break;
+	case SOS_TYPE_UINT16:
+	case SOS_TYPE_INT16:
+		key = __sos_key_maybe_new(key, sizeof(uint16_t));
+		if (key) {
+			uint16_t u16 = va_arg(ap, unsigned int);
+			sos_key_set(key, &u16, sizeof(uint16_t));
+		}
+		break;
+	case SOS_TYPE_FLOAT:
+	case SOS_TYPE_UINT32:
+	case SOS_TYPE_INT32:
+		key = __sos_key_maybe_new(key, sizeof(uint32_t));
+		if (key) {
+			uint32_t u32 = va_arg(ap, uint32_t);
+			sos_key_set(key, &u32, sizeof(uint32_t));
+		}
+		break;
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_DOUBLE:
+	case SOS_TYPE_INT64:
+	case SOS_TYPE_UINT64:
+		key = __sos_key_maybe_new(key, sizeof(uint64_t));
+		if (key) {
+			uint64_t u64 = va_arg(ap, uint64_t);
+			sos_key_set(key, &u64, sizeof(uint64_t));
+		}
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		key = __sos_key_maybe_new(key, sizeof(long double));
+		if (key) {
+			long double ld = va_arg(ap, long double);
+			sos_key_set(key, &ld, sizeof(long double));
+		}
+		break;
+	case SOS_TYPE_STRUCT:
+		key = __sos_key_maybe_new(key, sos_attr_size(attr));
+		if (key) {
+			data = va_arg(ap, char *);
+			sos_key_set(key, data, sos_attr_size(attr));
+		}
+		break;
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_CHAR_ARRAY:
+		data = va_arg(ap, char *);
+		len = va_arg(ap, int);
+		key = __sos_key_maybe_new(key, len);
+		if (key)
+			sos_key_set(key, data, len);
+		break;
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+		data = va_arg(ap, char *);
+		len = va_arg(ap, int) * sizeof(uint16_t);
+		key = __sos_key_maybe_new(key, len);
+		if (key)
+			sos_key_set(key, data, len);
+		break;
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+		data = va_arg(ap, char *);
+		len = va_arg(ap, int) * sizeof(uint32_t);
+		key = __sos_key_maybe_new(key, len);
+		if (key)
+			sos_key_set(key, data, len);
+		break;
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+		data = va_arg(ap, char *);
+		len = va_arg(ap, int) * sizeof(uint64_t);
+		key = __sos_key_maybe_new(key, len);
+		if (key)
+			sos_key_set(key, data, len);
+		break;
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+		data = va_arg(ap, char *);
+		len = va_arg(ap, int) * sizeof(long double);
+		key = __sos_key_maybe_new(key, len);
+		if (key)
+			sos_key_set(key, data, len);
+		break;
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_OBJ_ARRAY:
+	default:
+		errno = EINVAL;
+		key = NULL;
+	}
+	return key;
+}
+
+
 /**
  * \brief Create a key based on the specified attribute or size
  *
@@ -330,6 +476,7 @@ char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_
 }
 
 static uint64_t comp_type_size[] = {
+	/* Primitive type sizes include the uint16_t type field. */
 	[SOS_TYPE_LONG_DOUBLE] = sizeof(long double) + sizeof(uint16_t),
 	[SOS_TYPE_DOUBLE] = sizeof(double) + sizeof(uint16_t),
 	[SOS_TYPE_FLOAT] = sizeof(float) + sizeof(uint16_t),
@@ -340,6 +487,20 @@ static uint64_t comp_type_size[] = {
 	[SOS_TYPE_INT32] = sizeof(int32_t) + sizeof(uint16_t),
 	[SOS_TYPE_UINT16] = sizeof(uint16_t) + sizeof(uint16_t),
 	[SOS_TYPE_INT16] = sizeof(int16_t) + sizeof(uint16_t),
+
+	/* Array types do not include the uint16_t type field because
+	 * this value is multipied by the array length. */
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = sizeof(long double),
+	[SOS_TYPE_DOUBLE_ARRAY] = sizeof(double),
+	[SOS_TYPE_FLOAT_ARRAY] = sizeof(float),
+	[SOS_TYPE_UINT64_ARRAY] = sizeof(uint64_t),
+	[SOS_TYPE_INT64_ARRAY] = sizeof(int64_t),
+	[SOS_TYPE_UINT32_ARRAY] = sizeof(uint32_t),
+	[SOS_TYPE_INT32_ARRAY] = sizeof(int32_t),
+	[SOS_TYPE_UINT16_ARRAY] = sizeof(uint16_t),
+	[SOS_TYPE_INT16_ARRAY] = sizeof(int16_t),
+	[SOS_TYPE_CHAR_ARRAY] = sizeof(char),
+	[SOS_TYPE_BYTE_ARRAY] = sizeof(unsigned char),
 };
 
 ods_key_comp_t __sos_next_key_comp(ods_key_comp_t comp)
@@ -352,73 +513,6 @@ ods_key_comp_t __sos_next_key_comp(ods_key_comp_t comp)
 	}
 	assert(koff != 0);
 	return (ods_key_comp_t)&((char *)comp)[koff];
-}
-
-int __sos_key_join_value(sos_key_t key, sos_attr_t join_attr, int join_idx, sos_value_t value)
-{
-	ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
-	ods_key_comp_t comp;
-	int attr_id, idx;
-	sos_attr_t attr;
-	sos_array_t join_ids = sos_attr_join_list(join_attr);
-	if (!join_ids)
-		/* This is not a SOS_TYPE_JOIN attribute */
-		return EINVAL;
-
-	if (join_idx >= join_ids->count)
-		/* The specified join index is invalid */
-		return EINVAL;
-
-	comp = comp_key->value;
-
-	for (idx = 0; idx <= join_idx; idx++) {
-		attr_id = join_ids->data.uint32_[idx];
-		attr = sos_schema_attr_by_id(sos_attr_schema(join_attr), attr_id);
-		if (!attr)
-			/* The join id in the join_attr is
-			 * invalid. This is probably corruption */
-			return E2BIG;
-		if (idx != join_idx) {
-			/* Skip this component of the key */
-			comp = __sos_next_key_comp(comp);
-			continue;
-		}
-		/* The key component gets it's type from the attribute */
-		comp->type = sos_attr_type(attr);
-
-		/* Array types are memcpy'd as part of the key */
-		size_t sz = sos_value_size(value);
-		if (sos_attr_is_array(attr) || comp->type == SOS_TYPE_STRUCT) {
-			memcpy(comp->value.str.str, value->data->array.data.byte_, sz);
-			comp->value.str.len = sz;
-			comp_key->len += sz + sizeof(uint16_t) + sizeof(uint16_t);
-			break;
-		}
-
-		/* Assign primitive types directly */
-		comp_key->len += comp_type_size[comp->type];
-		switch (sos_attr_type(attr)) {
-		case SOS_TYPE_TIMESTAMP:
-		case SOS_TYPE_UINT64:
-		case SOS_TYPE_INT64:
-		case SOS_TYPE_DOUBLE:
-			comp->value.uint64_ = value->data->prim.uint64_;
-			break;
-		case SOS_TYPE_INT32:
-		case SOS_TYPE_UINT32:
-		case SOS_TYPE_FLOAT:
-			comp->value.uint32_ = value->data->prim.uint32_;
-			break;
-		case SOS_TYPE_INT16:
-		case SOS_TYPE_UINT16:
-			value->data->prim.uint16_ = value->data->prim.uint16_;
-			break;
-		default:
-			return EINVAL;
-		}
-		break;
-	}
-	return 0;
 }
 
 ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size_t *comp_len)
@@ -438,6 +532,7 @@ ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size
 		comp->value.uint32_ = 0;
 		*comp_len = sizeof(uint32_t) + sizeof(uint16_t);
 		break;
+
 	case SOS_TYPE_INT32:
 		comp->value.int32_ = INT_MIN;
 		*comp_len = sizeof(int32_t) + sizeof(uint16_t);
@@ -552,9 +647,26 @@ ods_key_comp_t __sos_set_key_comp(ods_key_comp_t comp, sos_value_t v, size_t *co
 	return __sos_next_key_comp(comp);
 }
 
+/**
+ * \brief Builds a join key from the attributes provided va_list
+ *
+ */
 int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 {
+	int rc;
 	va_list ap;
+	va_start(ap, join_attr);
+	rc = sos_key_join_va(key, join_attr, ap);
+	va_end(ap);
+	return rc;
+}
+
+/**
+ * \brief Builds a join key from the attributes in the arguement list
+ *
+ */
+int sos_key_join_va(sos_key_t key, sos_attr_t join_attr, va_list ap)
+{
 	unsigned char *src;
 	ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
 	ods_key_comp_t comp;
@@ -566,7 +678,6 @@ int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 		/* This is not a SOS_TYPE_JOIN attribute */
 		return EINVAL;
 
-	va_start(ap, join_attr);
 	comp = comp_key->value;
 	comp_key->len = 0;
 
@@ -600,10 +711,11 @@ int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_LONG_DOUBLE:
-			sos_error("Unsupported type in sos_key_join\n");
+			comp->value.long_double_ = va_arg(ap, long double);
+			comp_key->len += comp_type_size[comp->type];
 			break;
 		default:
-			src_len = va_arg(ap, size_t);
+			src_len = va_arg(ap, size_t) * comp_type_size[comp->type];
 			src = va_arg(ap, unsigned char *);
 			memcpy(comp->value.str.str, src, src_len);
 			comp->value.str.len = src_len;
@@ -612,8 +724,83 @@ int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 		}
 		comp = __sos_next_key_comp(comp);
 	}
-	va_end(ap);
+	assert(comp_key->len == ((unsigned long)comp - (unsigned long)comp_key->value));
 	return 0;
+}
+
+int sos_key_join_size(sos_attr_t join_attr, ...)
+{
+	va_list ap;
+	int rc;
+	va_start(ap, join_attr);
+	rc = sos_key_join_size_va(join_attr, ap);
+	va_end(ap);
+	return rc;
+}
+
+int sos_key_join_size_va(sos_attr_t join_attr, va_list ap)
+{
+	int size = 0;
+	size_t src_len;
+	sos_type_t type;
+	int attr_id, idx;
+	sos_attr_t attr;
+	sos_array_t join_ids = sos_attr_join_list(join_attr);
+	if (!join_ids)
+		/* This is not a SOS_TYPE_JOIN attribute */
+		return -EINVAL;
+
+	size = 0;
+	for (idx = 0; idx < join_ids->count; idx++) {
+		attr_id = join_ids->data.uint32_[idx];
+		attr = sos_schema_attr_by_id(sos_attr_schema(join_attr), attr_id);
+		if (!attr) {
+			sos_error("Join attr_id %d in attribute %s does "
+				  "not exist.\n", attr_id,
+				  sos_attr_name(join_attr));
+			return -EINVAL;
+		}
+		type = sos_attr_type(attr);
+		switch (type) {
+		case SOS_TYPE_TIMESTAMP:
+		case SOS_TYPE_UINT64:
+		case SOS_TYPE_INT64:
+		case SOS_TYPE_DOUBLE:
+			(void)va_arg(ap, uint64_t);
+			size += comp_type_size[type];
+			break;
+		case SOS_TYPE_INT32:
+		case SOS_TYPE_UINT32:
+		case SOS_TYPE_FLOAT:
+			(void)va_arg(ap, uint32_t);
+			size += comp_type_size[type];
+			break;
+		case SOS_TYPE_INT16:
+		case SOS_TYPE_UINT16:
+			(void)va_arg(ap, int);
+			size += comp_type_size[type];
+			break;
+		case SOS_TYPE_LONG_DOUBLE:
+			(void)va_arg(ap, long double);
+			size += comp_type_size[type];
+			break;
+		case SOS_TYPE_STRUCT:
+			(void)va_arg(ap, unsigned char *);
+			src_len = sos_attr_size(attr);
+			size += src_len + sizeof(uint16_t) + sizeof(uint16_t);
+			break;
+		default:
+			src_len = va_arg(ap, size_t) * comp_type_size[type];
+			(void)va_arg(ap, unsigned char *);
+			size += src_len + sizeof(uint16_t) + sizeof(uint16_t);
+			break;
+		case SOS_TYPE_OBJ:
+		case SOS_TYPE_JOIN:
+		case SOS_TYPE_OBJ_ARRAY:
+			assert(0 == "Invalid type in JOIN Key.");
+		}
+	}
+	return size;
 }
 
 int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
@@ -622,6 +809,7 @@ int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
 	uint64_t *p64;
 	uint32_t *p32;
 	uint16_t *p16;
+	long double *pld;
 	unsigned char *dst;
 	ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
 	ods_key_comp_t comp;
@@ -665,7 +853,8 @@ int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
 			*p16 = comp->value.uint16_;
 			break;
 		case SOS_TYPE_LONG_DOUBLE:
-			sos_error("Unsupported type in sos_key_join\n");
+			pld = va_arg(ap, long double *);
+			*pld = comp->value.long_double_;
 			break;
 		default:
 			dst = va_arg(ap, unsigned char *);

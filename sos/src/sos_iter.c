@@ -616,7 +616,7 @@ int sos_iter_inf(sos_iter_t i, sos_key_t key)
  * following code sequence:
  *
  *     sos_key_t iter_key = sos_iter_key(iter);
- *     int rc = sos_key_cmp(attr, iter_key, other);
+ *     int64_t rc = sos_key_cmp(attr, iter_key, other);
  *     sos_key_put(iter_key);
  *
  * \param iter	The iterator handle
@@ -625,9 +625,9 @@ int sos_iter_inf(sos_iter_t i, sos_key_t key)
  * \retval 0	iter == other
  * \retval >0	iter > other
  */
-int sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
+int64_t sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
 {
-	int rc;
+	int64_t rc;
 	ods_key_t iter_key = ods_iter_key(iter->iter);
 	rc = ods_key_cmp(iter->index->idx, iter_key, key);
 	ods_obj_put(iter_key);

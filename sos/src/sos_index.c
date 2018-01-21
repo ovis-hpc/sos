@@ -546,7 +546,7 @@ const char *sos_index_key_to_str(sos_index_t index, sos_key_t key)
  * \return 0	a == b
  * \return >0	a > b
  */
-int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b)
+int64_t sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b)
 {
 	return ods_key_cmp(index->idx, a, b);
 }

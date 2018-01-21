@@ -291,7 +291,10 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 			errno = ENOMEM;
 			goto err;;
 		}
-		size += sos_value_size(v[i]) + sizeof(comp->value.str);
+		if (sos_attr_is_array(join_attr))
+			size += sos_value_size(v[i]) + sizeof(comp->value.str) + sizeof(uint16_t);
+		else
+			size += sos_value_size(v[i]) + sizeof(uint16_t);
 	}
 
 	if (size > (sizeof(val->data_) + sizeof(*data))) {
@@ -304,17 +307,18 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 		data = (sos_array_t)&val->data_;
 	}
 
-	data->count = size;
 	val->attr = attr;
 	val->obj = NULL;
 	val->data = (sos_value_data_t)data;
 
 	comp = (ods_key_comp_t)data->data.byte_;
 
-	for (i = 0; i < count; i++) {
+	for (size = 0, i = 0; i < count; i++) {
 		comp = __sos_set_key_comp(comp, v[i], &comp_len);
+		size += comp_len;
 		sos_value_put(v[i]);
 	}
+	data->count = size;
 	if (count > MAX_JOIN_ATTRS) {
 		free(v_);
 		free(v);
