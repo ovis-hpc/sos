@@ -489,7 +489,7 @@ static inline size_t ods_obj_size(ods_obj_t obj) {
  */
 int ods_obj_valid(ods_t ods, ods_obj_t obj);
 
-#define ODS_PTR(_typ_, _obj_) ((_typ_)_obj_->as.ptr)
+#define ODS_PTR(_typ_, _obj_) (_obj_ ? ((_typ_)_obj_->as.ptr) : NULL)
 
 /**
  * \brief Lock the specified \em lock_id
