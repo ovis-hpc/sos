@@ -181,13 +181,6 @@ void sos_schema_free(sos_schema_t schema)
 
 void __sos_schema_free(sos_schema_t schema)
 {
-	/* Drop our reference on the schema object */
-	if (schema->schema_obj)
-		ods_obj_put(schema->schema_obj);
-
-	if (schema->dict)
-		free(schema->dict);
-
 	/* Free all of our attributes and close it's indices */
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		sos_attr_t attr = TAILQ_FIRST(&schema->attr_list);
@@ -200,6 +193,14 @@ void __sos_schema_free(sos_schema_t schema)
 			free(attr->idx_args);
 		free(attr);
 	}
+	/* Free the attribute dictionary */
+	if (schema->dict)
+		free(schema->dict);
+
+	/* Drop our reference on the schema object */
+	if (schema->schema_obj)
+		ods_obj_put(schema->schema_obj);
+
 	free(schema);
 }
 
