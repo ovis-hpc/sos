@@ -321,7 +321,6 @@ static void h2bxt_close(ods_idx_t idx)
 		ods_idx_close(t->idx_table[bkt].idx, ODS_COMMIT_ASYNC);
 	}
 	ods_obj_put(t->udata_obj);
-	ods_idx_close(t->ods_idx, ODS_COMMIT_ASYNC);
 	free(t->idx_table);
 	free(t);
 }
@@ -560,6 +559,7 @@ static void h2bxt_iter_delete(ods_iter_t i)
 
 	/* Empty the RBT */
 	iter_cleanup(t, iter);
+	ods_atomic_dec(&i->idx->ref_count);
 
 	/* Destroy each sub-iter */
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
@@ -579,6 +579,7 @@ static ods_iter_t h2bxt_iter_new(ods_idx_t idx)
 	if (!iter)
 		return NULL;
 	rbt_init(&iter->next_tree, entry_cmp);
+	ods_atomic_inc(&idx->ref_count);
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
 		iter->iter_table[bkt] = ods_iter_new(t->idx_table[bkt].idx);
 		if (!iter->iter_table[bkt]) {

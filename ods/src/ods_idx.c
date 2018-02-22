@@ -263,8 +263,11 @@ void ods_idx_close(ods_idx_t idx, int flags)
 		idx->idx_class->prv->close(idx);
 		ods_close(idx->ods, flags);
 		free(idx);
-	} else
+	} else {
+		ods_lwarn("%s not closing due to %d open iterators.\n",
+			  idx->ods->path, idx->ref_count);
 		ods_commit(idx->ods, flags);
+	}
 }
 
 int ods_idx_lock(ods_idx_t idx, struct timespec *wait)

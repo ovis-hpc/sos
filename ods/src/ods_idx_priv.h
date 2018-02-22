@@ -49,6 +49,7 @@
 #include <stdlib.h>
 #include <ods/rbt.h>
 #include <ods/ods.h>
+#include "ods_priv.h"
 
 struct ods_idx_provider {
 	const char *(*get_type)(void);
