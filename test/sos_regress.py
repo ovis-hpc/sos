@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 from schema_test import SchemaTest
 from value_test_from_str import ValueTestFromStr
 from obj_test_set_get import ObjTestSetGet
+from index_test_min_max import IndexTestMinMax
 from join_test_u16 import JoinTestU16
 from join_test_u32 import JoinTestU32
 from join_test_u64 import JoinTestU64
@@ -18,6 +19,7 @@ from join_test_i64 import JoinTestI64
 from join_test_u32_str_str import JoinTestU32_Str_Str
 from join_test_u32_str_u32 import JoinTestU32_Str_U32
 from join_test_u32_str_str import JoinTestU32_Str_Str
+from join_test_key import JoinTestKey
 from filter_test import FilterTestJoin3xU64
 from pos_test import FilterPosTest
 from filt_count_test import FilterCountTest
@@ -25,6 +27,7 @@ from filt_count_test import FilterCountTest
 tests = [ SchemaTest,
           ObjTestSetGet,
           ValueTestFromStr,
+          IndexTestMinMax,
           JoinTestU16,
           JoinTestU32,
           JoinTestU64,
@@ -33,6 +36,7 @@ tests = [ SchemaTest,
           JoinTestI64,
           JoinTestU32_Str_Str,
           JoinTestU32_Str_U32,
+          JoinTestKey,
           FilterTestJoin3xU64,
           FilterPosTest,
           FilterCountTest

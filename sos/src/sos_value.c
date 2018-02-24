@@ -55,6 +55,7 @@
  */
 #include <errno.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <sos/sos.h>
 #include <errno.h>
@@ -582,3 +583,158 @@ size_t sos_value_strlen(sos_value_t v)
 	return v->attr->strlen_fn(v);
 }
 
+size_t sos_value_data_set(sos_value_data_t vd, sos_type_t type, ...)
+{
+	size_t size;
+	va_list ap;
+	va_start(ap, type);
+	size = sos_value_data_set_va(vd, type, ap);
+	va_end(ap);
+	return size;
+}
+
+size_t sos_value_data_set_va(sos_value_data_t vd, sos_type_t type, va_list ap)
+{
+	size_t size;
+	switch (type) {
+	case SOS_TYPE_INT32:
+		vd->prim.int32_ = va_arg(ap, int32_t);
+		size = sizeof(vd->prim.int32_);
+		break;
+	case SOS_TYPE_INT64:
+		vd->prim.int64_ = va_arg(ap, int64_t);
+		size = sizeof(vd->prim.int64_);
+		break;
+	case SOS_TYPE_UINT16:
+		vd->prim.int16_ = va_arg(ap, int);
+		size = sizeof(vd->prim.int16_);
+		break;
+	case SOS_TYPE_UINT32:
+		vd->prim.uint32_ = va_arg(ap, uint32_t);
+		size = sizeof(vd->prim.uint32_);
+		break;
+	case SOS_TYPE_UINT64:
+		vd->prim.uint64_ = va_arg(ap, uint64_t);
+		size = sizeof(vd->prim.uint64_);
+		break;
+	case SOS_TYPE_FLOAT:
+	case SOS_TYPE_DOUBLE:
+		vd->prim.double_ = va_arg(ap, double);
+		size = sizeof(vd->prim.double_);
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		vd->prim.long_double_ = va_arg(ap, long double);
+		size = sizeof(vd->prim.long_double_);
+		break;
+	case SOS_TYPE_TIMESTAMP:
+		vd->prim.timestamp_.time = va_arg(ap, uint64_t);
+		size = sizeof(vd->prim.timestamp_);
+		break;
+	case SOS_TYPE_OBJ:
+		vd->prim.ref_.ref.ods = va_arg(ap, uint64_t);
+		vd->prim.ref_.ref.obj = va_arg(ap, uint64_t);
+		size = sizeof(vd->prim.ref_);
+		break;
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_BYTE_ARRAY:
+		vd->array.count = va_arg(ap, int);
+		size = vd->array.count;
+		memcpy(vd->array.data.byte_, va_arg(ap, char *), size);
+		break;
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+		vd->array.count = va_arg(ap, int);
+		size = vd->array.count * sizeof(int64_t);
+		memcpy(vd->array.data.byte_, va_arg(ap, char *), size);
+		break;
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+		vd->array.count = va_arg(ap, int);
+		size = vd->array.count * sizeof(int32_t);
+		memcpy(vd->array.data.byte_, va_arg(ap, char *), size);
+		break;
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+		vd->array.count = va_arg(ap, int);
+		size = vd->array.count * sizeof(int16_t);
+		memcpy(vd->array.data.byte_, va_arg(ap, char *), size);
+		break;
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+		vd->array.count = va_arg(ap, int);
+		size = vd->array.count * sizeof(long double);
+		memcpy(vd->array.data.byte_, va_arg(ap, char *), size);
+		break;
+	case SOS_TYPE_OBJ_ARRAY:
+	case SOS_TYPE_JOIN:
+	default:
+		assert(0 == "JOIN is not a valid type");
+		break;
+	}
+	return size;
+}
+
+size_t sos_value_data_size(sos_value_data_t vd, sos_type_t type)
+{
+	size_t size;
+	switch (type) {
+	case SOS_TYPE_INT32:
+		size = sizeof(vd->prim.int32_);
+		break;
+	case SOS_TYPE_INT64:
+		size = sizeof(vd->prim.int64_);
+		break;
+	case SOS_TYPE_UINT16:
+		size = sizeof(vd->prim.int16_);
+		break;
+	case SOS_TYPE_UINT32:
+		size = sizeof(vd->prim.uint32_);
+		break;
+	case SOS_TYPE_UINT64:
+		size = sizeof(vd->prim.uint64_);
+		break;
+	case SOS_TYPE_FLOAT:
+	case SOS_TYPE_DOUBLE:
+		size = sizeof(vd->prim.double_);
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		size = sizeof(vd->prim.long_double_);
+		break;
+	case SOS_TYPE_TIMESTAMP:
+		size = sizeof(vd->prim.timestamp_);
+		break;
+	case SOS_TYPE_OBJ:
+		size = sizeof(vd->prim.ref_);
+		break;
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_BYTE_ARRAY:
+		size = vd->array.count;
+		break;
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+		size = vd->array.count * sizeof(int64_t);
+		break;
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+		size = vd->array.count * sizeof(int32_t);
+		break;
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+		size = vd->array.count * sizeof(int16_t);
+		break;
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+		size = vd->array.count * sizeof(long double);
+		break;
+	case SOS_TYPE_OBJ_ARRAY:
+	case SOS_TYPE_JOIN:
+	default:
+		assert(0 == "JOIN is not a valid type");
+		break;
+	}
+	return size;
+}

@@ -177,6 +177,7 @@ typedef enum sos_type_e {
 	SOS_TYPE_BYTE_ARRAY = 32,
 	SOS_TYPE_ARRAY = SOS_TYPE_BYTE_ARRAY,
 	SOS_TYPE_CHAR_ARRAY,
+	SOS_TYPE_STRING = SOS_TYPE_CHAR_ARRAY,
 	SOS_TYPE_INT16_ARRAY,
 	SOS_TYPE_INT32_ARRAY,
 	SOS_TYPE_INT64_ARRAY,
@@ -489,6 +490,9 @@ sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src);
 sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr);
 void sos_value_put(sos_value_t value);
 sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *arr_obj);
+size_t sos_value_data_set(sos_value_data_t vd, sos_type_t type, ...);
+size_t sos_value_data_set_va(sos_value_data_t vd, sos_type_t type, va_list ap);
+size_t sos_value_data_size(sos_value_data_t vd, sos_type_t type);
 int sos_value_cmp(sos_value_t a, sos_value_t b);
 int sos_value_is_array(sos_value_t value);
 sos_type_t sos_value_type(sos_value_t value);
@@ -513,7 +517,6 @@ char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj, const char *attr_name,
 /** \defgroup index_types Index Types
  * @{
  */
-typedef struct ods_obj_s *sos_key_t;
 typedef struct sos_index_stat_s {
 	uint64_t cardinality;
 	uint64_t duplicates;
@@ -523,6 +526,7 @@ typedef struct sos_index_stat_s {
 /** \defgroup index_funcs Index Functions
  * @{
  */
+typedef struct ods_obj_s *sos_key_t;
 typedef int (*sos_ins_cb_fn_t)(sos_index_t index, sos_key_t key,
 			       int missing, sos_obj_ref_t *ref, void *arg);
 typedef enum sos_visit_action {
@@ -551,6 +555,8 @@ sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
 int sos_index_find_ref(sos_index_t index, sos_key_t key, sos_obj_ref_t *ref);
 sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
+sos_obj_t sos_index_find_min(sos_index_t index);
+sos_obj_t sos_index_find_max(sos_index_t index);
 int sos_index_commit(sos_index_t index, sos_commit_t flags);
 int sos_index_close(sos_index_t index, sos_commit_t flags);
 size_t sos_index_key_size(sos_index_t index);
@@ -573,6 +579,11 @@ sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter);
 /** \defgroup keys SOS Keys
  * @{
  */
+
+typedef struct sos_comp_key_spec {
+	sos_type_t type;
+	union sos_value_data_u data;
+} *sos_comp_key_spec_t;
 
 /**
  * \brief Define a SOS stack key
@@ -616,6 +627,9 @@ int sos_key_join_va(sos_key_t key, sos_attr_t join_attr, va_list ap);
 int sos_key_join_size(sos_attr_t join_attr, ...);
 int sos_key_join_size_va(sos_attr_t join_attr, va_list ap);
 int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...);
+int sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec);
+int sos_comp_key_get(sos_key_t key, size_t *len, sos_comp_key_spec_t key_spec);
+size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec);
 size_t sos_key_size(sos_key_t key);
 size_t sos_key_len(sos_key_t key);
 unsigned char *sos_key_value(sos_key_t key);

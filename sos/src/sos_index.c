@@ -405,11 +405,66 @@ int sos_index_find_ref(sos_index_t index, sos_key_t key, sos_obj_ref_t *ref)
 	return ods_idx_find(index->idx, key, &ref->idx_data);
 }
 
+/**
+ * \brief Find a key in the index for the attribute and return the associated object
+ *
+ * \param index The index handle
+ * \param key The key
+ * \returns The sos_obj_t handle for the object
+ */
 sos_obj_t sos_obj_find(sos_attr_t attr, sos_key_t key)
 {
 	if (attr->index)
 		return sos_index_find(attr->index, key);
 	return NULL;
+}
+
+/**
+ * \brief Find the minima in the index and return the associated object
+ *
+ * \param index The index handle
+ * \returns The sos_obj_t handle for the object
+ */
+sos_obj_t sos_index_find_min(sos_index_t index)
+{
+	sos_obj_t obj;
+	sos_obj_ref_t idx_ref;
+	ods_key_t key = NULL;
+	int rc = ods_idx_min(index->idx, &key, &idx_ref.idx_data);
+	if (rc) {
+		errno = rc;
+		return NULL;
+	}
+	if (key)
+		ods_obj_put(key);
+	obj = sos_ref_as_obj(index->sos, idx_ref);
+	if (!obj)
+		errno = ENOMEM;
+	return obj;
+}
+
+/**
+ * \brief Find the maxima in the index and return the associated object
+ *
+ * \param index The index handle
+ * \returns The sos_obj_t handle for the object
+ */
+sos_obj_t sos_index_find_max(sos_index_t index)
+{
+	sos_obj_t obj;
+	sos_obj_ref_t idx_ref;
+	ods_key_t key = NULL;
+	int rc = ods_idx_max(index->idx, &key, &idx_ref.idx_data);
+	if (rc) {
+		errno = rc;
+		return NULL;
+	}
+	if (key)
+		ods_obj_put(key);
+	obj = sos_ref_as_obj(index->sos, idx_ref);
+	if (!obj)
+		errno = ENOMEM;
+	return obj;
 }
 
 /**
@@ -553,7 +608,7 @@ int64_t sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b)
 
 void sos_index_print(sos_index_t index, FILE *fp)
 {
-	ods_idx_print(index->idx, fp);
+	ods_idx_print(index->idx, (fp ? fp : stdout));
 }
 
 struct sos_container_index_iter_s {

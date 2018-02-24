@@ -8,6 +8,13 @@ cimport numpy as np
 cimport Sos
 
 #
+# Python C-API
+#
+cdef extern from "Python.h":
+    object PyString_FromStringAndSize(char *s, Py_ssize_t len)
+    object PyByteArray_FromStringAndSize(char *s, Py_ssize_t len)
+
+#
 # Initialize the numpy array support. Numpy arrays are used
 # for all SOS arrays. The array data is therefore not copied
 # when accessed from Python
@@ -527,7 +534,7 @@ cdef class Schema(SosObject):
         For example:
 
         [
-            { "name" : "timestamp", "type" : "timestamp", "index" = {} },
+            { "name" : "timestamp", "type" : "timestamp", "index" : {} },
             { "name" : "component_id", "type" : "uint64" },
             { "name" : "flits", "type" : "double" },
             { "name" : "stalls", "type" : "double" },
@@ -727,30 +734,208 @@ cdef class Schema(SosObject):
 cdef class Key(object):
     cdef sos_key_t c_key
     cdef size_t c_size
+    cdef sos_type_t sos_type
     cdef Attr attr
+    cdef object str_fmt
 
-    def __init__(self, size=None, attr=None):
-        if not size and not attr:
-            raise ValueError("Either size or attr must be specified")
+    def __init__(self, size=None, sos_type=None, attr=None):
+        self.attr = attr
         if attr:
-            self.attr = attr
             if not size:
                 size = attr.size()
-        else:
-            self.attr = None
+            self.sos_type = attr.type()
+        if sos_type:
+            if attr:
+                raise ValueError("sos_type and attr are mutually exclusive")
+            self.sos_type = sos_type
+            if not size and sos_type >= SOS_TYPE_BYTE_ARRAY:
+                raise ValueError("size must be specified if the key type is an array")
+        # if not sos_type and not attr:
+        #    raise ValueError("Either attr or sos_type must be specified.")
+        if not size:
+            size = type_sizes[<int>self.sos_type](None)
         self.c_key = sos_key_new(size)
         self.c_size = size
+        self.str_fmt = "{0}"
 
     def __len__(self):
         return self.c_size
 
     def __str__(self):
-        cdef const char *s
-        if self.attr:
-            s = sos_attr_key_to_str(self.attr.c_attr, self.c_key)
+        cdef sos_value_data_t v = <sos_value_data_t>sos_key_value(self.c_key)
+        if self.sos_type == SOS_TYPE_UINT64:
+            return self.str_fmt.format(v.prim.uint64_)
+        elif self.sos_type == SOS_TYPE_INT64:
+            return self.str_fmt.format(v.prim.int64_)
+        elif self.sos_type == SOS_TYPE_DOUBLE:
+            return self.str_fmt.format(v.prim.double_)
+        elif self.sos_type == SOS_TYPE_INT32:
+            return self.str_fmt.format(v.prim.int32_)
+        elif self.sos_type == SOS_TYPE_UINT32:
+            return self.str_fmt.format(v.prim.uint32_)
+        elif self.sos_type == SOS_TYPE_FLOAT:
+            return self.str_fmt.format(v.prim.float_)
+        elif self.sos_type == SOS_TYPE_INT16:
+            return self.str_fmt.format(v.prim.int16_)
+        elif self.sos_type == SOS_TYPE_UINT16:
+            return self.str_fmt.format(v.prim.uint16_)
+        elif self.sos_type == SOS_TYPE_LONG_DOUBLE:
+            return self.str_fmt.format(v.prim.long_double_)
+        elif self.sos_type == SOS_TYPE_BYTE_ARRAY:
+            return PyByteArray_FromStringAndSize(v.array.char_, v.array.count)
+        elif self.sos_type == SOS_TYPE_CHAR_ARRAY:
+            return PyString_FromStringAndSize(v.array.char_, v.array.count)
+        elif self.sos_type == SOS_TYPE_UINT64_ARRAY:
+            s = ""
+            for j in range(v.array.count):
+                if len(s) > 0:
+                    s += ","
+                s += self.str_fmt.format(v.prim.uint64_)
+            return s
+        elif self.sos_type == SOS_TYPE_INT64_ARRAY:
+            pass
+        elif self.sos_type == SOS_TYPE_DOUBLE_ARRAY:
+            pass
+        elif self.sos_type == SOS_TYPE_UINT32_ARRAY:
+            pass
+        elif self.sos_type == SOS_TYPE_INT32_ARRAY:
+            pass
+        elif self.sos_type == SOS_TYPE_FLOAT_ARRAY:
+            pass
+        elif self.sos_type == SOS_TYPE_UINT16_ARRAY:
+            pass
+        elif self.sos_type == SOS_TYPE_INT16_ARRAY:
+            pass
+        elif self.sos_type == SOS_TYPE_LONG_DOUBLE_ARRAY:
+            pass
         else:
-            s = <char *>sos_key_value(self.c_key)
-        return s
+            raise ValueError("Invalid type {0} found in key.".format(self.sos_type))
+
+    def join(self, *args):
+        cdef int i, j, count, typ
+        cdef sos_comp_key_spec_t specs
+        cdef sos_key_t c_key
+
+        count = len(args) / 2
+        if count * 2 != len(args):
+            raise ValueError("The argument list must consist of a pairs of type, value")
+
+        specs = <sos_comp_key_spec_t>malloc(count * sizeof(sos_comp_key_spec))
+        if specs == NULL:
+            raise MemoryError("Could not allocate the component key spec list.")
+
+        i = 0
+        j = 0
+        while i < len(args):
+            typ = <int>args[i]
+            specs[j].type = typ
+            type_setters[typ](&specs[j].data, args[i+1])
+            i += 2
+            j += 1
+
+        i = sos_comp_key_set(self.c_key, count, specs);
+        if i != 0:
+            raise ValueError("Error encoding the composite key")
+        free(specs)
+        return self
+
+    def split(self):
+        """Split a join key into it's component parts"""
+        cdef int rc, i, j
+        cdef int typ
+        cdef size_t count
+        cdef sos_comp_key_spec_t specs
+        cdef sos_key_t c_key
+
+        rc = sos_comp_key_get(self.c_key, &count, NULL);
+        if rc != 0:
+            raise ValueError("Error {0} decoding key.".format(rc))
+
+        specs = <sos_comp_key_spec_t>malloc(count * sizeof(sos_comp_key_spec))
+        if specs == NULL:
+            raise MemoryError("Could not allocate the component key spec list.")
+
+        rc = sos_comp_key_get(self.c_key, &count, specs)
+        if rc:
+            raise ValueError("Error {0} decoding key after allocation.".format(rc))
+
+        res = []
+        for i in range(count):
+            typ = specs[i].type
+            res.append(typ)
+            if typ == SOS_TYPE_UINT64:
+                res.append(specs[i].data.prim.uint64_)
+            elif typ == SOS_TYPE_INT64:
+                res.append(specs[i].data.prim.int64_)
+            elif typ == SOS_TYPE_DOUBLE:
+                res.append(specs[i].data.prim.double_)
+            elif typ == SOS_TYPE_INT32:
+                res.append(specs[i].data.prim.int32_)
+            elif typ == SOS_TYPE_UINT32:
+                res.append(specs[i].data.prim.uint32_)
+            elif typ == SOS_TYPE_FLOAT:
+                res.append(specs[i].data.prim.float_)
+            elif typ == SOS_TYPE_INT16:
+                res.append(specs[i].data.prim.int16_)
+            elif typ == SOS_TYPE_UINT16:
+                res.append(specs[i].data.prim.uint16_)
+            elif typ == SOS_TYPE_LONG_DOUBLE:
+                res.append(specs[i].data.prim.long_double_)
+            elif typ == SOS_TYPE_BYTE_ARRAY:
+                res.append(PyByteArray_FromStringAndSize(specs[i].data.array.data.char_,
+                                                         specs[i].data.array.count))
+            elif typ == SOS_TYPE_CHAR_ARRAY:
+                res.append(PyString_FromStringAndSize(specs[i].data.array.data.char_,
+                                                      specs[i].data.array.count))
+            elif typ == SOS_TYPE_UINT64_ARRAY:
+                a = []
+                for j in range(specs[i].data.array.count):
+                    a.append(specs[i].data.array.data.uint64_[j])
+                res.append(a)
+            elif typ == SOS_TYPE_INT64_ARRAY:
+                a = []
+                for j in range(specs[i].data.array.count):
+                    a.append(specs[i].data.array.data.int64_[j])
+                res.append(a)
+            elif typ == SOS_TYPE_DOUBLE_ARRAY:
+                a = []
+                for j in range(specs[i].data.array.count):
+                    a.append(specs[i].data.array.data.double_[j])
+                res.append(a)
+            elif typ == SOS_TYPE_UINT32_ARRAY:
+                a = []
+                for j in range(specs[i].data.array.count):
+                    a.append(specs[i].data.array.data.uint32_[j])
+                res.append(a)
+            elif typ == SOS_TYPE_INT32_ARRAY:
+                a = []
+                for j in range(specs[i].data.array.count):
+                    a.append(specs[i].data.array.data.int32_[j])
+                res.append(a)
+            elif typ == SOS_TYPE_FLOAT_ARRAY:
+                a = []
+                for j in range(specs[i].data.array.count):
+                    a.append(specs[i].data.array.data.float_[j])
+                res.append(a)
+            elif typ == SOS_TYPE_UINT16_ARRAY:
+                a = []
+                for j in range(specs[i].data.array.count):
+                    a.append(specs[i].data.array.data.uint16_[j])
+                res.append(a)
+            elif typ == SOS_TYPE_INT16_ARRAY:
+                a = []
+                for j in range(specs[i].data.array.count):
+                    a.append(specs[i].data.array.data.int16_[j])
+                res.append(a)
+            elif typ == SOS_TYPE_LONG_DOUBLE_ARRAY:
+                a = []
+                for j in range(specs[i].data.array.count):
+                    a.append(specs[i].data.array.data.long_double_[j])
+                res.append(a)
+            else:
+                raise ValueError("Invalid type {0} found in key.".format(typ))
+        free(specs)
+        return res
 
     cdef assign(self, sos_key_t c_key):
         if c_key == NULL:
@@ -763,18 +948,19 @@ cdef class Key(object):
     def get_attr(self):
         return self.attr
 
-    def set_value(self, py_val):
+    def set_value(self, value):
         """Set the value of a key.
-        For primitive types (e.g. int, float), this method conveniently set the
-        internal key value data according to types. For `SOS_TYPE_STRUCT`, the
-        supplied value `py_val` must be prepared with `struct.pack()`.
+
+        Set the value of a key.
+
+        Positional Parameters:
+        value - The value to assign to the key
+
+        Keyword Parameters:
+        key_type - The sos_type_t of the value
         """
         cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
-        cdef char *c_val
-        if not self.attr:
-            raise TypeError("Key is not bound to any attribute.")
-        typ = self.attr.type()
-        type_setters[<int>typ](data, py_val)
+        type_setters[<int>self.sos_type](data, value)
 
     def __int__(self):
         cdef int typ
@@ -1256,6 +1442,54 @@ cdef class Attr(SosObject):
     def join_iter(self):
         return AttrJoinIter(self)
 
+    def key(self, *args):
+        """Construct a key for this attribute from the input arguments
+
+        The input argument is expected to be capable of being
+        converted to the attribute type. If the attribute is a join,
+        then each argument corresponds to each element of the
+        join. For example, if the attribute consists of three
+        components: Sos.TYPE_UINT16, Sos.STRING, Sos.TYPE_UINT32, then
+        one would call this function as follows:
+
+            key = attr.key(25, "the string value", 3423513)
+
+        Passing a value that is inappropriate for the attribute type
+        will result in a ValueError exception.
+        """
+        cdef sos_array_t attrs
+        cdef size_t size
+        cdef sos_comp_key_spec_t specs
+        cdef size_t specs_len
+        cdef int i, j, typ
+        cdef sos_attr_t attr
+
+        typ = sos_attr_type(self.c_attr)
+        if typ == SOS_TYPE_JOIN:
+            # create an argument list to use with Key.join()
+            attrs = sos_attr_join_list(self.c_attr)
+            join_list = []
+            specs_len = len(args)
+            specs = <sos_comp_key_spec_t>malloc(specs_len * sizeof(sos_comp_key_spec))
+            if specs == NULL:
+                raise MemoryError("Could not allocate the component key spec list.")
+            for i in range(attrs.count):
+                attr = sos_schema_attr_by_id(self.c_schema, attrs.data.uint32_[i])
+                typ = sos_attr_type(attr)
+                join_list.append(typ)
+                arg = args[i]
+                join_list.append(arg)
+                specs[i].type = typ
+                type_setters[typ](&specs[i].data, arg)
+            size = sos_comp_key_size(specs_len, specs)
+            free(specs)
+            key = Key(size=size, sos_type=SOS_TYPE_JOIN)
+            key.join(*join_list)
+        else:
+            key = Key(size=type_sizes[typ](args[0]), sos_type=typ)
+            key.set_value(args[0])
+        return key
+
     def find(self, Key key):
         cdef sos_index_t c_index = sos_attr_index(self.c_attr)
         cdef sos_obj_t c_obj = sos_index_find(c_index, key.c_key)
@@ -1266,50 +1500,58 @@ cdef class Attr(SosObject):
         return o
 
     def max(self):
-        """Return the maximum Key value of this attribute in the container"""
-        cdef sos_iter_t c_iter
-        cdef int c_rc
-        cdef sos_key_t c_key
+        """Return the maximum value of this attribute in the container"""
+        cdef sos_obj_t c_obj
+        cdef sos_obj_t c_arr_obj
+        cdef sos_value_data_t c_data
+        cdef int t
 
-        if not self.indexed:
-            return 0
-
-        c_iter = sos_attr_iter_new(self.c_attr)
-        if c_iter == NULL:
-            raise NotImplementedError("The attribute does not have an index")
-        c_rc = sos_iter_end(c_iter)
-        if c_rc:
+        if not self.is_indexed():
             return None
 
-        c_key = sos_iter_key(c_iter)
-        key = Key(attr=self)
-        sos_key_set(key.c_key, sos_key_value(c_key), sos_key_len(c_key))
-        sos_key_put(c_key)
-        sos_iter_free(c_iter)
-        return key
+        c_obj = sos_index_find_max(sos_attr_index(self.c_attr))
+        if c_obj == NULL:
+            return None
+        c_data = sos_obj_attr_data(c_obj, self.c_attr, &c_arr_obj)
+
+        t = sos_attr_type(self.c_attr)
+        if t == SOS_TYPE_STRUCT:
+            n = sos_attr_size(self.c_attr)
+            v = <object>c_data.struc.char_[:n]
+        else:
+            v = <object>type_getters[<int>t](c_obj, c_data)
+
+        sos_obj_put(c_obj)
+        if c_arr_obj != NULL:
+            sos_obj_put(c_arr_obj)
+        return v
 
     def min(self):
-        """Return the minimum Key value of this attribute in the container"""
-        cdef sos_iter_t c_iter
-        cdef int c_rc
-        cdef sos_key_t c_key
+        """Return the minimum value of this attribute in the container"""
+        cdef sos_obj_t c_obj
+        cdef sos_obj_t c_arr_obj
+        cdef sos_value_data_t c_data
+        cdef int t
 
-        if not self.indexed:
-            return 0
-
-        c_iter = sos_attr_iter_new(self.c_attr)
-        if c_iter == NULL:
-            raise NotImplementedError("The attribute does not have an index")
-        c_rc = sos_iter_begin(c_iter)
-        if c_rc:
+        if not self.is_indexed():
             return None
 
-        c_key = sos_iter_key(c_iter)
-        key = Key(attr=self)
-        sos_key_set(key.c_key, sos_key_value(c_key), sos_key_len(c_key))
-        sos_key_put(c_key)
-        sos_iter_free(c_iter)
-        return key
+        c_obj = sos_index_find_min(sos_attr_index(self.c_attr))
+        if c_obj == NULL:
+            return None
+        c_data = sos_obj_attr_data(c_obj, self.c_attr, &c_arr_obj)
+
+        t = sos_attr_type(self.c_attr)
+        if t == SOS_TYPE_STRUCT:
+            n = sos_attr_size(self.c_attr)
+            v = <object>c_data.struc.char_[:n]
+        else:
+            v = <object>type_getters[<int>t](c_obj, c_data)
+
+        sos_obj_put(c_obj)
+        if c_arr_obj != NULL:
+            sos_obj_put(c_arr_obj)
+        return v
 
     def __str__(self):
         cdef sos_index_t c_idx
@@ -2896,6 +3138,9 @@ cdef class Index(object):
         cdef int rc = sos_index_stat(self.c_index, &self.c_stats)
         return self.c_stats
 
+    def show(self):
+        sos_index_print(self.c_index, NULL);
+
 ################################
 # Object getter functions
 ################################
@@ -3058,24 +3303,28 @@ cdef set_LONG_DOUBLE_ARRAY(sos_value_data_t c_data, val):
 cdef set_DOUBLE_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
+    c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.double_[i] = val[i]
 
 cdef set_FLOAT_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
+    c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.float_[i] = val[i]
 
 cdef set_UINT64_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
+    c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.uint64_[i] = val[i]
 
 cdef set_UINT32_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
+    c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.uint32_[i] = val[i]
 
@@ -3088,24 +3337,28 @@ cdef set_UINT16_ARRAY(sos_value_data_t c_data, val):
 cdef set_BYTE_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
+    c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.byte_[i] = <uint8_t>val[i]
 
 cdef set_INT64_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
+    c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.int64_[i] = <int64_t>val[i]
 
 cdef set_INT32_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
+    c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.int32_[i] = val[i]
 
 cdef set_INT16_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
+    c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.int16_[i] = val[i]
 
@@ -3114,6 +3367,7 @@ cdef set_CHAR_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     s = val
+    c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.char_[i] = s[i]
 
@@ -3191,6 +3445,104 @@ type_setters[<int>SOS_TYPE_DOUBLE_ARRAY] = set_DOUBLE_ARRAY
 type_setters[<int>SOS_TYPE_LONG_DOUBLE_ARRAY] = set_LONG_DOUBLE_ARRAY
 type_setters[<int>SOS_TYPE_OBJ_ARRAY] = set_ERROR
 
+
+cdef int size_INT16(arg):
+    return sizeof(int16_t)
+
+cdef int size_UINT16(arg):
+    return sizeof(uint16_t)
+
+cdef int size_INT32(arg):
+    return sizeof(int32_t)
+
+cdef int size_UINT32(arg):
+    return sizeof(uint32_t)
+
+cdef int size_INT64(arg):
+    return sizeof(int64_t)
+
+cdef int size_UINT64(arg):
+    return sizeof(uint64_t)
+
+cdef int size_FLOAT(arg):
+    return sizeof(float)
+
+cdef int size_DOUBLE(arg):
+    return sizeof(double)
+
+cdef int size_LONG_DOUBLE(arg):
+    return sizeof(long double)
+
+cdef int size_TIMESTAMP(arg):
+    return sizeof(sos_timestamp_s)
+
+cdef int size_ERROR(arg):
+    raise ValueError("The type has no key size.")
+
+cdef int size_STRUCT(arg):
+    return len(arg)
+
+cdef int size_BYTE_ARRAY(arg):
+    return len(arg)
+
+cdef int size_CHAR_ARRAY(arg):
+    return len(arg)
+
+cdef int size_INT16_ARRAY(arg):
+    return sizeof(int16_t) * len(arg)
+
+cdef int size_UINT16_ARRAY(arg):
+    return sizeof(uint16_t) * len(arg)
+
+cdef int size_INT32_ARRAY(arg):
+    return sizeof(int32_t) * len(arg)
+
+cdef int size_UINT32_ARRAY(arg):
+    return sizeof(uint32_t) * len(arg)
+
+cdef int size_INT64_ARRAY(arg):
+    return sizeof(int64_t) * len(arg)
+
+cdef int size_UINT64_ARRAY(arg):
+    return sizeof(uint64_t) * len(arg)
+
+cdef int size_FLOAT_ARRAY(arg):
+    return sizeof(float) * len(arg)
+
+cdef int size_DOUBLE_ARRAY(arg):
+    return sizeof(double) * len(arg)
+
+cdef int size_LONG_DOUBLE_ARRAY(arg):
+    return sizeof(long double) * len(arg)
+
+ctypedef int (*type_size_fn_t)(arg)
+cdef type_size_fn_t type_sizes[SOS_TYPE_LAST+1]
+type_sizes[<int>SOS_TYPE_INT16] = size_INT16
+type_sizes[<int>SOS_TYPE_INT32] = size_INT32
+type_sizes[<int>SOS_TYPE_INT64] = size_INT64
+type_sizes[<int>SOS_TYPE_UINT16] = size_UINT16
+type_sizes[<int>SOS_TYPE_UINT32] = size_UINT32
+type_sizes[<int>SOS_TYPE_UINT64] = size_UINT64
+type_sizes[<int>SOS_TYPE_FLOAT] = size_FLOAT
+type_sizes[<int>SOS_TYPE_DOUBLE] = size_DOUBLE
+type_sizes[<int>SOS_TYPE_LONG_DOUBLE] = size_LONG_DOUBLE
+type_sizes[<int>SOS_TYPE_TIMESTAMP] = size_TIMESTAMP
+type_sizes[<int>SOS_TYPE_OBJ] = size_ERROR
+type_sizes[<int>SOS_TYPE_JOIN] = size_ERROR
+type_sizes[<int>SOS_TYPE_STRUCT] = size_STRUCT
+type_sizes[<int>SOS_TYPE_BYTE_ARRAY] = size_BYTE_ARRAY
+type_sizes[<int>SOS_TYPE_CHAR_ARRAY] = size_CHAR_ARRAY
+type_sizes[<int>SOS_TYPE_INT16_ARRAY] = size_INT16_ARRAY
+type_sizes[<int>SOS_TYPE_INT32_ARRAY] = size_INT32_ARRAY
+type_sizes[<int>SOS_TYPE_INT64_ARRAY] = size_INT64_ARRAY
+type_sizes[<int>SOS_TYPE_UINT16_ARRAY] = size_UINT16_ARRAY
+type_sizes[<int>SOS_TYPE_UINT32_ARRAY] = size_UINT32_ARRAY
+type_sizes[<int>SOS_TYPE_UINT64_ARRAY] = size_UINT64_ARRAY
+type_sizes[<int>SOS_TYPE_FLOAT_ARRAY] = size_FLOAT_ARRAY
+type_sizes[<int>SOS_TYPE_DOUBLE_ARRAY] = size_DOUBLE_ARRAY
+type_sizes[<int>SOS_TYPE_LONG_DOUBLE_ARRAY] = size_LONG_DOUBLE_ARRAY
+type_sizes[<int>SOS_TYPE_OBJ_ARRAY] = size_ERROR
+
 cdef class Value(object):
     cdef sos_value_s c_v_
     cdef sos_value_t c_v
@@ -3267,6 +3619,9 @@ cdef class Value(object):
         """
         return sos_value_strlen(self.c_v)
 
+    def to_key(self):
+        """Return a Key() object initialized from the associated Attr"""
+        return 
     def from_str(self, string):
         """Set the value from the string"""
         return sos_value_from_str(self.c_v, string, NULL)

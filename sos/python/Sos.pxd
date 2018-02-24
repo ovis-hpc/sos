@@ -455,6 +455,13 @@ cdef extern from "sos/sos.h":
     cdef struct ods_obj_s:
         pass
     ctypedef ods_obj_s *sos_key_t
+
+    cdef struct sos_comp_key_spec:
+        int type
+        sos_value_data_u data
+
+    ctypedef sos_comp_key_spec *sos_comp_key_spec_t
+
     cdef struct sos_index_stat_s:
         uint64_t cardinality
         uint64_t duplicates
@@ -486,6 +493,8 @@ cdef extern from "sos/sos.h":
     sos_obj_t sos_index_find(sos_index_t index, sos_key_t key)
     sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key)
     sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key)
+    sos_obj_t sos_index_find_max(sos_index_t index)
+    sos_obj_t sos_index_find_min(sos_index_t index)
     int sos_index_commit(sos_index_t index, sos_commit_t flags)
     int sos_index_close(sos_index_t index, sos_commit_t flags)
     size_t sos_index_key_size(sos_index_t index)
@@ -515,6 +524,9 @@ cdef extern from "sos/sos.h":
     size_t sos_key_len(sos_key_t key)
     unsigned char *sos_key_value(sos_key_t key)
     void *sos_value_as_key(sos_value_t value)
+    int sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec)
+    int sos_comp_key_get(sos_key_t key, size_t *len, sos_comp_key_spec_t key_spec)
+    size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec)
 
     int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
     const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key)
