@@ -1320,6 +1320,7 @@ static int bxt_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 				*key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 		} else
 			rc = ENOMEM;
+		ods_obj_put(rec);
 		ods_obj_put(node);
 	} else
 		rc = ENOMEM;
@@ -1346,6 +1347,7 @@ static int bxt_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 				*key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 		} else
 			rc = ENOMEM;
+		ods_obj_put(rec);
 		ods_obj_put(node);
 	} else
 		rc = ENOMEM;
