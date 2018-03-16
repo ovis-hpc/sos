@@ -479,7 +479,7 @@ ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz, const char *func, int line)
 			       sz + sizeof(struct ods_key_value_s),
 			       func, line);
 	if (key)
-		*key->as.uint16 = sz;
+		key->as.key->len = sz;
 	return key;
 }
 
