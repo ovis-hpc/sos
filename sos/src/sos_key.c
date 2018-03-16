@@ -532,7 +532,6 @@ ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size
 		comp->value.uint32_ = 0;
 		*comp_len = sizeof(uint32_t) + sizeof(uint16_t);
 		break;
-
 	case SOS_TYPE_INT32:
 		comp->value.int32_ = INT_MIN;
 		*comp_len = sizeof(int32_t) + sizeof(uint16_t);
@@ -637,11 +636,17 @@ ods_key_comp_t __sos_set_key_comp(ods_key_comp_t comp, sos_value_t v, size_t *co
 	case SOS_TYPE_LONG_DOUBLE:
 		sos_error("Unsupported type in sos_key_join\n");
 		break;
+	case SOS_TYPE_STRUCT:
+		sz = sos_value_size(v);
+		memcpy(comp->value.str.str, v->data->prim.struc_, sz);
+		comp->value.str.len = sz;
+		*comp_len = sz + sizeof(comp->value.str.len) + sizeof(uint16_t);
+		break;
 	default:
 		sz = sos_value_size(v);
 		memcpy(comp->value.str.str, v->data->array.data.char_, sz);
 		comp->value.str.len = sz;
-		*comp_len = sz + sizeof(uint16_t) + sizeof(uint16_t);
+		*comp_len = sz + sizeof(comp->value.str.len) + sizeof(uint16_t);
 		break;
 	}
 	return __sos_next_key_comp(comp);

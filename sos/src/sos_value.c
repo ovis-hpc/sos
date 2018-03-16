@@ -62,19 +62,19 @@
 #include <assert.h>
 #include "sos_priv.h"
 
-typedef int (*cmp_fn_t)(sos_value_t a, sos_value_t b);
+typedef int (*cmp_fn_t)(sos_value_t a, sos_value_t b, size_t size);
 
-static int INT16_cmp(sos_value_t a, sos_value_t b)
+static int INT16_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	return a->data->prim.int16_ - b->data->prim.int16_;
 }
 
-static int INT32_cmp(sos_value_t a, sos_value_t b)
+static int INT32_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	return a->data->prim.int32_ - b->data->prim.int32_;
 }
 
-static int INT64_cmp(sos_value_t a, sos_value_t b)
+static int INT64_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	if (a->data->prim.int64_ < b->data->prim.int64_)
 		return -1;
@@ -83,17 +83,17 @@ static int INT64_cmp(sos_value_t a, sos_value_t b)
 	return 0;
 }
 
-static int UINT16_cmp(sos_value_t a, sos_value_t b)
+static int UINT16_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	return a->data->prim.uint16_ - b->data->prim.uint16_;
 }
 
-static int UINT32_cmp(sos_value_t a, sos_value_t b)
+static int UINT32_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	return a->data->prim.uint32_ - b->data->prim.uint32_;
 }
 
-static int UINT64_cmp(sos_value_t a, sos_value_t b)
+static int UINT64_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	if (a->data->prim.uint64_ < b->data->prim.uint64_)
 		return -1;
@@ -102,7 +102,7 @@ static int UINT64_cmp(sos_value_t a, sos_value_t b)
 	return 0;
 }
 
-static int FLOAT_cmp(sos_value_t a, sos_value_t b)
+static int FLOAT_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	float res = a->data->prim.float_ - b->data->prim.float_;
 	if (res > 0)
@@ -112,7 +112,7 @@ static int FLOAT_cmp(sos_value_t a, sos_value_t b)
 	return 0;
 }
 
-static int DOUBLE_cmp(sos_value_t a, sos_value_t b)
+static int DOUBLE_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	double res = a->data->prim.double_ - b->data->prim.double_;
 	if (res > 0)
@@ -122,7 +122,7 @@ static int DOUBLE_cmp(sos_value_t a, sos_value_t b)
 	return 0;
 }
 
-static int LONG_DOUBLE_cmp(sos_value_t a, sos_value_t b)
+static int LONG_DOUBLE_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	if (a->data->prim.long_double_ > b->data->prim.long_double_)
 		return 1;
@@ -131,7 +131,7 @@ static int LONG_DOUBLE_cmp(sos_value_t a, sos_value_t b)
 	return 0;
 }
 
-static int TIMESTAMP_cmp(sos_value_t a, sos_value_t b)
+static int TIMESTAMP_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	if (a->data->prim.timestamp_.time > b->data->prim.timestamp_.time)
 		return 1;
@@ -140,7 +140,12 @@ static int TIMESTAMP_cmp(sos_value_t a, sos_value_t b)
 	return 0;
 }
 
-static int BYTE_ARRAY_cmp(sos_value_t a, sos_value_t b)
+static int STRUCT_cmp(sos_value_t a, sos_value_t b, size_t size)
+{
+	return memcmp(a->data->prim.struc_, b->data->prim.struc_, size);
+}
+
+static int BYTE_ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	int cmp_len = a->data->array.count;
 	if (cmp_len > b->data->array.count)
@@ -151,12 +156,12 @@ static int BYTE_ARRAY_cmp(sos_value_t a, sos_value_t b)
 	return res;
 }
 
-static int CHAR_ARRAY_cmp(sos_value_t a, sos_value_t b)
+static int CHAR_ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	return BYTE_ARRAY_cmp(a, b);
+	return BYTE_ARRAY_cmp(a, b, size);
 }
 
-static int ARRAY_cmp(sos_value_t a, sos_value_t b)
+static int ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	size_t a_len = sos_value_size(a);
 	size_t b_len = sos_value_size(b);
@@ -181,6 +186,7 @@ static cmp_fn_t cmp_fn_table[] = {
 	[SOS_TYPE_FLOAT] = FLOAT_cmp,
 	[SOS_TYPE_DOUBLE] = DOUBLE_cmp,
 	[SOS_TYPE_LONG_DOUBLE] = LONG_DOUBLE_cmp,
+	[SOS_TYPE_STRUCT] = STRUCT_cmp,
 	[SOS_TYPE_TIMESTAMP] = TIMESTAMP_cmp,
 	[SOS_TYPE_CHAR_ARRAY] = CHAR_ARRAY_cmp,
 	[SOS_TYPE_BYTE_ARRAY] = BYTE_ARRAY_cmp,
@@ -209,7 +215,7 @@ static cmp_fn_t cmp_fn_table[] = {
 int sos_value_cmp(sos_value_t a, sos_value_t b)
 {
 	if (a->attr->data->type < sizeof(cmp_fn_table)/sizeof(cmp_fn_table[0]))
-		return cmp_fn_table[a->attr->data->type](a, b);
+		return cmp_fn_table[a->attr->data->type](a, b, sos_attr_size(a->attr));
 	return a == b;
 }
 static sos_value_t mem_value_init(sos_value_t val, sos_attr_t attr)
@@ -292,7 +298,7 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 			errno = ENOMEM;
 			goto err;;
 		}
-		if (sos_attr_is_array(join_attr))
+		if (sos_attr_is_array(join_attr) || (sos_attr_type(join_attr) == SOS_TYPE_STRUCT))
 			size += sos_value_size(v[i]) + sizeof(comp->value.str) + sizeof(uint16_t);
 		else
 			size += sos_value_size(v[i]) + sizeof(uint16_t);
@@ -384,12 +390,19 @@ sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
 		dst->data = src->data;
 		return dst;
 	}
+	size_t sz = sos_value_size(src);
+	if (sos_value_type(src) == SOS_TYPE_STRUCT) {
+		dst->data = malloc(sz);
+		if (!dst->data)
+			return NULL;
+		memcpy(dst->data, src->data, sz);
+		return dst;
+	}
 	if (!sos_value_is_array(src)) {
 		memcpy(&dst->data_, &src->data_, sizeof(src->data_));
 		dst->data = &dst->data_;
 		return dst;
 	}
-	size_t sz = sos_value_size(src);
 	if (sz > sizeof(union sos_value_data_u) - sizeof(struct sos_array_s)) {
 		dst->data = malloc(sz + sizeof(struct sos_array_s));
 		if (!dst->data)
