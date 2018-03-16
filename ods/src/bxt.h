@@ -93,6 +93,7 @@ typedef struct bxt_pos_s {
 typedef struct bxt_iter_s {
 	struct ods_iter iter;
 	ods_obj_t rec;
+	ods_obj_t node;
 	uint32_t ent;
 } *bxt_iter_t;
 

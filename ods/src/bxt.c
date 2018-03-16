@@ -490,7 +490,6 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 		}
 	}
 	/* Our LUB is the first record in the right sibling */
-	ods_obj_put(leaf);
 	if (tail_ref != head_ref) {
 		ods_obj_put(rec);
 		rec = ods_ref_as_obj(t->ods, tail_ref);
@@ -499,8 +498,10 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 
 	next_ref = REC(rec)->next_ref;
 	ods_obj_put(rec);
-	if (!next_ref)
+	if (!next_ref) {
+		ods_obj_put(leaf);
 		return NULL;
+	}
 
 	rec = ods_ref_as_obj(t->ods, next_ref);
 	if (0 == (flags & ODS_ITER_F_LUB_LAST_DUP))
@@ -508,6 +509,7 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 	/* Get the parent of next_ref and return it's last_dup */
 	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 	ods_obj_put(rec);
+	ods_obj_put(leaf);
 	leaf = leaf_find(t, key);
 	ods_obj_put(key);
 	tail_ref = L_ENT(leaf,0).tail_ref;
@@ -1919,17 +1921,20 @@ static void bxt_iter_delete(ods_iter_t i)
 	bxt_iter_t bxi = (bxt_iter_t)i;
 	if (bxi->rec)
 		ods_obj_put(bxi->rec);
+	if (bxi->node)
+		ods_obj_put(bxi->node);
 	free(i);
 }
 
 static int _iter_begin_unique(bxt_iter_t i)
 {
 	bxt_t t = i->iter.idx->priv;
-	if (i->rec)
-		ods_obj_put(i->rec);
+	assert(0 != (i->iter.flags & ODS_ITER_F_UNIQUE));
+	if (i->node)
+		ods_obj_put(i->node);
 	i->ent = 0;
-	i->rec = bxt_min_node(t);
-	return i->rec ? 0 : ENOENT;
+	i->node = bxt_min_node(t);
+	return i->node ? 0 : ENOENT;
 }
 
 static int _iter_begin(bxt_iter_t i)
@@ -1939,11 +1944,13 @@ static int _iter_begin(bxt_iter_t i)
 	if (i->rec)
 		ods_obj_put(i->rec);
 	node = bxt_min_node(t);
-	if (node && (0 == (i->iter.flags & ODS_ITER_F_UNIQUE))) {
+	assert(0 == (i->iter.flags & ODS_ITER_F_UNIQUE));
+	if (node) {
 		i->rec = ods_ref_as_obj(t->ods, L_ENT(node, 0).head_ref);
 		ods_obj_put(node);
-	} else
-		  i->rec = node;
+	} else {
+		i->rec = NULL;
+	}
 #ifdef ODS_DEBUG
 	if (i->rec)
 		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
@@ -1962,22 +1969,24 @@ static int bxt_iter_begin(ods_iter_t oi)
 static int _iter_end_unique(bxt_iter_t i)
 {
 	bxt_t t = i->iter.idx->priv;
-	if (i->rec)
-		ods_obj_put(i->rec);
-	i->rec = bxt_max_node(t);
-	if (i->rec) {
+	assert(0 != (i->iter.flags & ODS_ITER_F_UNIQUE));
+	if (i->node)
+		ods_obj_put(i->node);
+	i->node = bxt_max_node(t);
+	if (i->node) {
 #ifdef ODS_DEBUG
 		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
-		i->ent = NODE(i->rec)->count-1;
+		i->ent = NODE(i->node)->count-1;
 	}
-	return i->rec ? 0 : ENOENT;
+	return i->node ? 0 : ENOENT;
 }
 
 static int _iter_end(bxt_iter_t i)
 {
 	ods_obj_t node;
 	bxt_t t = i->iter.idx->priv;
+	assert(0 == (i->iter.flags & ODS_ITER_F_UNIQUE));
 	if (i->rec)
 		ods_obj_put(i->rec);
 	node = bxt_max_node(t);
@@ -2005,9 +2014,10 @@ static ods_key_t _iter_key_unique(bxt_iter_t i)
 {
 	bxt_t t = i->iter.idx->priv;
 	ods_obj_t rec, key;
-	if (!i->rec)
+	assert(0 != (i->iter.flags & ODS_ITER_F_UNIQUE));
+	if (!i->node)
 		return NULL;
-	rec = ods_ref_as_obj(t->ods, L_ENT(i->rec, i->ent).head_ref);
+	rec = ods_ref_as_obj(t->ods, L_ENT(i->node, i->ent).head_ref);
 	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 	ods_obj_put(rec);
 	return key;
@@ -2016,6 +2026,7 @@ static ods_key_t _iter_key_unique(bxt_iter_t i)
 static ods_key_t _iter_key(bxt_iter_t i)
 {
 	bxt_t t = i->iter.idx->priv;
+	assert(0 == (i->iter.flags & ODS_ITER_F_UNIQUE));
 	if (!i->rec)
 		return NULL;
 	return ods_ref_as_obj(t->ods, REC(i->rec)->key_ref);
@@ -2050,9 +2061,10 @@ static ods_idx_data_t _iter_data_unique(bxt_iter_t i)
 	bxt_t t = i->iter.idx->priv;
 	ods_idx_data_t data;
 	ods_obj_t rec;
-	if (!i->rec)
+	assert(0 != (i->iter.flags & ODS_ITER_F_UNIQUE));
+	if (!i->node)
 		return NULL_DATA;
-	rec = ods_ref_as_obj(t->ods, L_ENT(i->rec, i->ent).head_ref);
+	rec = ods_ref_as_obj(t->ods, L_ENT(i->node, i->ent).head_ref);
 	data = REC(rec)->value;
 	ods_obj_put(rec);
 	return data;
@@ -2060,6 +2072,7 @@ static ods_idx_data_t _iter_data_unique(bxt_iter_t i)
 
 static ods_idx_data_t _iter_data(bxt_iter_t i)
 {
+	assert(0 == (i->iter.flags & ODS_ITER_F_UNIQUE));
 	if (!i->rec)
 		return NULL_DATA;
 	return REC(i->rec)->value;
@@ -2081,6 +2094,8 @@ static int _iter_find_dup(ods_iter_t oi, ods_key_t key, int first)
 	ods_ref_t ref;
 	int found;
 	int i;
+
+	assert(0 == (iter->iter.flags & ODS_ITER_F_UNIQUE));
 
 	if (iter->rec) {
 		ods_obj_put(iter->rec);
@@ -2150,26 +2165,56 @@ static int bxt_iter_find(ods_iter_t oi, ods_key_t key)
 	return 0;
 }
 
+static int _iter_find_lub_unique(bxt_iter_t iter, ods_key_t key)
+{
+	assert(0 != (iter->iter.flags & ODS_ITER_F_UNIQUE));
+	if (iter->node)
+		ods_obj_put(iter->node);
+	iter->node = __find_lub(iter->iter.idx, key, iter->iter.flags);
+	return iter->node ? 0 : ENOENT;
+}
+
+static int _iter_find_lub(bxt_iter_t iter, ods_key_t key)
+{
+	assert(0 == (iter->iter.flags & ODS_ITER_F_UNIQUE));
+	if (iter->rec)
+		ods_obj_put(iter->rec);
+	iter->rec = __find_lub(iter->iter.idx, key, iter->iter.flags);
+	return iter->rec ? 0 : ENOENT;
+}
+
 static int bxt_iter_find_lub(ods_iter_t oi, ods_key_t key)
 {
 	bxt_iter_t iter = (bxt_iter_t)oi;
-	if (iter->rec) {
+	if (0 == (iter->iter.flags & ODS_ITER_F_UNIQUE))
+		return _iter_find_lub(iter, key);
+	return _iter_find_lub_unique(iter, key);
+}
+
+static int _iter_find_glb(bxt_iter_t iter, ods_key_t key)
+{
+	assert(0 == (iter->iter.flags & ODS_ITER_F_UNIQUE));
+	if (iter->rec)
 		ods_obj_put(iter->rec);
-		iter->rec = NULL;
-	}
-	iter->rec = __find_lub(iter->iter.idx, key, iter->iter.flags);
+	iter->rec = __find_glb(iter->iter.idx, key, iter->iter.flags);
 	return iter->rec ? 0 : ENOENT;
+}
+
+static int _iter_find_glb_unique(bxt_iter_t iter, ods_key_t key)
+{
+	assert(0 != (iter->iter.flags & ODS_ITER_F_UNIQUE));
+	if (iter->node)
+		ods_obj_put(iter->node);
+	iter->node = __find_glb(iter->iter.idx, key, iter->iter.flags);
+	return iter->node ? 0 : ENOENT;
 }
 
 static int bxt_iter_find_glb(ods_iter_t oi, ods_key_t key)
 {
 	bxt_iter_t iter = (bxt_iter_t)oi;
-	if (iter->rec) {
-		ods_obj_put(iter->rec);
-		iter->rec = NULL;
-	}
-	iter->rec = __find_glb(iter->iter.idx, key, iter->iter.flags);
-	return iter->rec ? 0 : ENOENT;
+	if (0 == (iter->iter.flags & ODS_ITER_F_UNIQUE))
+		return _iter_find_glb(iter, key);
+	return _iter_find_glb_unique(iter, key);
 }
 
 static int _iter_next_unique(bxt_iter_t i)
@@ -2177,28 +2222,32 @@ static int _iter_next_unique(bxt_iter_t i)
 	bxt_t t = i->iter.idx->priv;
 	ods_obj_t right;
 
-	if (!i->rec)
+	assert(0 != (i->iter.flags & ODS_ITER_F_UNIQUE));
+
+	if (!i->node)
 		return ENOENT;
 
-	if (i->ent < NODE(i->rec)->count - 1)
+	if (i->ent < NODE(i->node)->count - 1)
 		i->ent++;
 	else {
-		right = right_sibling(t, i->rec);
-		ods_obj_put(i->rec);
-		i->rec = right;
+		right = right_sibling(t, i->node);
+		ods_obj_put(i->node);
+		i->node = right;
 		i->ent = 0;
 #ifdef ODS_DEBUG
-		if (i->rec)
-			assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+		if (i->node)
+			assert(REC(i->node)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
 	}
-	return i->rec ? 0 : ENOENT;
+	return i->node ? 0 : ENOENT;
 }
 
 static int _iter_next(bxt_iter_t i)
 {
 	bxt_t t = i->iter.idx->priv;
 	ods_obj_t next_rec;
+
+	assert(0 == (i->iter.flags & ODS_ITER_F_UNIQUE));
 
 	if (i->rec) {
 		ods_ref_t next_ref = REC(i->rec)->next_ref;
@@ -2246,6 +2295,8 @@ static int _iter_prev_unique(bxt_iter_t i)
 {
 	bxt_t t = i->iter.idx->priv;
 	ods_obj_t left;
+
+	assert(0 == (i->iter.flags & ODS_ITER_F_UNIQUE));
 
 	if (!i->rec)
 		return ENOENT;

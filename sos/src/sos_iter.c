@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2018 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2014 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
@@ -98,7 +98,6 @@ sos_iter_t sos_index_iter_new(sos_index_t index)
 	i->iter = ods_iter_new(index->idx);
 	if (!i->iter)
 		goto err;
-	ods_iter_begin(i->iter);
 	return i;
  err:
 	if (i)
