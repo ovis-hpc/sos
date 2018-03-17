@@ -2255,10 +2255,15 @@ cdef class Filter(object):
             raise ValueError("The attribute value for {0} could not be created.".format(cond_attr.name()))
 
         cond_v = sos_value_init(cond_v, NULL, cond_attr.c_attr)
-        rc = sos_value_from_str(cond_v, value_str, NULL)
-        if rc != 0:
-            raise ValueError("The value {0} is invalid for the {1} attribute."
-                             .format(value_str, cond_attr.name()))
+        if sos_attr_type(cond_attr.c_attr) == SOS_TYPE_STRUCT:
+            ba = bytearray(value_str)
+            for rc in range(0, len(ba)):
+                cond_v.data.prim.struc_[rc] = ba[rc]
+        else:
+            rc = sos_value_from_str(cond_v, value_str, NULL)
+            if rc != 0:
+                raise ValueError("The value {0} is invalid for the {1} attribute."
+                                 .format(value_str, cond_attr.name()))
 
         if sos_attr_type(cond_attr.c_attr) == SOS_TYPE_TIMESTAMP:
             if cond == SOS_COND_GT or cond == SOS_COND_GE:
@@ -2389,9 +2394,276 @@ cdef class Filter(object):
             return sos_filter_pos_put(self.c_filt, c_pos)
         return rc
 
-    def as_ndarray(self, size_t count, shape=None, order='attribute', cont=False,
-                   timestamp='timestamp', interval_ms=None):
-        return self.as_timeseries(count, shape, order, cont, timestamp, interval_ms)
+    def as_ndarray(self, size_t count, shape=None, order='attribute', cont=False):
+        """Return filter data as a Numpy array
+
+        The keyword parameter 'shape' is used to specify the object
+        attributes that will comprise the returned array. Each element
+        of the array should be either a string or a dictionary object
+        as follows:
+
+            {
+                "name" : <str attr-name>,
+                "op" : <str>,
+                "idx" : <int>
+            }
+
+        where name is the name of the object attribute and "op", and
+        "idx" are used to control how array attributes are handled.
+
+             [ self.attr.name() ]
+
+        If the len(shape) is 1, the array will be simplified to a singly
+        dimensioned array of the 'attr' attribute of each object.
+
+        If the number of objects defined by the Filter is less than 'count',
+        the array will be padded with zeroes.
+
+        The return value is a tuple containing the number of elements written
+        to the array and the array itself. For example,
+
+             schema = db.schema_by_name('Sample')
+             tstamp = schema.attr_by_name('timestamp')
+             f = Filter(tstamp)
+             count, array = f.as_ndarray(1024, shape=['timestamp', 'current_freemem'],
+                                         order=['attribute'])
+
+        will return the number of elements actually written to 'array' of
+        size 1024 elements. The array is an Numpy.ndarray as follows:
+
+             [ [ 1425362400.0, 1425362460.0, ... ], [ 62453912.0, 6553912.0, ... ] ]
+
+        which is an 'attribute' ordering of attribute values. This
+        ordering is more natural for numerical analysis as each
+        dimension contains data of the same type.
+
+        For applications such as graphing, it is often preferred to have the
+        attribute values grouped by index. Set the 'order' keyword argument to
+        'index', and the array data will be ordered as follows:
+
+             [ [ 1425362400.0, 62453912.0 ], [ 1425362460.0, 6553912.0 ], ... ]
+
+        Columns in an ndarray must all be the same order, therefore
+        when mixing scalars with arrays in the output, additional
+        fields in the shape column argument are used to specify how
+        the array should be handled;
+
+        - If the 'op' attribute equals the string 'inline', or the shape
+          argument is only a string containing the name of the array attribute,
+          the output array contains additional columns for each array element in
+          the attribute value. Assume that:
+
+               shape = [ 'timestamp', 'a_array', 'b_array' ]
+
+          and that a_array has a length of 2, b_array has a length of 4, and
+          order = 'index', then the output array would contain the following:
+
+          [ [ t0,
+              a_array[0], a_array[1],
+              b_array[0], b_array[1], b_array[2], b_array[3] ],
+            ...
+          ]
+
+        - If the shape array element dictionary keyword "op" equals 'sum',
+          'avg', 'max', or 'min', the output is a single scalar value that is
+          either the sum, average, maximum, or minimum of the array elements for
+          that column. For example:
+
+              shape = [ 'timestamp', { 'name' : 'power', 'op' : 'avg' } ]
+
+          would result in column 2 containing a single value that is the average
+          of the values in the power array.
+
+        - If the shape array element dictionary keyword "op" equals 'pick', the
+          output is a single scalar value that is chosen from the array based on
+          the value of the element dictionary keyword "idx" in the shape array
+          element dictionary. For example:
+
+              shape = [ 'timestamp', { 'name' : 'power', 'op' : 'pick', 'idx' : 5 } ]
+
+          would result in column 2 containing a single value that corresponds to
+          the 6-th element of the power array, i.e. power[5].
+
+        Positional Parameters:
+        -- The maximum number of rows in the output array. If this parameter is zero,
+           the output size will be the size necessary to hold all matching
+           data.
+
+        Keyword Parameters:
+        shape       -- Shape is an array/tuple specifies the contents of each column
+                       in the output.
+        order       -- One of 'attribute' (default) or 'index' as described
+                       above
+        cont        -- If true, the filter will continue where it left off,
+                       i.e. processing will not begin at the first matching
+                       key.
+        array       -- If specified, one of INLINE_ARRAY, MAX_ARRAY, MIN_ARRAY, AVG_ARRAY,
+                       or SUM_ARRAY
+        array_idx   -- If array=='pick', used to specify which element of the
+                       array is returned in the result.
+        Returns:
+        -- A two element tuple containing the number of samples written to
+           the array and the array itself as follows: (count, array)
+
+        """
+        cdef sos_obj_t c_o
+        cdef sos_value_s v_, t_
+        cdef sos_value_t v, t
+        cdef int el_idx
+        cdef int el_count
+        cdef int idx
+        cdef int attr_idx
+        cdef int res_idx
+        cdef int val_idx
+        cdef int atype
+        cdef int nattr
+        cdef int assign
+        cdef Schema schema = self.attr.schema()
+        cdef Attr attr
+        cdef sos_attr_t c_attr
+        cdef sos_attr_t *res_attr
+        cdef int *res_dim
+        cdef int dim
+        cdef int *res_type
+        cdef shape_opt res_acc
+        cdef int type_id
+
+        if shape == None:
+            shape = [ self.attr.name() ]
+        nattr = len(shape)
+
+        res_attr = <sos_attr_t *>malloc(sizeof(sos_attr_t) * nattr)
+        if res_attr == NULL:
+            raise MemoryError("Insufficient memory to allocate dimension array")
+        res_type = <int *>malloc(sizeof(uint64_t) * nattr)
+        if res_type == NULL:
+            free(res_attr)
+            raise MemoryError("Insufficient memory to allocate type array")
+        res_acc = <shape_opt>malloc(sizeof(shape_opt_s) * nattr)
+        if res_acc == NULL:
+            free(res_attr)
+            free(res_type)
+            raise MemoryError("Insufficient memory to allocate type array")
+        res_dim = <int *>malloc(sizeof(uint64_t) * nattr)
+        if res_dim == NULL:
+            free(res_attr)
+            free(res_type)
+            free(res_acc)
+            raise MemoryError("Insufficient memory to allocate type array")
+
+        try:
+            idx = 0
+            for opt in shape:
+                if type(opt) == str:
+                    aname = opt
+                elif type(opt) == dict:
+                    aname = opt['name']
+                else:
+                    raise ValueError("shape elements must be either <str> or <dict.")
+                attr = schema.attr_by_name(aname)
+                res_attr[idx] = attr.c_attr
+                res_type[idx] = sos_attr_type(attr.c_attr)
+                # set access defaults
+                res_acc[idx].idx = 0
+                res_acc[idx].len = 0
+                res_acc[idx].op = INLINE_ARRAY
+                if type(opt) == dict:
+                    # override defaults
+                    res_acc[idx].op = array_op_to_offset(opt['op'])
+                    if 'idx' in opt:
+                        res_acc[idx].idx = <int>opt['idx']
+                    if 'len' in opt:
+                        res_acc[idx].len = <int>opt['len']
+                res_acc[idx].acc_fn = get_accessor_for_type(res_type[idx], res_acc[idx].op)
+                idx += 1
+        except Exception as e:
+                free(res_attr)
+                free(res_type)
+                free(res_acc)
+                free(res_dim)
+                raise ValueError("Error '{0}' processing the shape keyword parameter".format(str(e)))
+
+        if cont:
+            c_o = sos_filter_next(self.c_filt)
+        else:
+            c_o = sos_filter_begin(self.c_filt)
+
+        # determine the result depth in the 'attribute' dimension
+        dim = 0
+        if c_o != NULL:
+            for attr_idx in range(0, nattr):
+                # expand the attribute dimension if there are arrays
+                if sos_attr_is_array(res_attr[attr_idx]):
+                    v = sos_value_init(&v_, c_o, res_attr[attr_idx])
+                    res_dim[attr_idx] = sos_array_count(v)
+                    sos_value_put(v)
+                else:
+                    res_dim[attr_idx] = 1
+                if res_acc[attr_idx].op == INLINE_ARRAY:
+                    dim += res_dim[attr_idx]
+                else:
+                    dim += 1
+
+        if nattr > 1:
+            if order == 'index':
+                ndshape = [ count, dim ]
+            elif order == 'attribute':
+                ndshape = [ dim, count ]
+            else:
+                raise ValueError("The 'order' keyword parameter must be one " \
+                                 "of 'index' or 'attribute'")
+        else:
+            # if dim == nattr, there are no arrays in the result
+            if dim > nattr:
+                ndshape = [ count, dim ]
+            else:
+                ndshape = [ count ]
+
+        result = np.zeros(ndshape, dtype=np.float64, order='C')
+
+        if nattr == 1 and dim == nattr:
+            assign = 0
+        else:
+            if order == 'index':
+                assign = 2
+            else:
+                assign = 3
+
+        idx = 0
+        while c_o != NULL and idx < count:
+
+            res_idx = 0
+            for attr_idx in range(0, nattr):
+                v = sos_value_init(&v_, c_o, res_attr[attr_idx])
+                type_id = res_type[attr_idx]
+
+                if res_acc[attr_idx].op == INLINE_ARRAY:
+                    el_count = res_dim[attr_idx]
+                else:
+                    el_count = 1
+
+                for el_idx in range(0, el_count):
+                    if assign == 2:
+                        result[idx][res_idx] = res_acc[attr_idx].acc_fn(v, el_idx, &res_acc[attr_idx])
+                    elif assign == 3:
+                        result[res_idx][idx] = res_acc[attr_idx].acc_fn(v, el_idx, &res_acc[attr_idx])
+                    else:
+                        result[idx] = res_acc[attr_idx].acc_fn(v, el_idx, &res_acc[attr_idx])
+                    res_idx += 1
+                sos_value_put(v)
+            sos_obj_put(c_o)
+
+            c_o = sos_filter_next(self.c_filt)
+            idx += 1
+            if idx >= count:
+                sos_obj_put(c_o)
+                break
+
+        free(res_attr)
+        free(res_type)
+        free(res_acc)
+        free(res_dim)
+        return (idx, result)
 
     def as_timeseries(self, size_t count, shape=None, order='attribute', cont=False,
                       timestamp='timestamp', interval_ms=None):
@@ -2747,6 +3019,8 @@ cdef class Filter(object):
         free(tmp_res)
         free(res_attr)
         free(res_type)
+        free(res_acc)
+        free(res_dim)
         return (last_idx, result)
 
     def __del__(self):
