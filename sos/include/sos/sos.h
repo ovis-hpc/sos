@@ -226,9 +226,15 @@ typedef struct sos_array_s {
 } *sos_array_t;
 #define SOS_ARRAY_SIZE(_count_, _type_)   ((sizeof(_type_) * _count_) + sizeof(uint32_t))
 
+struct sos_timeval_s {
+	uint32_t usecs;
+	uint32_t secs;
+};
+
 union sos_timestamp_u {
 	uint64_t timestamp;
 	struct ods_timeval_s tv;
+	struct sos_timeval_s fine;
 };
 
 union sos_primary_u {

@@ -463,8 +463,8 @@ ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref, const char *func, int line);
  */
 ods_ref_t ods_obj_ref(ods_obj_t obj);
 struct ods_timeval_s {
-	uint32_t tv_sec;
 	uint32_t tv_usec;
+	uint32_t tv_sec;
 };
 struct ods_key_value_s;
 union ods_obj_type_u {

@@ -211,12 +211,17 @@ cdef extern from "sos/sos.h":
     ctypedef sos_array_s *sos_array_t
 
     cdef struct ods_timeval_s:
-        uint32_t tv_sec
         uint32_t tv_usec
+        uint32_t tv_sec
+
+    cdef struct sos_timeval_s:
+        uint32_t usecs
+        uint32_t secs
 
     cdef union sos_timestamp_u:
         uint64_t time
         ods_timeval_s tv
+        sos_timeval_s fine
 
     cdef union sos_primary_u:
         unsigned char byte_
