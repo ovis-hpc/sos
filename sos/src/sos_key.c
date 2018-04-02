@@ -966,7 +966,7 @@ size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec)
 {
 	sos_comp_key_spec_t spec;
 	int idx;
-	size_t key_len;
+	size_t key_len = 0;
 
 	for (idx = 0; idx < len; idx++) {
 		spec = &key_spec[idx];
