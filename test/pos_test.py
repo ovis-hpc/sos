@@ -61,8 +61,8 @@ class FilterPosTest(SosTestCase):
         for p in pos_list:
             rc = self.filt.set_pos( p[0] )
             o = self.filt.obj()
-            self.assertTrue( rc == 0 )
-            self.assertTrue( o[:] == p[1] )
+            self.assertEqual( rc, 0 )
+            self.assertEqual( o[:], p[1] )
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
