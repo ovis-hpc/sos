@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2013-2018 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2013 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -85,8 +85,6 @@
  *
  */
 
-#define ODS_MAP_LEN	(128*1024*1024)
-
 /*
  * The ODS obj map is a partial map of the ODS object file.
  */
@@ -123,7 +121,7 @@ typedef struct ods_dirty_s {
 	struct rbn rbn;
 } *ods_dirty_t;
 
-#define ODS_MAP_DEF_SZ	(ODS_PAGE_SIZE * 1024 * 64) /* 256M */
+#define ODS_MAP_DEF_SZ	(256 * ODS_PAGE_SIZE) /* 1M */
 struct ods_s {
 	/* The path to the file on disk */
 	char *path;
