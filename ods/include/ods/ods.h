@@ -147,6 +147,39 @@ void ods_log_file_set(FILE *fp);
 void ods_log_mask_set(uint64_t mask);
 
 /**
+ * \brief Set an ODS runtime option
+ *
+ * Sets the value of an ODS runtime option. Both the name and the
+ * value are specified as strings and are converted internally to the
+ * required type.
+ *
+ * Example:
+ *   // Change the size of the ODS memory map to 8MB
+ *   rc = ods_opt_set(ods, "obj_map_size", "8388608");
+ *
+ * \brief name The name of the option.
+ * \brief value The value of the option.
+ * \retval 0 Success
+ * \retval ENOENT The option name is not recognized
+ * \retval EINVAL The option value is not supported
+ */
+int ods_opt_set(ods_t ods, const char *name, const char *value);
+
+/**
+ * \brief Get the value of an ODS runtime option
+ *
+ * Returns the value of an ODS runtime option as a string.
+ *
+ * Example:
+ *   printf("map_size = %s\n", ods_option_get(ods, "obj_map_size");
+ *
+ * \brief name The name of the option.
+ * \returns A pointer to a string value for the option or NULL
+ *          if the option name is not recognized
+ */
+const char *ods_opt_get(ods_t ods, const char *name);
+
+/**
  * \brief Acquire a pointer to the user-data for the ODS
  *
  * An ODS has storage pre-allocated for the storager of

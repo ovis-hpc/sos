@@ -88,9 +88,9 @@ static int ref_valid(ods_t ods, ods_ref_t ref);
 static void __lock_init(ods_lock_t *lock);
 
 #if defined(ODS_DEBUG)
-int ods_debug = 1;
+int __ods_debug = 1;
 #else
-int ods_debug = 0;
+int __ods_debug = 0;
 #endif
 
 /*
@@ -604,7 +604,7 @@ static inline void map_put(ods_map_t map)
 	if (!ods_atomic_dec(&map->refcount)) {
 		int rc = munmap(map->data, map->map.len);
 		assert(0 == rc);
-		if (ods_debug) {
+		if (__ods_debug) {
 			/*
 			 * DEBUG: run through the object list and ensure no
 			 * object has this as a reference
@@ -1593,7 +1593,7 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz, const char *func, int line)
  out:
 	__pgt_unlock(ods);
 	__ods_lock(ods);
-	if (ods_debug && ref)
+	if (__ods_debug && ref)
 		assert(ref_valid(ods, ref));
 	obj = _ref_as_obj_with_lock(ods, ref);
 	if (!obj && ref) {
@@ -2130,8 +2130,7 @@ static int q4_del_fn(struct rbn *rbn, void *arg, int l)
 	return 0;
 }
 
-#define DEFAULT_GC_TIMEOUT 10
-static time_t gc_timeout = DEFAULT_GC_TIMEOUT;
+time_t __ods_gc_timeout = ODS_DEF_GC_TIMEOUT;
 static pthread_t gc_thread;
 static void *gc_thread_fn(void *arg)
 {
@@ -2149,7 +2148,7 @@ static void *gc_thread_fn(void *arg)
 		 */
 		LIST_INIT(&del_list);
 		__ods_lock(ods);
-		fn_arg.timeout = gc_timeout;
+		fn_arg.timeout = __ods_gc_timeout;
 		fn_arg.del_q = &del_list;
 		fn_arg.mapped = 0;
 		rbt_traverse(&ods->map_tree, q4_del_fn, &fn_arg);
@@ -2160,7 +2159,7 @@ static void *gc_thread_fn(void *arg)
 	pthread_mutex_unlock(&ods_list_lock);
 	ods_ldebug("Total mapped memory is %ld MB\n", mapped / 1024 / 1024);
 
-	sleep(gc_timeout);
+	sleep(__ods_gc_timeout);
 	goto gc;
 	return NULL;
 }
@@ -2186,9 +2185,9 @@ static void __attribute__ ((constructor)) ods_lib_init(void)
 	/* Instantiate the memory management thread */
 	env = getenv("ODS_GC_TIMEOUT");
 	if (env) {
-		gc_timeout = atoi(env);
-		if (gc_timeout <= 0)
-			gc_timeout = DEFAULT_GC_TIMEOUT;
+		__ods_gc_timeout = atoi(env);
+		if (__ods_gc_timeout <= 0)
+			__ods_gc_timeout = ODS_DEF_GC_TIMEOUT;
 	}
 	pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
 }

@@ -56,6 +56,8 @@
 #ifndef __ODS_PRIV_H
 #define __ODS_PRIV_H
 #include <ods/ods_atomic.h>
+#include <ods/rbt.h>
+#include <stdarg.h>
 #include <stdint.h>
 
 /**
@@ -279,6 +281,14 @@ struct ods_obj_data_s {
 #define ODS_PGTBL_MIN_SZ	(4096)
 #define ODS_OBJ_MIN_SZ		(16 * 4096)
 
+/* Garbage collection timeout */
+#define ODS_DEF_GC_TIMEOUT	10 /* 10 seconds */
+extern time_t __ods_gc_timeout;
+
+/* ODS Debug True/False */
+extern int __ods_debug;
+
+/* Log file pointer and mask */
 extern FILE *__ods_log_fp;
 extern uint64_t __ods_log_mask;
 
