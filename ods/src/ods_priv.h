@@ -121,7 +121,6 @@ typedef struct ods_dirty_s {
 	struct rbn rbn;
 } *ods_dirty_t;
 
-#define ODS_MAP_DEF_SZ	(256 * ODS_PAGE_SIZE) /* 1M */
 struct ods_s {
 	/* The path to the file on disk */
 	char *path;
@@ -281,6 +280,10 @@ struct ods_obj_data_s {
 /* Garbage collection timeout */
 #define ODS_DEF_GC_TIMEOUT	10 /* 10 seconds */
 extern time_t __ods_gc_timeout;
+
+/* Default map size */
+#define ODS_DEF_MAP_SZ	(256 * ODS_PAGE_SIZE) /* 1M */
+extern uint64_t __ods_def_map_sz;
 
 /* ODS Debug True/False */
 extern int __ods_debug;

@@ -20,7 +20,7 @@ class SchemaMonitor(object):
         self.name_len = 0
 
         for attr in schema:
-            if attr.indexed():
+            if attr.is_indexed():
                 nlen = len(attr.name())
                 if nlen > self.name_len:
                     self.name_len = nlen

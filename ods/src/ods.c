@@ -95,6 +95,8 @@ int __ods_debug = 1;
 int __ods_debug = 0;
 #endif
 
+uint64_t __ods_def_map_sz = ODS_DEF_MAP_SZ;
+
 /*
  * Bit vectors are 0-based
  */
@@ -1340,7 +1342,7 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	pthread_mutex_init(&ods->lock, NULL);
 	LIST_INIT(&ods->obj_list);
 	LIST_INIT(&obj_free_list);
-	ods->obj_map_sz = ODS_MAP_DEF_SZ;
+	ods->obj_map_sz = __ods_def_map_sz;
 	rbt_init(&ods->map_tree, map_cmp);
 	rbt_init(&ods->dirty_tree, ref_cmp);
 
@@ -2164,4 +2166,12 @@ static void __attribute__ ((constructor)) ods_lib_init(void)
 			__ods_gc_timeout = ODS_DEF_GC_TIMEOUT;
 	}
 	pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
+
+	/* Override the default map size */
+	env = getenv("ODS_MAP_SIZE");
+	if (env) {
+		__ods_def_map_sz = atoi(env);
+		if (__ods_def_map_sz < ODS_DEF_MAP_SZ)
+			__ods_def_map_sz = ODS_DEF_MAP_SZ;
+	}
 }
