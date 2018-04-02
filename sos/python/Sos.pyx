@@ -1515,11 +1515,7 @@ cdef class Attr(SosObject):
         c_data = sos_obj_attr_data(c_obj, self.c_attr, &c_arr_obj)
 
         t = sos_attr_type(self.c_attr)
-        if t == SOS_TYPE_STRUCT:
-            n = sos_attr_size(self.c_attr)
-            v = <object>c_data.struc.char_[:n]
-        else:
-            v = <object>type_getters[<int>t](c_obj, c_data)
+        v = <object>type_getters[<int>t](c_obj, c_data, self.c_attr)
 
         sos_obj_put(c_obj)
         if c_arr_obj != NULL:
@@ -1542,11 +1538,7 @@ cdef class Attr(SosObject):
         c_data = sos_obj_attr_data(c_obj, self.c_attr, &c_arr_obj)
 
         t = sos_attr_type(self.c_attr)
-        if t == SOS_TYPE_STRUCT:
-            n = sos_attr_size(self.c_attr)
-            v = <object>c_data.struc.char_[:n]
-        else:
-            v = <object>type_getters[<int>t](c_obj, c_data)
+        v = <object>type_getters[<int>t](c_obj, c_data, self.c_attr)
 
         sos_obj_put(c_obj)
         if c_arr_obj != NULL:
@@ -3457,87 +3449,111 @@ cdef class OAArray:
             sos_obj_put(self.c_obj)
             self.c_obj = NULL
 
-cdef object get_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_FLOAT64)
 
-cdef object get_LONG_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_LONG_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_LONGDOUBLE)
 
-cdef object get_FLOAT_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_FLOAT_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_FLOAT32)
 
-cdef object get_UINT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_UINT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT64)
 
-cdef object get_UINT32_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_UINT32_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT32)
 
-cdef object get_UINT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_UINT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT16)
 
-cdef object get_BYTE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_BYTE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT8)
 
-cdef object get_CHAR_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_CHAR_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.array.data.char_
 
-cdef object get_INT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_INT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT64)
 
-cdef object get_INT32_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_INT32_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT32)
 
-cdef object get_INT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_INT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT16)
 
-cdef object get_TIMESTAMP(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_TIMESTAMP(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return <double>c_data.prim.timestamp_.tv.tv_sec \
         + (<double>c_data.prim.timestamp_.tv.tv_usec / 1000000.0)
 
-cdef object get_DOUBLE(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_DOUBLE(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.double_
 
-cdef object get_LONG_DOUBLE(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_LONG_DOUBLE(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.long_double_
 
-cdef object get_FLOAT(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_FLOAT(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.float_
 
-cdef object get_UINT64(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_UINT64(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.uint64_
 
-cdef object get_UINT32(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_UINT32(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.uint32_
 
-cdef object get_UINT16(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_UINT16(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.uint16_
 
-cdef object get_INT64(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_INT64(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.int64_
 
-cdef object get_INT32(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_INT32(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.int32_
 
-cdef object get_INT16(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_INT16(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.int16_
 
-cdef object get_STRUCT(sos_obj_t c_obj, sos_value_data_t c_data):
-    return c_data.prim.uint64_
+cdef object get_STRUCT(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
+    n = sos_attr_size(c_attr)
+    return <object>c_data.struc.char_[:n]
 
-cdef object get_ERROR(sos_obj_t c_obj, sos_value_data_t c_data):
+cdef object get_JOIN(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
+    cdef sos_value_data_t c_attr_data
+    cdef sos_attr_t c_join_attr
+    cdef sos_array_t join_ids
+    cdef sos_obj_t arr_obj
+    cdef int i
+
+    if c_obj == NULL:
+        raise ValueError("The c_obj parameter cannot be NULL")
+
+    join_ids = sos_attr_join_list(c_attr);
+    value = ""
+    for i in range(0, join_ids.count):
+        c_join_attr = sos_schema_attr_by_id(sos_attr_schema(c_attr), join_ids.data.uint32_[i])
+        c_attr_data = sos_obj_attr_data(c_obj, c_join_attr, &arr_obj)
+        if i != 0:
+            value += ":" + str(type_getters[<int>sos_attr_type(c_join_attr)](c_obj, c_attr_data, c_join_attr))
+        else:
+            value += str(type_getters[<int>sos_attr_type(c_join_attr)](c_obj, c_attr_data, c_join_attr))
+        if arr_obj != NULL:
+            sos_obj_put(arr_obj)
+    return value
+
+cdef object get_ERROR(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     raise ValueError("Get is not supported on this attribute type.")
 
-ctypedef object (*type_getter_fn_t)(sos_obj_t, sos_value_data_t)
+ctypedef object (*type_getter_fn_t)(sos_obj_t, sos_value_data_t, sos_attr_t)
 cdef type_getter_fn_t type_getters[SOS_TYPE_LAST+1]
 type_getters[<int>SOS_TYPE_INT16] = get_INT16
 type_getters[<int>SOS_TYPE_INT32] = get_INT32
@@ -3551,7 +3567,7 @@ type_getters[<int>SOS_TYPE_LONG_DOUBLE] = get_LONG_DOUBLE
 type_getters[<int>SOS_TYPE_TIMESTAMP] = get_TIMESTAMP
 type_getters[<int>SOS_TYPE_OBJ] = get_ERROR
 type_getters[<int>SOS_TYPE_STRUCT] = get_STRUCT
-type_getters[<int>SOS_TYPE_JOIN] = get_STRUCT
+type_getters[<int>SOS_TYPE_JOIN] = get_JOIN
 type_getters[<int>SOS_TYPE_BYTE_ARRAY] = get_BYTE_ARRAY
 type_getters[<int>SOS_TYPE_CHAR_ARRAY] = get_CHAR_ARRAY
 type_getters[<int>SOS_TYPE_INT16_ARRAY] = get_INT16_ARRAY
@@ -3843,7 +3859,7 @@ cdef class Value(object):
 
     @property
     def value(self):
-        return self.get_fn(self.c_obj, self.c_v.data)
+        return self.get_fn(self.c_obj, self.c_v.data, self.c_attr)
 
     @value.setter
     def value(self, v):
@@ -3971,11 +3987,7 @@ cdef class Object(object):
 
     cdef get_py_value(self, sos_obj_t c_obj, sos_attr_t c_attr, sos_value_data_t c_data):
         cdef int t = sos_attr_type(c_attr)
-        if t == SOS_TYPE_STRUCT:
-            n = sos_attr_size(c_attr)
-            return <object>c_data.struc.char_[:n]
-        else:
-            return <object>type_getters[<int>t](c_obj, c_data)
+        return <object>type_getters[<int>t](c_obj, c_data, c_attr)
 
     cdef set_py_array_value(self, sos_attr_t c_attr, val):
         cdef sos_value_s v_
@@ -4011,7 +4023,7 @@ cdef class Object(object):
                     raise ValueError("Object has no attribute with id '{0}'".format(idx))
                 arr_obj = NULL
                 c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
-                ret.append(self.get_py_value(arr_obj, c_attr, c_data))
+                ret.append(self.get_py_value(self.c_obj, c_attr, c_data))
                 if arr_obj != NULL:
                     sos_obj_put(arr_obj);
             return ret
@@ -4023,7 +4035,7 @@ cdef class Object(object):
             raise StopIteration("Object has no attribute with id '{0}'".format(idx))
         arr_obj = NULL
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
-        res = self.get_py_value(arr_obj, c_attr, c_data)
+        res = self.get_py_value(self.c_obj, c_attr, c_data)
         if arr_obj != NULL:
             sos_obj_put(arr_obj)
         return res
@@ -4039,7 +4051,7 @@ cdef class Object(object):
             raise ValueError("Object has no attribute with name '{0}'".format(name))
         arr_obj = NULL
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
-        res = self.get_py_value(arr_obj, c_attr, c_data)
+        res = self.get_py_value(self.c_obj, c_attr, c_data)
         if arr_obj != NULL:
             sos_obj_put(arr_obj);
         return res
