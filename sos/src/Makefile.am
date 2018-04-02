@@ -18,7 +18,7 @@ libsos_la_SOURCES = sos_fn.c \
 		    sos_log.c \
 		    sos_priv.h
 
-libsos_la_LIBADD = ../../ods/src/libods.la -ldl -lpthread
+libsos_la_LIBADD = ../../ods/src/libods.la -ldl -lpthread $(LIB_TCMALLOC)
 lib_LTLIBRARIES += libsos.la
 
 sos_cmd_SOURCES = sos_cmd.c
