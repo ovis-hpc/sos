@@ -89,6 +89,14 @@ static int64_t cmp(ods_key_t a, ods_key_t b)
 			koff += sizeof(comp_a->type) + sizeof(comp_a->value.double_);
 			break;
 		case SOS_TYPE_TIMESTAMP:
+			res = (int64_t)comp_a->value.tv_.tv_sec - (int64_t)comp_b->value.tv_.tv_sec;
+			if (res)
+				return res;
+			res = (int64_t)comp_a->value.tv_.tv_usec - (int64_t)comp_b->value.tv_.tv_usec;
+			if (res)
+				return res;
+			koff += sizeof(comp_a->type) + sizeof(comp_a->value.tv_);
+			break;
 		case SOS_TYPE_UINT64:
 			if (comp_a->value.uint64_ < comp_b->value.uint64_)
 				return -1;

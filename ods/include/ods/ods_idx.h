@@ -325,6 +325,7 @@ typedef union ods_key_comp_val_u {
 	float float_;
 	double double_;
 	long double long_double_;
+	struct ods_timeval_s tv_;
 	ods_key_comp_val_str_t str;
 } ods_key_comp_val_t;
 

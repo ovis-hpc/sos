@@ -200,6 +200,12 @@ sos_key_t sos_key_for_attr(sos_key_t key, sos_attr_t attr, ...)
 		}
 		break;
 	case SOS_TYPE_TIMESTAMP:
+		key = __sos_key_maybe_new(key, sizeof(union sos_timestamp_u));
+		if (key) {
+			union sos_timestamp_u ts = va_arg(ap, union sos_timestamp_u);
+			sos_key_set(key, &ts, sizeof(ts));
+		}
+		break;
 	case SOS_TYPE_DOUBLE:
 	case SOS_TYPE_INT64:
 	case SOS_TYPE_UINT64:
@@ -481,7 +487,7 @@ static uint64_t comp_type_size[] = {
 	[SOS_TYPE_DOUBLE] = sizeof(double) + sizeof(uint16_t),
 	[SOS_TYPE_FLOAT] = sizeof(float) + sizeof(uint16_t),
 	[SOS_TYPE_UINT64] = sizeof(uint64_t) + sizeof(uint16_t),
-	[SOS_TYPE_TIMESTAMP] = sizeof(uint64_t) + sizeof(uint16_t),
+	[SOS_TYPE_TIMESTAMP] = sizeof(union sos_timestamp_u) + sizeof(uint16_t),
 	[SOS_TYPE_INT64] = sizeof(int64_t) + sizeof(uint16_t),
 	[SOS_TYPE_UINT32] = sizeof(uint32_t) + sizeof(uint16_t),
 	[SOS_TYPE_INT32] = sizeof(int32_t) + sizeof(uint16_t),
@@ -520,6 +526,9 @@ ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size
 	comp->type = sos_attr_type(a);
 	switch (comp->type) {
 	case SOS_TYPE_TIMESTAMP:
+		comp->value.tv_.tv_sec = 0;
+		comp->value.tv_.tv_usec = 0;
+		break;
 	case SOS_TYPE_UINT64:
 		comp->value.uint64_ = 0;
 		*comp_len = sizeof(uint64_t) + sizeof(uint16_t);
@@ -567,6 +576,9 @@ ods_key_comp_t __sos_set_key_comp_to_max(ods_key_comp_t comp, sos_attr_t a, size
 	comp->type = sos_attr_type(a);
 	switch (comp->type) {
 	case SOS_TYPE_TIMESTAMP:
+		comp->value.tv_.tv_sec = UINT_MAX;
+		comp->value.tv_.tv_usec = UINT_MAX;
+		break;
 	case SOS_TYPE_UINT64:
 		comp->value.uint64_ = ULONG_MAX;
 		*comp_len = sizeof(uint64_t) + sizeof(uint16_t);
@@ -674,6 +686,7 @@ int sos_key_join_va(sos_key_t key, sos_attr_t join_attr, va_list ap)
 {
 	unsigned char *src;
 	ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
+	union sos_timestamp_u ts;
 	ods_key_comp_t comp;
 	size_t src_len;
 	int attr_id, idx;
@@ -698,6 +711,12 @@ int sos_key_join_va(sos_key_t key, sos_attr_t join_attr, va_list ap)
 		}
 		comp->type = sos_attr_type(attr);
 		switch (comp->type) {
+		case SOS_TYPE_TIMESTAMP:
+			ts = va_arg(ap, union sos_timestamp_u);
+			comp->value.tv_.tv_sec = ts.tv.tv_sec;
+			comp->value.tv_.tv_usec = ts.tv.tv_usec;
+			comp_key->len += comp_type_size[comp->type];
+			break;
 		case SOS_TYPE_UINT64:
 		case SOS_TYPE_INT64:
 		case SOS_TYPE_DOUBLE:
@@ -768,6 +787,9 @@ int sos_key_join_size_va(sos_attr_t join_attr, va_list ap)
 		type = sos_attr_type(attr);
 		switch (type) {
 		case SOS_TYPE_TIMESTAMP:
+			(void)va_arg(ap, union sos_timestamp_u);
+			size += comp_type_size[type];
+			break;
 		case SOS_TYPE_UINT64:
 		case SOS_TYPE_INT64:
 		case SOS_TYPE_DOUBLE:
@@ -811,6 +833,7 @@ int sos_key_join_size_va(sos_attr_t join_attr, va_list ap)
 int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
 {
 	va_list ap;
+	union sos_timestamp_u *ts;
 	uint64_t *p64;
 	uint32_t *p32;
 	uint16_t *p16;
@@ -840,6 +863,11 @@ int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
 			return E2BIG;
 		}
 		switch (sos_attr_type(attr)) {
+		case SOS_TYPE_TIMESTAMP:
+			ts = va_arg(ap, union sos_timestamp_u *);
+			ts->tv.tv_sec = comp->value.tv_.tv_sec;
+			ts->tv.tv_usec = comp->value.tv_.tv_usec;
+			break;
 		case SOS_TYPE_UINT64:
 		case SOS_TYPE_INT64:
 		case SOS_TYPE_DOUBLE:

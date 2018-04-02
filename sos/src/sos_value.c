@@ -133,10 +133,12 @@ static int LONG_DOUBLE_cmp(sos_value_t a, sos_value_t b, size_t size)
 
 static int TIMESTAMP_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	if (a->data->prim.timestamp_.time > b->data->prim.timestamp_.time)
-		return 1;
-	else if (a->data->prim.timestamp_.time < b->data->prim.timestamp_.time)
-		return -1;
+	int res = a->data->prim.timestamp_.tv.tv_sec - b->data->prim.timestamp_.tv.tv_sec;
+	if (res)
+		return res;
+	res = a->data->prim.timestamp_.tv.tv_usec - b->data->prim.timestamp_.tv.tv_usec;
+	if (res)
+		return res;
 	return 0;
 }
 
@@ -640,7 +642,7 @@ size_t sos_value_data_set_va(sos_value_data_t vd, sos_type_t type, va_list ap)
 		size = sizeof(vd->prim.long_double_);
 		break;
 	case SOS_TYPE_TIMESTAMP:
-		vd->prim.timestamp_.time = va_arg(ap, uint64_t);
+		vd->prim.timestamp_.tv = va_arg(ap, struct ods_timeval_s);
 		size = sizeof(vd->prim.timestamp_);
 		break;
 	case SOS_TYPE_OBJ:

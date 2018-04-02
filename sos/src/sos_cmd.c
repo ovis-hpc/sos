@@ -146,9 +146,9 @@ int value_from_str(sos_attr_t attr, sos_value_t cond_value, char *value_str, cha
 		ts = strtod(value_str, endptr);
 		if (ts == 0 && *endptr == value_str)
 			break;
-		cond_value->data->prim.timestamp_.fine.secs = (int)ts;
+		cond_value->data->prim.timestamp_.tv.tv_sec = (int)ts;
 		uint32_t usecs = (uint32_t)((double)(ts - (int)ts) * 1.0e6);
-		cond_value->data->prim.timestamp_.fine.usecs = usecs;
+		cond_value->data->prim.timestamp_.tv.tv_usec = usecs;
 		rc = 0;
 		break;
 	default:

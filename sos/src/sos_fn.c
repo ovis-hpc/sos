@@ -217,8 +217,8 @@ PRIMITIVE_STRLEN_FN(long_double, "%Lf", long_double_)
 
 static size_t timestamp_strlen_fn(sos_value_t v)
 {
-	double t= (double)v->data->prim.timestamp_.fine.secs +
-		((double)v->data->prim.timestamp_.fine.usecs) / 1.0e6;
+	double t= (double)v->data->prim.timestamp_.tv.tv_sec +
+		((double)v->data->prim.timestamp_.tv.tv_usec) / 1.0e6;
 	return snprintf(NULL, 0, "%.6f", t) + 1;
 }
 
@@ -351,8 +351,8 @@ PRIMITIVE_TO_STR_FN(long_double, "%Lf", long_double_)
 
 static char *timestamp_to_str_fn(sos_value_t v, char *str, size_t len)
 {
-	double t= (double)v->data->prim.timestamp_.fine.secs +
-		((double)v->data->prim.timestamp_.fine.usecs) / 1.0e6;
+	double t= (double)v->data->prim.timestamp_.tv.tv_sec +
+		((double)v->data->prim.timestamp_.tv.tv_usec) / 1.0e6;
 	snprintf(str, len, "%.6f", t);
 	return str;
 }
@@ -563,13 +563,13 @@ int timestamp_from_str_fn(sos_value_t v, const char *value, char **endptr)
 		if (strchr(value, '.')) {
 			/* Treat as a float, time since epoch + microseconds */
 			double ts = strtod(value, endptr);
-			v->data->prim.timestamp_.fine.secs = (int)ts;
-			v->data->prim.timestamp_.fine.usecs =
+			v->data->prim.timestamp_.tv.tv_sec = (int)ts;
+			v->data->prim.timestamp_.tv.tv_usec =
 				(uint32_t)((double)(ts - (int)ts) * 1.0e6);
 		} else {
 			/* Treat this like an epoch timestamp */
-			v->data->prim.timestamp_.fine.secs = strtoul(value, endptr, 0);
-			v->data->prim.timestamp_.fine.usecs = 0;
+			v->data->prim.timestamp_.tv.tv_sec = strtoul(value, endptr, 0);
+			v->data->prim.timestamp_.tv.tv_usec = 0;
 		}
 	} else {
 		/* Treat this like a formatted data/time string */
@@ -577,8 +577,8 @@ int timestamp_from_str_fn(sos_value_t v, const char *value, char **endptr)
 		if (!s)
 			return EINVAL;
 		usecs = strtoul(s, endptr, 0);
-		v->data->prim.timestamp_.fine.secs = mktime(&tm);
-		v->data->prim.timestamp_.fine.usecs = usecs;
+		v->data->prim.timestamp_.tv.tv_sec = mktime(&tm);
+		v->data->prim.timestamp_.tv.tv_usec = usecs;
 	}
 	return 0;
 }

@@ -1598,8 +1598,8 @@ cdef double float_acc(sos_value_t v, int idx, shape_opt s):
     return <double>v.data.prim.float_
 
 cdef double timestamp_acc(sos_value_t v, int idx, shape_opt s):
-    return <double>v.data.prim.timestamp_.fine.secs + \
-        (<double>v.data.prim.timestamp_.fine.usecs / 1.0e6)
+    return <double>v.data.prim.timestamp_.tv.tv_sec + \
+        (<double>v.data.prim.timestamp_.tv.tv_usec / 1.0e6)
 
 # uint64 array ops
 cdef double uint64_inline_array_acc(sos_value_t v, int idx, shape_opt s):
@@ -2267,11 +2267,11 @@ cdef class Filter(object):
 
         if sos_attr_type(cond_attr.c_attr) == SOS_TYPE_TIMESTAMP:
             if cond == SOS_COND_GT or cond == SOS_COND_GE:
-                self.start_us = <double>cond_v.data.prim.timestamp_.fine.secs * 1.0e6 \
-                                + <double>cond_v.data.prim.timestamp_.fine.usecs
+                self.start_us = <double>cond_v.data.prim.timestamp_.tv.tv_sec * 1.0e6 \
+                                + <double>cond_v.data.prim.timestamp_.tv.tv_usec
             elif cond == SOS_COND_LE or cond == SOS_COND_LT:
-                self.end_us = <double>cond_v.data.prim.timestamp_.fine.secs * 1.0e6 \
-                              + <double>cond_v.data.prim.timestamp_.fine.usecs
+                self.end_us = <double>cond_v.data.prim.timestamp_.tv.tv_sec * 1.0e6 \
+                              + <double>cond_v.data.prim.timestamp_.tv.tv_usec
 
         rc = sos_filter_cond_add(self.c_filt, cond_attr.c_attr,
                                  cond, cond_v)
@@ -2879,8 +2879,8 @@ cdef class Filter(object):
         dim = 0
         if c_o != NULL:
             t = sos_value_init(&t_, c_o, t_attr)
-            obj_time = <double>t.data.prim.timestamp_.fine.secs * 1.0e6 \
-                       + <double>t.data.prim.timestamp_.fine.usecs
+            obj_time = <double>t.data.prim.timestamp_.tv.tv_usec * 1.0e6 \
+                       + <double>t.data.prim.timestamp_.tv.tv_usec
             sos_value_put(t)
             self.start_us = obj_time
             for attr_idx in range(0, nattr):
@@ -2975,8 +2975,8 @@ cdef class Filter(object):
             c_o = sos_filter_next(self.c_filt)
             if c_o != NULL:
                 t = sos_value_init(&t_, c_o, t_attr)
-                obj_time = <double>t.data.prim.timestamp_.fine.secs * 1.0e6 \
-                           + <double>t.data.prim.timestamp_.fine.usecs
+                obj_time = <double>t.data.prim.timestamp_.tv.tv_usec * 1.0e6 \
+                           + <double>t.data.prim.timestamp_.tv.tv_usec
                 sos_value_put(t)
 
             # compute the next bin index
@@ -3501,8 +3501,8 @@ cdef object get_INT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data):
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT16)
 
 cdef object get_TIMESTAMP(sos_obj_t c_obj, sos_value_data_t c_data):
-    return <double>c_data.prim.timestamp_.fine.secs \
-        + (<double>c_data.prim.timestamp_.fine.usecs / 1000000.0)
+    return <double>c_data.prim.timestamp_.tv.tv_sec \
+        + (<double>c_data.prim.timestamp_.tv.tv_usec / 1000000.0)
 
 cdef object get_DOUBLE(sos_obj_t c_obj, sos_value_data_t c_data):
     return c_data.prim.double_
@@ -3651,8 +3651,8 @@ cdef set_TIMESTAMP(sos_value_data_t c_data, val):
     try:
         secs = val
         usecs = (val - secs) * 1000000
-        c_data.prim.timestamp_.fine.secs = secs
-        c_data.prim.timestamp_.fine.usecs = usecs
+        c_data.prim.timestamp_.tv.tv_sec = secs
+        c_data.prim.timestamp_.tv.tv_usec = usecs
     except Exception as e:
         raise ValueError("The time value is a floating point number representing "
                          "seconds since the epoch")
@@ -3748,7 +3748,7 @@ cdef int size_LONG_DOUBLE(arg):
     return sizeof(long double)
 
 cdef int size_TIMESTAMP(arg):
-    return sizeof(sos_timestamp_s)
+    return sizeof(ods_timeval_s)
 
 cdef int size_ERROR(arg):
     raise ValueError("The type has no key size.")

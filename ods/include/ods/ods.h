@@ -462,6 +462,10 @@ ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref, const char *func, int line);
  * Return an object's reference
  */
 ods_ref_t ods_obj_ref(ods_obj_t obj);
+struct ods_timeval_s {
+	uint32_t tv_sec;
+	uint32_t tv_usec;
+};
 struct ods_key_value_s;
 union ods_obj_type_u {
 	void *ptr;
@@ -473,6 +477,7 @@ union ods_obj_type_u {
 	uint32_t *uint32;
 	int64_t *int64;
 	uint64_t *uint64;
+	struct ods_timevalue_s *tv;
 	char *str;
 	unsigned char *bytes;
 	ods_atomic_t *lock;

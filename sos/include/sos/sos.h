@@ -227,12 +227,8 @@ typedef struct sos_array_s {
 #define SOS_ARRAY_SIZE(_count_, _type_)   ((sizeof(_type_) * _count_) + sizeof(uint32_t))
 
 union sos_timestamp_u {
-	uint64_t time;
-	struct sos_timestamp_s {
-		/* NB: will make usecs secondary if time is BE byte swapped for memcmp */
-		uint32_t usecs;
-		uint32_t secs;
-	} fine;
+	uint64_t timestamp;
+	struct ods_timeval_s tv;
 };
 
 union sos_primary_u {
