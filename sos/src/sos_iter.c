@@ -1203,13 +1203,16 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 
 	__sort_filter_conds_fwd(filt);
 	rc = __sos_filter_key_set(filt, key, 1);
-	if (rc == EINVAL) {
+	switch (rc) {
+	case 0:
+		rc = sos_iter_begin(filt->iter);
+		break;
+	case ESRCH:
+		rc = sos_iter_sup(filt->iter, key);
+		break;
+	default:
 		errno = rc;
 		return NULL;
-	} else if (rc) {
-		rc = sos_iter_sup(filt->iter, key);
-	} else {
-		rc = sos_iter_begin(filt->iter);
 	}
 	if (!rc)
 		return next_match(filt);
@@ -1280,13 +1283,16 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 
 	__sort_filter_conds_bkwd(filt);
 	rc = __sos_filter_key_set(filt, key, 0);
-	if (rc == EINVAL) {
+	switch (rc) {
+	case 0:
+		rc = sos_iter_end(filt->iter);
+		break;
+	case ESRCH:
+		rc = sos_iter_inf(filt->iter, key);
+		break;
+	default:
 		errno = rc;
 		return NULL;
-	} else if (rc) {
-		rc = sos_iter_inf(filt->iter, key);
-	} else {
-		rc = sos_iter_end(filt->iter);
 	}
  	if (!rc)
  		return prev_match(filt);
