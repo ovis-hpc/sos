@@ -784,7 +784,6 @@ ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock)
 {
 	ods_obj_t ods_obj;
 	size_t extend_size = (size < SOS_ODS_EXTEND_SZ ? SOS_ODS_EXTEND_SZ : size << 4);
-	pthread_mutex_lock(lock);
 	ods_obj = ods_obj_alloc(ods, size);
 	if (!ods_obj) {
 		int rc = ods_extend(ods, extend_size);
@@ -793,7 +792,6 @@ ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock)
 		ods_obj = ods_obj_alloc(ods, size);
 	}
  err_0:
-	pthread_mutex_unlock(lock);
 	return ods_obj;
 }
 

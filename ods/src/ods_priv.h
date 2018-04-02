@@ -159,7 +159,6 @@ struct ods_s {
 	/* The object list */
 	ods_atomic_t obj_count;
 	LIST_HEAD(obj_list_head, ods_obj_s) obj_list;
-	LIST_HEAD(obj_free_list_head, ods_obj_s) obj_free_list;
 
 	/* The dirty tree */
 	struct rbt dirty_tree;
