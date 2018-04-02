@@ -193,10 +193,10 @@ cdef extern from "sos/sos.h":
     cdef union sos_array_element_u:
         char char_[0]
         uint8_t byte_[0]
-        uint32_t uint16_[0]
+        uint16_t uint16_[0]
         uint32_t uint32_[0]
         uint64_t uint64_[0]
-        int32_t int16_[0]
+        int16_t int16_[0]
         int32_t int32_[0]
         int64_t int64_[0]
         float float_[0]
