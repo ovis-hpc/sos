@@ -59,7 +59,6 @@ class JoinTestKey(SosTestCase):
         k = a.key(1, 0, 0)
         idx = a.index()
         o = idx.find_sup(k)
-        print(o[0], o[1], o[2])
 
     def compare_join_split(self, values):
         k = Sos.Key(size=256)
