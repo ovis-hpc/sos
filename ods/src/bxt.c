@@ -716,6 +716,15 @@ static ods_obj_t rec_new(ods_idx_t idx, ods_key_t key, ods_idx_data_t data, int 
 	return NULL;
 }
 
+static void rec_del(ods_obj_t obj, int is_dup)
+{
+	if (!is_dup) {
+		/* Delete the key */
+		ods_ref_delete(obj->ods, REC(obj)->key_ref);
+	}
+	ods_obj_delete(obj);
+}
+
 static struct bxn_entry ENTRY_INITIALIZER = {
 	.u.leaf = { 0, 0 }
 };
@@ -1648,6 +1657,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 		REC(next_rec)->prev_ref = REC(rec)->prev_ref;
 	ods_obj_put(next_rec);
 	ods_obj_put(prev_rec);
+	rec_del(rec, 0);
 
  next_level:
 	parent = ods_ref_as_obj(t->ods, NODE(node)->parent);
@@ -1790,7 +1800,7 @@ static void delete_head(bxt_t t, ods_obj_t leaf, int ent)
 	L_ENT(leaf,ent).head_ref = REC(rec)->next_ref;
 	ods_obj_put(next_rec);
 	ods_obj_put(prev_rec);
-	ods_obj_delete(rec);
+	rec_del(rec, 1);
 	ods_obj_put(rec);
 }
 
@@ -1816,7 +1826,7 @@ static void delete_dup_rec(bxt_t t, ods_obj_t leaf, ods_obj_t rec, int ent)
 
 	ods_obj_put(next_rec);
 	ods_obj_put(prev_rec);
-	ods_obj_delete(rec);
+	rec_del(rec, 1);
 	ods_obj_put(rec);
 }
 

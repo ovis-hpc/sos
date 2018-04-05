@@ -747,6 +747,8 @@ cdef class Key(object):
         if sos_type:
             if attr:
                 raise ValueError("sos_type and attr are mutually exclusive")
+            if sos_type < 0 or sos_type > SOS_TYPE_LAST:
+                raise ValueError("{0} is an invalid Sos type")
             self.sos_type = sos_type
             if not size and sos_type >= SOS_TYPE_BYTE_ARRAY:
                 raise ValueError("size must be specified if the key type is an array")
@@ -828,7 +830,10 @@ cdef class Key(object):
         j = 0
         while i < len(args):
             typ = <int>args[i]
-            specs[j].type = typ
+            if typ < SOS_TYPE_LAST:
+                specs[j].type = typ
+            else:
+                raise ValueError("Invalid value type {0} specifed".format(typ))
             type_setters[typ](&specs[j].data, args[i+1])
             i += 2
             j += 1
@@ -3772,6 +3777,9 @@ cdef int size_ERROR(arg):
 cdef int size_STRUCT(arg):
     return len(arg)
 
+cdef int size_JOIN(arg):
+    return len(arg)
+
 cdef int size_BYTE_ARRAY(arg):
     return len(arg)
 
@@ -3818,7 +3826,7 @@ type_sizes[<int>SOS_TYPE_DOUBLE] = size_DOUBLE
 type_sizes[<int>SOS_TYPE_LONG_DOUBLE] = size_LONG_DOUBLE
 type_sizes[<int>SOS_TYPE_TIMESTAMP] = size_TIMESTAMP
 type_sizes[<int>SOS_TYPE_OBJ] = size_ERROR
-type_sizes[<int>SOS_TYPE_JOIN] = size_ERROR
+type_sizes[<int>SOS_TYPE_JOIN] = size_JOIN
 type_sizes[<int>SOS_TYPE_STRUCT] = size_STRUCT
 type_sizes[<int>SOS_TYPE_BYTE_ARRAY] = size_BYTE_ARRAY
 type_sizes[<int>SOS_TYPE_CHAR_ARRAY] = size_CHAR_ARRAY
@@ -4139,6 +4147,14 @@ cdef class Object(object):
         if self.c_obj == NULL:
             self.abort("There is no container object associated with this Object")
         sos_obj_remove(self.c_obj)
+
+    def delete(self):
+        """
+        Remove the object from the container
+        """
+        sos_obj_delete(self.c_obj)
+        sos_obj_put(self.c_obj)
+        self.c_obj = NULL
 
     def type_of(self):
         if self.c_obj == NULL:
