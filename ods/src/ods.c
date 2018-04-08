@@ -1409,8 +1409,8 @@ static uint64_t alloc_pages(ods_t ods, size_t pg_needed)
 	}
 
 	/* Update the extent created by splitting this one */
+	n_pg_no = pg_no + pg_needed;
 	if (pg_needed < pgt->pg_pages[pg_no].pg_count) {
-		n_pg_no = pg_no + pg_needed;
 		if (n_pg_no < pgt->pg_count) {
 			pgt->pg_pages[n_pg_no].pg_count =
 				pgt->pg_pages[pg_no].pg_count - pg_needed;
