@@ -87,6 +87,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz);
 static ods_pgt_t pgt_map(ods_t ods);
 static void pgt_unmap(ods_t ods);
 static int ref_valid(ods_t ods, ods_ref_t ref);
+static void free_pages(ods_t ods, uint64_t pg_no);
 static void __lock_init(ods_lock_t *lock);
 
 #if defined(ODS_DEBUG)
@@ -250,7 +251,7 @@ static int init_pgtbl(int pg_fd)
 
 	/* Initialize the bucket table */
 	for (i = 0; i < ODS_BKT_TABLE_SZ; i++) {
-		pgt.bkt_table[i].bkt_next = 0;
+		pgt.bkt_table[i].pg_next = 0;
 	}
 
 	/* Initialize all the lock entries */
@@ -1393,32 +1394,44 @@ static uint64_t alloc_pages(ods_t ods, size_t pg_needed)
 	ods_pgt_t pgt = ods->pg_table;
 
 	p_pg_no = 0;
+	/* Search for an extent large enough to satisfy pg_needed */
 	for (pg_no = pgt->pg_free; pg_no; pg_no = pgt->pg_pages[pg_no].pg_next) {
 		if (pg_needed <= pgt->pg_pages[pg_no].pg_count) {
 			break;
 		}
+		/* keep track of the previous extent */
+		p_pg_no = pg_no;
 	}
 	if (!pg_no) {
+		/* No extents exist or are large enough */
 		errno = ENOMEM;
 		goto out;
 	}
+
+	/* Update the extent created by splitting this one */
 	n_pg_no = pg_no + pg_needed;
-	if (pg_needed < pgt->pg_pages[pg_no].pg_count) {
-		/* Return the remainder to the table */
+	if (n_pg_no < pgt->pg_count) {
 		pgt->pg_pages[n_pg_no].pg_count = pgt->pg_pages[pg_no].pg_count - pg_needed;
+		pgt->pg_pages[n_pg_no].pg_next = pgt->pg_pages[pg_no].pg_next;
 		pgt->pg_pages[n_pg_no].pg_flags = 0;
 	}
-	pgt->pg_pages[pg_no].pg_count = pg_needed;
-	if (p_pg_no)
-		/* Link the previous extent to the tail of this allocation */
-		pgt->pg_pages[p_pg_no].pg_next = n_pg_no;
-	else if (n_pg_no < pgt->pg_count)
-		/* We used the first extent, update pg_free */
-		pgt->pg_free = n_pg_no;
-	else
-		pgt->pg_free = 0;
 
+	/* Update the newly allocated extent */
+	pgt->pg_pages[pg_no].pg_count = pg_needed;
+	pgt->pg_pages[pg_no].pg_next = pg_no + pg_needed;
 	pgt->pg_pages[pg_no].pg_flags = ODS_F_ALLOCATED;
+
+	if (p_pg_no)
+		/* Link the previous extent to the new extent */
+		pgt->pg_pages[p_pg_no].pg_next = n_pg_no;
+	else {
+		/* We used the first extent, update pg_free */
+		if (n_pg_no < pgt->pg_count) {
+			pgt->pg_free = n_pg_no;
+		} else {
+			pgt->pg_free = 0;
+		}
+	}
  out:
 	return pg_no;
 }
@@ -1503,9 +1516,9 @@ static uint64_t replenish_bkt(ods_t ods, ods_pgt_t pgt, int bkt)
 	if (!pg_no)
 		return 0;
 	ods_pg_t pg = &pgt->pg_pages[pg_no];
-	assert(0 == pgt->bkt_table[bkt].bkt_next);
-	pgt->bkt_table[bkt].bkt_next = pg_no;
-	pg->bkt_next = 0;
+	assert(0 == pgt->bkt_table[bkt].pg_next);
+	pgt->bkt_table[bkt].pg_next = pg_no;
+	pg->pg_next = 0;
 	pg->pg_flags |= ODS_F_IDX_VALID;
 	pg->pg_bkt_idx = bkt;
 	pg->pg_bits[0] = bkt_bits[bkt].mask_0;
@@ -1517,7 +1530,7 @@ static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 {
 	int is_empty, blk, bkt = size_to_bkt(sz);
 	ods_pg_t pg;
-	uint64_t pg_no = pgt->bkt_table[bkt].bkt_next;
+	uint64_t pg_no = pgt->bkt_table[bkt].pg_next;
 	if (!pg_no) {
 		pg_no = replenish_bkt(ods, pgt, bkt);
 		if (!pg_no)
@@ -1528,7 +1541,7 @@ static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 	assert(blk >= 0);	/* if < 0, an empty page was left on the blk list */
 	if (is_empty) {
 		/* Remove the now fully allocated (i.e. 'empty') page from the bucket list */
-		pgt->bkt_table[bkt].bkt_next = pg->bkt_next;
+		pgt->bkt_table[bkt].pg_next = pg->pg_next;
 	}
 	ods_ref_t ref = pg_no << ODS_PAGE_SHIFT | (bkt_to_size(bkt) * blk);
 	assert(ref_valid(ods, ref));
@@ -1708,9 +1721,10 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 {
 	ods_pgt_t pgt = ods->pg_table;
 	ods_pg_t pg;
-	int bkt, blk_no;
+	int bkt, blk_no, pg_no;
 
-	pg = &pgt->pg_pages[ref_to_page_no(ref)];
+	pg_no = ref_to_page_no(ref);
+	pg = &pgt->pg_pages[pg_no];
 	bkt = pg->pg_bkt_idx;
 	blk_no = ref_to_blk_no(ods, ref);
 
@@ -1728,38 +1742,95 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 		return;
 	}
 	set_bit(pg->pg_bits, blk_no);
+
+	if ((pg->pg_bits[0] == bkt_bits[bkt].mask_0) && (pg->pg_bits[1] == bkt_bits[bkt].mask_1)) {
+		int bkt_pg, prev_pg;
+		/* Remove the page from the block list */
+		prev_pg = 0;
+		for (bkt_pg = pgt->bkt_table[bkt].pg_next; bkt_pg; bkt_pg = pg->pg_next) {
+			pg = &pgt->pg_pages[bkt_pg];
+			if (bkt_pg == pg_no) {
+				if (prev_pg) {
+					pgt->pg_pages[prev_pg].pg_next = pg->pg_next;
+				} else {
+					pgt->bkt_table[bkt].pg_next = pg->pg_next;
+				}
+				break;
+			}
+		}
+
+		/* The block is now empty, free the page */
+		free_pages(ods, pg_no);
+	}
 }
 
-static void free_pages(ods_t ods, ods_ref_t ref)
+static void free_pages(ods_t ods, uint64_t pg_no)
 {
 	ods_pgt_t pgt = ods->pg_table;
-	ods_pg_t pg, next_pg, last_pg;
-	uint64_t pg_no;
+	ods_pg_t pg, next_ext;
 	uint64_t count;
 
-	pg_no = ref_to_page_no(ref);
-	assert(pg_no < pgt->pg_count);
+	if (pg_no >= pgt->pg_count) {
+		ods_lerror("Attempt to free an invalid page number: %ld\n", pg_no);
+		return;
+	}
+
 	pg = &pgt->pg_pages[pg_no];
-	last_pg = &pgt->pg_pages[pgt->pg_count];
-	/*
-	 * If the page count is 0 ref is an interior page in an allocation
-	 */
 	if (0 == pg->pg_count) {
-		ods_lerror("Ref %p @ page %d is in interior of page allocation\n",
-			   (void *)ref, pg_no);
+		/* If the page count is 0, this is an interior page in an extent */
+		ods_lerror("Page %ld is an interior page of an extent\n", pg_no);
 		return;
 	}
 	for (count = pg->pg_count; count; count--) {
+		/* Mark all the pages in this extent as free */
 		pg->pg_flags = 0;
 		pg++;
-		assert(pg < last_pg);
 	}
-	next_pg = pg + pg->pg_count; /* next adjacent page */
-	while (next_pg < last_pg && next_pg->pg_flags == 0) {
-		/* Coelesce any adjacent free pages */
-		pg->pg_count += next_pg->pg_count;
-		next_pg->pg_count = 0;    /* interior pages have 0 pg_count */
-		next_pg = pg + pg->pg_count; /* next adjacent page */
+	pg = &pgt->pg_pages[pg_no];
+
+	/* Insert at head of the free list */
+	if (pg_no < pgt->pg_free) {
+		pg->pg_next = pgt->pg_free;
+		pgt->pg_free = pg_no;
+
+		/* Coalesce adjacent extent */
+		next_ext = pg + pg->pg_count; /* adjacent extent */
+		if (next_ext->pg_flags == 0) {
+			uint64_t next_count, next_no;
+			/* Save off the info for the ext being coalesced */
+			next_no = pg->pg_next;
+			next_count = next_ext->pg_count;
+
+			pg->pg_next = next_ext->pg_next;
+			pg->pg_count += next_count;
+			next_ext->pg_count = 0;
+
+			next_ext = &pgt->pg_pages[next_no + next_count];
+		}
+		return;
+	}
+	uint64_t pg_prev, pg_next;
+	/* Search for the free entry that is less than pg_no */
+	for (pg_prev = 0, pg_next = pgt->pg_free; pg_next < pg_no;
+	     pg_prev = pg_next, pg_next = pgt->pg_pages[pg_next].pg_next);
+	assert(pg_prev);
+	ods_pg_t prev_ext = &pgt->pg_pages[pg_prev];
+	/* See if previous extent abuts this extent */
+	if ((pg_prev + prev_ext->pg_count) == pg_no) {
+		/* Combine extents */
+		prev_ext->pg_count += pg->pg_count;
+		pg_no = pg_prev;
+		pg = prev_ext;
+
+		/* See if this spanned to the next free extent */
+		if ((pg_no + pg->pg_count) == pg->pg_next) {
+			ods_pg_t next_ext = &pgt->pg_pages[pg->pg_next];
+			pg->pg_next = next_ext->pg_next;
+			pg->pg_count += next_ext->pg_count;
+		}
+	} else {
+		pg->pg_next = prev_ext->pg_next;
+		prev_ext->pg_next = pg_no;
 	}
 }
 
@@ -1848,7 +1919,7 @@ static void free_ref(ods_t ods, ods_ref_t ref)
 	if (pgt->pg_pages[pg_no].pg_flags & ODS_F_IDX_VALID)
 		free_blk(ods, ref);
 	else
-		free_pages(ods, ref);
+		free_pages(ods, pg_no);
 }
 
 uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
@@ -1942,13 +2013,7 @@ void ods_dump(ods_t ods, FILE *fp)
 
 	for(pg_no = 1; pg_no < pgt->pg_count; ) {
 		pg = &pgt->pg_pages[pg_no];
-		if (0 == pg->pg_flags) {
-			pg_no++;
-			continue;
-		}
-		if (pg->pg_flags & ODS_F_IDX_VALID) {
-			fprintf(fp, "BLKS[%5zuB]     %10zu\n",
-				bkt_to_size(pg->pg_bkt_idx), pg_no);
+		if (0 == pg->pg_flags || 0 != (pg->pg_flags & ODS_F_IDX_VALID)) {
 			pg_no++;
 			continue;
 		}
@@ -1989,8 +2054,7 @@ void ods_dump(ods_t ods, FILE *fp)
 	count = 0;
 	for (pg_no = pgt->pg_free; pg_no && pg_no < pgt->pg_count; ) {
 		pg = &pgt->pg_pages[pg_no];
-		fprintf(fp, "%-32s : 0x%016lx\n", "Page No", pg_no);
-		fprintf(fp, "%-32s : %zu\n", "Page Count", pg->pg_count);
+		fprintf(fp, "%-32s : 0x%016lx / %zu\n", "Page No / Page Count", pg_no, pg->pg_count);
 		count += pg->pg_count;
 		pg_no = pgt->pg_pages[pg_no].pg_next;
 	}
@@ -1998,9 +2062,9 @@ void ods_dump(ods_t ods, FILE *fp)
 
 	fprintf(fp, "------------------------------ Free Blocks -----------------------------\n");
 	for (bkt = 0; bkt < ODS_BKT_TABLE_SZ; bkt++) {
-		if (0 == pgt->bkt_table[bkt].bkt_next)
+		if (0 == pgt->bkt_table[bkt].pg_next)
 			continue;
-		pg = &pgt->pg_pages[pgt->bkt_table[bkt].bkt_next];
+		pg = &pgt->pg_pages[pgt->bkt_table[bkt].pg_next];
 		count = 0;
 		fprintf(fp, "%-32s : %zu\n", "Block Size", bkt_to_size(bkt));
 		for (blk = 0; blk < ODS_PAGE_SIZE / bkt_to_size(bkt); blk++) {

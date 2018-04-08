@@ -169,10 +169,6 @@ struct ods_s {
 #define ODS_PGT_SIGNATURE "PGTSTORE"
 #define ODS_OBJ_VERSION   "09082016"
 
-typedef struct ods_bkt_s {
-	uint64_t bkt_next;	/* next bucket */
-} *ods_bkt_t;
-
 #define ODS_PAGE_SIZE	 4096
 #define ODS_PAGE_SHIFT	 12
 #define ODS_PAGE_MASK	 ~(ODS_PAGE_SIZE-1)
@@ -227,14 +223,9 @@ typedef struct ods_bkt_s {
 typedef struct ods_pg_s {
 	uint64_t pg_flags:8;	/* Indicates if the page is allocated and whether or not it is bucket list member */
 	uint64_t pg_bkt_idx:8;	/* If page contains blocks, this is the index in the bucket table */
-	union {
-		uint64_t pg_next;	/* Page no of next free range */
-		uint64_t bkt_next;	/* Next free bkt of allocated and part of sub-alloc blk */
-	};
-	union {
-		uint64_t pg_bits[2];	/* 1 if blk allocated, 0 if block is free */
-		uint64_t pg_count;	/* number of pages in this page range */
-	};
+	uint64_t pg_next;	/* Page no of next extent */
+	uint64_t pg_count;	/* number of pages in this extent */
+	uint64_t pg_bits[2];	/* 1 if blk allocated, 0 if block is free */
 } *ods_pg_t;
 
 typedef struct ods_lock_s {
@@ -250,6 +241,10 @@ typedef struct ods_lock_s {
 
 #define ODS_LOCK_MEM_SZ	(ODS_PAGE_SIZE - 32 - sizeof(ods_lock_t))
 #define ODS_LOCK_CNT	(ODS_LOCK_MEM_SZ / sizeof(ods_lock_t))
+
+typedef struct ods_bkt_s {
+	uint64_t pg_next;	/* next bucket */
+} *ods_bkt_t;
 
 typedef struct ods_pgt_s {
 	char pg_signature[8];	 /* pgt signature 'PGTSTORE' */
