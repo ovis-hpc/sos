@@ -1409,13 +1409,16 @@ static uint64_t alloc_pages(ods_t ods, size_t pg_needed)
 	}
 
 	/* Update the extent created by splitting this one */
-	n_pg_no = pg_no + pg_needed;
-	if (n_pg_no < pgt->pg_count) {
-		pgt->pg_pages[n_pg_no].pg_count = pgt->pg_pages[pg_no].pg_count - pg_needed;
-		pgt->pg_pages[n_pg_no].pg_next = pgt->pg_pages[pg_no].pg_next;
-		pgt->pg_pages[n_pg_no].pg_flags = 0;
+	if (pg_needed < pgt->pg_pages[pg_no].pg_count) {
+		n_pg_no = pg_no + pg_needed;
+		if (n_pg_no < pgt->pg_count) {
+			pgt->pg_pages[n_pg_no].pg_count =
+				pgt->pg_pages[pg_no].pg_count - pg_needed;
+			pgt->pg_pages[n_pg_no].pg_next =
+				pgt->pg_pages[pg_no].pg_next;
+			pgt->pg_pages[n_pg_no].pg_flags = 0;
+		}
 	}
-
 	/* Update the newly allocated extent */
 	pgt->pg_pages[pg_no].pg_count = pg_needed;
 	pgt->pg_pages[pg_no].pg_next = pg_no + pg_needed;
@@ -1747,7 +1750,8 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 		int bkt_pg, prev_pg;
 		/* Remove the page from the block list */
 		prev_pg = 0;
-		for (bkt_pg = pgt->bkt_table[bkt].pg_next; bkt_pg; bkt_pg = pg->pg_next) {
+		for (bkt_pg = pgt->bkt_table[bkt].pg_next; bkt_pg;
+		     prev_pg = bkt_pg, bkt_pg = pg->pg_next) {
 			pg = &pgt->pg_pages[bkt_pg];
 			if (bkt_pg == pg_no) {
 				if (prev_pg) {
