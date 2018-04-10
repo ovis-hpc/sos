@@ -218,7 +218,7 @@ static size_t size(void)
 static size_t str_size(ods_key_t key)
 {
 	ods_key_value_t kv = key->as.ptr;
-	return kv->len + 1;
+	return (kv->len * 2) + 2;
 }
 
 static struct ods_idx_comparator key_comparator = {
