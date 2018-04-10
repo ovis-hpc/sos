@@ -113,6 +113,9 @@ cdef extern from "sys/stat.h":
 
 cdef extern from "sys/time.h":
     ctypedef int time_t
+    cdef struct timespec:
+        time_t tv_sec
+        int64_t tv_nsec
 
 cdef extern from "stdio.h":
     cdef struct FILE:
@@ -120,6 +123,21 @@ cdef extern from "stdio.h":
 
 cdef extern from "ods/ods.h":
     ctypedef uint64_t ods_ref_t
+    cdef struct ods_stat:
+        timespec st_atim
+        timespec st_mtim
+        timespec st_ctim
+        uint64_t st_size
+        uint64_t st_grain_size
+        uint64_t st_pg_size
+        uint64_t st_pg_count
+        uint64_t st_pg_free
+        uint64_t st_bkt_count
+        uint64_t st_total_blk_free
+        uint64_t st_total_blk_alloc
+        uint64_t *st_blk_free
+        uint64_t *st_blk_alloc
+    ctypedef ods_stat *ods_stat_t
 
 cdef extern from "ods/ods_idx.h":
     cdef struct ods_idx_data_s:

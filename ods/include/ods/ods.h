@@ -113,6 +113,44 @@ extern const char *ods_path(ods_t ods);
  */
 extern ods_t ods_open(const char *path, ods_perm_t o_perm);
 
+typedef struct ods_stat {
+	struct timespec st_atim;
+	struct timespec st_mtim;
+	struct timespec st_ctim;
+	uint64_t st_size;
+	uint64_t st_grain_size;
+	uint64_t st_pg_size;
+	uint64_t st_pg_count;
+	uint64_t st_pg_free;
+	uint64_t st_bkt_count;
+	uint64_t st_total_blk_free;
+	uint64_t st_total_blk_alloc;
+	uint64_t *st_blk_free;
+	uint64_t *st_blk_alloc;
+} *ods_stat_t;
+ods_stat_t ods_stat_buf_new(ods_t ods);
+void ods_stat_buf_del(ods_t ods, ods_stat_t buf);
+
+/**
+ * \brief Obtain detail allocation data for the ODS
+ *
+ * This function provides detail ODS object allocation information for
+ * a container. This can be useful when debugging an application.
+ *
+ * There are two fundamental kinds of objects, blocks, and
+ * extents. Blocks are objects that are between st_grain_size and
+ * st_bkt_count * st_grain_size in size.
+ *
+ * Extents are multiples of st_pg_size.
+ *
+ * \param ods	The ODS handle
+ * \param osb	Pointer to an ODS stats buffer.
+ * \retval 0	The stats were successfully queried.
+ * \retval ENOMEM The page table was not available.
+ * \retval !0 The file data could not be queried.
+ */
+int ods_stat_get(ods_t ods, ods_stat_t osb);
+
 /**
  * \brief Obtain file stats for the ODS database
  *
