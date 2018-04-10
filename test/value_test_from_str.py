@@ -190,21 +190,32 @@ class ValueTestFromStr(SosTestCase):
     def test_timestamp_strlen(self):
         a = self.schema['timestamp']
         v = Sos.Value(a)
-        v.value = 1511885835.12345
+        v.value = ( 1511885835, 12345 )
         self.assertGreaterEqual(v.strlen(), 6)
 
     def test_timestamp_from_str(self):
         a = self.schema['timestamp']
         v = Sos.Value(a)
+
+        v.from_str('1511885835.012345')
+        self.assertEqual(v.value, ( 1511885835, 12345 ))
+
         v.from_str('1511885835.12345')
-        self.assertEqual(v.value, 1511885835.12345)
+        self.assertEqual(v.value, ( 1511885835, 12345 ))
+
+        v.from_str('1511885835.123450')
+        self.assertEqual(v.value, ( 1511885835, 123450 ))
 
     def test_timestamp_to_str(self):
         a = self.schema['timestamp']
         v = Sos.Value(a)
-        v.value = 1511885835.12345
+        v.value = ( 1511885835, 123450 )
         s = v.to_str()
         self.assertEqual(s, '1511885835.123450')
+
+        v.value = ( 1511885835, 12345 )
+        s = v.to_str()
+        self.assertEqual(s, '1511885835.012345')
 
     # Array strlen
     def chk_array_strlen(self, a, av):

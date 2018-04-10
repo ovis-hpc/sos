@@ -25,6 +25,7 @@ from filter_test import FilterTestJoin3xU64
 from pos_test import FilterPosTest
 from filt_count_test import FilterCountTest
 from delete_test import DeleteTest
+from pattern_test import PatternTest
 tests = [ SchemaTest,
           ObjTestSetGet,
           ValueTestFromStr,
@@ -42,7 +43,8 @@ tests = [ SchemaTest,
           FilterTestJoin3xU64,
           FilterPosTest,
           FilterCountTest,
-          DeleteTest
+          DeleteTest,
+          PatternTest
           ]
 
 if __name__ == "__main__":

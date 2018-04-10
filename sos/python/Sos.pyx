@@ -3342,6 +3342,16 @@ cdef class Index(object):
         self.c_index = idx
         return self
 
+    def insert(self, Key key, Object obj):
+        cdef int rc
+        rc = sos_index_insert(self.c_index, key.c_key, obj.c_obj)
+        return rc
+
+    def remove(self, Key key, Object obj):
+        cdef int rc
+        rc = sos_index_remove(self.c_index, key.c_key, obj.c_obj)
+        return rc
+
     def find(self, Key key):
         """Positions the index at the first matching key
 
@@ -3498,8 +3508,7 @@ cdef object get_INT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT16)
 
 cdef object get_TIMESTAMP(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    return <double>c_data.prim.timestamp_.tv.tv_sec \
-        + (<double>c_data.prim.timestamp_.tv.tv_usec / 1000000.0)
+    return (c_data.prim.timestamp_.tv.tv_sec, c_data.prim.timestamp_.tv.tv_usec)
 
 cdef object get_DOUBLE(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return c_data.prim.double_
@@ -3667,16 +3676,12 @@ cdef set_CHAR_ARRAY(sos_value_data_t c_data, val):
         c_data.array.data.char_[i] = s[i]
 
 cdef set_TIMESTAMP(sos_value_data_t c_data, val):
-    cdef int secs
-    cdef int usecs
     try:
-        secs = val
-        usecs = (val - secs) * 1000000
-        c_data.prim.timestamp_.tv.tv_sec = secs
-        c_data.prim.timestamp_.tv.tv_usec = usecs
+        c_data.prim.timestamp_.tv.tv_sec = val[0]
+        c_data.prim.timestamp_.tv.tv_usec = val[1]
     except Exception as e:
-        raise ValueError("The time value is a floating point number representing "
-                         "seconds since the epoch")
+        raise ValueError("The time value is a tuple"
+                         " of ( seconds, microseconds )")
 
 cdef set_LONG_DOUBLE(sos_value_data_t c_data, val):
     c_data.prim.long_double_ = <long double>val
@@ -4146,7 +4151,7 @@ cdef class Object(object):
         """
         if self.c_obj == NULL:
             self.abort("There is no container object associated with this Object")
-        sos_obj_remove(self.c_obj)
+        return sos_obj_remove(self.c_obj)
 
     def delete(self):
         """

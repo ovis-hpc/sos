@@ -942,11 +942,15 @@ int  sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec)
 		spec = &key_spec[idx];
 		comp->type = spec->type;
 		switch (comp->type) {
-		case SOS_TYPE_TIMESTAMP:
 		case SOS_TYPE_UINT64:
 		case SOS_TYPE_INT64:
 		case SOS_TYPE_DOUBLE:
 			comp->value.uint64_ = spec->data.prim.uint64_;
+			comp_key->len += comp_type_size[comp->type];
+			break;
+		case SOS_TYPE_TIMESTAMP:
+			comp->value.tv_.tv_sec = spec->data.prim.timestamp_.tv.tv_sec;
+			comp->value.tv_.tv_usec = spec->data.prim.timestamp_.tv.tv_usec;
 			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_INT32:

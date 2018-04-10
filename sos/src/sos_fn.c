@@ -217,9 +217,9 @@ PRIMITIVE_STRLEN_FN(long_double, "%Lf", long_double_)
 
 static size_t timestamp_strlen_fn(sos_value_t v)
 {
-	double t= (double)v->data->prim.timestamp_.tv.tv_sec +
-		((double)v->data->prim.timestamp_.tv.tv_usec) / 1.0e6;
-	return snprintf(NULL, 0, "%.6f", t) + 1;
+	return snprintf(NULL, 0, "%d.%06d",
+			v->data->prim.timestamp_.tv.tv_sec,
+			v->data->prim.timestamp_.tv.tv_usec) + 1;
 }
 
 static size_t obj_strlen_fn(sos_value_t v)
@@ -351,9 +351,9 @@ PRIMITIVE_TO_STR_FN(long_double, "%Lf", long_double_)
 
 static char *timestamp_to_str_fn(sos_value_t v, char *str, size_t len)
 {
-	double t= (double)v->data->prim.timestamp_.tv.tv_sec +
-		((double)v->data->prim.timestamp_.tv.tv_usec) / 1.0e6;
-	snprintf(str, len, "%.6f", t);
+	snprintf(str, len, "%d.%06d",
+		 v->data->prim.timestamp_.tv.tv_sec,
+		 v->data->prim.timestamp_.tv.tv_usec);
 	return str;
 }
 
@@ -561,11 +561,13 @@ int timestamp_from_str_fn(sos_value_t v, const char *value, char **endptr)
 	memset(&tm, 0, sizeof(tm));
 	if (!strchr(value, '/')) {
 		if (strchr(value, '.')) {
-			/* Treat as a float, time since epoch + microseconds */
-			double ts = strtod(value, endptr);
-			v->data->prim.timestamp_.tv.tv_sec = (int)ts;
-			v->data->prim.timestamp_.tv.tv_usec =
-				(uint32_t)((double)(ts - (int)ts) * 1.0e6);
+			/* Treat as a secs.usecs */
+			int rc = sscanf(value, "%d.%d",
+					&v->data->prim.timestamp_.tv.tv_sec,
+					&v->data->prim.timestamp_.tv.tv_usec);
+			if (rc != 2) {
+				return EINVAL;
+			}
 		} else {
 			/* Treat this like an epoch timestamp */
 			v->data->prim.timestamp_.tv.tv_sec = strtoul(value, endptr, 0);

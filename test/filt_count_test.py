@@ -48,7 +48,7 @@ class FilterCountTest(SosTestCase):
             for ts in range(start, start + 60 * int(random.random() * 60)):
                 for comp in range(1, int(random.random() * 16) + 1):
                     o = self.schema.alloc()
-                    o[:] = (job, ts, comp)
+                    o[:] = (job, ( ts, 0 ), comp)
                     o.index_add()
 
     def test_01_test_count(self):
