@@ -293,6 +293,7 @@ ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 	ods_ref_t ref;
 	ods_obj_t n;
 	int i;
+	int depth = 2;
 
 	if (!t->udata->root_ref)
 		return 0;
@@ -300,6 +301,7 @@ ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 	n = ods_ref_as_obj(t->ods, t->udata->root_ref);
 	while (!NODE(n)->is_leaf) {
 		int64_t rc;
+		depth += 1;
 		for (i = 1; i < NODE(n)->count; i++) {
 			ods_obj_t entry_key =
 				ods_ref_as_obj(t->ods, N_ENT(n,i).key_ref);
@@ -314,6 +316,7 @@ ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 		ods_obj_put(n);
 		n = ods_ref_as_obj(t->ods, ref);
 	}
+	t->udata->depth = depth;
 	return n;
 }
 
@@ -1108,7 +1111,7 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 		NODE(left_parent)->parent = ods_obj_ref(next_parent);
 		NODE(right_parent)->parent = ods_obj_ref(next_parent);
 		t->udata->root_ref = ods_obj_ref(next_parent);
-		ods_atomic_inc(&t->udata->depth);
+		// ods_atomic_inc(&t->udata->depth);
 		goto out;
 	}
 	/* If there is room, insert into the parent */
@@ -1212,7 +1215,7 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 
 		NODE(leaf)->parent = ods_obj_ref(parent);
 		NODE(new_leaf)->parent = ods_obj_ref(parent);
-		ods_atomic_inc(&t->udata->depth);
+		// ods_atomic_inc(&t->udata->depth);
 		t->udata->root_ref = ods_obj_ref(parent);
 		goto out;
 	}
@@ -1695,7 +1698,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 				ods_obj_put(parent);
 				ods_obj_delete(node);
 				ods_obj_put(node);
-				ods_atomic_dec(&t->udata->depth);
+				// ods_atomic_dec(&t->udata->depth);
 				return root_ref;
 			}
 		default:
