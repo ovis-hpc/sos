@@ -176,10 +176,9 @@ struct ods_s {
 #define ODS_GRAIN_SHIFT	 5
 #define ODS_BKT_TABLE_SZ 64
 
-#define ODS_F_IDX_VALID	0x10 /* Bucket index is valid */
-#define ODS_F_NEXT	0x20 /* Next page is part of this allocation */
-#define ODS_F_PREV	0x40 /* Previous page is part of this allocation */
-#define ODS_F_ALLOCATED	0x80 /* Page is allocated */
+#define ODS_F_IDX_VALID		0x10 /* Bucket index is valid */
+#define ODS_F_IN_BKT		0x20 /* In the bucket table */
+#define ODS_F_ALLOCATED		0x80 /* Page is allocated */
 
 /*
  *              Page Table

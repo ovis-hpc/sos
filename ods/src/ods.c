@@ -1586,11 +1586,33 @@ static uint64_t replenish_bkt(ods_t ods, ods_pgt_t pgt, int bkt)
 	ods_pg_t pg = &pgt->pg_pages[pg_no];
 	pg->pg_next = pgt->bkt_table[bkt].pg_next;
 	pgt->bkt_table[bkt].pg_next = pg_no;
-	pg->pg_flags |= ODS_F_IDX_VALID;
+	pg->pg_flags |= ODS_F_IDX_VALID | ODS_F_IN_BKT;
 	pg->pg_bkt_idx = bkt;
 	pg->pg_bits[0] = bkt_bits[bkt].mask_0;
 	pg->pg_bits[1] = bkt_bits[bkt].mask_1;
 	return pg_no;
+}
+
+static void del_bkt_tbl_pg(ods_pgt_t pgt, int bkt, uint32_t pg_no)
+{
+	uint64_t bkt_pg, prev_pg;
+	ods_pg_t pg;
+
+	/* Remove the page from the block list */
+	prev_pg = 0;
+	for (bkt_pg = pgt->bkt_table[bkt].pg_next; bkt_pg;
+	     prev_pg = bkt_pg, bkt_pg = pg->pg_next) {
+		pg = &pgt->pg_pages[bkt_pg];
+		if (bkt_pg == pg_no) {
+			if (prev_pg) {
+				pgt->pg_pages[prev_pg].pg_next = pg->pg_next;
+			} else {
+				pgt->bkt_table[bkt].pg_next = pg->pg_next;
+			}
+			break;
+		}
+		pg->pg_flags &= ~ODS_F_IN_BKT;
+	}
 }
 
 static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
@@ -1608,7 +1630,9 @@ static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 		pg = &pgt->pg_pages[pg_no];
 		if (pg->pg_bits[0] || pg->pg_bits[1]) {
 			blk = alloc_bit(pg->pg_bits, bkt_bits[bkt].blk_cnt, &is_empty);
-			if (blk >= 0)
+			if (is_empty || blk < 0)
+				del_bkt_tbl_pg(pgt, bkt, pg_no);
+			else if (blk >= 0)
 				break;
 		}
 		pg_no = pg->pg_next;
@@ -1813,24 +1837,18 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 	}
 	set_bit(pg->pg_bits, blk_no);
 
-	if ((pg->pg_bits[0] == bkt_bits[bkt].mask_0) && (pg->pg_bits[1] == bkt_bits[bkt].mask_1)) {
-		int bkt_pg, prev_pg;
-		/* Remove the page from the block list */
-		prev_pg = 0;
-		for (bkt_pg = pgt->bkt_table[bkt].pg_next; bkt_pg;
-		     prev_pg = bkt_pg, bkt_pg = pg->pg_next) {
-			pg = &pgt->pg_pages[bkt_pg];
-			if (bkt_pg == pg_no) {
-				if (prev_pg) {
-					pgt->pg_pages[prev_pg].pg_next = pg->pg_next;
-				} else {
-					pgt->bkt_table[bkt].pg_next = pg->pg_next;
-				}
-				break;
-			}
-		}
+	if (0 == (pg->pg_flags & ODS_F_IN_BKT)) {
+		pg->pg_next = pgt->bkt_table[bkt].pg_next;
+		pgt->bkt_table[bkt].pg_next = pg_no;
+		pg->pg_flags |= ODS_F_IN_BKT;
+	} else 	if ((0 != pgt->bkt_table[bkt].pg_next) && /* Not the last page in the bucket */
+		    (pg->pg_bits[0] == bkt_bits[bkt].mask_0)
+		    && (pg->pg_bits[1] == bkt_bits[bkt].mask_1)) /* all blocks are free */
+	{
+		/* Remove the page from the bkt table */
+		del_bkt_tbl_pg(pgt, bkt, pg_no);
 
-		/* The block is now empty, free the page */
+		/* Free the page */
 		free_pages(ods, pg_no);
 	}
 }
