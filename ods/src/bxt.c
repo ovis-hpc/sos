@@ -1695,6 +1695,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 				ods_obj_put(parent);
 				ods_obj_delete(node);
 				ods_obj_put(node);
+				ods_atomic_dec(&t->udata->depth);
 				return root_ref;
 			}
 		default:
