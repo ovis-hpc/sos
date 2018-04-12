@@ -437,6 +437,30 @@ static void dump_maps()
 	pthread_mutex_unlock(&ods_list_lock);
 }
 
+void ods_dump_maps(const char *name)
+{
+	ods_t ods;
+	pthread_mutex_lock(&ods_list_lock);
+	LIST_FOREACH(ods, &ods_list, entry) {
+		if (strstr(ods->path, name))
+			ods_info(ods, __ods_log_fp, ODS_ALL_INFO);
+	}
+	pthread_mutex_unlock(&ods_list_lock);
+}
+
+/* Returns a 2^x value based on the current ODS container size */
+static inline size_t new_obj_map_sz(ods_t ods)
+{
+	size_t computed_size = ods->obj_sz >> 3;
+	int i = __builtin_clz(computed_size);
+	computed_size = 1 << (64 - i);
+	if (computed_size < ODS_MIN_MAP_SZ)
+		return ODS_MIN_MAP_SZ;
+	if (computed_size > ODS_MAX_MAP_SZ)
+		return ODS_MAX_MAP_SZ;
+	return computed_size;
+}
+
 /*
  * The loff parameter specifies the offset in the file the map must
  * include.
@@ -466,6 +490,9 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	rbn = rbt_find_glb(&ods->map_tree, &key);
 	if (rbn) {
 		map = container_of(rbn, struct ods_map_s, rbn);
+		if (map->map.len > ods->obj_sz && map->map.len < ods->obj_map_sz)
+			/* Replace this map and let it age out */
+			goto skip;
 		if ((map->map.off + map->map.len) >= (loff + sz)) {
 			map->last_used = time(NULL);
 			__ods_unlock(ods);
@@ -473,7 +500,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 		}
 		/* Found a map, but it wasn't big enough */
 	}
-
+ skip:
 	map = calloc(1, sizeof *map);
 	if (!map) {
 		ods_lerror("Memory allocation failure in %s for %d bytes\n",
@@ -483,7 +510,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	map->ods = ods;
 	map->refcount = 1;
 
-
+	ods->obj_map_sz = new_obj_map_sz(ods);
 	map_off = loff & ~(ods->obj_map_sz - 1);
 	map_len = ods->obj_map_sz;
 	if ((map_off + map_len) < (loff + sz))

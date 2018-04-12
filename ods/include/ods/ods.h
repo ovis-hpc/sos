@@ -162,6 +162,16 @@ int ods_stat_get(ods_t ods, ods_stat_t osb);
 extern int ods_stat(ods_t ods, struct stat *sb);
 
 /**
+ * \brief Show ODS object map information
+ *
+ * Goes through all open ODS and if 'name' appears anywhere in the
+ * path, outputs the mmap information for that ODS.
+ *
+ * \param name The search string
+ */
+extern void ods_dump_maps(const char *name);
+
+/**
  * \brief Truncate an ODS to it's minimum size
  *
  * An ODS has both allocated and unallocated space. This function

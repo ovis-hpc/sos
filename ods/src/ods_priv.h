@@ -146,7 +146,7 @@ struct ods_s {
 	struct ods_pgt_s *lck_table; /* never grows, persistent until close */
 	struct ods_pgt_s *pg_table; /* grows on ods_extend */
 
-	/* Current ODS map size for new maps in 4096B pages */
+	/* Current ODS map size for new maps in bytes */
 	size_t obj_map_sz;
 
 	/* Tree of object maps. Key is file offset. */
@@ -276,7 +276,10 @@ struct ods_obj_data_s {
 extern time_t __ods_gc_timeout;
 
 /* Default map size */
-#define ODS_DEF_MAP_SZ	(256 * ODS_PAGE_SIZE) /* 1M */
+#define ODS_MIN_MAP_SZ	(64 * ODS_PAGE_SIZE)	/* 256K */
+#define ODS_DEF_MAP_SZ	(256 * ODS_PAGE_SIZE)	/* 1M */
+#define ODS_MAX_MAP_SZ	(512 * ODS_DEF_MAP_SZ)	/* 512M */
+
 extern uint64_t __ods_def_map_sz;
 
 /* ODS Debug True/False */
