@@ -32,11 +32,14 @@ libidx_BXTREE_la_LIBADD = libods.la
 lib_LTLIBRARIES += libidx_BXTREE.la
 
 libidx_H2BXT_la_SOURCES = h2bxt.c h2bxt.h mq.c mq.h
-#libidx_H2BXT_la_CFLAGS = $(AM_CFLAGS)
 libidx_H2BXT_la_CFLAGS = $(AM_CFLAGS)
-# libidx_H2BXT_la_LDFLAGS = -pg
 libidx_H2BXT_la_LIBADD = libods.la
 lib_LTLIBRARIES += libidx_H2BXT.la
+
+libidx_H2HTBL_la_SOURCES = h2htbl.c h2htbl.h mq.c mq.h
+libidx_H2HTBL_la_CFLAGS = $(AM_CFLAGS)
+libidx_H2HTBL_la_LIBADD = libods.la
+lib_LTLIBRARIES += libidx_H2HTBL.la
 
 libkey_TIMESTAMP_la_SOURCES = key_timestamp.c
 lib_LTLIBRARIES += libkey_TIMESTAMP.la

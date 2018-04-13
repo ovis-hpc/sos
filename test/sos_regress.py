@@ -26,6 +26,7 @@ from pos_test import FilterPosTest
 from filt_count_test import FilterCountTest
 from delete_test import DeleteTest
 from pattern_test import PatternTest
+from h2htbl_test import H2HTBLTest
 tests = [ SchemaTest,
           ObjTestSetGet,
           ValueTestFromStr,
@@ -44,7 +45,8 @@ tests = [ SchemaTest,
           FilterPosTest,
           FilterCountTest,
           DeleteTest,
-          PatternTest
+          PatternTest,
+          H2HTBLTest
           ]
 
 if __name__ == "__main__":

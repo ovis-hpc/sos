@@ -113,7 +113,6 @@ class PatternTest(SosTestCase):
             id_key = id_attr.key(ptn_id)
             ptn = id_attr.index().find(id_key)
             self.assertTrue( ptn is not None )
-            print(ptn[:])
             ptn.index_del()
             ptn.delete()
             del ptn
