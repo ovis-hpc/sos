@@ -525,7 +525,7 @@ union ods_obj_type_u {
 	uint32_t *uint32;
 	int64_t *int64;
 	uint64_t *uint64;
-	struct ods_timevalue_s *tv;
+	struct ods_timeval_s *tv;
 	char *str;
 	unsigned char *bytes;
 	ods_atomic_t *lock;
