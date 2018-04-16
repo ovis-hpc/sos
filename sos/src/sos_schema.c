@@ -340,15 +340,15 @@ static const char *key_types[] = {
 	[SOS_TYPE_JOIN] = "COMPOUND",
 	[SOS_TYPE_BYTE_ARRAY] = "MEMCMP",
 	[SOS_TYPE_CHAR_ARRAY] = "STRING",
-	[SOS_TYPE_INT16_ARRAY] = "NONE",
-	[SOS_TYPE_INT32_ARRAY] = "NONE",
-	[SOS_TYPE_INT64_ARRAY] = "NONE",
-	[SOS_TYPE_UINT16_ARRAY] = "NONE",
-	[SOS_TYPE_UINT32_ARRAY] = "NONE",
-	[SOS_TYPE_UINT64_ARRAY] = "NONE",
-	[SOS_TYPE_FLOAT_ARRAY] = "NONE",
-	[SOS_TYPE_DOUBLE_ARRAY] = "NONE",
-	[SOS_TYPE_LONG_DOUBLE_ARRAY] = "NONE",
+	[SOS_TYPE_INT16_ARRAY] = "INT16_ARRAY",
+	[SOS_TYPE_INT32_ARRAY] = "INT32_ARRAY",
+	[SOS_TYPE_INT64_ARRAY] = "INT64_ARRAY",
+	[SOS_TYPE_UINT16_ARRAY] = "UINT16_ARRAY",
+	[SOS_TYPE_UINT32_ARRAY] = "UINT32_ARRAY",
+	[SOS_TYPE_UINT64_ARRAY] = "UINT64_ARRAY",
+	[SOS_TYPE_FLOAT_ARRAY] = "FLOAT_ARRAY",
+	[SOS_TYPE_DOUBLE_ARRAY] = "DOUBLE_ARRAY",
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = "LONG_DOUBLE_ARRAY",
 	[SOS_TYPE_OBJ_ARRAY] = "NONE",
 };
 
@@ -815,6 +815,7 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 		if (!array)
 			goto err;
 		array->count = count;
+		val->attr = attr;
 		val->data = (sos_value_data_t)array;
 		val->obj = NULL;
 		return val;
