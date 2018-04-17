@@ -559,6 +559,7 @@ int timestamp_from_str_fn(sos_value_t v, const char *value, char **endptr)
 	char *s;
 	struct tm tm;
 	memset(&tm, 0, sizeof(tm));
+	tm.tm_isdst = -1;
 	if (!strchr(value, '/')) {
 		if (strchr(value, '.')) {
 			/* Treat as a secs.usecs */
