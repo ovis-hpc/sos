@@ -86,5 +86,33 @@ lib_LTLIBRARIES += libkey_UINT16.la
 libkey_INT16_la_SOURCES = key_int16.c
 lib_LTLIBRARIES += libkey_INT16.la
 
+libkey_FLOAT_la_SOURCES = key_float.c
+lib_LTLIBRARIES += libkey_FLOAT.la
+
 libkey_DOUBLE_la_SOURCES = key_double.c
 lib_LTLIBRARIES += libkey_DOUBLE.la
+
+libkey_UINT16_ARRAY_la_SOURCES = key_uint16_array.c
+lib_LTLIBRARIES += libkey_UINT16_ARRAY.la
+
+libkey_INT16_ARRAY_la_SOURCES = key_int16_array.c
+lib_LTLIBRARIES += libkey_INT16_ARRAY.la
+
+libkey_UINT32_ARRAY_la_SOURCES = key_uint32_array.c
+lib_LTLIBRARIES += libkey_UINT32_ARRAY.la
+
+libkey_INT32_ARRAY_la_SOURCES = key_int32_array.c
+lib_LTLIBRARIES += libkey_INT32_ARRAY.la
+
+libkey_UINT64_ARRAY_la_SOURCES = key_uint64_array.c
+lib_LTLIBRARIES += libkey_UINT64_ARRAY.la
+
+libkey_INT64_ARRAY_la_SOURCES = key_int64_array.c
+lib_LTLIBRARIES += libkey_INT64_ARRAY.la
+
+libkey_DOUBLE_ARRAY_la_SOURCES = key_double_array.c
+lib_LTLIBRARIES += libkey_DOUBLE_ARRAY.la
+
+libkey_FLOAT_ARRAY_la_SOURCES = key_float_array.c
+lib_LTLIBRARIES += libkey_FLOAT_ARRAY.la
+

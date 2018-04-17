@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2018 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -55,52 +55,54 @@
 
 static const char *get_type(void)
 {
-	return "UINT16";
+	return "FLOAT";
 }
 
 static const char *get_doc(void)
 {
-	return  "ODS_KEY_UINT16: The key is an unsigned 16b integer.\n"
-		"                The comparator returns -1,0,1 for a <,=,> b respectively.\n";
+	return  "ODS_KEY_FLOAT: The key is a floating point float.\n"
+		"                The comparator returns -1,1,0 if a <,>,= b respectively.\n";
 }
 
-static int64_t uint16_comparator(ods_key_t a, ods_key_t b)
+static int64_t float_comparator(ods_key_t a, ods_key_t b)
 {
-	uint16_t av = *((uint16_t *)ods_key_value(a)->value);
-	uint16_t bv = *((uint16_t *)ods_key_value(b)->value);
-	return av - bv;
+	float av = *((float *)ods_key_value(a)->value);
+	float bv = *((float *)ods_key_value(b)->value);
+	if (av < bv)
+		return -1;
+	if (av > bv)
+		return 1;
+	return 0;
 }
 
 static const char *to_str(ods_key_t key, char *sbuf, size_t len)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	snprintf(sbuf, len, "%uh", *(int16_t *)kv->value);
+	snprintf(sbuf, len, "%f", *(float *)kv->value);
 	return sbuf;
 }
 
 static int from_str(ods_key_t key, const char *str)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	unsigned long lv;
-	uint16_t v;
+	float v;
 	errno = 0;
-	lv = strtoul(str, NULL, 0);
+	v = strtod(str, NULL);
 	if (errno)
 		return -1;
-	v = (uint16_t)lv;
-	memcpy(kv->value, &v, 2);
-	kv->len = 2;
+	memcpy(kv->value, &v, sizeof(v));
+	kv->len = sizeof(v);
 	return 0;
 }
 
 static size_t size(void)
 {
-	return sizeof(uint16_t);
+	return sizeof(float);
 }
 
 static size_t str_size(ods_key_t key)
 {
-	return 8;
+	return 65;
 }
 
 static struct ods_idx_comparator key_comparator = {
@@ -110,7 +112,7 @@ static struct ods_idx_comparator key_comparator = {
 	from_str,
 	size,
 	str_size,
-	uint16_comparator
+	float_comparator
 };
 
 struct ods_idx_comparator *get(void)

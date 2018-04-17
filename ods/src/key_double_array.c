@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2018 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -55,52 +55,66 @@
 
 static const char *get_type(void)
 {
-	return "UINT16";
+	return "DOUBLE_ARRAY";
 }
 
 static const char *get_doc(void)
 {
-	return  "ODS_KEY_UINT16: The key is an unsigned 16b integer.\n"
-		"                The comparator returns -1,0,1 for a <,=,> b respectively.\n";
+	return  "DOUBLE_ARRAY: The key is an array of double.\n";
 }
 
-static int64_t uint16_comparator(ods_key_t a, ods_key_t b)
+static int64_t comparator(ods_key_t a, ods_key_t b)
 {
-	uint16_t av = *((uint16_t *)ods_key_value(a)->value);
-	uint16_t bv = *((uint16_t *)ods_key_value(b)->value);
-	return av - bv;
+	ods_key_value_t kva = a->as.key;
+	ods_key_value_t kvb = b->as.key;
+	int i;
+	size_t count = kva->len;
+	for (i = 0; count; i++) {
+		if (kva->double_[i] < kvb->double_[i])
+			return -1;
+		if (kva->double_[i] > kvb->double_[i])
+			return 1;
+		count -= sizeof(kva->double_[i]);
+	}
+	return kva->len - kvb->len;
 }
 
-static const char *to_str(ods_key_t key, char *sbuf, size_t len)
+static const char *to_str(ods_key_t key, char *buf, size_t len)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	snprintf(sbuf, len, "%uh", *(int16_t *)kv->value);
-	return sbuf;
+	int i;
+	char *dst;
+	size_t cnt = snprintf(buf, len, "%f", kv->double_[0]);
+	for (i = 1, dst = buf + cnt, len = len - cnt; len > 0; len -= cnt, i ++, dst += cnt)
+		cnt = snprintf(dst, len, ",%f", kv->double_[i]);
+	return buf;
 }
 
 static int from_str(ods_key_t key, const char *str)
 {
 	ods_key_value_t kv = ods_key_value(key);
-	unsigned long lv;
-	uint16_t v;
-	errno = 0;
-	lv = strtoul(str, NULL, 0);
-	if (errno)
-		return -1;
-	v = (uint16_t)lv;
-	memcpy(kv->value, &v, 2);
-	kv->len = 2;
-	return 0;
+	int i, off;
+	size_t cnt = sscanf(str, " %lf%n", &kv->double_[0], &off);
+	for (i = 1; cnt == 1; i ++)
+		cnt = sscanf(&str[off], " , %lf%n", &kv->double_[i], &off);
+	kv->len = sizeof(double) * i;
+	return off;
 }
 
 static size_t size(void)
 {
-	return sizeof(uint16_t);
+	return -1;
 }
 
 static size_t str_size(ods_key_t key)
 {
-	return 8;
+	ods_key_value_t kv = ods_key_value(key);
+	char buf[2];
+	int i, rem = kv->len;
+	size_t cnt = snprintf(buf, 0, "%lf", kv->double_[0]);
+	for (rem -= sizeof(double), i = 1; rem > 0; rem -= sizeof(double))
+		cnt += snprintf(buf, 0, ",%lf", kv->double_[i]);
+	return cnt;
 }
 
 static struct ods_idx_comparator key_comparator = {
@@ -110,7 +124,7 @@ static struct ods_idx_comparator key_comparator = {
 	from_str,
 	size,
 	str_size,
-	uint16_comparator
+	comparator
 };
 
 struct ods_idx_comparator *get(void)

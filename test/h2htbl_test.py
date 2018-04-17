@@ -22,9 +22,11 @@ class H2HTBLTest(SosTestCase):
         cls.setUpDb("h2htbl_cont")
         cls.schema = Sos.Schema()
         cls.schema.from_template('test_h2htbl',
-                             [ { "name" : "tkn_id", "type" : "uint64", "index" : { "type" : "H2HTBL" } },
+                             [ { "name" : "tkn_id", "type" : "uint64",
+                                 "index" : { "type" : "H2HTBL" } },
                                { "name" : "tkn_count", "type" : "uint64", },
-                               { "name" : "tkn_text", "type" : "char_array", "index" : { "type" : "h2htbl" } },
+                               { "name" : "tkn_text", "type" : "char_array",
+                                 "index" : { "type" : "h2htbl" } },
                            ])
         cls.schema.add(cls.db)
 

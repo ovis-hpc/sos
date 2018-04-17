@@ -1448,7 +1448,8 @@ sos_schema_t sos_obj_schema(sos_obj_t obj)
  *
  * Deletes the object and any arrays to which the object refers. It
  * does not delete an object that is referred to by this object,
- * i.e. SOS_TYPE_OBJ_REF attribute values.
+ * i.e. SOS_TYPE_OBJ_REF attribute values. This function does does not
+ * remove the object from indices that may refer to the object.
  *
  * This function does not drop any references on the memory resources
  * for this object. Object references must still be dropped with the
@@ -1597,6 +1598,10 @@ int sos_obj_index(sos_obj_t obj)
 	TAILQ_FOREACH(attr, &obj->schema->idx_attr_list, idx_entry) {
 		assert(attr->data->indexed);
 		value = sos_value_init(&v_, obj, attr);
+		if (!value) {
+			/* Array value not set, skip */
+			continue;
+		}
 		key_sz = sos_value_size(value);
 		if (key_sz < 254) {
 			the_key = key;

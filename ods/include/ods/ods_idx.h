@@ -292,7 +292,20 @@ void ods_idx_commit(ods_idx_t idx, int flags);
 #pragma pack(2)
 typedef struct ods_key_value_s {
 	uint16_t len;
-	unsigned char value[0];
+	union {
+		unsigned char value[0];
+		unsigned char byte_[0];
+		uint16_t uint16_[0];
+		uint32_t uint32_[0];
+		uint64_t uint64_[0];
+		int16_t int16_[0];
+		int32_t int32_[0];
+		int64_t int64_[0];
+		float float_[0];
+		double double_[0];
+		long double long_double_[0];
+		struct ods_timeval_s tv_[0];
+	};
 } *ods_key_value_t;
 #pragma pack()
 typedef ods_obj_t ods_key_t;

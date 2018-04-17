@@ -769,6 +769,9 @@ cdef class Key(object):
             return self.str_fmt.format(v.prim.uint64_)
         elif self.sos_type == SOS_TYPE_INT64:
             return self.str_fmt.format(v.prim.int64_)
+        elif self.sos_type == SOS_TYPE_TIMESTAMP:
+            return "({0}, {1})".format(v.prim.timestamp_.tv.tv_sec,
+                                       v.prim.timestamp_.tv.tv_usec)
         elif self.sos_type == SOS_TYPE_DOUBLE:
             return self.str_fmt.format(v.prim.double_)
         elif self.sos_type == SOS_TYPE_INT32:
@@ -956,16 +959,53 @@ cdef class Key(object):
     def set_value(self, value):
         """Set the value of a key.
 
-        Set the value of a key.
-
         Positional Parameters:
-        value - The value to assign to the key
+        - The value to assign to the key
 
-        Keyword Parameters:
-        key_type - The sos_type_t of the value
+        The value parameter can be a string or a value of the type
+        appropriate for the attribute. If the value is a string, an
+        attempt will be made to convert the string to the type.
+
+        Integers, i.e. SOS_TYPE_INT16 ... SOS_TYPE_UINT64 are converted
+        with the Python int() functions. The values will be truncated as
+        necessary to fit in the target value.
+
+        Floating point, i.e. SOS_TYPE_FLOAT ... SOS_TYPE_DOUBLE will
+        be converted using the Python float().
+
+        Arrays, with the exception of SOS_TYPE_CHAR_ARRAY and
+        SOS_TYPE_BYTE_ARRAY, are expected to be a list or tuple.
+
+        If the attribute is a SOS_TYPE_CHAR_ARRAY the value is
+        expected to be a Python string. If the attribute is a
+        SOS_TYPE_BYTE_ARRAY, the value is expected to be a Python
+        bytearray.
+
+        Finally, if the type is SOS_TYPE_TIMESTAMP, three value types are accepted:
+
+        -- A tuple as follows: ( seconds, microseconds ), representing
+           the number of seconds and microseconds since the Epoch.
+           This is the preferred method since the value can be
+           exactly specified with no loss of precision.
+
+        -- A floating point value representing the number of seconds
+           since the Epoch. This is equivalent to specifying;
+              ( int(value), int( (value - int(value)) * 1.0e6) )
+           Note that there is insufficient precision in a double
+           precision floating point number to accurately represent the
+           number of seconds and microseconds since the Epoch. This
+           can lead to confusion when searching for a particular
+           timestamp if the value cannot be exactly represented by a
+           double.
+
+        -- An integer representing the number of seconds since the
+           Epoch. This is equivalent to specifying ( seconds, 0 ).
+
         """
-        cdef sos_value_data_t data = <sos_value_data_t>sos_key_value(self.c_key)
-        type_setters[<int>self.sos_type](data, value)
+        cdef ods_key_value_t kv
+        cdef sos_value_data_t data
+        kv = self.c_key.as.key
+        key_setters[<int>self.sos_type](kv, value)
 
     def __int__(self):
         cdef int typ
@@ -2207,7 +2247,7 @@ cdef class Filter(object):
         """Return the attribute with this name"""
         return self.attr.schema[name]
 
-    def add_condition(self, Attr cond_attr, cond, value_str):
+    def add_condition(self, Attr cond_attr, cond, value):
         """Add a filter condition on the iterator
 
         Adds a condition on objects returned by the iterator. Objects
@@ -2223,46 +2263,105 @@ cdef class Filter(object):
         initial position for the iteration.  Note that if SOS_COND_EQ,
         SOS_COND_LT or SOS_COND_LE is specified alone, iteration is
         only possible backwards. If the intent is to return all
-        objects less than a particular value, then
+        objects less than a particular value, then use
         SOS_COND_GT/SOS_COND_GE with the desired start value.
 
         Positional parameters:
         -- The attribute whose value is being compared
-        -- The condition:
+        -- The condition, which is one of:
            SOS_COND_LE    less-or-equal
            SOS_COND_LT    less-than
            SOS_COND_EQ    equal
            SOS_COND_NE    not-equal
            SOS_COND_GE    greater-or-equal
            SOS_COND_GT    greater-than
-        -- A string representation of the value
+        -- The value to compare to the object attribute value
+
+        The value parameter can be a string or a value of a type
+        appropriate for the attribute. If the value is a string, an
+        attempt will be made to convert the string to the appropriate
+        type.
+
+        Integers, i.e. SOS_TYPE_INT16 ... SOS_TYPE_UINT64 are converted
+        with the C strtol()/strtoul() functions. The values will be truncated as
+        necessary to fit in the target value.
+
+        Floating point, i.e. SOS_TYPE_FLOAT ... SOS_TYPE_DOUBLE will
+        be converted using the strtod() function.
+
+        Arrays, with the exception of SOS_TYPE_CHAR_ARRAY and
+        SOS_TYPE_BYTE_ARRAY, are expected to be of the form
+        "value,value,...,value".  The values themselves are converted
+        as described above.
+
+        If the attribute is a SOS_TYPE_CHAR_ARRAY the value is
+        expected to be a Python string. If the attribute is a
+        SOS_TYPE_BYTE_ARRAY, the value is expected to be a Python
+        bytearray.
+
+        Finally, if the type is SOS_TYPE_TIMESTAMP, three value types are accepted:
+
+        -- A tuple as follows: ( seconds, microseconds ), representing
+           the number of seconds and microseconds since the Epoch.
+           This is the preferred method since the value can be
+           exactly specified with no loss of precision.
+
+        -- A floating point value representing the number of seconds
+           since the Epoch. This is equivalent to specifying;
+              ( int(value), int( (value - int(value)) *1.0e6) )
+           Note that there is insufficient precision in a double
+           precision floating point number to accurately represent the
+           number of seconds and microseconds since the Epoch. This
+           can lead to confusion when searching for a particular
+           timestamp if the value cannot be exactly represented by a
+           double.
+
+        -- An integer representing the number of seconds since the
+           Epoch. This is equivalent to specifying ( seconds, 0 ).
 
         """
         cdef int rc
+        cdef int typ
+        cdef int typ_is_array
+        cdef int count
         cdef sos_value_t cond_v
 
-        if type(value_str) != str:
-            value_str = str(value_str)
+        typ = <int>sos_attr_type(cond_attr.c_attr)
+        typ_is_array = sos_attr_is_array(cond_attr.c_attr)
 
-        # strip embedded '"' from value if present
-        value_str = value_str.replace('"', '')
+        if type(value) == str:
+            # strip embedded '"' from value if present
+            value = value.replace('"', '')
+            if typ_is_array:
+                count = value.count(',') + 1
+        else:
+            if typ_is_array:
+                count = len(value)
 
         cond_v = sos_value_new()
-        if not cond_v:
-            raise ValueError("The attribute value for {0} could not be created.".format(cond_attr.name()))
-
-        cond_v = sos_value_init(cond_v, NULL, cond_attr.c_attr)
-        if sos_attr_type(cond_attr.c_attr) == SOS_TYPE_STRUCT:
-            ba = bytearray(value_str)
-            for rc in range(0, len(ba)):
-                cond_v.data.prim.struc_[rc] = ba[rc]
+        if typ_is_array != 0:
+            cond_v = sos_array_new(cond_v, cond_attr.c_attr, NULL, count)
         else:
-            rc = sos_value_from_str(cond_v, value_str, NULL)
+            cond_v = sos_value_init(cond_v, NULL, cond_attr.c_attr)
+
+        if not cond_v:
+            raise ValueError("The attribute value for {0} "
+                             "could not be created.".format(cond_attr.name()))
+
+        if typ == SOS_TYPE_STRUCT:
+            # truncate the value to avoid overflowing the struct
+            value = value[:sos_attr_size(cond_attr.c_attr)]
+
+        if type(value) != str:
+            type_setters[typ](cond_v.data, value)
+        else:
+            rc = sos_value_from_str(cond_v, value, NULL)
             if rc != 0:
                 raise ValueError("The value {0} is invalid for the {1} attribute."
-                                 .format(value_str, cond_attr.name()))
+                                 .format(value, cond_attr.name()))
 
-        if sos_attr_type(cond_attr.c_attr) == SOS_TYPE_TIMESTAMP:
+        if typ == SOS_TYPE_TIMESTAMP:
+            # this is to support as_timeseries
             if cond == SOS_COND_GT or cond == SOS_COND_GE:
                 self.start_us = <double>cond_v.data.prim.timestamp_.tv.tv_sec * 1.0e6 \
                                 + <double>cond_v.data.prim.timestamp_.tv.tv_usec
@@ -2830,7 +2929,7 @@ cdef class Filter(object):
 
         t_attr = sos_schema_attr_by_name(schema.c_schema, timestamp)
         if t_attr == NULL:
-            raise ValueError("The timestamp attribute was not found in the schema. " +\
+            raise ValueError("The timestamp attribute was not found in the schema. "
                              "Consider specifying the timestamp keyword parameter")
         if sos_attr_type(t_attr) != SOS_TYPE_TIMESTAMP:
             raise ValueError("The timestamp attribute {0} is not a SOS_TYPE_TIMESTAMP".format(timestamp))
@@ -3493,7 +3592,7 @@ cdef object get_BYTE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t 
     return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT8)
 
 cdef object get_CHAR_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    return c_data.array.data.char_
+    return PyString_FromStringAndSize(c_data.array.data.char_, c_data.array.count)
 
 cdef object get_INT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     array = OAArray()
@@ -3596,7 +3695,7 @@ type_getters[<int>SOS_TYPE_LONG_DOUBLE_ARRAY] = get_LONG_DOUBLE_ARRAY
 type_getters[<int>SOS_TYPE_OBJ_ARRAY] = get_ERROR
 
 ################################
-# Object setter functions
+# Object attribute setter functions
 ################################
 cdef set_LONG_DOUBLE_ARRAY(sos_value_data_t c_data, val):
     cdef int i, sz
@@ -3676,12 +3775,28 @@ cdef set_CHAR_ARRAY(sos_value_data_t c_data, val):
         c_data.array.data.char_[i] = s[i]
 
 cdef set_TIMESTAMP(sos_value_data_t c_data, val):
-    try:
-        c_data.prim.timestamp_.tv.tv_sec = val[0]
-        c_data.prim.timestamp_.tv.tv_usec = val[1]
-    except Exception as e:
-        raise ValueError("The time value is a tuple"
-                         " of ( seconds, microseconds )")
+    cdef int secs
+    cdef int usecs
+    if type(val) == tuple:
+        try:
+            secs = <int>val[0]
+            usecs = <int>val[1]
+        except:
+            raise ValueError("The time value is a tuple"
+                             " of ( int(secs), int(usecs) )")
+    elif type(val) == float:
+        try:
+            secs = int(val)
+            usecs = int((val - secs) * 1.e6)
+        except:
+            raise ValueError("The time value is a floating point secs.usecs number")
+    elif type(val) == int:
+        secs = val
+        usecs = 0
+    else:
+        raise ValueError("timestamp must be float, tuple or int")
+    c_data.prim.timestamp_.tv.tv_sec = secs
+    c_data.prim.timestamp_.tv.tv_usec = usecs
 
 cdef set_LONG_DOUBLE(sos_value_data_t c_data, val):
     c_data.prim.long_double_ = <long double>val
@@ -3745,6 +3860,218 @@ type_setters[<int>SOS_TYPE_DOUBLE_ARRAY] = set_DOUBLE_ARRAY
 type_setters[<int>SOS_TYPE_LONG_DOUBLE_ARRAY] = set_LONG_DOUBLE_ARRAY
 type_setters[<int>SOS_TYPE_OBJ_ARRAY] = set_ERROR
 
+cdef set_key_LONG_DOUBLE_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    cdef int count
+    if type(val) == str:
+        val = list(float(v) for v in val.split(','))
+    count = len(val)
+    c_key.len = count * sizeof(long double)
+    for i in range(count):
+        c_key.long_double_[i] = <long double>val[i]
+
+cdef set_key_DOUBLE_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    cdef int count
+    if type(val) == str:
+        val = list(float(v) for v in val.split(','))
+    count = len(val)
+    c_key.len = count * sizeof(double)
+    for i in range(count):
+        c_key.double_[i] = <double>val[i]
+
+cdef set_key_FLOAT_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    cdef int count
+    if type(val) == str:
+        val = list(float(v) for v in val.split(','))
+    count = len(val)
+    c_key.len = count * sizeof(float)
+    for i in range(count):
+        c_key.float_[i] = <float>val[i]
+
+cdef set_key_UINT64_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    cdef int count
+    if type(val) == str:
+        val = list(int(v) for v in val.split(','))
+    count = len(val)
+    c_key.len = count * sizeof(uint64_t)
+    for i in range(count):
+        c_key.uint64_[i] = <uint64_t>val[i]
+
+cdef set_key_UINT32_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    cdef int count
+    if type(val) == str:
+        val = list(int(v) for v in val.split(','))
+    count = len(val)
+    c_key.len = count * sizeof(uint32_t)
+    for i in range(count):
+        c_key.uint32_[i] = <uint32_t>val[i]
+
+cdef set_key_UINT16_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    cdef int count
+    if type(val) == str:
+        val = list(int(v) for v in val.split(','))
+    count = len(val)
+    c_key.len = count * sizeof(uint16_t)
+    for i in range(count):
+        c_key.uint16_[i] = <uint16_t>val[i]
+
+cdef set_key_BYTE_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    if type(val) == list:
+        c_key.len = len(val)
+        for i in range(c_key.len):
+            c_key.byte_[i] = <char>val[i]
+        return
+    if type(val) == bytearray:
+        c_key.len = len(val)
+        for i in range(c_key.len):
+            c_key.byte_[i] = <char>val[i]
+        return
+    raise ValueError("The value for a BYTE_ARRAY key must be a list "
+                     "or a bytearray()")
+
+cdef set_key_INT64_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    cdef int count
+    if type(val) == str:
+        val = list(int(v) for v in val.split(','))
+    count = len(val)
+    c_key.len = count * sizeof(int64_t)
+    for i in range(count):
+        c_key.int64_[i] = <int64_t>val[i]
+
+cdef set_key_INT32_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    cdef int count
+    if type(val) == str:
+        val = list(int(v) for v in val.split(','))
+    count = len(val)
+    c_key.len = count * sizeof(int32_t)
+    for i in range(count):
+        c_key.int32_[i] = <int32_t>val[i]
+
+cdef set_key_INT16_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    cdef int count
+    if type(val) == str:
+        val = list(int(v) for v in val.split(','))
+    count = len(val)
+    c_key.len = count * sizeof(int16_t)
+    for i in range(count):
+        c_key.int16_[i] = <int16_t>val[i]
+
+cdef set_key_CHAR_ARRAY(ods_key_value_t c_key, val):
+    cdef int i
+    c_key.len = len(val)
+    ba = bytearray(val)
+    for i in range(c_key.len):
+        c_key.value[i] = <char>ba[i]
+
+cdef set_key_TIMESTAMP(ods_key_value_t c_key, val):
+    if type(val) == int:
+        c_key.tv_.tv_sec = val
+        c_key.tv_.tv_usec = 0
+    elif type(val) == tuple or type(val) == list:
+        c_key.tv_.tv_sec = val[0]
+        c_key.tv_.tv_usec = val[1]
+    elif type(val) == float:
+        c_key.tv_.tv_sec = int(val)
+        c_key.tv_.tv_usec = int((val - int(val)) * 1.0e6)
+    else:
+        raise ValueError("The time value is a tuple, list, float or unix timestamp")
+
+cdef set_key_LONG_DOUBLE(ods_key_value_t c_key, val):
+    if type(val) == str:
+        val = float(val)
+    c_key.long_double_[0] = <long double>val
+
+cdef set_key_DOUBLE(ods_key_value_t c_key, val):
+    if type(val) == str:
+        val = float(val)
+    c_key.len = 8
+    c_key.double_[0] = <double>val
+
+cdef set_key_FLOAT(ods_key_value_t c_key, val):
+    if type(val) == str:
+        val = float(val)
+    c_key.len = 4
+    c_key.float_[0] = <float>val
+
+cdef set_key_UINT64(ods_key_value_t c_key, val):
+    if type(val) == str:
+        val = int(val)
+    c_key.len = 8
+    c_key.uint64_[0] = <uint64_t>val
+
+cdef set_key_UINT32(ods_key_value_t c_key, val):
+    if type(val) == str:
+        val = int(val)
+    c_key.len = 4
+    c_key.uint32_[0] = <uint32_t>val
+
+cdef set_key_UINT16(ods_key_value_t c_key, val):
+    if type(val) == str:
+        val = int(val)
+    c_key.len = 2
+    c_key.uint16_[0] = <uint16_t>val
+
+cdef set_key_INT64(ods_key_value_t c_key, val):
+    if type(val) == str:
+        val = int(val)
+    c_key.len = 8
+    c_key.int64_[0] = <int64_t>val
+
+cdef set_key_INT32(ods_key_value_t c_key, val):
+    if type(val) == str:
+        val = int(val)
+    c_key.len = 4
+    c_key.int32_[0] = <int32_t>val
+
+cdef set_key_INT16(ods_key_value_t c_key, val):
+    if type(val) == str:
+        val = int(val)
+    c_key.len = 2
+    c_key.int16_[0] = <int16_t>val
+
+cdef set_key_STRUCT(ods_key_value_t c_key, val):
+    cdef char *s = val
+    memcpy(&c_key.value, s, len(val))
+
+cdef set_key_ERROR(ods_key_value_t c_key, val):
+    raise ValueError("Set is not supported on this attribute type")
+
+ctypedef object (*key_setter_fn_t)(ods_key_value_t c_key, val)
+cdef key_setter_fn_t key_setters[SOS_TYPE_LAST+1]
+key_setters[<int>SOS_TYPE_INT16] = set_key_INT16
+key_setters[<int>SOS_TYPE_INT32] = set_key_INT32
+key_setters[<int>SOS_TYPE_INT64] = set_key_INT64
+key_setters[<int>SOS_TYPE_UINT16] = set_key_UINT16
+key_setters[<int>SOS_TYPE_UINT32] = set_key_UINT32
+key_setters[<int>SOS_TYPE_UINT64] = set_key_UINT64
+key_setters[<int>SOS_TYPE_FLOAT] = set_key_FLOAT
+key_setters[<int>SOS_TYPE_DOUBLE] = set_key_DOUBLE
+key_setters[<int>SOS_TYPE_LONG_DOUBLE] = set_key_LONG_DOUBLE
+key_setters[<int>SOS_TYPE_TIMESTAMP] = set_key_TIMESTAMP
+key_setters[<int>SOS_TYPE_OBJ] = set_key_ERROR
+key_setters[<int>SOS_TYPE_JOIN] = set_key_ERROR
+key_setters[<int>SOS_TYPE_STRUCT] = set_key_STRUCT
+key_setters[<int>SOS_TYPE_BYTE_ARRAY] = set_key_BYTE_ARRAY
+key_setters[<int>SOS_TYPE_CHAR_ARRAY] = set_key_CHAR_ARRAY
+key_setters[<int>SOS_TYPE_INT16_ARRAY] = set_key_INT16_ARRAY
+key_setters[<int>SOS_TYPE_INT32_ARRAY] = set_key_INT32_ARRAY
+key_setters[<int>SOS_TYPE_INT64_ARRAY] = set_key_INT64_ARRAY
+key_setters[<int>SOS_TYPE_UINT16_ARRAY] = set_key_UINT16_ARRAY
+key_setters[<int>SOS_TYPE_UINT32_ARRAY] = set_key_UINT32_ARRAY
+key_setters[<int>SOS_TYPE_UINT64_ARRAY] = set_key_UINT64_ARRAY
+key_setters[<int>SOS_TYPE_FLOAT_ARRAY] = set_key_FLOAT_ARRAY
+key_setters[<int>SOS_TYPE_DOUBLE_ARRAY] = set_key_DOUBLE_ARRAY
+key_setters[<int>SOS_TYPE_LONG_DOUBLE_ARRAY] = set_key_LONG_DOUBLE_ARRAY
+key_setters[<int>SOS_TYPE_OBJ_ARRAY] = set_key_ERROR
 
 cdef int size_INT16(arg):
     return sizeof(int16_t)
@@ -3922,9 +4249,6 @@ cdef class Value(object):
         """
         return sos_value_strlen(self.c_v)
 
-    def to_key(self):
-        """Return a Key() object initialized from the associated Attr"""
-        return 
     def from_str(self, string):
         """Set the value from the string"""
         return sos_value_from_str(self.c_v, string, NULL)
@@ -4143,7 +4467,7 @@ cdef class Object(object):
         """
         if self.c_obj == NULL:
             self.abort("There is no container object associated with this Object")
-        sos_obj_index(self.c_obj)
+        return sos_obj_index(self.c_obj)
 
     def index_del(self):
         """

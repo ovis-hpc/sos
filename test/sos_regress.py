@@ -27,6 +27,8 @@ from filt_count_test import FilterCountTest
 from delete_test import DeleteTest
 from pattern_test import PatternTest
 from h2htbl_test import H2HTBLTest
+from key_test import KeyTest
+from timestamp_test import TimestampTest
 tests = [ SchemaTest,
           ObjTestSetGet,
           ValueTestFromStr,
@@ -46,7 +48,9 @@ tests = [ SchemaTest,
           FilterCountTest,
           DeleteTest,
           PatternTest,
-          H2HTBLTest
+          H2HTBLTest,
+          KeyTest,
+          TimestampTest
           ]
 
 if __name__ == "__main__":

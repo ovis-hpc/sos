@@ -121,6 +121,32 @@ cdef extern from "stdio.h":
     cdef struct FILE:
         pass
 
+cdef extern from "ods/ods_idx.h":
+
+    cdef struct ods_idx_data_s:
+        unsigned char bytes[16]
+    ctypedef ods_idx_data_s ods_idx_data_t
+
+    cdef struct ods_timeval_s:
+        uint32_t tv_usec
+        uint32_t tv_sec
+
+    cdef struct ods_key_value_s:
+        uint16_t len
+        unsigned char value[0]
+        unsigned char byte_[0]
+        uint16_t uint16_[0]
+        uint32_t uint32_[0]
+        uint64_t uint64_[0]
+        int16_t int16_[0]
+        int32_t int32_[0]
+        int64_t int64_[0]
+        float float_[0]
+        double double_[0]
+        long double long_double_[0]
+        ods_timeval_s tv_[0]
+    ctypedef ods_key_value_s *ods_key_value_t
+
 cdef extern from "ods/ods.h":
     ctypedef uint64_t ods_ref_t
     cdef struct ods_stat:
@@ -139,10 +165,23 @@ cdef extern from "ods/ods.h":
         uint64_t *st_blk_alloc
     ctypedef ods_stat *ods_stat_t
 
-cdef extern from "ods/ods_idx.h":
-    cdef struct ods_idx_data_s:
-        unsigned char bytes[16]
-    ctypedef ods_idx_data_s ods_idx_data_t
+    cdef union ods_obj_type_u:
+        void *ptr
+        int8_t *int8
+        uint8_t *uint8
+        int16_t *int16
+        uint16_t *uint16
+        int32_t *int32
+        uint32_t *uint32
+        int64_t *int64
+        uint64_t *uint64
+        ods_timeval_s *tv
+        char *str
+        unsigned char *bytes
+        ods_key_value_s *key
+
+    cdef struct ods_obj_s:
+        ods_obj_type_u as
 
 cdef extern from "sos/sos.h":
 
@@ -475,8 +514,7 @@ cdef extern from "sos/sos.h":
     char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj, const char *attr_name,
                                       char *str, size_t len)
 
-    cdef struct ods_obj_s:
-        pass
+
     ctypedef ods_obj_s *sos_key_t
 
     cdef struct sos_comp_key_spec:
