@@ -284,7 +284,7 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 			return NULL;
 		v = calloc(count, sizeof *v);
 		if (!v)
-			return NULL;
+			goto err;
 	}
 
 	size = 0;
@@ -298,7 +298,7 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 		v[i] = sos_value_init(&v_[i], obj, join_attr);
 		if (!v[i]) {
 			errno = ENOMEM;
-			goto err;;
+			goto err;
 		}
 		if (sos_attr_is_array(join_attr) || (sos_attr_type(join_attr) == SOS_TYPE_STRUCT))
 			size += sos_value_size(v[i]) + sizeof(comp->value.str) + sizeof(uint16_t);
@@ -310,7 +310,7 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 		data = malloc(sizeof(*data) + size);
 		if (!data) {
 			errno = ENOMEM;
-			return NULL;
+			goto err;
 		}
 	} else {
 		data = (sos_array_t)&val->data_;

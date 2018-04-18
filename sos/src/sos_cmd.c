@@ -225,6 +225,8 @@ int add_column(const char *str)
 	if (!col)
 		goto err;
 	s = strdup(str);
+	if (!s)
+		goto err;
 	width = strchr(s, '[');
 	if (width) {
 		*width = '\0';
@@ -237,6 +239,10 @@ int add_column(const char *str)
 	TAILQ_INSERT_TAIL(&col_list, col, entry);
 	return 0;
  err:
+	if (col)
+		free(col);
+	if (s)
+		free(s);
 	printf("Could not allocate memory for the column.\n");
 	return ENOMEM;
 }

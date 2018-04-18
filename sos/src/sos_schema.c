@@ -489,8 +489,11 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, 
 		break;
 	}
 	attr = attr_new(schema, type, size);
-	if (!attr)
+	if (!attr) {
+		if (ext_ptr)
+			free(ext_ptr);
 		return ENOMEM;
+	}
 	strcpy(attr->data->name, name);
 	attr->data->type = type;
 	attr->data->id = schema->data->attr_cnt++;

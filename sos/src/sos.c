@@ -781,7 +781,7 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		ods_obj_put(sos->part_udata);
 	if (sos->part_ods)
 		ods_close(sos->part_ods, flags);
-
+	pthread_mutex_destroy(&sos->lock);
 	free(sos);
 }
 
@@ -869,6 +869,7 @@ static void __pos_cleanup(sos_t sos)
 				sos_error("An iterator for index %s could not be created, errno %d.\n",
 					  pos_ent->name, errno);
 				sos_index_close(idx, SOS_COMMIT_ASYNC);
+				free(idx_ent);
 				free(pos_ent);
 				continue;
 			}
