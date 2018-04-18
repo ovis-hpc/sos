@@ -451,9 +451,9 @@ void ods_dump_maps(const char *name)
 /* Returns a 2^x value based on the current ODS container size */
 static inline size_t new_obj_map_sz(ods_t ods)
 {
-	size_t computed_size = ods->obj_sz >> 3;
+	uint64_t computed_size = ods->obj_sz >> 3;
 	int i = __builtin_clz(computed_size);
-	computed_size = 1 << (64 - i);
+	computed_size = 1LL << (63 - i);
 	if (computed_size < ODS_MIN_MAP_SZ)
 		return ODS_MIN_MAP_SZ;
 	if (computed_size > ODS_MAX_MAP_SZ)
