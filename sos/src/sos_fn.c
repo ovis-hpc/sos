@@ -388,7 +388,25 @@ static char *byte_array_to_str_fn(sos_value_t v, char *str, size_t len)
 
 static char *struct_to_str_fn(sos_value_t v, char *str, size_t len)
 {
-	return byte_array_to_str_fn(v, str, len);
+	int i, res_cnt;
+	char *p = str;
+	if (!v)
+		return "";
+	if (!v->attr) {
+		strncpy(str, "Attr/Value req'd to decode struct", len);
+		return str;
+	}
+	res_cnt = snprintf(str, len, "%02X", v->data->struc.byte_[0]);
+	len -= res_cnt;
+	p = str + res_cnt;
+	for (i = 1; i < sos_attr_size(v->attr); i++) {
+		res_cnt = snprintf(p, len, ":%02X", v->data->struc.byte_[i]);
+		if (res_cnt > len)
+			break;
+		p += res_cnt;
+		len -= res_cnt;
+	}
+	return str;
 }
 
 static char *join_to_str_fn(sos_value_t v, char *str, size_t len)
