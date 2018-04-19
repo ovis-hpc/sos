@@ -228,7 +228,7 @@ cdef class Container(SosObject):
     def open(self, path, o_perm=SOS_PERM_RW):
         if self.c_cont != NULL:
             self.abort(EBUSY)
-        self.c_cont = sos_container_open(path, o_perm)
+        self.c_cont = sos_container_open(path.encode(), o_perm)
         if self.c_cont == NULL:
             raise self.abort(errno)
 
@@ -236,7 +236,7 @@ cdef class Container(SosObject):
         cdef int rc
         if self.c_cont != NULL:
             self.abort(EBUSY)
-        rc = sos_container_new(path, o_mode)
+        rc = sos_container_new(path.encode(), o_mode)
         if rc != 0:
             self.abort(rc)
 
@@ -265,14 +265,14 @@ cdef class Container(SosObject):
         if self.c_cont == NULL:
             raise ValueError("The container is not open.")
         if path:
-            rc = sos_part_create(self.c_cont, name, path)
+            rc = sos_part_create(self.c_cont, name.encode(), path.encode())
         else:
-            rc = sos_part_create(self.c_cont, name, NULL)
+            rc = sos_part_create(self.c_cont, name.encode(), NULL)
         if rc != 0:
             self.abort(rc)
 
     def part_by_name(self, name):
-        cdef sos_part_t c_part = sos_part_find(self.c_cont, name)
+        cdef sos_part_t c_part = sos_part_find(self.c_cont, name.encode())
         if c_part != NULL:
             p = Partition()
             p.assign(c_part)
@@ -286,7 +286,7 @@ cdef class Container(SosObject):
         return IndexIter(self)
 
     def schema_by_name(self, name):
-        cdef sos_schema_t c_schema = sos_schema_by_name(self.c_cont, name)
+        cdef sos_schema_t c_schema = sos_schema_by_name(self.c_cont, name.encode())
         if c_schema != NULL:
             s = Schema()
             s.assign(c_schema)
@@ -395,7 +395,7 @@ cdef class Partition(SosObject):
 
     def move(self, new_path):
         """Move the paritition to a different location"""
-        cdef int rc = sos_part_move(self.c_part, new_path)
+        cdef int rc = sos_part_move(self.c_part, new_path.encode())
         if rc != 0:
             self.abort(rc)
 
@@ -597,7 +597,7 @@ cdef class Schema(SosObject):
         cdef int join_count
         cdef char **join_args
 
-        self.c_schema = sos_schema_new(name)
+        self.c_schema = sos_schema_new(name.encode())
         if self.c_schema == NULL:
             self.abort(ENOMEM)
         for attr in template:
@@ -621,22 +621,22 @@ cdef class Schema(SosObject):
                 for attr_name in join_attrs:
                     join_args[rc] = <char *>attr_name
                     rc += 1
-                rc = sos_schema_attr_add(self.c_schema, attr['name'],
+                rc = sos_schema_attr_add(self.c_schema, attr['name'].encode(),
                                          t, <size_t>join_count, join_args)
             elif t == SOS_TYPE_STRUCT:
                 if 'size' not in attr:
                     raise ValueError("The type {0} must have a 'size'.".format(n))
                 sz = attr['size']
-                rc = sos_schema_attr_add(self.c_schema, attr['name'], t, <size_t>sz)
+                rc = sos_schema_attr_add(self.c_schema, attr['name'].encode(), t, <size_t>sz)
             else:
-                rc = sos_schema_attr_add(self.c_schema, attr['name'], t, 0)
+                rc = sos_schema_attr_add(self.c_schema, attr['name'].encode(), t, 0)
 
             if rc != 0:
                 raise ValueError("The attribute named {0} resulted in error {1}". \
                                  format(attr['name'], rc))
 
             if 'index' in attr:
-                rc = sos_schema_index_add(self.c_schema, attr['name'])
+                rc = sos_schema_index_add(self.c_schema, attr['name'].encode())
                 if rc != 0:
                     self.abort(rc)
 
@@ -650,7 +650,7 @@ cdef class Schema(SosObject):
                 if 'args' in idx:
                     idx_args = idx['args']
                 rc = sos_schema_index_modify(self.c_schema,
-                                             attr['name'],
+                                             attr['name'].encode(),
                                              idx_type,
                                              idx_key,
                                              <const char *>idx_args)
@@ -708,7 +708,7 @@ cdef class Schema(SosObject):
         if type(attr_id) == int:
             return Attr(self, attr_id=attr_id)
         elif type(attr_id) == str:
-            return Attr(self, attr_name=attr_id)
+            return Attr(self, attr_name=attr_id.encode())
         raise ValueError("The index must be a string or an integer.")
 
     def __str__(self):
@@ -1308,7 +1308,7 @@ cdef class AttrIter(SosObject):
         -- String representation of the iterator position
         """
         cdef sos_pos_t c_pos
-        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
+        cdef int rc = sos_pos_from_str(&c_pos, pos_str.encode())
         if rc == 0:
             return sos_iter_pos_set(self.c_iter, c_pos)
         return rc
@@ -1320,7 +1320,7 @@ cdef class AttrIter(SosObject):
         -- String representation of the iterator position
         """
         cdef sos_pos_t c_pos
-        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
+        cdef int rc = sos_pos_from_str(&c_pos, pos_str.encode())
         if rc == 0:
             return sos_iter_pos_put(self.c_iter, c_pos)
         return rc
@@ -1392,7 +1392,7 @@ cdef class Attr(SosObject):
         if attr_id is not None:
             self.c_attr = sos_schema_attr_by_id(schema.c_schema, attr_id)
         elif attr_name is not None:
-            self.c_attr = sos_schema_attr_by_name(schema.c_schema, attr_name)
+            self.c_attr = sos_schema_attr_by_name(schema.c_schema, attr_name.encode())
         if self.c_attr == NULL:
             if attr_id:
                 name = attr_id
@@ -2473,7 +2473,7 @@ cdef class Filter(object):
         -- String representation of the iterator position
         """
         cdef sos_pos_t c_pos
-        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
+        cdef int rc = sos_pos_from_str(&c_pos, pos_str.encode())
         if rc == 0:
             return sos_filter_pos_set(self.c_filt, c_pos)
         return rc
@@ -2485,7 +2485,7 @@ cdef class Filter(object):
         -- String representation of the iterator position
         """
         cdef sos_pos_t c_pos
-        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
+        cdef int rc = sos_pos_from_str(&c_pos, pos_str.encode())
         if rc == 0:
             return sos_filter_pos_put(self.c_filt, c_pos)
         return rc
@@ -2927,7 +2927,7 @@ cdef class Filter(object):
             free(res_acc)
             raise MemoryError("Insufficient memory to allocate type array")
 
-        t_attr = sos_schema_attr_by_name(schema.c_schema, timestamp)
+        t_attr = sos_schema_attr_by_name(schema.c_schema, timestamp.encode())
         if t_attr == NULL:
             raise ValueError("The timestamp attribute was not found in the schema. "
                              "Consider specifying the timestamp keyword parameter")
@@ -3827,7 +3827,7 @@ cdef set_INT16(sos_value_data_t c_data, val):
 
 cdef set_STRUCT(sos_value_data_t c_data, val):
     cdef char *s = val
-    memcpy(&c_data.prim.byte_, s, len(val))
+    memcpy(c_data.prim.struc_, s, len(val))
 
 cdef set_ERROR(sos_value_data_t c_data, val):
     raise ValueError("Set is not supported on this attribute type")
@@ -4251,7 +4251,7 @@ cdef class Value(object):
 
     def from_str(self, string):
         """Set the value from the string"""
-        return sos_value_from_str(self.c_v, string, NULL)
+        return sos_value_from_str(self.c_v, string.encode(), NULL)
 
     def to_str(self):
         """Return the value as a formatted string"""
@@ -4367,7 +4367,7 @@ cdef class Object(object):
         if int == type(idx):
             c_attr = sos_schema_attr_by_id(sos_obj_schema(self.c_obj), idx)
         else:
-            c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), idx)
+            c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), idx.encode())
         if c_attr == NULL:
             raise StopIteration("Object has no attribute with id '{0}'".format(idx))
         arr_obj = NULL
@@ -4383,7 +4383,7 @@ cdef class Object(object):
         cdef sos_value_data_t c_data
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
-        c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name)
+        c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name.encode())
         if c_attr == NULL:
             raise ValueError("Object has no attribute with name '{0}'".format(name))
         arr_obj = NULL
@@ -4417,7 +4417,7 @@ cdef class Object(object):
         if type(idx) == int:
             c_attr = sos_schema_attr_by_id(self.c_schema, idx)
         elif type(idx) == str:
-            c_attr = sos_schema_attr_by_name(self.c_schema, idx)
+            c_attr = sos_schema_attr_by_name(self.c_schema, idx.encode())
         else:
             raise ValueError("Object has no attribute with id '{0}'".format(idx))
         if 0 == sos_attr_is_array(c_attr):
@@ -4429,7 +4429,7 @@ cdef class Object(object):
         cdef sos_attr_t c_attr
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
-        c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name)
+        c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name.encode())
         if c_attr == NULL:
             raise ObjAttrError(name)
         if 0 == sos_attr_is_array(c_attr):
@@ -4450,7 +4450,7 @@ cdef class Object(object):
 
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
-        c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name)
+        c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name.encode())
         if c_attr == NULL:
             raise ObjAttrError(name)
         c_type = sos_attr_type(c_attr)
@@ -4516,7 +4516,7 @@ cdef class Object(object):
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
 
-        c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name)
+        c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name.encode())
         if c_attr == NULL:
             raise ObjAttrError(name)
         t = sos_attr_type(c_attr)
