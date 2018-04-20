@@ -83,6 +83,7 @@ class FilterCountTest(SosTestCase):
             filt.add_condition(self.schema['job_id'], Sos.COND_EQ, job_id)
             count = 0
             o = filt.begin()
+            self.assertIsNotNone( o )
             comp_id = o['component_id']
             comps[job_id] = comp_id
             filt.add_condition(self.schema['component_id'], Sos.COND_EQ, comp_id)
