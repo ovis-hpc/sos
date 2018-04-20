@@ -837,7 +837,7 @@ cdef class Key(object):
                 specs[j].type = typ
             else:
                 raise ValueError("Invalid value type {0} specifed".format(typ))
-            type_setters[typ](&specs[j].data, args[i+1])
+            type_setters[typ](self.attr.c_attr, &specs[j].data, args[i+1])
             i += 2
             j += 1
 
@@ -1005,7 +1005,7 @@ cdef class Key(object):
         cdef ods_key_value_t kv
         cdef sos_value_data_t data
         kv = self.c_key.as.key
-        key_setters[<int>self.sos_type](kv, value)
+        key_setters[<int>self.sos_type](self.attr.c_attr, kv, value)
 
     def __int__(self):
         cdef int typ
@@ -1525,11 +1525,14 @@ cdef class Attr(SosObject):
                 arg = args[i]
                 join_list.append(arg)
                 specs[i].type = typ
-                type_setters[typ](&specs[i].data, arg)
+                type_setters[typ](attr, &specs[i].data, arg)
             size = sos_comp_key_size(specs_len, specs)
             free(specs)
             key = Key(size=size, sos_type=SOS_TYPE_JOIN)
             key.join(*join_list)
+        elif typ < SOS_TYPE_ARRAY:
+            key = Key(attr=self)
+            key.set_value(args[0])
         else:
             key = Key(size=type_sizes[typ](args[0]), sos_type=typ)
             key.set_value(args[0])
@@ -2353,7 +2356,7 @@ cdef class Filter(object):
             value = value[:sos_attr_size(cond_attr.c_attr)]
 
         if type(value) != str:
-            type_setters[typ](cond_v.data, value)
+            type_setters[typ](cond_attr.c_attr, cond_v.data, value)
         else:
             rc = sos_value_from_str(cond_v, value, NULL)
             if rc != 0:
@@ -3637,8 +3640,7 @@ cdef object get_INT16(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_att
     return c_data.prim.int16_
 
 cdef object get_STRUCT(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    n = sos_attr_size(c_attr)
-    return <object>c_data.struc.char_[:n]
+    return PyByteArray_FromStringAndSize(c_data.struc.char_, sos_attr_size(c_attr))
 
 cdef object get_JOIN(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     cdef sos_value_data_t c_attr_data
@@ -3697,75 +3699,75 @@ type_getters[<int>SOS_TYPE_OBJ_ARRAY] = get_ERROR
 ################################
 # Object attribute setter functions
 ################################
-cdef set_LONG_DOUBLE_ARRAY(sos_value_data_t c_data, val):
+cdef set_LONG_DOUBLE_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     for i in range(sz):
         c_data.array.data.long_double_[i] = val[i]
 
-cdef set_DOUBLE_ARRAY(sos_value_data_t c_data, val):
+cdef set_DOUBLE_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.double_[i] = val[i]
 
-cdef set_FLOAT_ARRAY(sos_value_data_t c_data, val):
+cdef set_FLOAT_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.float_[i] = val[i]
 
-cdef set_UINT64_ARRAY(sos_value_data_t c_data, val):
+cdef set_UINT64_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.uint64_[i] = val[i]
 
-cdef set_UINT32_ARRAY(sos_value_data_t c_data, val):
+cdef set_UINT32_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.uint32_[i] = val[i]
 
-cdef set_UINT16_ARRAY(sos_value_data_t c_data, val):
+cdef set_UINT16_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     for i in range(sz):
         c_data.array.data.uint16_[i] = val[i]
 
-cdef set_BYTE_ARRAY(sos_value_data_t c_data, val):
+cdef set_BYTE_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.byte_[i] = <uint8_t>val[i]
 
-cdef set_INT64_ARRAY(sos_value_data_t c_data, val):
+cdef set_INT64_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.int64_[i] = <int64_t>val[i]
 
-cdef set_INT32_ARRAY(sos_value_data_t c_data, val):
+cdef set_INT32_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.int32_[i] = val[i]
 
-cdef set_INT16_ARRAY(sos_value_data_t c_data, val):
+cdef set_INT16_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz
     sz = len(val)
     c_data.array.count = sz
     for i in range(sz):
         c_data.array.data.int16_[i] = val[i]
 
-cdef set_CHAR_ARRAY(sos_value_data_t c_data, val):
+cdef set_CHAR_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef char *s
     cdef int i, sz
     sz = len(val)
@@ -3774,7 +3776,7 @@ cdef set_CHAR_ARRAY(sos_value_data_t c_data, val):
     for i in range(sz):
         c_data.array.data.char_[i] = s[i]
 
-cdef set_TIMESTAMP(sos_value_data_t c_data, val):
+cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int secs
     cdef int usecs
     if type(val) == tuple:
@@ -3798,41 +3800,49 @@ cdef set_TIMESTAMP(sos_value_data_t c_data, val):
     c_data.prim.timestamp_.tv.tv_sec = secs
     c_data.prim.timestamp_.tv.tv_usec = usecs
 
-cdef set_LONG_DOUBLE(sos_value_data_t c_data, val):
+cdef set_LONG_DOUBLE(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.long_double_ = <long double>val
 
-cdef set_DOUBLE(sos_value_data_t c_data, val):
+cdef set_DOUBLE(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.double_ = <double>val
 
-cdef set_FLOAT(sos_value_data_t c_data, val):
+cdef set_FLOAT(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.float_ = <float>val
 
-cdef set_UINT64(sos_value_data_t c_data, val):
+cdef set_UINT64(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.uint64_ = <uint64_t>val
 
-cdef set_UINT32(sos_value_data_t c_data, val):
+cdef set_UINT32(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.uint32_ = <uint32_t>val
 
-cdef set_UINT16(sos_value_data_t c_data, val):
+cdef set_UINT16(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.uint16_ = <uint16_t>val
 
-cdef set_INT64(sos_value_data_t c_data, val):
+cdef set_INT64(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.int64_ = <int64_t>val
 
-cdef set_INT32(sos_value_data_t c_data, val):
+cdef set_INT32(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.int32_ = <int32_t>val
 
-cdef set_INT16(sos_value_data_t c_data, val):
+cdef set_INT16(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.int16_ = <int16_t>val
 
-cdef set_STRUCT(sos_value_data_t c_data, val):
-    cdef char *s = val
-    memcpy(c_data.prim.struc_, s, len(val))
+cdef set_STRUCT(sos_attr_t c_attr, sos_value_data_t c_data, val):
+    cdef unsigned char *s
+    cdef int count
+    if c_attr == NULL:
+        raise ValueError("Cannot set a STRUCT attribute value without an sos_attr_t value")
+    s = val
+    count = sos_attr_size(c_attr)
+    if len(val) < count:
+        memset(c_data.struc.byte_, 0, count)
+        count = len(val)
+    memcpy(c_data.struc.byte_, s, count)
 
-cdef set_ERROR(sos_value_data_t c_data, val):
+cdef set_ERROR(sos_attr_t c_attr, sos_value_data_t c_data, val):
     raise ValueError("Set is not supported on this attribute type")
 
-ctypedef object (*type_setter_fn_t)(sos_value_data_t c_data, val)
+ctypedef object (*type_setter_fn_t)(sos_attr_t c_attr, sos_value_data_t c_data, val)
 cdef type_setter_fn_t type_setters[SOS_TYPE_LAST+1]
 type_setters[<int>SOS_TYPE_INT16] = set_INT16
 type_setters[<int>SOS_TYPE_INT32] = set_INT32
@@ -3860,7 +3870,7 @@ type_setters[<int>SOS_TYPE_DOUBLE_ARRAY] = set_DOUBLE_ARRAY
 type_setters[<int>SOS_TYPE_LONG_DOUBLE_ARRAY] = set_LONG_DOUBLE_ARRAY
 type_setters[<int>SOS_TYPE_OBJ_ARRAY] = set_ERROR
 
-cdef set_key_LONG_DOUBLE_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_LONG_DOUBLE_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     cdef int count
     if type(val) == str:
@@ -3870,7 +3880,7 @@ cdef set_key_LONG_DOUBLE_ARRAY(ods_key_value_t c_key, val):
     for i in range(count):
         c_key.long_double_[i] = <long double>val[i]
 
-cdef set_key_DOUBLE_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_DOUBLE_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     cdef int count
     if type(val) == str:
@@ -3880,7 +3890,7 @@ cdef set_key_DOUBLE_ARRAY(ods_key_value_t c_key, val):
     for i in range(count):
         c_key.double_[i] = <double>val[i]
 
-cdef set_key_FLOAT_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_FLOAT_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     cdef int count
     if type(val) == str:
@@ -3890,7 +3900,7 @@ cdef set_key_FLOAT_ARRAY(ods_key_value_t c_key, val):
     for i in range(count):
         c_key.float_[i] = <float>val[i]
 
-cdef set_key_UINT64_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_UINT64_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     cdef int count
     if type(val) == str:
@@ -3900,7 +3910,7 @@ cdef set_key_UINT64_ARRAY(ods_key_value_t c_key, val):
     for i in range(count):
         c_key.uint64_[i] = <uint64_t>val[i]
 
-cdef set_key_UINT32_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_UINT32_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     cdef int count
     if type(val) == str:
@@ -3910,7 +3920,7 @@ cdef set_key_UINT32_ARRAY(ods_key_value_t c_key, val):
     for i in range(count):
         c_key.uint32_[i] = <uint32_t>val[i]
 
-cdef set_key_UINT16_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_UINT16_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     cdef int count
     if type(val) == str:
@@ -3920,7 +3930,7 @@ cdef set_key_UINT16_ARRAY(ods_key_value_t c_key, val):
     for i in range(count):
         c_key.uint16_[i] = <uint16_t>val[i]
 
-cdef set_key_BYTE_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_BYTE_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     if type(val) == list:
         c_key.len = len(val)
@@ -3935,7 +3945,7 @@ cdef set_key_BYTE_ARRAY(ods_key_value_t c_key, val):
     raise ValueError("The value for a BYTE_ARRAY key must be a list "
                      "or a bytearray()")
 
-cdef set_key_INT64_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_INT64_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     cdef int count
     if type(val) == str:
@@ -3945,7 +3955,7 @@ cdef set_key_INT64_ARRAY(ods_key_value_t c_key, val):
     for i in range(count):
         c_key.int64_[i] = <int64_t>val[i]
 
-cdef set_key_INT32_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_INT32_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     cdef int count
     if type(val) == str:
@@ -3955,7 +3965,7 @@ cdef set_key_INT32_ARRAY(ods_key_value_t c_key, val):
     for i in range(count):
         c_key.int32_[i] = <int32_t>val[i]
 
-cdef set_key_INT16_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_INT16_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     cdef int count
     if type(val) == str:
@@ -3965,14 +3975,14 @@ cdef set_key_INT16_ARRAY(ods_key_value_t c_key, val):
     for i in range(count):
         c_key.int16_[i] = <int16_t>val[i]
 
-cdef set_key_CHAR_ARRAY(ods_key_value_t c_key, val):
+cdef set_key_CHAR_ARRAY(sos_attr_t c_attr, ods_key_value_t c_key, val):
     cdef int i
     c_key.len = len(val)
     ba = bytearray(val)
     for i in range(c_key.len):
         c_key.value[i] = <char>ba[i]
 
-cdef set_key_TIMESTAMP(ods_key_value_t c_key, val):
+cdef set_key_TIMESTAMP(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == int:
         c_key.tv_.tv_sec = val
         c_key.tv_.tv_usec = 0
@@ -3985,67 +3995,77 @@ cdef set_key_TIMESTAMP(ods_key_value_t c_key, val):
     else:
         raise ValueError("The time value is a tuple, list, float or unix timestamp")
 
-cdef set_key_LONG_DOUBLE(ods_key_value_t c_key, val):
+cdef set_key_LONG_DOUBLE(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == str:
         val = float(val)
     c_key.long_double_[0] = <long double>val
 
-cdef set_key_DOUBLE(ods_key_value_t c_key, val):
+cdef set_key_DOUBLE(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == str:
         val = float(val)
     c_key.len = 8
     c_key.double_[0] = <double>val
 
-cdef set_key_FLOAT(ods_key_value_t c_key, val):
+cdef set_key_FLOAT(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == str:
         val = float(val)
     c_key.len = 4
     c_key.float_[0] = <float>val
 
-cdef set_key_UINT64(ods_key_value_t c_key, val):
+cdef set_key_UINT64(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == str:
         val = int(val)
     c_key.len = 8
     c_key.uint64_[0] = <uint64_t>val
 
-cdef set_key_UINT32(ods_key_value_t c_key, val):
+cdef set_key_UINT32(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == str:
         val = int(val)
     c_key.len = 4
     c_key.uint32_[0] = <uint32_t>val
 
-cdef set_key_UINT16(ods_key_value_t c_key, val):
+cdef set_key_UINT16(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == str:
         val = int(val)
     c_key.len = 2
     c_key.uint16_[0] = <uint16_t>val
 
-cdef set_key_INT64(ods_key_value_t c_key, val):
+cdef set_key_INT64(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == str:
         val = int(val)
     c_key.len = 8
     c_key.int64_[0] = <int64_t>val
 
-cdef set_key_INT32(ods_key_value_t c_key, val):
+cdef set_key_INT32(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == str:
         val = int(val)
     c_key.len = 4
     c_key.int32_[0] = <int32_t>val
 
-cdef set_key_INT16(ods_key_value_t c_key, val):
+cdef set_key_INT16(sos_attr_t c_attr, ods_key_value_t c_key, val):
     if type(val) == str:
         val = int(val)
     c_key.len = 2
     c_key.int16_[0] = <int16_t>val
 
-cdef set_key_STRUCT(ods_key_value_t c_key, val):
-    cdef char *s = val
-    memcpy(&c_key.value, s, len(val))
+cdef set_key_STRUCT(sos_attr_t c_attr, ods_key_value_t c_key, val):
+    cdef char *s
+    cdef int count
+    cdef int l = len(val)
+    if c_attr == NULL:
+        raise ValueError("Attr is required to set STRUCT key")
+    s = val
+    count = sos_attr_size(c_attr)
+    c_key.len = count
+    if l < count:
+        memset(c_key.value, 0, count)
+        count = l
+    memcpy(c_key.value, s, count)
 
-cdef set_key_ERROR(ods_key_value_t c_key, val):
+cdef set_key_ERROR(sos_attr_t c_attr, ods_key_value_t c_key, val):
     raise ValueError("Set is not supported on this attribute type")
 
-ctypedef object (*key_setter_fn_t)(ods_key_value_t c_key, val)
+ctypedef object (*key_setter_fn_t)(sos_attr_t c_attr, ods_key_value_t c_key, val)
 cdef key_setter_fn_t key_setters[SOS_TYPE_LAST+1]
 key_setters[<int>SOS_TYPE_INT16] = set_key_INT16
 key_setters[<int>SOS_TYPE_INT32] = set_key_INT32
@@ -4205,11 +4225,11 @@ cdef class Value(object):
     def value(self, v):
         cdef int sz
         if 0 == sos_attr_is_array(self.c_attr):
-            self.set_fn(self.c_v.data, v)
+            self.set_fn(self.c_attr, self.c_v.data, v)
         else:
             sz = len(v)
             self.c_v = sos_array_new(&self.c_v_, self.c_attr, self.c_obj, sz)
-            self.set_fn(self.c_v.data, v)
+            self.set_fn(self.c_attr, self.c_v.data, v)
 
     cdef assign(self, sos_obj_t c_obj):
         cdef int typ
@@ -4331,14 +4351,14 @@ cdef class Object(object):
         cdef sos_value_s *v
         cdef int t = sos_attr_type(c_attr)
         v = sos_array_new(&v_, c_attr, self.c_obj, len(val))
-        <object>type_setters[<int>t](v.data, val)
+        <object>type_setters[<int>t](c_attr, v.data, val)
         sos_value_put(v)
 
     cdef set_py_value(self, sos_attr_t c_attr, val):
         cdef sos_value_data_t c_data
         cdef int t = sos_attr_type(c_attr)
         c_data = sos_obj_attr_data(self.c_obj, c_attr, NULL)
-        <object>type_setters[<int>t](c_data, val)
+        <object>type_setters[<int>t](c_attr, c_data, val)
 
     def __getitem__(self, idx):
         cdef sos_obj_t arr_obj

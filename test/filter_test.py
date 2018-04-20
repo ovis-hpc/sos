@@ -1,29 +1,63 @@
 #!/usr/bin/env python
 from __future__ import print_function
 import unittest
-import shutil
-import numpy as np
 import logging
 import os
+import random
+import numpy
 from sosdb import Sos
-from sosunittest import SosTestCase
+from sosunittest import SosTestCase, Dprint
+import datetime as dt
 
 class Debug(object): pass
 
 logger = logging.getLogger(__name__)
+data = []
 
-class FilterTestJoin3xU64(SosTestCase):
+class FilterTest(SosTestCase):
     @classmethod
     def setUpClass(cls):
-        cls.setUpDb('join_test_3x_u64_cont')
+        cls.setUpDb('filter_test_cont')
         cls.schema = Sos.Schema()
-        cls.schema.from_template('3x_u64',
-                                 [ { "name" : "a_1", "type" : "uint64" },
-                                   { "name" : "a_2", "type" : "uint64" },
-                                   { "name" : "a_3", "type" : "uint64" },
-                                   { "name" : "join_key", "type" : "join",
-                                     "join_attrs" : [ "a_1", "a_2", "a_3" ],
-                                     "index" : {}}
+        cls.schema.from_template('filter_test',
+                                 [
+                                 { "name" : "int16", "type" : "int16", "index" : {} },
+                                 { "name" : "int32", "type" : "int32", "index" : {} },
+                                 { "name" : "int64", "type" : "int64", "index" : {} },
+                                 { "name" : "uint16", "type" : "uint16", "index" : {} },
+                                 { "name" : "uint32", "type" : "uint32", "index" : {} },
+                                 { "name" : "uint64", "type" : "uint64", "index" : {} },
+                                 { "name" : "float", "type" : "float", "index" : {} },
+                                 { "name" : "double", "type" : "double", "index" : {} },
+                                 { "name" : "timestamp", "type" : "timestamp", "index" : {} },
+                                 { "name" : "string", "type" : "char_array", "index" : {} },
+                                 { "name" : "byte_array", "type" : "byte_array", "index" : {} },
+                                 { "name" : "int16_array", "type" : "int16_array", "index" : {} },
+                                 { "name" : "int32_array", "type" : "int32_array", "index" : {} },
+                                 { "name" : "int64_array", "type" : "int64_array", "index" : {} },
+                                 { "name" : "uint16_array", "type" : "uint16_array", "index" : {} },
+                                 { "name" : "uint32_array", "type" : "uint32_array", "index" : {} },
+                                 { "name" : "uint64_array", "type" : "uint64_array", "index" : {} },
+                                 { "name" : "float_array", "type" : "float_array", "index" : {} },
+                                 { "name" : "double_array", "type" : "double_array", "index" : {} },
+
+                                 { "name" : "join_i16_i32_i64", "type" : "join",
+                                   "join_attrs" : [ "int16", "int32", "int64" ], "index" : {} },
+
+                                 { "name" : "join_u16_u32_u64", "type" : "join",
+                                   "join_attrs" : [ "uint16", "uint32", "uint64" ], "index" : {} },
+
+                                 { "name" : "join_i16_u32_i64", "type" : "join",
+                                   "join_attrs" : [ "int16", "uint32", "int64" ], "index" : {} },
+
+                                 { "name" : "join_i16_i32_u64", "type" : "join",
+                                   "join_attrs" : [ "int16", "int32", "uint64" ], "index" : {} },
+
+                                 { "name" : "join_i64_double", "type" : "join",
+                                   "join_attrs" : [ "int64", "double" ], "index" : {} },
+
+                                 { "name" : "join_u64_timestamp", "type" : "join",
+                                   "join_attrs" : [ "uint64", "timestamp" ], "index" : {} },
                                ])
         cls.schema.add(cls.db)
 
@@ -31,110 +65,189 @@ class FilterTestJoin3xU64(SosTestCase):
     def tearDownClass(cls):
         cls.tearDownDb()
 
-    def setUp(self):
-        self.min_a_1 = 1000
-        self.max_a_1 = 10000
-        self.filt = Sos.Filter(self.schema.attr_by_name('join_key'))
-        a_1 = self.schema.attr_by_name('a_1')
-        self.filt.add_condition(a_1, Sos.COND_GE, self.min_a_1)
-        self.filt.add_condition(a_1, Sos.COND_LE, self.max_a_1)
+    def __generate_data(self):
+        for i in range(0, 1024):
+            t = dt.datetime.now()
+            data.append((
+                -i, -i, -i,
+                i, i, i,
+                random.random(), random.random(),
+                (t.second, t.microsecond),
+                "{0}".format(i), bytearray("{0}".format(i)),
+                [ -i, -i, -i ], [ -i, -i, -i ], [ -i, -i, -i ],
+                [ i, i, i ], [ i, i, i ], [ i, i, i ],
+                [ random.random(), random.random(), random.random() ],
+                [ random.random(), random.random(), random.random() ]
+            ))
 
-    def tearDown(self):
-        del self.filt
+    def test_00_add_data(self):
+        global data
+        self.__generate_data()
+        for t in data:
+            obj = self.schema.alloc()
+            obj[:] = t
+            rc = obj.index_add()
+            self.assertEqual( rc, 0 )
 
-    def compute_min_max_a_23(self):
-        # compute known min and max for the a_2 and a_3
-        a_2_vals = {}
-        a_3_vals = {}
-        o = self.filt.begin()
-        while o:
-            if o[1] in a_2_vals:
-                a_2_vals[o[1]] += 1
-            else:
-                a_2_vals[o[1]] = 1
-            if o[2] in a_3_vals:
-                a_3_vals[o[2]] += 1
-            else:
-                a_3_vals[o[2]] = 1
-            o = self.filt.next()
-
-        c1 = a_2_vals.keys()[len(a_2_vals)/2]
-        c2 = a_2_vals.keys()[-1]
-        if c1 > c2:
-            min_a_2 = c2
-            max_a_2 = c1
-        else:
-            min_a_2 = c1
-            max_a_2 = c2
-        c1 = a_3_vals.keys()[len(a_3_vals)/2]
-        c2 = a_3_vals.keys()[-1]
-        if c1 > c2:
-            min_a_3 = c2
-            max_a_3 = c1
-        else:
-            min_a_3 = c1
-            max_a_3 = c2
-        return (min_a_2, max_a_2, min_a_3, max_a_3)
-
-    def test_00_add_objects(self):
-        for i in range(0, 128 * 1024):
-            o = self.schema.alloc()
-            o[:] = np.random.rand(3) * 1000000
-            o.index_add()
-
-    def test_01_next_prev_a_1(self):
-        o = self.filt.begin()
+    def __test_next_prev(self, attr_name, min_v, max_v):
+        attr = self.schema[attr_name]
+        f = Sos.Filter(attr)
+        f.add_condition(attr, Sos.COND_GE, min_v)
+        f.add_condition(attr, Sos.COND_LE, max_v)
+        o = f.begin()
         next_count = 0
         while o:
-            self.assertTrue(o[0] >= self.min_a_1)
-            self.assertTrue(o[0] <= self.max_a_1)
-            o = self.filt.next()
             next_count += 1
+            v = o[attr_name]
+            if type(v) == numpy.ndarray:
+                v = v.tolist()
+            Dprint("{0} >= {1}".format(v, min_v))
+            Dprint("{0} <= {1}".format(v, max_v))
+            self.assertTrue( v >= min_v )
+            self.assertTrue( v <= max_v )
+            o = f.next()
 
         # iterate backwards, the count should be the same
-        o = self.filt.end()
+        o = f.end()
         prev_count = 0
         while o:
-            self.assertTrue(o[0] >= self.min_a_1)
-            self.assertTrue(o[0] <= self.max_a_1)
-            o = self.filt.prev()
             prev_count += 1
+            v = o[attr_name]
+            if type(v) == numpy.ndarray:
+                v = v.tolist()
+            Dprint("{0} >= {1}".format(v, min_v))
+            Dprint("{0} <= {1}".format(v, max_v))
+            self.assertTrue( v >= min_v )
+            self.assertTrue( v <= max_v )
+            o = f.prev()
 
         self.assertEqual(next_count, prev_count)
 
-    def test_02_next_prev_a_23(self):
-        (min_a_2, max_a_2, min_a_3, max_a_3) = self.compute_min_max_a_23()
-
-        # Add conditions an a_2 and a_3
-        a_2 = self.schema.attr_by_name('a_2')
-        a_3 = self.schema.attr_by_name('a_3')
-        self.filt.add_condition(a_2, Sos.COND_GE, min_a_2)
-        self.filt.add_condition(a_2, Sos.COND_LE, max_a_2)
-        self.filt.add_condition(a_3, Sos.COND_GE, min_a_3)
-        self.filt.add_condition(a_3, Sos.COND_LE, max_a_3)
-
-        o = self.filt.begin()
+    def __join_test_next_prev(self, join_attr_name, attr_name, min_v, max_v):
+        join_attr = self.schema[join_attr_name]
+        attr = self.schema[attr_name]
+        f = Sos.Filter(join_attr)
+        f.add_condition(attr, Sos.COND_GE, min_v)
+        f.add_condition(attr, Sos.COND_LE, max_v)
+        o = f.begin()
         next_count = 0
         while o:
-            self.assertTrue(o[1] >= min_a_2)
-            self.assertTrue(o[1] <= max_a_2)
-            self.assertTrue(o[2] >= min_a_3)
-            self.assertTrue(o[2] <= max_a_3)
-            o = self.filt.next()
+            Dprint(o[:])
             next_count += 1
+            self.assertTrue( o[attr_name] >= min_v )
+            self.assertTrue( o[attr_name] <= max_v )
+            o = f.next()
 
-        o = self.filt.end()
+        # iterate backwards, the count should be the same
+        o = f.end()
         prev_count = 0
         while o:
-            self.assertTrue(o[1] >= min_a_2)
-            self.assertTrue(o[1] <= max_a_2)
-            self.assertTrue(o[2] >= min_a_3)
-            self.assertTrue(o[2] <= max_a_3)
-            o = self.filt.prev()
+            Dprint(o[:])
             prev_count += 1
+            self.assertTrue( o[attr_name] >= min_v )
+            self.assertTrue( o[attr_name] <= max_v )
+            o = f.prev()
 
-        # The forward and reverse counts should be the same
         self.assertEqual(next_count, prev_count)
+
+    def test_01_next_prev_int16(self):
+        self.__test_next_prev("int16", -600, -500)
+
+    def test_02_u_next_prev_uint16(self):
+        self.__test_next_prev("uint16", 500, 600)
+
+    def test_03_next_prev_int32(self):
+        self.__test_next_prev("int32", -600, -500)
+
+    def test_04_next_prev_uint32(self):
+        self.__test_next_prev("uint32", 500, 600)
+
+    def test_05_next_prev_int64(self):
+        self.__test_next_prev("int64", -600, -500)
+
+    def test_06_next_prev_uint64(self):
+        self.__test_next_prev("uint64", 500, 600)
+
+    def test_07_next_prev_float(self):
+        self.__test_next_prev("float", 0, 1)
+
+    def test_08_next_prev_double(self):
+        self.__test_next_prev("double", 0, 1)
+
+    def test_09_next_prev_int16_array(self):
+        self.__test_next_prev("int16_array", [-600, -600, -600], [-500, -500, -500])
+
+    def test_10_next_prev_int32_array(self):
+        self.__test_next_prev("int32_array", [-600, -600, -600], [-500, -500, -500])
+
+    def test_11_next_prev_int64_array(self):
+        self.__test_next_prev("int64_array", [-600, -600, -600], [-500, -500, -500])
+
+    def test_12_next_prev_uint16_array(self):
+        self.__test_next_prev("uint16_array", [500, 500, 500], [600, 600, 600])
+
+    def test_13_next_prev_uint32_array(self):
+        self.__test_next_prev("uint32_array", [500, 500, 500], [600, 600, 600])
+
+    def test_14_next_prev_uint64_array(self):
+        self.__test_next_prev("uint64_array", [500, 500, 500], [600, 600, 600])
+
+    def test_15_next_prev_float_array(self):
+        self.__test_next_prev("float_array", [0, 0, 0], [1, 1, 1])
+
+    def test_16_next_prev_double_array(self):
+        self.__test_next_prev("double_array", [0, 0, 0], [1, 1, 1])
+
+
+    def test_200_next_prev_join_i16_i32_i64(self):
+        self.__join_test_next_prev("join_i16_i32_i64", "int16", -600, -500)
+
+    def test_201_next_prev_join_i16_i32_i64(self):
+        self.__join_test_next_prev("join_i16_i32_i64", "int32", -600, -500)
+
+    def test_202_next_prev_join_i16_i32_i64(self):
+        self.__join_test_next_prev("join_i16_i32_i64", "int64", -600, -500)
+
+
+    def test_300_next_prev_join_u16_u32_u64(self):
+        self.__join_test_next_prev("join_u16_u32_u64", "uint16", 500, 600)
+
+    def test_301_next_prev_join_u16_u32_u64(self):
+        self.__join_test_next_prev("join_u16_u32_u64", "uint32", 500, 600)
+
+    def test_302_next_prev_join_u16_u32_u64(self):
+        self.__join_test_next_prev("join_u16_u32_u64", "uint64", 500, 600)
+
+
+    def test_400_next_prev_join_i16_u32_i64(self):
+        self.__join_test_next_prev("join_i16_u32_i64", "int16", -600, -500)
+
+    def test_401_next_prev_join_i16_u32_i64(self):
+        self.__join_test_next_prev("join_i16_u32_i64", "uint32", 500, 600)
+
+    def test_402_next_prev_join_i16_u32_i64(self):
+        self.__join_test_next_prev("join_i16_u32_i64", "int64", -600, -500)
+
+
+    def test_500_next_prev_join_i16_i32_u64(self):
+        self.__join_test_next_prev("join_i16_i32_u64", "int16", -600, -500)
+
+    def test_501_next_prev_join_i16_i32_u64(self):
+        self.__join_test_next_prev("join_i16_i32_u64", "int32", -600, -500)
+
+    def test_502_next_prev_join_i16_i32_u64(self):
+        self.__join_test_next_prev("join_i16_i32_u64", "uint64", 500, 600)
+
+
+    def test_600_next_prev_join_i64_double(self):
+        self.__join_test_next_prev("join_i64_double", "int64", -600, -500)
+
+    def test_601_next_prev_join_i64_double(self):
+        self.__join_test_next_prev("join_i64_double", "double", 0, 1)
+
+
+    def test_700_next_prev_join_u64_timestamp(self):
+        self.__join_test_next_prev("join_u64_timestamp", "timestamp", data[100][8], data[200][8])
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'

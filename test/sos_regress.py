@@ -21,7 +21,7 @@ from join_test_u32_str_u32 import JoinTestU32_Str_U32
 from join_test_u32_str_str import JoinTestU32_Str_Str
 from join_test_key import JoinTestKey
 from join_test_getter import JoinTestGet
-from filter_test import FilterTestJoin3xU64
+from filter_test import FilterTest
 from pos_test import FilterPosTest
 from filt_count_test import FilterCountTest
 from delete_test import DeleteTest
@@ -43,7 +43,7 @@ tests = [ SchemaTest,
           JoinTestU32_Str_U32,
           JoinTestKey,
           JoinTestGet,
-          FilterTestJoin3xU64,
+          FilterTest,
           FilterPosTest,
           FilterCountTest,
           DeleteTest,

@@ -142,6 +142,11 @@ static int TIMESTAMP_cmp(sos_value_t a, sos_value_t b, size_t size)
 	return 0;
 }
 
+static int OBJ_cmp(sos_value_t a, sos_value_t b, size_t size)
+{
+	return memcmp(a->data->prim.ref_.idx_data.bytes, b->data->prim.ref_.idx_data.bytes, sizeof(ods_idx_data_t));
+}
+
 static int STRUCT_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	return memcmp(a->data->prim.struc_, b->data->prim.struc_, size);
@@ -163,20 +168,67 @@ static int CHAR_ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 	return BYTE_ARRAY_cmp(a, b, size);
 }
 
-static int ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
+static int OBJ_ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	size_t a_len = sos_value_size(a);
-	size_t b_len = sos_value_size(b);
-	size_t cmp_len;
-	if (a_len > b_len)
-		cmp_len = b_len;
-	else
-		cmp_len = a_len;
-	int res = memcmp(a->data->array.data.byte_, b->data->array.data.byte_, cmp_len);
-	if (res == 0)
-		return a_len - b_len;
-	return res;
+	size_t a_len = a->data->array.count;
+	size_t b_len = b->data->array.count;
+	int i, res;
+	size_t cmp_len = (a_len < b_len ? a_len : b_len);
+	for (i = 0; i < cmp_len; i++) {
+		res = memcmp(a->data->array.data.ref_[i].idx_data.bytes,
+			     a->data->array.data.ref_[i].idx_data.bytes,
+			     sizeof(sos_obj_ref_t));
+		if (res)
+			return res;
+	}
+	return a_len - b_len;
 }
+
+#if 0
+#define ARRAY_CMP(_n_, _t_, _f_)					\
+	static int _n_ ## _cmp(sos_value_t a, sos_value_t b, size_t size) \
+	{								\
+		size_t a_len = sos_value_size(a);			\
+		size_t b_len = sos_value_size(b);			\
+		int i;							\
+		size_t cmp_len = (a_len < b_len ? a_len : b_len);	\
+		for (i = 0; i < cmp_len / sizeof(_t_); i++) {		\
+			_t_ av = a->data->array.data._f_[i];		\
+			_t_ bv = b->data->array.data._f_[i];		\
+			if (av < bv)					\
+				return -1;				\
+			if (av > bv)					\
+				return 1;				\
+		}							\
+		return a_len - b_len;					\
+	}
+#else
+#define ARRAY_CMP(_n_, _t_, _f_)					\
+static int _n_ ## _cmp(sos_value_t a, sos_value_t b, size_t size) \
+{								\
+	size_t a_len = a->data->array.count;			\
+	size_t b_len = b->data->array.count;			\
+	int i;							\
+	size_t cmp_len = (a_len < b_len ? a_len : b_len);	\
+	for (i = 0; i < cmp_len; i++) {				\
+		if (a->data->array.data._f_[i] < b->data->array.data._f_[i]) \
+			return -1;				\
+		if (a->data->array.data._f_[i] > b->data->array.data._f_[i]) \
+			return 1;				\
+	}							\
+	return a_len - b_len;					\
+}
+#endif
+
+ARRAY_CMP(INT16_ARRAY, int16_t, int16_)
+ARRAY_CMP(INT32_ARRAY, int32_t, int32_)
+ARRAY_CMP(INT64_ARRAY, int64_t, int64_)
+ARRAY_CMP(UINT16_ARRAY, uint16_t, uint16_)
+ARRAY_CMP(UINT32_ARRAY, uint32_t, uint32_)
+ARRAY_CMP(UINT64_ARRAY, uint64_t, uint64_)
+ARRAY_CMP(FLOAT_ARRAY, float, float_)
+ARRAY_CMP(DOUBLE_ARRAY, double, double_)
+ARRAY_CMP(LONG_DOUBLE_ARRAY, long double, long_double_)
 
 static cmp_fn_t cmp_fn_table[] = {
 	[SOS_TYPE_INT16] = INT16_cmp,
@@ -188,20 +240,21 @@ static cmp_fn_t cmp_fn_table[] = {
 	[SOS_TYPE_FLOAT] = FLOAT_cmp,
 	[SOS_TYPE_DOUBLE] = DOUBLE_cmp,
 	[SOS_TYPE_LONG_DOUBLE] = LONG_DOUBLE_cmp,
+	[SOS_TYPE_OBJ] = OBJ_cmp,
 	[SOS_TYPE_STRUCT] = STRUCT_cmp,
 	[SOS_TYPE_TIMESTAMP] = TIMESTAMP_cmp,
 	[SOS_TYPE_CHAR_ARRAY] = CHAR_ARRAY_cmp,
 	[SOS_TYPE_BYTE_ARRAY] = BYTE_ARRAY_cmp,
-	[SOS_TYPE_INT16_ARRAY] = ARRAY_cmp,
-	[SOS_TYPE_INT32_ARRAY] = ARRAY_cmp,
-	[SOS_TYPE_INT64_ARRAY] = ARRAY_cmp,
-	[SOS_TYPE_UINT16_ARRAY] = ARRAY_cmp,
-	[SOS_TYPE_UINT32_ARRAY] = ARRAY_cmp,
-	[SOS_TYPE_UINT64_ARRAY] = ARRAY_cmp,
-	[SOS_TYPE_FLOAT_ARRAY] = ARRAY_cmp,
-	[SOS_TYPE_DOUBLE_ARRAY] = ARRAY_cmp,
-	[SOS_TYPE_LONG_DOUBLE_ARRAY] = ARRAY_cmp,
-	[SOS_TYPE_OBJ_ARRAY] = ARRAY_cmp,
+	[SOS_TYPE_INT16_ARRAY] = INT16_ARRAY_cmp,
+	[SOS_TYPE_INT32_ARRAY] = INT32_ARRAY_cmp,
+	[SOS_TYPE_INT64_ARRAY] = INT64_ARRAY_cmp,
+	[SOS_TYPE_UINT16_ARRAY] = UINT16_ARRAY_cmp,
+	[SOS_TYPE_UINT32_ARRAY] = UINT32_ARRAY_cmp,
+	[SOS_TYPE_UINT64_ARRAY] = UINT64_ARRAY_cmp,
+	[SOS_TYPE_FLOAT_ARRAY] = FLOAT_ARRAY_cmp,
+	[SOS_TYPE_DOUBLE_ARRAY] = DOUBLE_ARRAY_cmp,
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = LONG_DOUBLE_ARRAY_cmp,
+	[SOS_TYPE_OBJ_ARRAY] = OBJ_ARRAY_cmp,
 };
 
 /**

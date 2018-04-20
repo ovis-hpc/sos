@@ -30,6 +30,7 @@ class KeyTest(SosTestCase):
                                  { "name" : "float", "type" : "float", "index" : {} },
                                  { "name" : "double", "type" : "double", "index" : {} },
                                  { "name" : "timestamp", "type" : "timestamp", "index" : {} },
+                                 { "name" : "struct", "type" : "struct", "size" : 16, "index" : {} },
                                  { "name" : "string", "type" : "char_array", "index" : {} },
                                  { "name" : "byte_array", "type" : "byte_array", "index" : {} },
                                  { "name" : "int16_array", "type" : "int16_array", "index" : {} },
@@ -46,7 +47,6 @@ class KeyTest(SosTestCase):
     @classmethod
     def tearDownClass(cls):
         cls.tearDownDb()
-        pass
 
     def __generate_data(self):
         for i in range(0, 1024):
@@ -56,6 +56,7 @@ class KeyTest(SosTestCase):
                 i, i, i,
                 random.random(), random.random(),
                 (t.second, t.microsecond),
+                bytearray(str(-i)),
                 "{0}".format(i), bytearray("{0}".format(i)),
                 [ -i, -i, -i ], [ -i, -i, -i ], [ -i, -i, -i ],
                 [ i, i, i ], [ i, i, i ], [ i, i, i ],
@@ -81,7 +82,7 @@ class KeyTest(SosTestCase):
         o = idx.find(key)
         if o is not None:
             Dprint(o[:])
-        self.assertTrue( o is not None )
+        self.assertIsNotNone( o )
         self.assertEqual( o[attr_name], value )
 
     def _test_int_key_str(self, attr_name, value):
@@ -91,7 +92,7 @@ class KeyTest(SosTestCase):
         # generate key from string
         key = attr.key(str(value))
         o = idx.find(key)
-        self.assertTrue( o is not None )
+        self.assertIsNotNone( o )
         self.assertEqual( o[attr_name], value )
 
         # cause exception by giving key a garbage integer value
@@ -168,32 +169,40 @@ class KeyTest(SosTestCase):
         d = data[501]
         self._test_int_key_type('timestamp', d[8])
 
-    def test_10_char_array(self):
-        d = data[502]
+    def test_10_struct(self):
+        attr = self.schema['struct']
+        idx = attr.index()
+
+        # generate key from value
+        value = '-503'
+        key = attr.key(value)
+        o = idx.find(key)
+        if o is not None:
+            Dprint(o[:])
+        self.assertIsNotNone( o )
+        self.assertEqual( o['struct'][:len(value)],
+                          bytearray(value) )
+
+    def test_11_char_array(self):
         self._test_int_key_type('string', '502')
 
-    def test_11_byte_array(self):
-        d = data[503]
+    def test_12_byte_array(self):
         self._test_array_key_type('byte_array', bytearray('503'))
         self._test_array_key_type('byte_array', [53, 48, 51])
 
-    def test_12_int16_array(self):
-        d = data[504]
+    def test_13_int16_array(self):
         self._test_array_key_type('int16_array', [-504, -504, -504])
         self._test_array_key_str('int16_array', '  -504  ,  -504, -504')
 
-    def test_13_uint16_array(self):
-        d = data[504]
+    def test_14_uint16_array(self):
         self._test_array_key_type('uint16_array', [504, 504, 504])
         self._test_array_key_str('uint16_array', '  504  ,  504, 504')
 
-    def test_14_int32_array(self):
-        d = data[504]
+    def test_15_int32_array(self):
         self._test_array_key_type('int32_array', [-504, -504, -504])
         self._test_array_key_str('int32_array', '  -504  ,  -504, -504')
 
-    def test_15_uint32_array(self):
-        d = data[504]
+    def test_16_uint32_array(self):
         self._test_array_key_type('uint32_array', [504, 504, 504])
         self._test_array_key_str('uint32_array', '  504  ,  504, 504')
 
