@@ -63,8 +63,14 @@
 #include <sys/stat.h>
 #include <ods/ods_atomic.h>
 #ifdef __cplusplus
-extern "C" {
+#define EXTERN_C_BEGIN	extern "C" {
+#define EXTERN_C_END	}
+#else
+#define EXTERN_C_BEGIN
+#define EXTERN_C_END
 #endif
+
+EXTERN_C_BEGIN
 
 typedef struct ods_s *ods_t;
 typedef uint64_t ods_ref_t;
@@ -652,8 +658,5 @@ int ods_lock_cleanup(const char *path);
 #define ODS_ALL_INFO		0xff
 void ods_info(ods_t ods, FILE *fp, int flags);
 
-#ifdef __cplusplus
-}
-#endif
-
+EXTERN_C_END
 #endif

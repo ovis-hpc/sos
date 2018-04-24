@@ -50,8 +50,14 @@
 #include <ods/ods.h>
 
 #ifdef __cplusplus
-extern "C" {
+#define EXTERN_C_BEGIN	extern "C" {
+#define EXTERN_C_END	}
+#else
+#define EXTERN_C_BEGIN
+#define EXTERN_C_END
 #endif
+
+EXTERN_C_BEGIN
 
 typedef struct ods_idx *ods_idx_t;
 typedef struct ods_iter *ods_iter_t;
@@ -1031,8 +1037,6 @@ void ods_idx_print(ods_idx_t idx, FILE* fp);
  * \param file	The file pointer
  */
 void ods_idx_info(ods_idx_t idx, FILE* fp);
-#ifdef __cplusplus
-}
-#endif
+EXTERN_C_END
 
 #endif
