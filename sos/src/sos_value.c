@@ -319,7 +319,7 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 	ods_key_comp_t comp;
 	size_t comp_len;
 	struct sos_array_s *data;
-	int i, count, join_id;
+	int i = 0, count, join_id;
 	sos_schema_t schema = sos_attr_schema(attr);
 	size_t size;
 	sos_attr_t join_attr;
