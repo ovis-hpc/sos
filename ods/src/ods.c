@@ -1631,6 +1631,7 @@ static void del_bkt_tbl_pg(ods_pgt_t pgt, int bkt, uint32_t pg_no)
 	     prev_pg = bkt_pg, bkt_pg = pg->pg_next) {
 		pg = &pgt->pg_pages[bkt_pg];
 		if (bkt_pg == pg_no) {
+			pg->pg_flags &= ~ODS_F_IN_BKT;
 			if (prev_pg) {
 				pgt->pg_pages[prev_pg].pg_next = pg->pg_next;
 			} else {
@@ -1638,7 +1639,6 @@ static void del_bkt_tbl_pg(ods_pgt_t pgt, int bkt, uint32_t pg_no)
 			}
 			break;
 		}
-		pg->pg_flags &= ~ODS_F_IN_BKT;
 	}
 }
 
@@ -1657,9 +1657,11 @@ static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 		pg = &pgt->pg_pages[pg_no];
 		if (pg->pg_bits[0] || pg->pg_bits[1]) {
 			blk = alloc_bit(pg->pg_bits, bkt_bits[bkt].blk_cnt, &is_empty);
-			if (is_empty || blk < 0)
+			if (is_empty)
+				/* The last bit was consumed, take it off the bucket
+				 * list to avoid searching it next time */
 				del_bkt_tbl_pg(pgt, bkt, pg_no);
-			else if (blk >= 0)
+			if (blk >= 0)
 				break;
 		}
 		pg_no = pg->pg_next;
@@ -1864,20 +1866,30 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 	}
 	set_bit(pg->pg_bits, blk_no);
 
+	/* Add the bucket back to the bucket list */
 	if (0 == (pg->pg_flags & ODS_F_IN_BKT)) {
 		pg->pg_next = pgt->bkt_table[bkt].pg_next;
 		pgt->bkt_table[bkt].pg_next = pg_no;
 		pg->pg_flags |= ODS_F_IN_BKT;
-	} else 	if ((0 != pgt->bkt_table[bkt].pg_next) && /* Not the last page in the bucket */
-		    (pg->pg_bits[0] == bkt_bits[bkt].mask_0)
-		    && (pg->pg_bits[1] == bkt_bits[bkt].mask_1)) /* all blocks are free */
-	{
-		/* Remove the page from the bkt table */
-		del_bkt_tbl_pg(pgt, bkt, pg_no);
-
-		/* Free the page */
-		free_pages(ods, pg_no);
+		return;
 	}
+
+	/* The bucket is on the list, and it not empty return */
+	if (pg->pg_bits[0] != bkt_bits[bkt].mask_0
+	    || pg->pg_bits[1] != bkt_bits[bkt].mask_1) {
+		return;
+	}
+
+	/* If this is the only bucket remaining on the list, leave it */
+	if (pgt->bkt_table[bkt].pg_next == pg_no && pg->pg_next == 0) {
+		return;
+	}
+
+	/* Remove this bucket to avoid accumulating empty buckets on a bucket list */
+	del_bkt_tbl_pg(pgt, bkt, pg_no);
+
+	/* Free the page */
+	free_pages(ods, pg_no);
 }
 
 static void free_pages(ods_t ods, uint64_t pg_no)

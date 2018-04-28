@@ -35,7 +35,7 @@ class PatternTest(SosTestCase):
 
     @classmethod
     def tearDownClass(cls):
-        # cls.tearDownDb()
+        cls.tearDownDb()
         pass
 
     def __time_to_tuple(self, t):
