@@ -74,6 +74,20 @@ static void print_info(ods_idx_t idx, FILE *fp)
 	fprintf(fp, "%*s : %d\n", 12, "Cardinality", t->udata->card);
 	fprintf(fp, "%*s : %d\n", 12, "Duplicates", t->udata->dups);
 	fflush(fp);
+
+	int bkt;
+	int max_bkt_len = t->udata->max_bkt_len;
+	uint32_t *counts = calloc(max_bkt_len + 1, sizeof(uint32_t));
+	for (bkt = 0; bkt <= t->udata->max_bkt; bkt++) {
+		uint32_t cnt = t->htable->table[bkt].count;
+		if (cnt)
+			counts[cnt] += 1;
+	}
+	for (bkt = 1; bkt <= max_bkt_len; bkt++) {
+		fprintf(fp, "%12d %24d\n", bkt, counts[bkt]);
+	}
+	fflush(fp);
+	free(counts);
 }
 
 #ifdef HT_DEBUG
@@ -158,9 +172,9 @@ static int ht_init(ods_t ods, const char *idx_type, const char *key_type, const 
 			name = strtok(arg_buf, "=");
 			type = strtok(NULL, "=");
 			if (name && (0 == strcasecmp(name, "TYPE"))) {
-				if (type && (0 == strcasecmp(type, "fnv_32")))
+				if (type && (0 == strncasecmp(type, "fnv_32", 6)))
 					hash_type = HT_HASH_FNV_32;
-				else if (type && (0 == strcasecmp(type, "fnv_64")))
+				else if (type && (0 == strncasecmp(type, "fnv_64", 6)))
 					hash_type = HT_HASH_FNV_64;
 				else
 					return EINVAL;
