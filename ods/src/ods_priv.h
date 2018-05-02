@@ -149,7 +149,8 @@ struct ods_s {
 	/* Current ODS map size for new maps in bytes */
 	size_t obj_map_sz;
 
-	/* Tree of object maps. Key is file offset. */
+	/* Tree of object maps. Key is file offset and map length. */
+	ods_map_t last_map;
 	struct rbt map_tree;
 
 	/* Local lock for this ODS instance */

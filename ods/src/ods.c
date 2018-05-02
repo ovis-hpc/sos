@@ -89,6 +89,7 @@ static void pgt_unmap(ods_t ods);
 static int ref_valid(ods_t ods, ods_ref_t ref);
 static void free_pages(ods_t ods, uint64_t pg_no);
 static void __lock_init(ods_lock_t *lock);
+static inline void map_put(ods_map_t map);
 
 #if defined(ODS_DEBUG)
 int __ods_debug = 1;
@@ -108,20 +109,17 @@ static inline int test_bit(uint64_t *bits, int bit)
 	return (bits[word] & (1L << bit) ? 1 : 0);
 }
 
-static inline int alloc_bit(uint64_t *bits, size_t bit_count, int *is_empty)
+static inline int alloc_bit(uint64_t *bits, size_t bit_count)
 {
 	int i, bit, words = bit_count >> 6;
 	if (!words)
 		words = 1;
-	*is_empty = 0;
 	for (bit = -1, i = 0; i < words; i++) {
 		int wit = ffsl(bits[i]);
 		if (wit) {
 			wit -= 1;	      /* ffsl returns 1 based bit #s */
 			bits[i] &= ~(1L << wit);
 			bit = (i << 6) + wit;
-			if ((0 == bits[i]) && (i == (words - 1)))
-				*is_empty = 1;
 			break;
 		}
 	}
@@ -182,8 +180,10 @@ static inline uint64_t page_count(size_t sz)
 
 static inline ods_map_t map_get(ods_map_t map)
 {
-	assert(map->refcount >= 1);
-	ods_atomic_inc(&map->refcount);
+	if (__builtin_expect(!!(map), 1)) {
+		assert(map->refcount >= 1);
+		ods_atomic_inc(&map->refcount);
+	}
 	return map;
 }
 
@@ -478,6 +478,17 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	uint64_t map_len;
 	ods_pgt_t pgt;
 
+	/* Opportunistically check if last map will work */
+	map = map_get(ods->last_map);
+	if (map
+	    && (loff >= map->map.off)
+	    && ((map->map.off + map->map.len) >= (loff + sz))) {
+		return map;
+	} else if (map) {
+		map_put(map);
+	}
+
+	/* Get the PGT in case it has been resized by another process */
 	pgt = pgt_get(ods);
 	if (!pgt)
 		goto err_0;
@@ -494,9 +505,17 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 			/* Replace this map and let it age out */
 			goto skip;
 		if ((map->map.off + map->map.len) >= (loff + sz)) {
+			ods_map_t last_map = ods->last_map;
 			map->last_used = time(NULL);
+			map = map_get(map);
 			__ods_unlock(ods);
-			return map_get(map);
+			if (__sync_bool_compare_and_swap(&ods->last_map, last_map, map)) {
+				/* We replaced the last_map, drop the ODS ref on it */
+				map_put(last_map);
+				/* Take a ref on the new last_map */
+				map_get(map);
+			}
+			return map;
 		}
 		/* Found a map, but it wasn't big enough */
 	}
@@ -1631,20 +1650,23 @@ static void del_bkt_tbl_pg(ods_pgt_t pgt, int bkt, uint32_t pg_no)
 	     prev_pg = bkt_pg, bkt_pg = pg->pg_next) {
 		pg = &pgt->pg_pages[bkt_pg];
 		if (bkt_pg == pg_no) {
+			assert(pg->pg_flags & ODS_F_IN_BKT);
 			pg->pg_flags &= ~ODS_F_IN_BKT;
 			if (prev_pg) {
 				pgt->pg_pages[prev_pg].pg_next = pg->pg_next;
 			} else {
 				pgt->bkt_table[bkt].pg_next = pg->pg_next;
 			}
-			break;
+			pg->pg_next = 0;
+			return;
 		}
 	}
+	assert(0 == "Attempt to remove a block that was not on the free list");
 }
 
 static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 {
-	int is_empty, blk, bkt = size_to_bkt(sz);
+	int blk, bkt = size_to_bkt(sz);
 	ods_pg_t pg;
 	uint64_t pg_no = pgt->bkt_table[bkt].pg_next;
 
@@ -1656,8 +1678,8 @@ static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 		}
 		pg = &pgt->pg_pages[pg_no];
 		if (pg->pg_bits[0] || pg->pg_bits[1]) {
-			blk = alloc_bit(pg->pg_bits, bkt_bits[bkt].blk_cnt, &is_empty);
-			if (is_empty)
+			blk = alloc_bit(pg->pg_bits, bkt_bits[bkt].blk_cnt);
+			if (0 == pg->pg_bits[0] && 0 == pg->pg_bits[1])
 				/* The last bit was consumed, take it off the bucket
 				 * list to avoid searching it next time */
 				del_bkt_tbl_pg(pgt, bkt, pg_no);
