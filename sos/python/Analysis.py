@@ -2,6 +2,8 @@ from __future__ import print_function
 import numpy as np
 from sosdb import Sos
 import datetime as dt
+import time
+import os
 
 class Pipeline(object):
     """Implements a generic analysis pipeline interface to SosDB.
@@ -239,16 +241,18 @@ class Pipeline(object):
             else:
                 self.index = "timestamp"
         self.filter = Sos.Filter(self.in_schema.attr_by_name(self.index))
-        self.filter.add_condition(self.timestamp,
-                                  Sos.COND_GE,
-                                  self.start.strftime(self.dt_fmt))
-        self.filter.add_condition(self.timestamp,
-                                  Sos.COND_LE,
-                                  self.end.strftime(self.dt_fmt))
-        if job_id is not None:
+        if self.start:
+            self.filter.add_condition(self.timestamp,
+                                      Sos.COND_GE,
+                                      self.start)
+        if self.end:
+            self.filter.add_condition(self.timestamp,
+                                      Sos.COND_LE,
+                                      self.end)
+        if job_id:
             self.job_id = self.in_schema.attr_by_name("job_id")
             self.filter.add_condition(self.job_id, Sos.COND_EQ, str(job_id))
-        if comp_id is not None:
+        if comp_id:
             self.comp_id = self.in_schema.attr_by_name("component_id")
             self.filter.add_condition(self.comp_id, Sos.COND_EQ, str(comp_id))
 
@@ -312,28 +316,32 @@ class Pipeline(object):
         """
         if window is None:
             window = self.window
-        cnt, nda = self.filter.as_ndarray(window,
-                                          shape=self.inp_query_attrs,
-                                          cont=cont, order=order)
+        cnt, nda = self.filter.as_timeseries(window,
+                                             shape=self.inp_query_attrs,
+                                             cont=cont, order=order)
         return cnt, nda
 
-    def process(self):
+    def process(self, runwait=0.0):
         """Run the analysis pipeline
 
         The analysis pipe line calls select(), and then query(),
         transform() and output() in a loop until all samples matching
         the select criteria have been processed.
         """
-        if self.comp_list:
-            for comp_id in self.comp_list:
-                self.select(comp_id=comp_id, job_id=self.job_id)
+        while True:
+            if self.comp_list:
+                for comp_id in self.comp_list:
+                    self.select(comp_id=comp_id, job_id=self.job_id)
+                    self.__process_window()
+            elif self.job_id is not None:
+                self.select(job_id=self.job_id)
                 self.__process_window()
-        elif self.job_id is not None:
-            self.select(job_id=self.job_id)
-            self.__process_window()
-        else:
-            self.select()
-            self.__process_window()
+            else:
+                self.select()
+                self.__process_window()
+            if runwait == 0.0:
+                break
+            time.sleep(runwait)
 
     def output(self, cnt, res):
         if self.out_cont:
