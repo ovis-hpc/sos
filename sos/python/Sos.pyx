@@ -2758,6 +2758,10 @@ cdef class Filter(object):
                 sos_obj_put(c_o)
                 break
 
+        if idx < count:
+            c_o = sos_filter_end(self.c_filt)
+            sos_obj_put(c_o)
+
         free(res_attr)
         free(res_type)
         free(res_acc)
@@ -3114,6 +3118,10 @@ cdef class Filter(object):
             if idx >= count:
                 sos_obj_put(c_o)
                 break
+
+        if idx < count:
+            c_o = sos_filter_end(self.c_filt)
+            sos_obj_put(c_o)
 
         free(tmp_res)
         free(res_attr)
@@ -3786,7 +3794,7 @@ cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
         except:
             raise ValueError("The time value is a tuple"
                              " of ( int(secs), int(usecs) )")
-    elif type(val) == float:
+    elif type(val) == float or type(val) == np.float64 or type(val) == np.float32:
         try:
             secs = int(val)
             usecs = int((val - secs) * 1.e6)
