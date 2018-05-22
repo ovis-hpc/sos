@@ -1506,30 +1506,33 @@ cdef class Attr(SosObject):
         cdef size_t size
         cdef sos_comp_key_spec_t specs
         cdef size_t specs_len
-        cdef int i, j, typ
+        cdef int i, typ
         cdef sos_attr_t attr
 
         typ = sos_attr_type(self.c_attr)
         if typ == SOS_TYPE_JOIN:
             # create an argument list to use with Key.join()
             attrs = sos_attr_join_list(self.c_attr)
-            join_list = []
             specs_len = len(args)
+            if specs_len != attrs.count:
+                raise ValueError("A Join key was specified with fewer "
+                                 "than the required number of values. "
+                                 "Expecting {0} got {1}".format(attrs.count, specs_len))
             specs = <sos_comp_key_spec_t>malloc(specs_len * sizeof(sos_comp_key_spec))
             if specs == NULL:
                 raise MemoryError("Could not allocate the component key spec list.")
-            for i in range(attrs.count):
+            for i in range(0, specs_len):
                 attr = sos_schema_attr_by_id(self.c_schema, attrs.data.uint32_[i])
                 typ = sos_attr_type(attr)
-                join_list.append(typ)
                 arg = args[i]
-                join_list.append(arg)
                 specs[i].type = typ
                 type_setters[typ](attr, &specs[i].data, arg)
             size = sos_comp_key_size(specs_len, specs)
-            free(specs)
             key = Key(size=size, sos_type=SOS_TYPE_JOIN)
-            key.join(*join_list)
+            i = sos_comp_key_set(key.c_key, specs_len, specs)
+            free(specs)
+            if i != 0:
+                raise ValueError("Error {0} encoding the key.".format(i))
         elif typ < SOS_TYPE_ARRAY:
             key = Key(attr=self)
             key.set_value(args[0])
