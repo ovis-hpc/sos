@@ -1875,7 +1875,6 @@ static int bxt_delete_with_leaf(ods_idx_t idx,
 			rec = find_matching_rec(t, leaf, ent, data);
 			if (rec) {
 				delete_dup_rec(t, leaf, rec, ent);
-				ods_obj_put(rec);
 			} else {
 				rc = ENOENT;
 			}
