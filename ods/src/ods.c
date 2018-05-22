@@ -78,8 +78,6 @@
 
 static pthread_mutex_t ods_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static LIST_HEAD(ods_list_head, ods_s) ods_list = LIST_HEAD_INITIALIZER(ods_list);
-static __thread LIST_HEAD(t_obj_list_head, ods_obj_s)
-     obj_free_list = LIST_HEAD_INITIALIZER(obj_free_list);
 
 static size_t ref_size(ods_t ods, ods_ref_t ref);
 static void free_ref(ods_t ods, ods_ref_t ref);
@@ -681,16 +679,6 @@ static inline void map_put(ods_map_t map)
 	}
 }
 
-static int dirty_print_fn(struct rbn *rbn, void *udata, int level)
-{
-	FILE *fp = udata;
-	ods_dirty_t dirt = container_of(rbn, struct ods_dirty_s, rbn);
-	fprintf(fp, "%14p %14p\n",
-		(void *)(unsigned long)dirt->start,
-		(void *)(unsigned long)dirt->end);
-	return 0;
-}
-
 static int print_map(struct rbn *rbn, void *arg, int l)
 {
 	FILE *fp = arg;
@@ -864,28 +852,6 @@ static void __active_object_info(ods_t ods, FILE *fp)
 	fprintf(fp, "\n");
 }
 
-static void __free_object_info(ods_t ods, FILE *fp)
-{
-	ods_obj_t obj;
-	fprintf(fp, "Free Objects\n");
-	fprintf(fp, "                        ODS                           Put   Put\n");
-	fprintf(fp, "Object         Size     Reference      Thread         Line  Func\n");
-	fprintf(fp, "-------------- -------- -------------- -------------- ----- ------------\n");
-	LIST_FOREACH(obj, &obj_free_list, entry) {
-		fprintf(fp, "%14p %8zu 0x%012lx %14p %5d %s\n",
-			obj,
-			obj->size, obj->ref,
-			(void *)obj->thread,
-			obj->put_line, obj->put_func);
-	}
-	fprintf(fp, "\n");
-	fprintf(fp, "Dirty Tree\n\n");
-	fprintf(fp, "Start          End\n");
-	fprintf(fp, "-------------- --------------\n");
-	rbt_traverse(&ods->dirty_tree, dirty_print_fn, fp);
-	fprintf(fp, "\n");
-}
-
 static void __lock_info(ods_t ods, FILE *fp)
 {
 	pthread_mutex_t *mtx;
@@ -912,7 +878,6 @@ void ods_info(ods_t ods, FILE *fp, int flags)
 		ods->pg_fd, ods->pg_sz);
 	__active_map_info(ods, fp);
 	__active_object_info(ods, fp);
-	__free_object_info(ods, fp);
 	__lock_info(ods, fp);
 	fflush(fp);
 }
@@ -945,8 +910,8 @@ void __ods_obj_put(ods_obj_t obj, int lock)
 			if (lock)
 				__ods_unlock(obj->ods);
 		}
-		LIST_INSERT_HEAD(&obj_free_list, obj, entry);
 		map_put(obj->map);
+		free(obj);
 	}
 }
 
@@ -987,15 +952,10 @@ static ods_obj_t obj_new(ods_t ods, ods_ref_t ref)
 	void *ptr = ref_to_ptr(ods, ref, &ref_sz, &map);
 	if (!ptr)
 		return NULL;
-	if (!LIST_EMPTY(&obj_free_list)) {
-		obj = LIST_FIRST(&obj_free_list);
-		LIST_REMOVE(obj, entry);
-	} else {
-		obj = calloc(1, sizeof *obj);
-		if (obj) {
-			obj->ods = ods;
-			ods_atomic_inc(&ods->obj_count);
-		}
+	obj = calloc(1, sizeof *obj);
+	if (obj) {
+		obj->ods = ods;
+		ods_atomic_inc(&ods->obj_count);
 	}
 	obj->as.ptr = ptr;
 	obj->ods = ods;
@@ -1452,7 +1412,6 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	ods->obj_count = 0;
 	pthread_mutex_init(&ods->lock, NULL);
 	LIST_INIT(&ods->obj_list);
-	LIST_INIT(&obj_free_list);
 	ods->obj_map_sz = __ods_def_map_sz;
 	rbt_init(&ods->map_tree, map_cmp);
 	rbt_init(&ods->dirty_tree, ref_cmp);
@@ -2037,13 +1996,6 @@ void ods_close(ods_t ods, int flags)
 			map_put(obj->map);
 			free(obj);
 		}
-	}
-
-	/* Free objects in the cache */
-	while (!LIST_EMPTY(&obj_free_list)) {
-		obj = LIST_FIRST(&obj_free_list);
-		LIST_REMOVE(obj, entry);
-		free(obj);
 	}
 
 	/* Clean up any maps */
