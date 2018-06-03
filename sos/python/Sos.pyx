@@ -4,6 +4,7 @@ from libc.stdint cimport *
 from libc.stdlib cimport malloc, free
 import numpy as np
 import struct
+import sys
 cimport numpy as np
 cimport Sos
 
@@ -1598,8 +1599,9 @@ cdef class Attr(SosObject):
 
     def __str__(self):
         cdef sos_index_t c_idx
-        s = '{{ "name" : "{0}", "type" : "{1}", "size" : {2}'.format(
-            sos_attr_name(self.c_attr), sos_type_strs[sos_attr_type(self.c_attr)],
+        s = '{{ "name" : "{0}", "schema" : "{1}", "type" : "{2}", "size" : {3}'.format(
+            sos_attr_name(self.c_attr), sos_schema_name(sos_attr_schema(self.c_attr)),
+            sos_type_strs[sos_attr_type(self.c_attr)],
             sos_attr_size(self.c_attr))
         c_idx = sos_attr_index(self.c_attr)
         if c_idx != NULL:
@@ -2043,7 +2045,7 @@ cdef accessor_fn_t *accessors = [
     NULL, NULL, NULL, NULL, NULL,
     NULL, NULL, NULL, NULL, NULL,
     NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL,     # twenty zeroes to get to 32, i.e. SOS_TYPE_BYTE_ARRAY
+    NULL, NULL, NULL, NULL,     # twenty zeros to get to 32, i.e. SOS_TYPE_BYTE_ARRAY
     uint8_inline_array_acc,     # byte_array
     int8_inline_array_acc,      # char_array
     int16_inline_array_acc,
@@ -2519,7 +2521,7 @@ cdef class Filter(object):
         dimensioned array of the 'attr' attribute of each object.
 
         If the number of objects defined by the Filter is less than 'count',
-        the array will be padded with zeroes.
+        the array will be padded with zeros.
 
         The return value is a tuple containing the number of elements written
         to the array and the array itself. For example,
@@ -2528,7 +2530,7 @@ cdef class Filter(object):
              tstamp = schema.attr_by_name('timestamp')
              f = Filter(tstamp)
              count, array = f.as_ndarray(1024, shape=['timestamp', 'current_freemem'],
-                                         order=['attribute'])
+                                         order='attribute')
 
         will return the number of elements actually written to 'array' of
         size 1024 elements. The array is an Numpy.ndarray as follows:
@@ -2795,7 +2797,7 @@ cdef class Filter(object):
         dimensioned array of the 'attr' attribute of each object.
 
         If the number of objects defined by the Filter is less than 'count',
-        the array will be padded with zeroes.
+        the array will be padded with zeros.
 
         The return value is a tuple containing the number of elements written
         to the array and the array itself. For example,
@@ -2803,8 +2805,8 @@ cdef class Filter(object):
              schema = db.schema_by_name('Sample')
              tstamp = schema.attr_by_name('timestamp')
              f = Filter(tstamp)
-             count, array = f.as_ndarray(1024, shape=['timestamp', 'current_freemem'],
-                                         order=['attribute'])
+             count, array = f.as_timeseries(1024, shape=['timestamp', 'current_freemem'],
+                                            order='attribute')
 
         will return the number of elements actually written to 'array' of
         size 1024 elements. The array is an Numpy.ndarray as follows:
@@ -3147,6 +3149,109 @@ cdef class Filter(object):
             sos_filter_free(self.c_filt)
             self.c_filt = NULL
 
+cdef class ColSpec(object):
+
+    LEFT = 1
+    RIGHT = 2
+    CENTER = 3
+
+    cdef name                   # The text name for the column
+    cdef query                  # The Query
+    cdef int cursor_idx         # The index in the cursor for the Object
+                                # specifying the filter
+    cdef attr                   # The attribute in the Object
+    cdef int col_width          # How wide to make the column
+    cdef cvt_fn                 # Function to convert the attribute value
+                                # to some other value type for output
+    cdef interp_fn                # Function to provide the default value if
+                                # there is no object for this column at the
+                                # cursor index
+    cdef fill
+    cdef align
+
+    def __init__(self, name,
+                 cvt_fn=None, interp_fn=None,
+                 col_width=None, align=ColSpec.RIGHT, fill=' '):
+        self.name = name
+        self.cvt_fn = cvt_fn
+        self.interp_fn = interp_fn
+        if col_width:
+            self.col_width = col_width
+        else:
+            self.col_width = 0
+        self.align = align
+        self.fill = fill
+
+    def set_idx(self, idx):
+        cursor_idx = idx
+
+    def get_idx(self):
+        return self.cursor_idx
+
+    def set_query(self, query):
+        self.query = query
+
+    def get_query(self, query):
+        return self.query
+
+    @property
+    def col_name(self):
+        return self.name
+
+    @property
+    def schema_name(self):
+        return self.attr.schema().name()
+
+    @property
+    def attr_name(self):
+        return self.attr.name()
+
+    @property
+    def attr_type(self):
+        return self.attr.type()
+
+    @property
+    def value(self):
+        obj = self.query[self.cursor_idx]
+        if obj:
+            if self.cvt_fn:
+                return self.cvt_fn(obj[self.attr.attr_id()])
+            else:
+                return obj[self.attr.attr_id()]
+        else:
+            return None
+
+    @property
+    def width(self):
+        return self.col_width
+
+    def update(self, query, cursor_idx, attr):
+        self.query = query
+        self.cursor_idx = cursor_idx
+        self.attr = attr
+        if self.col_width == 0:
+            self.col_width = query.get_col_width()
+
+    def __repr__(self):
+        r = "name      : {0}\n".format(self.name)
+        r += "query     : {0}\n".format(self.query)
+        r += "attr      : {0}\n".format(self.attr)
+        r += "cvt_fn    : {0}\n".format(self.cvt_fn)
+        r += "cursor_idx: {0}\n".format(self.cursor_idx)
+        r += "col_width : {0}\n".format(self.col_width)
+        r += "align     : {0}\n".format(self.align)
+        r += "fill      : {0}".format(self.fill)
+        return r
+
+    def __str__(self):
+        v = str(self.value)
+        if self.align == ColSpec.RIGHT:
+            return v.rjust(self.col_width, self.fill)
+        elif self.align == ColSpec.LEFT:
+            return v.ljust(self.col_width, self.fill)
+        else:
+            return v.center(self.col_width, self.fill)
+
 cdef class Query(object):
     cdef Container cont         # The container
     cdef filter_idx             # dictionary mapping schema to filter index
@@ -3155,10 +3260,9 @@ cdef class Query(object):
     cdef columns                # array of columns
     cdef int col_width          # default width of an output column
     cdef primary                # primary attribute
-    cdef cursor                 # array of objects at the current index position
-    cdef fill_fn                # function that returns values for missing objects
+    cpdef cursor                # array of objects at the current index position
     cdef group_fn               # function that decides how objects are grouped
-
+    cdef last_row               # indeed...
     def __init__(self, container):
         """Implements a Query interface to the SOS container.
 
@@ -3210,17 +3314,23 @@ cdef class Query(object):
             return (schema, schema[aname])
         raise ValueError('No schema contains the attribute "{0}"'.format(aname))
 
+    def __getitem__(self, idx):
+        return self.cursor[idx]
+
     def set_col_width(self, width):
         self.col_width = width
 
-    def show_all_schema(self):
+    def get_col_width(self):
+        return self.col_width
+
+    def get_schemas(self):
         """Return all schema names in the container"""
         result = []
         for schema in self.cont.schema_iter():
             result.append(schema.name())
         return result
 
-    def show_all_indices(self):
+    def get_indices(self):
         """Return all indexed attributes in the container"""
         result = []
         for schema in self.cont.schema_iter():
@@ -3229,150 +3339,181 @@ cdef class Query(object):
                     result.append(schema.name() + '.' + attr.name())
         return result
 
-    def show_schema(self, name):
-        """Return a string describing the schema"""
-        return str(self.cont.schema_by_name(name))
+    def query(self, inputer, reset=True):
+        """Calls the inputer class' input function for every row in the result
 
-    def show_results(self, row_limit=0, col_width=0, fmt='table'):
-        if col_width == 0L:
-            col_width = self.col_width
-        if format == 'table':
-            return self.show_table_results(row_limit, col_width)
-        print("{0} is an unsupported format".format(fmt))
+        If the input() function returns True, the query continues and
+        the input() function is called again with the next record. If
+        the input() function returns False, the query is discontinued
+        and the call returns with the number of times input() was
+        called. If query() is called again with reset=False, the query
+        will continue with the next record following the last one
+        delivered to input().
 
-    def show_table_results(self, row_limit, col_width):
-        for col in self.columns:
-            print("{0:{width}}".format(col[1].schema().name(), width=col_width), end=' ')
-        print("")
-        for col in self.columns:
-            print("{0:{width}}".format(col[1].name(), width=col_width), end=' ')
-        print("")
-        for col in self.columns:
-            print("{0:{width}}".format('-'.ljust(col_width, '-'), width=col_width), end=' ')
-        print("")
-        count = 0
-        row = self.begin()
-        while row and (row_limit == 0 or count < row_limit):
-            for col in range(0, len(self.columns)):
-                print("{0:{width}}".format(row[col], width=col_width), end=' ')
-            print("")
-            row = self.next()
-            count += 1
-        for col in self.columns:
-            print("{0:{width}}".format('-'.ljust(col_width, '-'), width=col_width), end=' ')
-        print("\n{0} record(s)".format(count))
-
-    def show_json_results(self, row_limit, col_width):
-        for col in self.columns:
-            print("{0:{width}}".format(col[1].schema().name(), width=col_width), end=' ')
-        print("")
-        for col in self.columns:
-            print("{0:{width}}".format(col[1].name(), width=col_width), end=' ')
-        print("")
-        for col in self.columns:
-            print("{0:{width}}".format('-'.ljust(col_width, '-'), width=col_width), end=' ')
-        print("")
-        count = 0
-        row = self.begin()
-        while row and (row_limit == 0 or count < row_limit):
-            for col in range(0, len(self.columns)):
-                print("{0:{width}}".format(row[col], width=col_width), end=' ')
-            print("")
-            row = self.next()
-            count += 1
-        for col in self.columns:
-            print("{0:{width}}".format('-'.ljust(col_width, '-'), width=col_width), end=' ')
-        print("\n{0} record(s)".format(count))
-
-    def from_(self, schema):
-        """Specify the schema(s) to query
-
-        If from_() is not called, the default is all schema present in
-        the container; otherwise, it must be called before select().
+        The record argument to the input() function is a list of
+        column values as defined in the column argument to select()
 
         Positional Parameters:
-        schema - An array of schema names
+
+        -- An instance of an Inputer class that must at-least contain
+           the input function with the following signature:
+
+           def input(self, record):
+               . . .
+
+        Keyword Parameters:
+        reset     -- Start at the beginning of the query (default is True)
+
+        Returns:
+        The number of times cb_fn was called.
 
         Example:
-        query.from_(['meminfo', 'vmstat'])
+
+            class Inputer(object):
+                def __init__(self, query, row_limit=16, file=sys.stdout):
+                    self.row_count = 0
+                    self.row_limit = row_limit
+                    self.query = query
+                    self.file = file
+
+                def input(self, row):
+                    if self.row_count >= self.row_limit:
+                        return False
+                    for col in self.query.get_columns():
+                        print(col, end=' ', file=self.file)
+                    print("", file=self.file)
+                    self.row_count += 1
+                    return True
 
         """
+        cdef int count
+
+        if reset:
+            row = self.begin()
+        else:
+            row = self.next()
+            # row = self.last_row
+
+        row_count = 0
+        rc = True
+        while row and rc:
+            rc = inputer.input(row)
+            row_count += 1
+            if rc:
+                row = self.next()
+        # self.last_row = row
+        return row_count
+
+    def _from_(self, schema):
         self.schema = []
         for name in schema:
             self.schema.append(self.cont.schema_by_name(name))
 
-    def order_by(self, name):
-        """Specify the attribute name to use for ordering the result
-
-        Must be called before select().
-
-        Positional Parameters:
-        name - This name of the attribute used to order the data.
-               This attribute must be present and indexed in all schema.
-        """
+    def _order_by(self, name):
         self.primary = name
 
-    def select(self, attr_list):
+    cdef _add_colspec(self, ColSpec colspec):
+        schema, attr = self.__decode_attr_name(colspec.name)
+        if not schema:
+            raise ValueError("The attribute {0} was not found in any schema.".format(colspec.name))
+        if schema.name() not in self.filter_idx:
+            ts = schema[self.primary]
+            f = Sos.Filter(schema[self.primary])
+            idx = len(self.filters)
+            self.filter_idx[schema.name()] = idx
+            self.filters.append(f)
+        else:
+            idx = self.filter_idx[schema.name()]
+        colspec.update(self, idx, attr)
+        self.columns.append(colspec)
+
+    def select(self, columns, order_by=None, where=None, from_=None):
         """Set the attribute list returned in the result
 
-        The attr_list is an array of attribute names (logically
-        similar to column names in SQL.)  The attribute names should
-        be adorned with the containing schema name if the name is
-        ambiguous, i.e. multiple schema may contain the same attribute
-        name. Good examples in the LDMS use case are the component_id
-        and job_id attributes.
+        Positional Parmeters:
 
-        The syntax of an attribute name is as follows:
+        -- An array of column-specifications. A column-specification is
+           either an attribute name (string), or a ColDef object. The
+           ColDef object allows for the specification of how the data
+           will be converted and formatted on output.
 
-        name      := [[:alpha:]_]+ [[:alnum:]_]
-        attribute := '*'
-                  |  name
-                  |  name '.' name
-                  |  name '.' '*'
-                  |  '*' '.' '*'
-                  ;
+           Examples:
 
-        The special character '*' (asterisk) represents a wild
-        card. If '*' is alone, it represents all attribute names in
-        all schema. If a schema name precedes it, e.g. meminfo.*, it
-        is all attribute names in the schema named 'meminfo'. The
-        strings '*.*' and '*' are synonyms.
+           The simplest format is simply an array of names:
 
-        The set of schema that are part of the query is inferred from
-        the select clause.
+             [ 'meminfo.timestamp',
+               'vmstat.timestamp',
+               'meminfo.job_id',
+               'meminfo.MemFree',
+               'vmstat.nr_free_pages'
+             ]
 
-        Positional Parameters:
-        attr_list - An array of attribute names
+           A ColSpec object can be used to control data conversion and formatting:
+
+              def fmt_timestamp(ts):
+                  return str(dt.datetime.fromtimestamp(ts[0]))
+
+              [ Sos.ColSpec('meminfo.timestamp', cvt_fn=fmt_timestamp, col_width=24, align=Sos.ColSpec.LEFT),
+                Sos.ColSpec('vmstat.timestamp', cvt_fn=fmt_timestamp,  col_width=24, align=Sos.ColSpec.LEFT),
+                Sos.ColSpec('meminfo.job_id', cvt_fn=int, col_width=12),
+                'meminfo.MemFree',
+                'vmstat.nr_free_pages',
+              ]
+
+        Keyword Parameters:
+        order_by  -- The attribute to use as the primary index
+        where     -- An array of conditions to filter the data
+        from_     -- An optional array of schema names
+
+        WHERE
+
+        The 'where' keyword is an array of filter condition tuples.
+        Each condition must be applicable to every schema. A
+        condition tuple contains three elements as follows:
+
+        ( attribute_name, condition, value )
+
+        Example:
+
+        where = [( 'timestamp', COND_GE, 1510597567.001617 )]
+
+        ORDER_BY
+
+        Specifies the name of the primary key. This attribute must be
+        indexed and present in all schema referenced in the columns
+        list.
+
+        Example:
+
+        order_by = 'job_comp_time'
 
         """
+        if order_by:
+            # Must be before the Filter(s) are created
+            self._order_by(order_by)
+
+        if from_:
+            self._from_(from_)
+
         self.filter_idx = {}
         self.filters = []
         self.columns = []
-        for name in attr_list:
-            schema, attr = self.__decode_attr_name(name)
-            if not schema:
-                raise ValueError("The attribute {0} was not found in any schema.".format(name))
-            if schema.name() not in self.filter_idx:
-                ts = schema[self.primary]
-                f = Sos.Filter(schema[self.primary])
-                idx = len(self.filters)
-                self.filter_idx[schema.name()] = idx
-                self.filters.append(f)
+        for col in columns:
+            if type(col) == ColSpec:
+                spec = col
             else:
-                idx = self.filter_idx[schema.name()]
-            self.columns.append((idx, attr))
+                spec = ColSpec(col, col_width=self.get_col_width())
+            self._add_colspec(spec)
+
+        if where:
+            # Must be after the Filter(s) are created
+            self._where(where)
 
     def get_columns(self):
         return self.columns
 
     def get_filters(self):
         return self.filters
-
-    def set_fill_fn(self, fill_fn):
-        """Sets the function that will be called when a value cannot be filled
-        from the current object
-        """
-        self.fill_fn = fill_fn
 
     def default_group_fn(self, o1, o2):
         pass
@@ -3382,33 +3523,7 @@ cdef class Query(object):
         """
         self.group_fn = group_fn
 
-    def set_(self, fill_fn):
-        """Sets the function that will be called when a value cannot be filled
-        from the current object
-        """
-        self.fill_fn = fill_fn
-
-    def where(self, clause):
-        """Specify the filter conditions
-
-        'clause' is an array of filter condition tuples.  Each
-        condition must be applicable to every Filter/schema. A
-        condition tuple contains three elements as follows:
-
-        ( attribute_name, condition, value )
-
-        For example:
-
-        ( 'timestamp', COND_GE, 1510597567.001617 )
-
-        A valid call then is:
-
-        query.where(clause = [ ( 'timestamp', COND_GE, 1510597567.001617 ) ] )
-
-        Keyword Parameters:
-        clause -- An array of filter conditions as described above
-        timespec -- A two element tuple of start and end timestamps
-        """
+    def _where(self, clause):
         for c in clause:
             for f in self.filters:
                 f.add_condition(f.get_attr().schema()[c[0]], c[1], c[2])
@@ -3416,9 +3531,7 @@ cdef class Query(object):
     cdef object make_row(self):
         row = []
         for col in self.columns:
-            obj = self.cursor[col[0]]
-            attr_id = col[1].attr_id()
-            row.append(obj[attr_id])
+            row.append(col.value)
         return row
 
     def begin(self):
@@ -3428,8 +3541,10 @@ cdef class Query(object):
         return self.make_row()
 
     def end(self):
-        self.cursor = (f.end() for f in self.filters)
-        return self.cursor
+        self.cursor = []
+        for f in self.filters:
+            self.cursor.append(f.end())
+        return self.make_row()
 
     def next(self):
         self.cursor = []
@@ -3438,8 +3553,10 @@ cdef class Query(object):
         return self.make_row()
 
     def prev(self):
-        self.cursor = (f.prev() for f in self.filters)
-        return self.cursor
+        self.cursor = []
+        for f in self.filters:
+            self.cursor.append(f.prev())
+        return self.make_row()
 
 cdef class Index(object):
     cdef sos_index_t c_index
