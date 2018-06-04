@@ -1482,8 +1482,10 @@ cdef class Attr(SosObject):
 
     def join_list(self):
         cdef sos_array_t array = sos_attr_join_list(self.c_attr)
-        a = OAArray()
-        return a.set_data(NULL, array.data.byte_, array.count, np.NPY_UINT32)
+        res = np.ndarray([ array.count ], dtype=np.dtype('uint32'), order="C")
+        for i in range(0, array.count):
+            res[i] = array.data.uint32_[i]
+        return res
 
     def join_iter(self):
         return AttrJoinIter(self)
@@ -3695,47 +3697,67 @@ cdef class OAArray:
             self.c_obj = NULL
 
 cdef object get_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_FLOAT64)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('float64'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.double_[i]
+    return res
 
 cdef object get_LONG_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_LONGDOUBLE)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('float128'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.long_double_[i]
+    return res
 
 cdef object get_FLOAT_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_FLOAT32)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('float32'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.float_[i]
+    return res
 
 cdef object get_UINT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT64)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('uint64'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.uint64_[i]
+    return res
 
 cdef object get_UINT32_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT32)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('uint32'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.uint32_[i]
+    return res
 
 cdef object get_UINT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT16)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('uint16'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.uint16_[i]
+    return res
 
 cdef object get_BYTE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_UINT8)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('uint8'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.byte_[i]
+    return res
 
 cdef object get_CHAR_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return PyString_FromStringAndSize(c_data.array.data.char_, c_data.array.count)
 
 cdef object get_INT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT64)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('int64'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.int64_[i]
+    return res
 
 cdef object get_INT32_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT32)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('int32'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.int32_[i]
+    return res
 
 cdef object get_INT16_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    array = OAArray()
-    return array.set_data(c_obj, c_data.array.data.char_, c_data.array.count, np.NPY_INT16)
+    res = np.ndarray([ c_data.array.count ], dtype=np.dtype('int16'), order="C")
+    for i in range(0, c_data.array.count):
+        res[i] = c_data.array.data.int16_[i]
+    return res
 
 cdef object get_TIMESTAMP(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     return (c_data.prim.timestamp_.tv.tv_sec, c_data.prim.timestamp_.tv.tv_usec)

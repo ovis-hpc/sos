@@ -29,6 +29,7 @@ from pattern_test import PatternTest
 from h2htbl_test import H2HTBLTest
 from key_test import KeyTest
 from timestamp_test import TimestampTest
+from array_test import ArrayTest
 tests = [ SchemaTest,
           ObjTestSetGet,
           ValueTestFromStr,
@@ -50,7 +51,8 @@ tests = [ SchemaTest,
           PatternTest,
           H2HTBLTest,
           KeyTest,
-          TimestampTest
+          TimestampTest,
+          ArrayTest,
           ]
 
 if __name__ == "__main__":
