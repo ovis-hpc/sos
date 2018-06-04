@@ -3657,45 +3657,6 @@ cdef class Index(object):
 ################################
 # Object getter functions
 ################################
-cdef class OAArray:
-    cdef sos_obj_t c_obj
-    cdef void *c_ptr
-    cdef int c_size
-    cdef int c_type
-
-    def __init__(self):
-        self.c_obj = NULL
-        self.c_ptr = NULL
-        self.c_size = 0
-
-    cdef set_data(self, sos_obj_t obj, void *data_ptr, int size, int el_type):
-        cdef np.ndarray ndarray
-        self.c_obj = obj
-        if self.c_obj != NULL:
-            sos_obj_get(obj)
-        self.c_ptr = data_ptr
-        self.c_size = size
-        self.c_type = el_type
-        ndarray = np.array(self, copy=False)
-        Py_INCREF(self)
-        ndarray.base = <PyObject *>self
-        return ndarray
-
-    def __array__(self):
-        cdef np.npy_intp shape[1]
-        shape[0] = <np.npy_intp> self.c_size
-        ndarray = np.PyArray_SimpleNewFromData(1, shape,
-                                               self.c_type, self.c_ptr)
-        return ndarray
-
-    def __del__(self):
-        self.__dealloc__()
-
-    def __dealloc__(self):
-        if self.c_obj:
-            sos_obj_put(self.c_obj)
-            self.c_obj = NULL
-
 cdef object get_DOUBLE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     res = np.ndarray([ c_data.array.count ], dtype=np.dtype('float64'), order="C")
     for i in range(0, c_data.array.count):
