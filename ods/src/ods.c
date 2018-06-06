@@ -477,10 +477,12 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	ods_pgt_t pgt;
 
 	/* Opportunistically check if last map will work */
+	__ods_lock(ods);
 	map = map_get(ods->last_map);
 	if (map
 	    && (loff >= map->map.off)
 	    && ((map->map.off + map->map.len) >= (loff + sz))) {
+		__ods_unlock(ods);
 		return map;
 	} else if (map) {
 		map_put(map);
@@ -492,7 +494,6 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 		goto err_0;
 
 	assert(loff + sz <= ods->obj_sz);
-	__ods_lock(ods);
 	/* Find the largest map that will support loff */
 	key.off = loff;
 	key.len = 0xffffffff;
@@ -506,13 +507,13 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 			ods_map_t last_map = ods->last_map;
 			map->last_used = time(NULL);
 			map = map_get(map);
-			__ods_unlock(ods);
 			if (__sync_bool_compare_and_swap(&ods->last_map, last_map, map)) {
 				/* We replaced the last_map, drop the ODS ref on it */
 				map_put(last_map);
 				/* Take a ref on the new last_map */
 				map_get(map);
 			}
+			__ods_unlock(ods);
 			return map;
 		}
 		/* Found a map, but it wasn't big enough */
