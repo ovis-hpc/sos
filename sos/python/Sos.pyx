@@ -9,13 +9,6 @@ cimport numpy as np
 cimport Sos
 
 #
-# Python C-API
-#
-cdef extern from "Python.h":
-    object PyString_FromStringAndSize(char *s, Py_ssize_t len)
-    object PyByteArray_FromStringAndSize(char *s, Py_ssize_t len)
-
-#
 # Initialize the numpy array support. Numpy arrays are used
 # for all SOS arrays. The array data is therefore not copied
 # when accessed from Python
@@ -788,9 +781,9 @@ cdef class Key(object):
         elif self.sos_type == SOS_TYPE_LONG_DOUBLE:
             return self.str_fmt.format(v.prim.long_double_)
         elif self.sos_type == SOS_TYPE_BYTE_ARRAY:
-            return PyByteArray_FromStringAndSize(v.array.char_, v.array.count)
+            return bytearray(v.array.char_[:v.array.count])
         elif self.sos_type == SOS_TYPE_CHAR_ARRAY:
-            return PyString_FromStringAndSize(v.array.char_, v.array.count)
+            return str(v.array.char_[:v.array.count])
         elif self.sos_type == SOS_TYPE_UINT64_ARRAY:
             s = ""
             for j in range(v.array.count):
@@ -891,11 +884,9 @@ cdef class Key(object):
             elif typ == SOS_TYPE_LONG_DOUBLE:
                 res.append(specs[i].data.prim.long_double_)
             elif typ == SOS_TYPE_BYTE_ARRAY:
-                res.append(PyByteArray_FromStringAndSize(specs[i].data.array.data.char_,
-                                                         specs[i].data.array.count))
+                res.append(bytearray(specs[i].data.array.data.char_[:specs[i].data.array.count]))
             elif typ == SOS_TYPE_CHAR_ARRAY:
-                res.append(PyString_FromStringAndSize(specs[i].data.array.data.char_,
-                                                      specs[i].data.array.count))
+                res.append(str(specs[i].data.array.data.char_[:specs[i].data.array.count]))
             elif typ == SOS_TYPE_UINT64_ARRAY:
                 a = []
                 for j in range(specs[i].data.array.count):
@@ -3700,7 +3691,7 @@ cdef object get_BYTE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t 
     return res
 
 cdef object get_CHAR_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    return PyString_FromStringAndSize(c_data.array.data.char_, c_data.array.count)
+    return str(c_data.array.data.char_[:c_data.array.count])
 
 cdef object get_INT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     res = np.ndarray([ c_data.array.count ], dtype=np.dtype('int64'), order="C")
@@ -3751,7 +3742,7 @@ cdef object get_INT16(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_att
     return c_data.prim.int16_
 
 cdef object get_STRUCT(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    return PyByteArray_FromStringAndSize(c_data.struc.char_, sos_attr_size(c_attr))
+    return bytearray(c_data.struc.char_[:sos_attr_size(c_attr)])
 
 cdef object get_JOIN(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     cdef sos_value_data_t c_attr_data
