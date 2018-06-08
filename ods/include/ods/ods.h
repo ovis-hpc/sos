@@ -119,6 +119,24 @@ extern const char *ods_path(ods_t ods);
  */
 extern ods_t ods_open(const char *path, ods_perm_t o_perm);
 
+#define ODS_VER_MAJOR	4
+#define ODS_VER_MINOR	1
+#define ODS_VER_FIX	0
+
+#pragma pack(1)
+struct ods_version_s {
+	uint8_t major;		/* Binary compatability */
+	uint8_t minor;		/* Feature availability */
+	uint16_t fix;		/* Defect repair */
+	const char *git_commit_id;	/* git commit id */
+};
+#pragma pack()
+/**
+ * \brief Return a structure defining the ODS database version
+ * \returns ods_version_s
+ */
+struct ods_version_s ods_version(ods_t ods);
+
 typedef struct ods_stat {
 	struct timespec st_atim;
 	struct timespec st_mtim;

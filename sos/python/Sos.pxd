@@ -147,7 +147,15 @@ cdef extern from "ods/ods_idx.h":
         ods_timeval_s tv_[0]
     ctypedef ods_key_value_s *ods_key_value_t
 
+cdef extern from "config.h":
+    cdef char *ODS_COMMIT_ID
+
 cdef extern from "ods/ods.h":
+    cdef enum:
+        ODS_VER_MAJOR
+        ODS_VER_MINOR
+        ODS_VER_FIX
+
     ctypedef uint64_t ods_ref_t
     cdef struct ods_stat:
         timespec st_atim
@@ -358,6 +366,15 @@ cdef extern from "sos/sos.h":
         char value[0]
     ctypedef sos_config_data_s *sos_config_t
 
+    cdef enum:
+        SOS_VER
+    cdef struct sos_version_s:
+        uint8_t major
+        uint8_t minor
+        uint16_t fix
+        char *git_commit_id
+
+    sos_version_s sos_container_version(sos_t c)
     int sos_container_new(const char *path, int o_mode)
     sos_t sos_container_open(const char *path, sos_perm_t o_perm)
     int sos_container_delete(sos_t c)

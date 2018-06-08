@@ -60,11 +60,13 @@
 #include <assert.h>
 #include <sos/sos.h>
 #include <ods/ods_atomic.h>
+#include "config.h"
+#undef VERSION
 
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
-const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:idcqlLR";
+const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:idcqlLRv";
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
@@ -87,6 +89,7 @@ struct option long_options[] = {
 	{"threads",	required_argument,  0,  'T'},
 	{"option",      optional_argument,  0,  'K'},
 	{"column",      optional_argument,  0,  'V'},
+	{"version",     optional_argument,  0,  'v'},
 	{0,             0,                  0,  0}
 };
 
@@ -95,6 +98,7 @@ void usage(int argc, char *argv[])
 	printf("sos_cmd { -l | -i | -c | -K | -q } -C <path> -m <new_path>"
 	       "[-O <mode_mask>]\n");
 	printf("    -C <path>      The path to the container. Required for all options.\n");
+	printf("    -v             Print the container version information and exit.\n");
 	printf("    -m <new_path>  Use to modify the path saved internally after the container is copied.\n");
 	printf("\n");
 	printf("    -K <key>=<value> Set a container configuration option.\n");
@@ -826,7 +830,7 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 #define CLEANUP		0x0400
 #define MOVE		0x0800
 #define DEBUG		0x1000
-
+#define VERSION		0x2000
 struct cond_key_s {
 	char *name;
 	enum sos_cond_e cond;
@@ -949,6 +953,9 @@ int main(int argc, char **argv)
 		case 'q':
 			action |= QUERY;
 			break;
+		case 'v':
+			action |= VERSION;
+			break;
 		case 'f':
 			if (0 == strcasecmp("table", optarg))
 				format = TABLE_FMT;
@@ -1035,6 +1042,10 @@ int main(int argc, char **argv)
 	if (!action)
 		return 0;
 
+	if (action & VERSION) {
+		printf("Library Version   : %d.%d.%d\n", ODS_VER_MAJOR, ODS_VER_MINOR, ODS_VER_FIX);
+		printf("Git Commit ID     : %s\n", ODS_COMMIT_ID);
+	}
 	if (action & CLEANUP)
 		sos_container_lock_cleanup(path);
 
@@ -1068,6 +1079,11 @@ int main(int argc, char **argv)
 		printf("Error %d opening the container %s.\n",
 		       errno, path);
 		exit(1);
+	}
+	if (action & VERSION) {
+		struct sos_version_s vers = sos_container_version(sos);
+		printf("Container Version : %d.%d.%d\n", vers.major, vers.minor, vers.fix);
+		printf("Git Commit ID     : %s\n", vers.git_commit_id);
 	}
 
 	if (action & INFO)

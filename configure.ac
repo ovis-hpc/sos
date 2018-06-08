@@ -6,6 +6,15 @@ AM_CONFIG_HEADER(config.h)
 AM_INIT_AUTOMAKE([foreign])
 AM_PROG_LIBTOOL
 
+COMMIT_ID="$(git rev-parse HEAD 2>/dev/null)"
+if test -z "$COMMIT_ID"; then
+	dnl Git OK from ovis repo.
+	AC_MSG_RESULT([The git command is not available, commit_id is "00..."])
+	COMMIT_ID="0000000000000000000000000000000000000000"
+fi
+AC_DEFINE_UNQUOTED([ODS_COMMIT_ID],["$COMMIT_ID"], [Git commit id])
+AC_SUBST([ODS_COMMIT_ID],["$COMMIT_ID"])
+
 dnl Checks for programs
 AC_PROG_CC
 

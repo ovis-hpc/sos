@@ -168,7 +168,6 @@ struct ods_s {
 
 #define ODS_OBJ_SIGNATURE "OBJSTORE"
 #define ODS_PGT_SIGNATURE "PGTSTORE"
-#define ODS_OBJ_VERSION   "09082016"
 
 #define ODS_PAGE_SIZE	 4096
 #define ODS_PAGE_SHIFT	 12
@@ -239,7 +238,15 @@ typedef struct ods_lock_s {
 	};
 } ods_lock_t;
 
-#define ODS_LOCK_MEM_SZ	(ODS_PAGE_SIZE - 32 - sizeof(ods_lock_t))
+#pragma pack(4)
+
+#define ODS_PGT_PFX_SZ  (8 +				\
+			 44 +				\
+			 sizeof(struct ods_version_s) +	\
+			 (3 * sizeof(uint64_t)) +	\
+			 sizeof(ods_lock_t)		\
+			 )
+#define ODS_LOCK_MEM_SZ	(ODS_PAGE_SIZE - ODS_PGT_PFX_SZ)
 #define ODS_LOCK_CNT	(ODS_LOCK_MEM_SZ / sizeof(ods_lock_t))
 
 typedef struct ods_bkt_s {
@@ -248,6 +255,8 @@ typedef struct ods_bkt_s {
 
 typedef struct ods_pgt_s {
 	char pg_signature[8];	 /* pgt signature 'PGTSTORE' */
+	char pg_commit_id[41];	 /* git SHA1 hash is 40B */
+	struct ods_version_s pg_vers; /* PGT version */
 	uint64_t pg_gen;	 /* generation number */
 	uint64_t pg_free;	 /* first free page number */
 	uint64_t pg_count;	 /* count of pages */
@@ -257,15 +266,16 @@ typedef struct ods_pgt_s {
 		unsigned char lock_mem[ODS_LOCK_MEM_SZ];
 		ods_lock_t lck_tbl[0];
 	};
-	/* Should being on a 4096B boundary */
+	/* Should begin on a 4096B boundary */
 	struct ods_bkt_s bkt_table[ODS_BKT_TABLE_SZ];
 	struct ods_pg_s pg_pages[0];/* array of page control information */
 } *ods_pgt_t;
 
 struct ods_obj_data_s {
 	char obj_signature[8];	 /* obj signature 'OBJSTORE' */
-	uint64_t obj_version;	 /* The file format version number */
 };
+#pragma pack()
+
 #define ODS_UDATA_SIZE (ODS_PAGE_SIZE - sizeof(struct ods_obj_data_s))
 
 #define ODS_PGTBL_MIN_SZ	(4096)

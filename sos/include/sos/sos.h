@@ -101,6 +101,15 @@ typedef struct sos_config_data_s {
 /** \defgroup cont_funcs Container Functions
  * @{
  */
+#pragma pack(1)
+struct sos_version_s {
+	uint8_t major;		/* Binary compatability */
+	uint8_t minor;		/* Feature availability */
+	uint16_t fix;		/* Defect repair */
+	const char *git_commit_id;	/* git commit id */
+};
+#pragma pack()
+struct sos_version_s sos_container_version(sos_t sos);
 int sos_container_new(const char *path, int o_mode);
 sos_t sos_container_open(const char *path, sos_perm_t o_perm);
 int sos_container_move(const char *path_arg, const char *new_path);

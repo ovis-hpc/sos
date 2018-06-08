@@ -72,6 +72,7 @@
 #include <pthread.h>
 #include <ods/ods.h>
 #include <ods/rbt.h>
+#include "config.h"
 #include "ods_priv.h"
 #define ODS_OBJ_SUFFIX		".OBJ"
 #define ODS_PGTBL_SUFFIX	".PG"
@@ -87,6 +88,8 @@ static void pgt_unmap(ods_t ods);
 static int ref_valid(ods_t ods, ods_ref_t ref);
 static void free_pages(ods_t ods, uint64_t pg_no);
 static void __lock_init(ods_lock_t *lock);
+static void __ods_lock(ods_t ods);
+static void __ods_unlock(ods_t ods);
 static inline void map_put(ods_map_t map);
 
 #if defined(ODS_DEBUG)
@@ -242,7 +245,11 @@ static int init_pgtbl(int pg_fd)
 		return -1;
 
 	memset(&pgt, 0, sizeof pgt);
-	memcpy(pgt.pg_signature, ODS_PGT_SIGNATURE, sizeof ODS_PGT_SIGNATURE);
+	memcpy(pgt.pg_signature, ODS_PGT_SIGNATURE, sizeof(pgt.pg_signature));
+	pgt.pg_vers.major = ODS_VER_MAJOR;
+	pgt.pg_vers.minor = ODS_VER_MINOR;
+	pgt.pg_vers.fix = ODS_VER_FIX;
+	strncpy(pgt.pg_commit_id, ODS_COMMIT_ID, sizeof(pgt.pg_commit_id));
 	pgt.pg_gen = 1;
 	pgt.pg_count = count;
 	pgt.pg_free = 1;
@@ -297,6 +304,24 @@ static int init_pgtbl(int pg_fd)
 	return 0;
 }
 
+struct ods_version_s ods_version(ods_t ods)
+{
+	ods_pgt_t pgt;
+	struct ods_version_s ver = { 0, 0, 0, "" };
+	static char commit_id[] = "........................................";
+
+	__ods_lock(ods);
+	pgt = pgt_get(ods);
+	if (!pgt)
+		goto out;
+	ver = pgt->pg_vers;
+	strncpy(commit_id, pgt->pg_commit_id, sizeof(commit_id));
+	ver.git_commit_id = commit_id;
+ out:
+	__ods_unlock(ods);
+	return ver;
+}
+
 static int init_obj(int obj_fd)
 {
 	static struct obj_hdr {
@@ -306,8 +331,7 @@ static int init_obj(int obj_fd)
 	int rc;
 
 	memset(&hdr, 0, sizeof(hdr));
-	memcpy(hdr.obj.obj_signature, ODS_OBJ_SIGNATURE, sizeof ODS_OBJ_SIGNATURE);
-	memcpy(&hdr.obj.obj_version, ODS_OBJ_VERSION, sizeof hdr.obj.obj_version);
+	memcpy(hdr.obj.obj_signature, ODS_OBJ_SIGNATURE, sizeof(hdr.obj.obj_signature));
 
 	rc = lseek(obj_fd, 0, SEEK_SET);
 	if (rc < 0)
@@ -579,7 +603,7 @@ static void pgt_unmap(ods_t ods)
 static ods_pgt_t pgt_map(ods_t ods)
 {
 	int rc;
-	void *pgt_map;
+	ods_pgt_t pgt_map;
 	struct stat sb;
 
 	rc = fstat(ods->pg_fd, &sb);
@@ -593,6 +617,22 @@ static ods_pgt_t pgt_map(ods_t ods)
 	if (pgt_map == MAP_FAILED)
 		goto err_0;
 
+	/* Check the Page Table signature */
+	if (memcmp(pgt_map->pg_signature, ODS_PGT_SIGNATURE, sizeof(pgt_map->pg_signature))) {
+		ods_lerror("The file '%s' is not a Page Table file\n", ods->path);
+		errno = EINVAL;
+		goto err_1;
+	}
+
+	/* Check the ODS version to see if the container is compatible */
+	if (pgt_map->pg_vers.major != ODS_VER_MAJOR) {
+		ods_lerror("Unsupported container version %d.%d.%d; this library is version %d.%d.%d\n",
+			   pgt_map->pg_vers.major, pgt_map->pg_vers.minor, pgt_map->pg_vers.fix,
+			   ODS_VER_MAJOR, ODS_VER_MINOR, ODS_VER_FIX);
+		errno = EINVAL;
+		goto err_1;
+	}
+
 	ods->pg_sz = sb.st_size;
 	ods->pg_table = pgt_map;
 	ods->pg_gen = ods->pg_table->pg_gen; /* cache gen from mapped memory */
@@ -600,9 +640,11 @@ static ods_pgt_t pgt_map(ods_t ods)
 	/* Update the object file size */
 	rc = fstat(ods->obj_fd, &sb);
 	if (rc)
-		goto err_0;
+		goto err_1;
 	ods->obj_sz = sb.st_size;
 	return pgt_map;
+ err_1:
+	munmap(pgt_map, sb.st_size);
  err_0:
 	return NULL;
 }

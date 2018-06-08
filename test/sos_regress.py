@@ -30,6 +30,8 @@ from h2htbl_test import H2HTBLTest
 from key_test import KeyTest
 from timestamp_test import TimestampTest
 from array_test import ArrayTest
+from version_test import VersionTest
+
 tests = [ SchemaTest,
           ObjTestSetGet,
           ValueTestFromStr,
@@ -53,6 +55,7 @@ tests = [ SchemaTest,
           KeyTest,
           TimestampTest,
           ArrayTest,
+          VersionTest,
           ]
 
 if __name__ == "__main__":

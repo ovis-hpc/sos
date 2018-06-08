@@ -898,6 +898,17 @@ static void __pos_cleanup(sos_t sos)
 	ods_unlock(sos->pos_ods, 0);
 }
 
+struct sos_version_s sos_container_version(sos_t sos)
+{
+	struct sos_version_s vers;
+	struct ods_version_s overs = ods_version(sos->schema_ods);
+	vers.major = overs.major;
+	vers.minor = overs.minor;
+	vers.fix = overs.fix;
+	vers.git_commit_id = overs.git_commit_id;
+	return vers;
+}
+
 /**
  * \brief Open a Container
  *

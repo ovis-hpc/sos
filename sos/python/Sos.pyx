@@ -219,6 +219,11 @@ cdef class Container(SosObject):
         if path:
             self.open(path, o_perm=o_perm)
 
+    def version(self):
+        if self.c_cont != NULL:
+            return sos_container_version(self.c_cont)
+        return None
+
     def open(self, path, o_perm=SOS_PERM_RW):
         if self.c_cont != NULL:
             self.abort(EBUSY)
@@ -1144,7 +1149,7 @@ cdef class AttrIter(SosObject):
         """Instantiate an AttrIter object
 
         Positional Arguments:
-        attr	The Attr with the Index on which the iterator is being
+        attr    The Attr with the Index on which the iterator is being
                 created.
         """
         self.c_iter = sos_attr_iter_new(attr.c_attr)
@@ -1350,6 +1355,11 @@ TYPE_OBJ_ARRAY = SOS_TYPE_OBJ_ARRAY
 
 PERM_RW = SOS_PERM_RW
 PERM_RO = SOS_PERM_RO
+
+VERS_MAJOR = ODS_VER_MAJOR
+VERS_MINOR = ODS_VER_MINOR
+VERS_FIX = ODS_VER_FIX
+GIT_COMMIT_ID = ODS_COMMIT_ID
 
 cdef class AttrJoinIter(object):
     cdef id_list
