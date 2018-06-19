@@ -926,6 +926,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	char *path = NULL;
 	sos_t sos;
 	struct stat sb;
+	ods_iter_t iter = NULL;
 	int rc;
 
 	if (strlen(path_arg) >= SOS_PART_PATH_LEN) {
@@ -1048,7 +1049,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	/*
 	 * Build the schema dictionary
 	 */
-	ods_iter_t iter = ods_iter_new(sos->schema_idx);
+	iter = ods_iter_new(sos->schema_idx);
 	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_next(iter)) {
 		sos_obj_ref_t obj_ref;
 		obj_ref.idx_data = ods_iter_data(iter);
@@ -1082,6 +1083,8 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	pthread_mutex_unlock(&cont_list_lock);
 	return sos;
  err:
+	if (iter)
+		ods_iter_delete(iter);
 	free_sos(sos, SOS_COMMIT_ASYNC);
 	return NULL;
 }
