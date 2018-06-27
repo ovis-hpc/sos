@@ -3222,7 +3222,7 @@ cdef class ColSpec(object):
             else:
                 return obj[self.attr.attr_id()]
         else:
-            return None
+            raise StopIteration
 
     @property
     def width(self):
@@ -3399,12 +3399,14 @@ cdef class Query(object):
 
         row_count = 0
         rc = True
-        while row and rc:
-            rc = inputer.input(row)
-            row_count += 1
-            if rc:
-                row = self.next()
-        # self.last_row = row
+        try:
+            while row and rc:
+                rc = inputer.input(row)
+                row_count += 1
+                if rc:
+                    row = self.next()
+        except StopIteration:
+            pass
         return row_count
 
     def _from_(self, schema):
