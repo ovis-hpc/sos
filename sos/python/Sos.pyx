@@ -5,6 +5,7 @@ from libc.stdlib cimport malloc, free
 import numpy as np
 import struct
 import sys
+import copy
 cimport numpy as np
 cimport Sos
 
@@ -3505,7 +3506,7 @@ cdef class Query(object):
         self.columns = []
         for col in columns:
             if type(col) == ColSpec:
-                spec = col
+                spec = copy.copy(col)
             else:
                 spec = ColSpec(col, col_width=self.get_col_width())
             self._add_colspec(spec)
