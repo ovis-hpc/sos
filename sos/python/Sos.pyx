@@ -3226,6 +3226,25 @@ cdef class ColSpec(object):
             raise StopIteration
 
     @property
+    def float_value(self):
+        cdef int typ = self.attr.type()
+        cdef int aid = self.attr.attr_id()
+        cdef double dv = 0.0
+        obj = self.query[self.cursor_idx]
+        if obj:
+            try:
+                v = obj[aid]
+                if typ == SOS_TYPE_TIMESTAMP:
+                    dv = float(v[0]) + float(v[1]) / 1.0e6
+                else:
+                    dv = v
+            except:
+                pass
+            return dv
+        else:
+            raise StopIteration
+
+    @property
     def width(self):
         return self.col_width
 
@@ -3390,15 +3409,17 @@ cdef class Query(object):
                     return True
 
         """
-        cdef int count
+        cdef int row_count = 0
 
-        if reset:
-            row = self.begin()
-        else:
-            row = self.next()
-            # row = self.last_row
+        try:
+            if reset:
+                row = self.begin()
+            else:
+                row = self.next()
+                # row = self.last_row
+        except StopIteration:
+            return row_count
 
-        row_count = 0
         rc = True
         try:
             while row and rc:
@@ -3439,8 +3460,8 @@ cdef class Query(object):
         Positional Parmeters:
 
         -- An array of column-specifications. A column-specification is
-           either an attribute name (string), or a ColDef object. The
-           ColDef object allows for the specification of how the data
+           either an attribute name (string), or a ColSpec object. The
+           ColSpec object allows for the specification of how the data
            will be converted and formatted on output.
 
            Examples:
@@ -3508,8 +3529,30 @@ cdef class Query(object):
             if type(col) == ColSpec:
                 spec = copy.copy(col)
             else:
-                spec = ColSpec(col, col_width=self.get_col_width())
-            self._add_colspec(spec)
+                if '*' in col:
+                    if '*' == col:
+                        if len(self.columns) > 1:
+                            raise ValueError("Ambiguous wildcard in column specification, "
+                                             "use shchema-name.* to identify column source")
+                        if from_ is None:
+                            raise ValueError("from_ is required with wildcard column names")
+                        name = from_[0]
+                    else:
+                        name = col.split('.')[0]
+                    schema = self.cont.schema_by_name(name)
+                    if schema is None:
+                        raise ValueError("Schema {0} was not found.".format(name))
+                    for attr in schema.attr_iter():
+                        if attr.type() == SOS_TYPE_JOIN:
+                            continue
+                        if len(from_) > 1:
+                            spec = ColSpec(name + '.' + attr.name(), col_width=self.get_col_width())
+                        else:
+                            spec = ColSpec(attr.name(), col_width=self.get_col_width())
+                        self._add_colspec(spec)
+                else:
+                    spec = ColSpec(col, col_width=self.get_col_width())
+                    self._add_colspec(spec)
 
         if where:
             # Must be after the Filter(s) are created
