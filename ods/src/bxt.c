@@ -2275,7 +2275,7 @@ static int _iter_next(bxt_iter_t i)
 		next_rec = ods_ref_as_obj(t->ods, next_ref);
 		ods_obj_put(i->rec);
 		i->rec = next_rec;
-#ifdef ODS_DEBUG 
+#ifdef ODS_DEBUG
 		if (i->rec)
 			assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
 #endif
