@@ -82,7 +82,7 @@ static LIST_HEAD(ods_list_head, ods_s) ods_list = LIST_HEAD_INITIALIZER(ods_list
 
 static size_t ref_size(ods_t ods, ods_ref_t ref);
 static void free_ref(ods_t ods, ods_ref_t ref);
-static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz);
+static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz);
 static ods_pgt_t pgt_map(ods_t ods);
 static void pgt_unmap(ods_t ods);
 static int ref_valid(ods_t ods, ods_ref_t ref);
@@ -193,26 +193,13 @@ static void *ref_to_ptr(ods_t ods, uint64_t ref, uint64_t *ref_sz, ods_map_t *ma
 	if (!ref || !ods)
 		return NULL;
 
-	*ref_sz = ref_size(ods, ref);
-	*map = map_new(ods, ref, *ref_sz);
+	*map = map_new(ods, ref, ref_sz);
 	if (!*map)
 		return NULL;
 
 	assert(ref >= (*map)->map.off);
 	return &(*map)->data[ref - (*map)->map.off];
 }
-
-#ifdef _not_yet_
-static ods_ref_t ptr_to_ref(ods_map_t map, void *p)
-{
-	ods_ref_t ref;
-	if (!p)
-		return 0;
-	ref = (uint64_t)p - (uint64_t)map->data;
-	assert(ref < map->map.len);
-	return ref;
-}
-#endif
 
 static inline uint64_t ref_to_page_no(ods_ref_t ref)
 {
@@ -227,6 +214,9 @@ static inline int size_to_bkt(size_t sz)
 
 static inline size_t bkt_to_size(int bkt)
 {
+	if (bkt > ODS_BKT_TABLE_SZ)
+		printf("holy shit\n");
+	assert(bkt < ODS_BKT_TABLE_SZ);
 	return (bkt + 1) << ODS_GRAIN_SHIFT;
 }
 
@@ -487,10 +477,12 @@ static inline size_t new_obj_map_sz(ods_t ods)
  * The loff parameter specifies the offset in the file the map must
  * include.
  *
- * If the sz parameter is non-zero and > the ods->obj_map_sz, it will
- * be used for the map size rounded up to the next ODS_PAGE_SZ boudary.
+ * The ref_sz parameter returns the size of the object to which loff
+ * refers. If the object size is greater than ods->obj_map_sz, it will
+ * be used for the map size rounded up to the next ODS_PAGE_SZ
+ * boundary.
  */
-static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
+static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 {
 	void *obj_map;
 	struct rbn *rbn;
@@ -499,9 +491,20 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	uint64_t map_off;
 	uint64_t map_len;
 	ods_pgt_t pgt;
+	uint64_t sz;
 
 	/* Opportunistically check if last map will work */
 	__ods_lock(ods);
+
+	/* Get the PGT in case it has been resized by another process */
+	pgt = pgt_get(ods);
+	if (!pgt)
+		goto err_1;
+
+	sz = *ref_sz = ref_size(ods, loff);
+	if (loff + sz > ods->obj_sz)
+		goto err_1;
+
 	map = map_get(ods->last_map);
 	if (map
 	    && (loff >= map->map.off)
@@ -512,12 +515,6 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 		map_put(map);
 	}
 
-	/* Get the PGT in case it has been resized by another process */
-	pgt = pgt_get(ods);
-	if (!pgt)
-		goto err_0;
-
-	assert(loff + sz <= ods->obj_sz);
 	/* Find the largest map that will support loff */
 	key.off = loff;
 	key.len = 0xffffffff;
@@ -589,7 +586,6 @@ static ods_map_t map_new(ods_t ods, loff_t loff, size_t sz)
 	free(map);
  err_1:
 	__ods_unlock(ods);
- err_0:
 	return NULL;
 }
 
@@ -1166,7 +1162,9 @@ int ods_extend(ods_t ods, size_t sz)
 	 */
 	n_pages = (sz + ODS_PAGE_SIZE - 1) >> ODS_PAGE_SHIFT;
 	n_sz = n_pages << ODS_PAGE_SHIFT;
-	rc = ftruncate(ods->pg_fd, pg_sb.st_size + (n_pages * sizeof(struct ods_pg_s)));
+	uint64_t pg_sz = (uint64_t)&((struct ods_pgt_s *)0)->
+		pg_pages[n_pages + ods->pg_table->pg_count];
+	rc = ftruncate(ods->pg_fd, pg_sz);
 	if (rc)
 		goto out;
 
@@ -1201,7 +1199,7 @@ int ods_extend(ods_t ods, size_t sz)
 
 	/* Update the cached file sizes. */
 	ods->obj_sz = obj_sb.st_size + n_sz;
-	ods->pg_sz = pg_sb.st_size + (n_pages * sizeof(struct ods_pg_s));
+	ods->pg_sz = pg_sz;
 
 	/* Update the generation number so older maps will see the change */
 	ods->pg_table->pg_gen += 1;
@@ -1671,7 +1669,6 @@ static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 	int blk, bkt = size_to_bkt(sz);
 	ods_pg_t pg;
 	uint64_t pg_no = pgt->bkt_table[bkt].pg_next;
-
 	do {
 		if (!pg_no) {
 			pg_no = replenish_bkt(ods, pgt, bkt);
@@ -1679,6 +1676,7 @@ static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 				return 0;
 		}
 		pg = &pgt->pg_pages[pg_no];
+		assert(pg->pg_flags & (ODS_F_IDX_VALID | ODS_F_IN_BKT));
 		if (pg->pg_bits[0] || pg->pg_bits[1]) {
 			blk = alloc_bit(pg->pg_bits, bkt_bits[bkt].blk_cnt);
 			if (0 == pg->pg_bits[0] && 0 == pg->pg_bits[1])
@@ -1727,9 +1725,9 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz, const char *func, int line)
 		ref = pg_no << ODS_PAGE_SHIFT;
 	}
  out:
-	__pgt_unlock(ods);
 	if (__ods_debug && ref)
 		assert(ref_valid(ods, ref));
+	__pgt_unlock(ods);
 	obj = ods_ref_as_obj(ods, ref);
 	if (!obj && ref) {
 		__pgt_lock(ods);
