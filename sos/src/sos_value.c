@@ -437,14 +437,15 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 	return val;
 }
 
+/**
+ * \brief Copy a value to a memory value
+ *
+ * \param dst - Pointer to the destination value.
+ * \param src - Pointer to the source value
+ */
 sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
 {
 	dst->attr = src->attr;
-	if (src->obj) {
-		dst->obj = sos_obj_get(dst->obj);
-		dst->data = src->data;
-		return dst;
-	}
 	size_t sz = sos_value_size(src);
 	if (sos_value_type(src) == SOS_TYPE_STRUCT) {
 		dst->data = malloc(sz);
@@ -454,7 +455,7 @@ sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
 		return dst;
 	}
 	if (!sos_value_is_array(src)) {
-		memcpy(&dst->data_, &src->data_, sizeof(src->data_));
+		memcpy(&dst->data_, src->data, sos_attr_size(src->attr));
 		dst->data = &dst->data_;
 		return dst;
 	}
