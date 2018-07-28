@@ -75,6 +75,10 @@
 #include "sos_priv.h"
 
 static int __attr_join_idx(sos_attr_t filt_attr, sos_attr_t attr);
+static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key,
+				int min_not_max, int last_match);
+static sos_obj_t next_match(sos_filter_t filt);
+static sos_obj_t prev_match(sos_filter_t filt);
 
 /**
  * \brief Create a SOS iterator from an index
@@ -1034,7 +1038,7 @@ static void __sort_filter_conds_bkwd(sos_filter_t f)
 int sos_filter_cond_add(sos_filter_t filt,
 			sos_attr_t attr, enum sos_cond_e cond_e, sos_value_t value)
 {
-	sos_filter_cond_t cond = malloc(sizeof *cond);
+	sos_filter_cond_t cond = calloc(1, sizeof *cond);
 	if (!cond)
 		return ENOMEM;
 	cond->attr = attr;
@@ -1048,29 +1052,67 @@ int sos_filter_cond_add(sos_filter_t filt,
 sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt, int *ret)
 {
 	sos_filter_cond_t cond;
+	struct sos_value_s v_;
+	sos_value_t obj_value;
+	int rc;
 	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
-		struct sos_value_s v_;
-		sos_value_t obj_value = sos_value_init(&v_, obj, cond->attr);
-		int rc = cond->cmp_fn(obj_value, cond->value);
+		obj_value = sos_value_init(&v_, obj, cond->attr);
+		rc = cond->cmp_fn(obj_value, cond->value);
 		sos_value_put(obj_value);
 		if (!rc) {
 			*ret = rc;
 			return cond;
 		}
 	}
+	/* Update the last match values */
+	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
+		obj_value = sos_value_init(&v_, obj, cond->attr);
+		cond->last_match = sos_value_copy(&cond->last_match_, obj_value);
+		sos_value_put(obj_value);
+	}
+	return NULL;
+}
+
+static sos_obj_t continue_next(sos_filter_t filt)
+{
+	int rc;
+	SOS_KEY(key);
+	__sort_filter_conds_fwd(filt);
+	rc = __sos_filter_key_set(filt, key, 1, 1);
+	switch (rc) {
+	case 0:
+		rc = sos_iter_begin(filt->iter);
+		break;
+	case ESRCH:
+		rc = sos_iter_sup(filt->iter, key);
+		break;
+	default:
+		errno = rc;
+		return NULL;
+	}
+	if (!rc)
+		return next_match(filt);
 	return NULL;
 }
 
 static sos_obj_t next_match(sos_filter_t filt)
 {
 	int rc;
+	sos_obj_t obj;
+	sos_filter_cond_t cond;
+	int join;
 	do {
-		sos_obj_t obj = sos_iter_obj(filt->iter);
-		sos_filter_cond_t cond = sos_filter_eval(obj, filt, &rc);
-		int join;
-		if (!cond)
+		if (filt->empty)
+			obj = continue_next(filt);
+		else
+			obj = sos_iter_obj(filt->iter);
+		if (!obj)
+			break;
+		cond = sos_filter_eval(obj, filt, &rc);
+		if (!cond) {
+			filt->empty = 0;
 			return obj;
-
+		}
 		sos_obj_put(obj);
 		join = __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
 		/* We can't assume anything about not-equal */
@@ -1089,7 +1131,31 @@ static sos_obj_t next_match(sos_filter_t filt)
 		}
 		rc = sos_iter_next(filt->iter);
 	} while (rc == 0);
- 	return NULL;
+	filt->empty = 1;
+	return NULL;
+}
+
+static sos_obj_t continue_prev(sos_filter_t filt)
+{
+	int rc;
+	SOS_KEY(key);
+
+	__sort_filter_conds_bkwd(filt);
+	rc = __sos_filter_key_set(filt, key, 0, 1);
+	switch (rc) {
+	case 0:
+		rc = sos_iter_end(filt->iter);
+		break;
+	case ESRCH:
+		rc = sos_iter_inf(filt->iter, key);
+		break;
+	default:
+		errno = rc;
+		return NULL;
+	}
+	if (!rc)
+		return prev_match(filt);
+	return NULL;
 }
 
 static sos_obj_t prev_match(sos_filter_t filt)
@@ -1098,11 +1164,17 @@ static sos_obj_t prev_match(sos_filter_t filt)
 	sos_obj_t obj;
 	sos_filter_cond_t cond;
 	do {
-		obj = sos_iter_obj(filt->iter);
+		if (filt->empty)
+			obj = continue_prev(filt);
+		else
+			obj = sos_iter_obj(filt->iter);
+		if (!obj)
+			break;
 		cond = sos_filter_eval(obj, filt, &rc);
-		if (!cond)
+		if (!cond) {
+			filt->empty = 0;
 			return obj;
-
+		}
 		sos_obj_put(obj);
 		join = __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
 		/* We can't assume anything about not-equal */
@@ -1117,9 +1189,10 @@ static sos_obj_t prev_match(sos_filter_t filt)
 				if (cond->cond == SOS_COND_EQ && rc > 0)
 					break;
 			}
- 		}
+		}
 		rc = sos_iter_prev(filt->iter);
 	} while (rc == 0);
+	filt->empty = 1;
 	return NULL;
 }
 
@@ -1133,7 +1206,7 @@ static sos_filter_cond_t __sos_find_filter_condition(sos_filter_t filt, int attr
 	return NULL;
 }
 
-static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_max)
+static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_max, int last_match)
 {
 	sos_filter_cond_t cond;
 	int join_idx;
@@ -1152,7 +1225,14 @@ static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_ma
 			/* Search the condition list for this attribute */
 			cond = __sos_find_filter_condition(filt, join_attr_id);
 			if (cond) {
-				key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+				sos_value_t v;
+				if (!last_match)
+					v = cond->value;
+				else if (!cond->last_match)
+					return ENOENT;
+				else
+					v = cond->last_match;
+				key_comp = __sos_set_key_comp(key_comp, v, &comp_len);
 				comp_key->len += comp_len;
 				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
 					search = ESRCH;
@@ -1177,8 +1257,14 @@ static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_ma
 		/* Find the first condition that matches the filter attr */
 		TAILQ_FOREACH(cond, &filt->cond_list, entry) {
 			if (filt_attr_id == sos_attr_id(cond->attr)) {
-				sos_key_set(key, sos_value_as_key(cond->value),
-					    sos_value_size(cond->value));
+				sos_value_t v;
+				if (!last_match)
+					v = cond->value;
+				else if (!cond->last_match)
+					return ENOENT;
+				else
+					v = cond->last_match;
+				sos_key_set(key, sos_value_as_key(v), sos_value_size(v));
 				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
 					search = ESRCH;
 				break;
@@ -1202,7 +1288,7 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 	SOS_KEY(key);
 
 	__sort_filter_conds_fwd(filt);
-	rc = __sos_filter_key_set(filt, key, 1);
+	rc = __sos_filter_key_set(filt, key, 1, 0);
 	switch (rc) {
 	case 0:
 		rc = sos_iter_begin(filt->iter);
@@ -1282,7 +1368,7 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 	SOS_KEY(key);
 
 	__sort_filter_conds_bkwd(filt);
-	rc = __sos_filter_key_set(filt, key, 0);
+	rc = __sos_filter_key_set(filt, key, 0, 0);
 	switch (rc) {
 	case 0:
 		rc = sos_iter_end(filt->iter);
@@ -1294,8 +1380,8 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 		errno = rc;
 		return NULL;
 	}
- 	if (!rc)
- 		return prev_match(filt);
+	if (!rc)
+		return prev_match(filt);
 	return NULL;
 }
 

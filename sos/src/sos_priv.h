@@ -367,6 +367,8 @@ struct sos_filter_cond_s {
 	sos_attr_t attr;
 	struct sos_value_s value_;
 	sos_value_t value;
+	struct sos_value_s last_match_;
+	sos_value_t last_match;
 	sos_iter_t iter;
 	sos_filter_fn_t cmp_fn;
 	enum sos_cond_e cond;
@@ -375,6 +377,7 @@ struct sos_filter_cond_s {
 
 struct sos_filter_s {
 	sos_iter_t iter;
+	int empty;
 	TAILQ_HEAD(sos_cond_list, sos_filter_cond_s) cond_list;
 };
 
