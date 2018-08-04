@@ -102,6 +102,11 @@ void sos_key_put(sos_key_t key)
 	ods_obj_put(key);
 }
 
+int sos_key_copy(sos_key_t dst, sos_key_t src)
+{
+	return sos_key_set(dst, sos_key_value(src), sos_key_len(src));
+}
+
 /**
  * \brief Create a memory key
  *

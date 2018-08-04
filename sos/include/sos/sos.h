@@ -611,6 +611,12 @@ typedef struct sos_comp_key_spec {
  * \param _name_	The variable name to use to refer to the key.
  */
 #define SOS_STACK_KEY_SIZE 256
+#define SOS_KEY_VALUE(_name_)					\
+	struct sos_key_value_s  ## _name_ {			\
+		uint16_t len;					\
+		unsigned char value[SOS_STACK_KEY_SIZE];	\
+	} _name_ ## _ ## data;
+
 #define SOS_KEY(_name_)					\
 	struct sos_key_value_s  ## _name_ {		\
 		uint16_t len;				\
@@ -630,6 +636,7 @@ typedef struct sos_comp_key_spec {
 sos_key_t sos_key_new(size_t sz);
 sos_key_t sos_key_new_from_attr(sos_key_t key, sos_attr_t attr, ...);
 void sos_key_put(sos_key_t key);
+int sos_key_copy(sos_key_t dst, sos_key_t src);
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
 char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_sz);
 sos_key_t sos_key_for_attr(sos_key_t key, sos_attr_t attr, ...);
