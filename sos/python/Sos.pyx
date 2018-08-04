@@ -1343,6 +1343,7 @@ TYPE_STRUCT = SOS_TYPE_STRUCT
 TYPE_JOIN = SOS_TYPE_JOIN
 TYPE_BYTE_ARRAY = SOS_TYPE_BYTE_ARRAY
 TYPE_CHAR_ARRAY = SOS_TYPE_CHAR_ARRAY
+TYPE_STRING = SOS_TYPE_CHAR_ARRAY
 TYPE_INT16_ARRAY = SOS_TYPE_INT16_ARRAY
 TYPE_INT32_ARRAY = SOS_TYPE_INT32_ARRAY
 TYPE_INT64_ARRAY = SOS_TYPE_INT64_ARRAY
@@ -3167,18 +3168,18 @@ cdef class ColSpec(object):
     cdef int col_width          # How wide to make the column
     cdef cvt_fn                 # Function to convert the attribute value
                                 # to some other value type for output
-    cdef interp_fn                # Function to provide the default value if
+    cdef default_fn             # Function to provide the default value if
                                 # there is no object for this column at the
                                 # cursor index
     cdef fill
     cdef align
 
     def __init__(self, name,
-                 cvt_fn=None, interp_fn=None,
+                 cvt_fn=None, default_fn=None, attr_type=None,
                  col_width=None, align=ColSpec.RIGHT, fill=' '):
         self.name = name
         self.cvt_fn = cvt_fn
-        self.interp_fn = interp_fn
+        self.default_fn = default_fn
         if col_width:
             self.col_width = col_width
         else:
@@ -3195,7 +3196,7 @@ cdef class ColSpec(object):
     def set_query(self, query):
         self.query = query
 
-    def get_query(self, query):
+    def get_query(self):
         return self.query
 
     @property
@@ -3215,7 +3216,20 @@ cdef class ColSpec(object):
         return self.attr.type()
 
     @property
+    def attr_id(self):
+        return self.attr.attr_id()
+
+    @property
     def value(self):
+        if self.query is None:
+            return None
+
+        v = self.query[self.cursor_idx, self.attr.attr_id()]
+        if self.cvt_fn:
+            v = self.cvt_fn(v)
+
+        return v
+
         obj = self.query[self.cursor_idx]
         if obj:
             if self.cvt_fn:
@@ -3223,17 +3237,16 @@ cdef class ColSpec(object):
             else:
                 return obj[self.attr.attr_id()]
         else:
-            raise StopIteration
+            return None
 
     @property
     def float_value(self):
         cdef int typ = self.attr.type()
         cdef int aid = self.attr.attr_id()
         cdef double dv = 0.0
-        obj = self.query[self.cursor_idx]
-        if obj:
+        v = self.query[self.cursor_idx, self.attr.attr_id()]
+        if v is not None:
             try:
-                v = obj[aid]
                 if typ == SOS_TYPE_TIMESTAMP:
                     dv = float(v[0]) + float(v[1]) / 1.0e6
                 else:
@@ -3242,7 +3255,7 @@ cdef class ColSpec(object):
                 pass
             return dv
         else:
-            raise StopIteration
+            return None
 
     @property
     def width(self):
@@ -3338,7 +3351,10 @@ cdef class Query(object):
         raise ValueError('No schema contains the attribute "{0}"'.format(aname))
 
     def __getitem__(self, idx):
-        return self.cursor[idx]
+        obj = self.cursor[idx[0]]
+        if obj is None:
+            return None
+        return obj[idx[1]]
 
     def set_col_width(self, width):
         self.col_width = width
@@ -3362,33 +3378,48 @@ cdef class Query(object):
                     result.append(schema.name() + '.' + attr.name())
         return result
 
-    def query(self, inputer, reset=True):
+    def query(self, inputer, reset=True, wait=None):
         """Calls the inputer class' input function for every row in the result
 
         If the input() function returns True, the query continues and
         the input() function is called again with the next record. If
-        the input() function returns False, the query is discontinued
-        and the call returns with the number of times input() was
-        called. If query() is called again with reset=False, the query
-        will continue with the next record following the last one
-        delivered to input().
+        the input() function returns False and wait is None, the query
+        is discontinued and the call returns with the number of times
+        input() was called.
+
+        If wait is None, the query completes when the data is
+        exhausted, or the row limit has been reached. Otherwise, wait
+        must be a tuple containing a wait_fn and a wait_arg. The
+        wait_fn(self, row, row_count, wait_arg) is called if input()
+        returns False before the limit is reached. If wait_fn returns
+        False, the query returns with the data already obtained, if
+        wait_fn return True, the query loop continues.
+
+        If query() is called again with reset=False, the query will
+        continue with the next record following the last one delivered
+        to input().
 
         The record argument to the input() function is a list of
         column values as defined in the column argument to select()
 
         Positional Parameters:
 
-        -- An instance of an Inputer class that must at-least contain
-           the input function with the following signature:
-
-           def input(self, record):
-               . . .
+        -- An instance of an Inputer class that defines an
+           input(self, record) function and a get_results(self)
+           function. The input() fuction is called as each record is
+           read from the DataSource. The get_results() function is
+           called when the desired data has been read and is to be
+           returned to the caller as a DataSet instance.
 
         Keyword Parameters:
-        reset     -- Start at the beginning of the query (default is True)
+        reset -- Start at the beginning of the query (default is True)
+        wait  -- A tuple containing a wait_fn and a wait_arg
+                 (default is None)
 
         Returns:
-        The number of times cb_fn was called.
+
+            The number of times the Inputer's input function was
+            called and returned True.
 
         Example:
 
@@ -3411,24 +3442,26 @@ cdef class Query(object):
         """
         cdef int row_count = 0
 
-        try:
-            if reset:
-                row = self.begin()
-            else:
-                row = self.next()
-                # row = self.last_row
-        except StopIteration:
-            return row_count
+        if reset:
+            row = self.begin()
+        else:
+            row = self.next()
 
-        rc = True
-        try:
-            while row and rc:
-                rc = inputer.input(row)
+        while True:
+            if row:
                 row_count += 1
-                if rc:
+                if inputer.input(row) == False:
+                    break
+            else:
+                if wait:
+                    wait[0](self, row, row_count, wait[1])
                     row = self.next()
-        except StopIteration:
-            pass
+                    continue
+                else:
+                    break
+
+            row = self.next()
+
         return row_count
 
     def _from_(self, schema):
@@ -3480,39 +3513,51 @@ cdef class Query(object):
               def fmt_timestamp(ts):
                   return str(dt.datetime.fromtimestamp(ts[0]))
 
-              [ Sos.ColSpec('meminfo.timestamp', cvt_fn=fmt_timestamp, col_width=24, align=Sos.ColSpec.LEFT),
-                Sos.ColSpec('vmstat.timestamp', cvt_fn=fmt_timestamp,  col_width=24, align=Sos.ColSpec.LEFT),
+              [ Sos.ColSpec('meminfo.timestamp', cvt_fn=fmt_timestamp,
+                   col_width=24, align=Sos.ColSpec.LEFT),
+                Sos.ColSpec('vmstat.timestamp', cvt_fn=fmt_timestamp,
+                   col_width=24, align=Sos.ColSpec.LEFT),
                 Sos.ColSpec('meminfo.job_id', cvt_fn=int, col_width=12),
                 'meminfo.MemFree',
                 'vmstat.nr_free_pages',
               ]
 
         Keyword Parameters:
-        order_by  -- The attribute to use as the primary index
+
+        from_     -- An array of schema names
         where     -- An array of conditions to filter the data
-        from_     -- An optional array of schema names
+        order_by  -- The attribute to use as the primary index
+
+        FROM_
+
+          The 'from_' keyword is an arrray of schema names to search
+          for attribute names.
+
+          Example:
+
+            from_ = [ 'meminfo', 'jobinfo' ]
 
         WHERE
 
-        The 'where' keyword is an array of filter condition tuples.
-        Each condition must be applicable to every schema. A
-        condition tuple contains three elements as follows:
+          The 'where' keyword is an array of filter condition tuples.
+          Each condition must be applicable to every schema. A
+          condition tuple contains three elements as follows:
 
-        ( attribute_name, condition, value )
+          ( attribute_name, condition, value )
 
-        Example:
+          Example:
 
-        where = [( 'timestamp', COND_GE, 1510597567.001617 )]
+            where = [( 'timestamp', COND_GE, 1510597567.001617 )]
 
         ORDER_BY
 
-        Specifies the name of the primary key. This attribute must be
-        indexed and present in all schema referenced in the columns
-        list.
+          Specifies the name of the primary key. This attribute must be
+          indexed and present in all schema referenced in the columns
+          list.
 
-        Example:
+          Example:
 
-        order_by = 'job_comp_time'
+            order_by = 'job_comp_time'
 
         """
         if order_by:
@@ -3528,12 +3573,13 @@ cdef class Query(object):
         for col in columns:
             if type(col) == ColSpec:
                 spec = copy.copy(col)
+                self._add_colspec(spec)
             else:
                 if '*' in col:
                     if '*' == col:
                         if len(self.columns) > 1:
                             raise ValueError("Ambiguous wildcard in column specification, "
-                                             "use shchema-name.* to identify column source")
+                                             "use schema-name.* to identify column source")
                         if from_ is None:
                             raise ValueError("from_ is required with wildcard column names")
                         name = from_[0]
@@ -3559,9 +3605,11 @@ cdef class Query(object):
             self._where(where)
 
     def get_columns(self):
+        """Return list of columns-specification (ColSpec)"""
         return self.columns
 
     def get_filters(self):
+        """Return list of Sos.Filter objects"""
         return self.filters
 
     def default_group_fn(self, o1, o2):
@@ -3580,10 +3628,14 @@ cdef class Query(object):
     cdef object make_row(self):
         row = []
         for col in self.columns:
-            row.append(col.value)
+            v = col.value
+            if v is None:
+                return None
+            row.append(v)
         return row
 
     def begin(self):
+        """Position the cursor at the first object"""
         self.cursor = []
         for f in self.filters:
             self.cursor.append(f.begin())
