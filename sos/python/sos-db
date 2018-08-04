@@ -47,7 +47,7 @@ if __name__ == "__main__":
         try:
             # Create the database
             if args.mode:
-                cont.create(args.path, o_perm=args.mode)
+                cont.create(args.path, o_mode=args.mode)
             else:
                 cont.create(args.path)
             # Create a ROOT partition unless the user asked us not to
