@@ -362,13 +362,11 @@ struct sos_container_s {
 	LIST_ENTRY(sos_container_s) entry;
 };
 
-typedef int (*sos_filter_fn_t)(sos_value_t a, sos_value_t b);
+typedef int (*sos_filter_fn_t)(sos_value_t a, sos_value_t b, int *ret);
 struct sos_filter_cond_s {
 	sos_attr_t attr;
 	struct sos_value_s value_;
 	sos_value_t value;
-	struct sos_value_s last_match_;
-	sos_value_t last_match;
 	sos_iter_t iter;
 	sos_filter_fn_t cmp_fn;
 	enum sos_cond_e cond;
@@ -377,6 +375,9 @@ struct sos_filter_cond_s {
 
 struct sos_filter_s {
 	sos_iter_t iter;
+	SOS_KEY_VALUE(last_match_key);
+	struct ods_obj_s last_match_obj;
+	sos_key_t last_match;
 	int empty;
 	TAILQ_HEAD(sos_cond_list, sos_filter_cond_s) cond_list;
 };

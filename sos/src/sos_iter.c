@@ -700,39 +700,39 @@ sos_key_t sos_iter_key(sos_iter_t iter)
 {
 	return ods_iter_key(iter->iter);
 }
-static int lt_fn(sos_value_t obj_value, sos_value_t cond_value)
+static int lt_fn(sos_value_t obj_value, sos_value_t cond_value, int *ret)
 {
-	int rc = sos_value_cmp(obj_value, cond_value);
+	int rc = *ret = sos_value_cmp(obj_value, cond_value);
 	return (rc < 0);
 }
 
-static int le_fn(sos_value_t obj_value, sos_value_t cond_value)
+static int le_fn(sos_value_t obj_value, sos_value_t cond_value, int *ret)
 {
-	int rc = sos_value_cmp(obj_value, cond_value);
+	int rc = *ret = sos_value_cmp(obj_value, cond_value);
 	return (rc <= 0);
 }
 
-static int eq_fn(sos_value_t obj_value, sos_value_t cond_value)
+static int eq_fn(sos_value_t obj_value, sos_value_t cond_value, int *ret)
 {
-	int rc = sos_value_cmp(obj_value, cond_value);
+	int rc = *ret = sos_value_cmp(obj_value, cond_value);
 	return (rc == 0);
 }
 
-static int ne_fn(sos_value_t obj_value, sos_value_t cond_value)
+static int ne_fn(sos_value_t obj_value, sos_value_t cond_value, int *ret)
 {
-	int rc = sos_value_cmp(obj_value, cond_value);
+	int rc = *ret = sos_value_cmp(obj_value, cond_value);
 	return (rc != 0);
 }
 
-static int ge_fn(sos_value_t obj_value, sos_value_t cond_value)
+static int ge_fn(sos_value_t obj_value, sos_value_t cond_value, int *ret)
 {
-	int rc = sos_value_cmp(obj_value, cond_value);
+	int rc = *ret = sos_value_cmp(obj_value, cond_value);
 	return (rc >= 0);
 }
 
-static int gt_fn(sos_value_t obj_value, sos_value_t cond_value)
+static int gt_fn(sos_value_t obj_value, sos_value_t cond_value, int *ret)
 {
-	int rc = sos_value_cmp(obj_value, cond_value);
+	int rc = *ret = sos_value_cmp(obj_value, cond_value);
 	return (rc > 0);
 }
 
@@ -748,9 +748,13 @@ sos_filter_fn_t fn_table[] = {
 sos_filter_t sos_filter_new(sos_iter_t iter)
 {
 	sos_filter_t f = calloc(1, sizeof *f);
-	if (f)
+	if (f) {
 		TAILQ_INIT(&f->cond_list);
-	f->iter = iter;
+		f->iter = iter;
+		f->last_match = ODS_OBJ_INIT(f->last_match_obj,
+					     &f->last_match_key_data,
+					     SOS_STACK_KEY_SIZE);
+	}
 	return f;
 }
 
@@ -1057,41 +1061,12 @@ sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt, int *ret)
 	int rc;
 	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
 		obj_value = sos_value_init(&v_, obj, cond->attr);
-		rc = cond->cmp_fn(obj_value, cond->value);
+		rc = cond->cmp_fn(obj_value, cond->value, ret);
 		sos_value_put(obj_value);
-		if (!rc) {
-			*ret = rc;
+		if (!rc)
 			return cond;
-		}
 	}
-	/* Update the last match values */
-	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
-		obj_value = sos_value_init(&v_, obj, cond->attr);
-		cond->last_match = sos_value_copy(&cond->last_match_, obj_value);
-		sos_value_put(obj_value);
-	}
-	return NULL;
-}
-
-static sos_obj_t continue_next(sos_filter_t filt)
-{
-	int rc;
-	SOS_KEY(key);
-	__sort_filter_conds_fwd(filt);
-	rc = __sos_filter_key_set(filt, key, 1, 1);
-	switch (rc) {
-	case 0:
-		rc = sos_iter_begin(filt->iter);
-		break;
-	case ESRCH:
-		rc = sos_iter_sup(filt->iter, key);
-		break;
-	default:
-		errno = rc;
-		return NULL;
-	}
-	if (!rc)
-		return next_match(filt);
+	sos_key_copy(filt->last_match, sos_iter_key(filt->iter));
 	return NULL;
 }
 
@@ -1102,10 +1077,7 @@ static sos_obj_t next_match(sos_filter_t filt)
 	sos_filter_cond_t cond;
 	int join;
 	do {
-		if (filt->empty)
-			obj = continue_next(filt);
-		else
-			obj = sos_iter_obj(filt->iter);
+		obj = sos_iter_obj(filt->iter);
 		if (!obj)
 			break;
 		cond = sos_filter_eval(obj, filt, &rc);
@@ -1135,26 +1107,31 @@ static sos_obj_t next_match(sos_filter_t filt)
 	return NULL;
 }
 
-static sos_obj_t continue_prev(sos_filter_t filt)
+static sos_obj_t continue_next(sos_filter_t filt)
 {
 	int rc;
 	SOS_KEY(key);
-
-	__sort_filter_conds_bkwd(filt);
-	rc = __sos_filter_key_set(filt, key, 0, 1);
+	__sort_filter_conds_fwd(filt);
+	rc = __sos_filter_key_set(filt, key, 1, 1);
 	switch (rc) {
 	case 0:
-		rc = sos_iter_end(filt->iter);
+		rc = sos_iter_begin(filt->iter);
 		break;
 	case ESRCH:
-		rc = sos_iter_inf(filt->iter, key);
+		rc = sos_iter_sup(filt->iter, key);
 		break;
 	default:
 		errno = rc;
 		return NULL;
 	}
+	/*
+	 * The last_match key positions us at the last record we
+	 * returned, skip it or the last record will keep getting
+	 * returned
+	 */
+	rc = sos_iter_next(filt->iter);
 	if (!rc)
-		return prev_match(filt);
+		return next_match(filt);
 	return NULL;
 }
 
@@ -1164,10 +1141,7 @@ static sos_obj_t prev_match(sos_filter_t filt)
 	sos_obj_t obj;
 	sos_filter_cond_t cond;
 	do {
-		if (filt->empty)
-			obj = continue_prev(filt);
-		else
-			obj = sos_iter_obj(filt->iter);
+		obj = sos_iter_obj(filt->iter);
 		if (!obj)
 			break;
 		cond = sos_filter_eval(obj, filt, &rc);
@@ -1196,6 +1170,29 @@ static sos_obj_t prev_match(sos_filter_t filt)
 	return NULL;
 }
 
+static sos_obj_t continue_prev(sos_filter_t filt)
+{
+	int rc;
+	SOS_KEY(key);
+
+	__sort_filter_conds_bkwd(filt);
+	rc = __sos_filter_key_set(filt, key, 0, 1);
+	switch (rc) {
+	case 0:
+		rc = sos_iter_end(filt->iter);
+		break;
+	case ESRCH:
+		rc = sos_iter_inf(filt->iter, key);
+		break;
+	default:
+		errno = rc;
+		return NULL;
+	}
+	if (!rc)
+		return prev_match(filt);
+	return NULL;
+}
+
 static sos_filter_cond_t __sos_find_filter_condition(sos_filter_t filt, int attr_id)
 {
 	sos_filter_cond_t cond;
@@ -1215,6 +1212,11 @@ static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_ma
 	int search = 0;
 	sos_array_t attr_ids = sos_attr_join_list(filt_attr);
 
+	if (last_match) {
+		sos_key_copy(key, filt->last_match);
+		return ESRCH;
+	}
+
 	if (sos_attr_type(filt_attr) == SOS_TYPE_JOIN) {
 		ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
 		ods_key_comp_t key_comp = comp_key->value;
@@ -1225,14 +1227,7 @@ static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_ma
 			/* Search the condition list for this attribute */
 			cond = __sos_find_filter_condition(filt, join_attr_id);
 			if (cond) {
-				sos_value_t v;
-				if (!last_match)
-					v = cond->value;
-				else if (!cond->last_match)
-					return ENOENT;
-				else
-					v = cond->last_match;
-				key_comp = __sos_set_key_comp(key_comp, v, &comp_len);
+				key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
 				comp_key->len += comp_len;
 				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
 					search = ESRCH;
@@ -1257,14 +1252,8 @@ static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_ma
 		/* Find the first condition that matches the filter attr */
 		TAILQ_FOREACH(cond, &filt->cond_list, entry) {
 			if (filt_attr_id == sos_attr_id(cond->attr)) {
-				sos_value_t v;
-				if (!last_match)
-					v = cond->value;
-				else if (!cond->last_match)
-					return ENOENT;
-				else
-					v = cond->last_match;
-				sos_key_set(key, sos_value_as_key(v), sos_value_size(v));
+				sos_key_set(key, sos_value_as_key(cond->value),
+					    sos_value_size(cond->value));
 				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
 					search = ESRCH;
 				break;
@@ -1314,8 +1303,9 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
  */
 sos_obj_t sos_filter_next(sos_filter_t filt)
 {
-	int rc = sos_iter_next(filt->iter);
-	if (!rc)
+	if (filt->empty)
+		return continue_next(filt);
+	if (0 == sos_iter_next(filt->iter))
 		return next_match(filt);
 	return NULL;
 }
@@ -1356,8 +1346,9 @@ int sos_filter_pos_put(sos_filter_t filt, sos_pos_t pos)
 
 sos_obj_t sos_filter_prev(sos_filter_t filt)
 {
-	int rc = sos_iter_prev(filt->iter);
-	if (!rc)
+	if (filt->empty)
+		return continue_prev(filt);
+	if (0 == sos_iter_prev(filt->iter));
 		return prev_match(filt);
 	return NULL;
 }
