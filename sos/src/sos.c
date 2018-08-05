@@ -1050,21 +1050,24 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	 * Build the schema dictionary
 	 */
 	iter = ods_iter_new(sos->schema_idx);
+	ods_lock(sos->schema_ods, 0, NULL);
 	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_next(iter)) {
 		sos_obj_ref_t obj_ref;
 		obj_ref.idx_data = ods_iter_data(iter);
 		ods_obj_t schema_obj = ods_ref_as_obj(sos->schema_ods, obj_ref.ref.obj);
 		sos_schema_t schema = __sos_schema_init(sos, schema_obj);
-		if (!schema)
+		if (!schema) {
+			ods_unlock(sos->schema_ods, 0);
 			goto err;
-		sos->schema_count++;
-		LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
+		}
 		rc = __sos_schema_open(sos, schema);
 		if (rc) {
 			errno = rc;
+			ods_unlock(sos->schema_ods, 0);
 			goto err;
 		}
 	}
+	ods_unlock(sos->schema_ods, 0);
 	ods_iter_delete(iter);
 
 	/*
@@ -1273,7 +1276,8 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 	sos_obj_t sos_obj;
 	sos_part_t part;
 	sos_obj_ref_t obj_ref;
-	if (!schema->sos)
+
+	if (!schema || !schema->sos)
 		return NULL;
 	part = __sos_primary_obj_part(schema->sos);
 	if (!part) {

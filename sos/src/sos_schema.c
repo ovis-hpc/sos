@@ -64,6 +64,7 @@
 #include <string.h>
 #include <endian.h>
 #include <sos/sos.h>
+#include <ods/ods_idx.h>
 #include "sos_priv.h"
 
 static struct sos_schema_s *ischema_dir[SOS_TYPE_LAST+1];
@@ -1173,6 +1174,8 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
 	rbn_init(&schema->id_rbn, &schema->data->id);
 	rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
+	sos->schema_count++;
+	LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
 	return schema;
  err_1:
 	free(schema->dict);
@@ -1220,6 +1223,45 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 	return rc;
 }
 
+static sos_schema_t __schema_by_name(sos_t sos, const char *name)
+{
+	ods_idx_data_t data;
+	sos_obj_ref_t obj_ref;
+	ods_obj_t schema_obj;
+	sos_schema_t schema = NULL;
+	SOS_KEY(key);
+
+	ods_key_set(key, name, strlen(name)+1);
+	if (0 == ods_idx_find(sos->schema_idx, key, &data)) {
+		obj_ref.idx_data = data;
+		schema_obj = ods_ref_as_obj(sos->schema_ods, obj_ref.ref.obj);
+		schema = __sos_schema_init(sos, schema_obj);
+	}
+	return schema;
+}
+
+static sos_schema_t __sos_schema_by_name(sos_t sos, const char *name)
+{
+	sos_schema_t schema = NULL;
+	struct rbt *tree;
+	struct rbn *rbn;
+
+	if (name[0] == '_' && name[1] == '_')
+		tree = &ischema_rbt;
+	else
+		tree = &sos->schema_name_rbt;
+
+	rbn = rbt_find(tree, (void *)name);
+	if (!rbn) {
+		/* Schema not in cache. Check persistent storage. */
+		schema = __schema_by_name(sos, name);
+		goto out;
+	}
+	schema = container_of(rbn, struct sos_schema_s, name_rbn);
+out:
+	return schema;
+}
+
 /**
  * \brief Find the schema with the specified name
  *
@@ -1234,16 +1276,11 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 sos_schema_t sos_schema_by_name(sos_t sos, const char *name)
 {
 	sos_schema_t schema;
-	struct rbt *tree;
-	struct rbn *rbn;
-	if (name[0] == '_' && name[1] == '_')
-		tree = &ischema_rbt;
-	else
-		tree = &sos->schema_name_rbt;
-	rbn = rbt_find(tree, (void *)name);
-	if (!rbn)
-		return NULL;
-	schema = container_of(rbn, struct sos_schema_s, name_rbn);
+
+	ods_lock(sos->schema_ods, 0, NULL);
+	schema = __sos_schema_by_name(sos, name);
+	ods_unlock(sos->schema_ods, 0);
+
 	return schema;
 }
 
@@ -1299,18 +1336,24 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	if (schema->schema_obj)
 		return EBUSY;
 
+	ods_lock(sos->schema_ods, 0, NULL);
+
 	/* Check to see if a schema by this name is already in the container */
-	if (sos_schema_by_name(sos, schema->data->name))
-		return EEXIST;
+	if (__sos_schema_by_name(sos, schema->data->name)) {
+		rc = EEXIST;
+		goto err_0;
+	}
 
 	udata = ods_get_user_data(sos->schema_ods);
-	if (!udata)
-		return ENOMEM;
+	if (!udata) {
+		rc= ENOMEM;
+		goto err_0;
+	}
 
 	rc = ods_stat(sos->schema_ods, &sb);
 	if (rc) {
 		rc = errno;
-		goto err_0;
+		goto err_1;
 	}
 
 	/* Compute the size of the schema data */
@@ -1318,8 +1361,8 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	size += schema->data->attr_cnt * sizeof(struct sos_attr_data_s);
 	schema_obj = __sos_obj_new(sos->schema_ods, size, &sos->lock);
 	if (!schema_obj) {
-		rc = ENOMEM;
-		goto err_0;
+		rc = errno;
+		goto err_1;
 	}
 	sos_obj_ref_t sos_obj_ref = {
 		.ref = {
@@ -1332,7 +1375,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	schema_key = ods_key_alloc(sos->schema_idx, key_len);
 	if (!schema_key) {
 		rc = ENOMEM;
-		goto err_1;
+		goto err_2;
 	}
 	ods_key_set(schema_key, schema->data->name, key_len);
 
@@ -1351,7 +1394,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	idx = 0;
 	schema->dict = calloc(schema->data->attr_cnt, sizeof(sos_attr_t));
 	if (!schema->dict)
-		goto err_2;
+		goto err_3;
 	/*
 	 * Iterate through the attribute definitions and add them to
 	 * the schema object
@@ -1373,14 +1416,14 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 		attr->data = attr_data;
 		if (attr->data->indexed && !attr->key_type) {
 			rc = EINVAL;
-			goto err_2;
+			goto err_3;
 		}
 		schema->dict[idx++] = attr;
 	}
 	schema->data = schema_obj->as.ptr;
 	rc = ods_idx_insert(sos->schema_idx, schema_key, sos_obj_ref.idx_data);
 	if (rc)
-		goto err_2;
+		goto err_3;
 
 	rbn_init(&schema->name_rbn, schema->data->name);
 	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
@@ -1393,15 +1436,18 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 
 	ods_obj_put(schema_key);
 	ods_obj_put(udata);
+	ods_unlock(sos->schema_ods, 0);
 	return __sos_schema_open(sos, schema);
- err_2:
+ err_3:
 	ods_obj_delete(schema_key);
 	ods_obj_put(schema_key);
- err_1:
+ err_2:
 	ods_obj_delete(schema_obj);
 	ods_obj_put(schema_obj);
- err_0:
+ err_1:
 	ods_obj_put(udata);
+ err_0:
+	ods_unlock(sos->schema_ods, 0);
 	return rc;
 }
 
