@@ -1096,8 +1096,9 @@ static sos_obj_t next_match(sos_filter_t filt)
 				/* Conditions LT, and LE cannot follow */
 				if (cond->cond < SOS_COND_EQ)
 					break;
-				/* The condition is EQ and the key was LT the cond */
-				if (cond->cond == SOS_COND_EQ && rc < 0)
+				/* The condition is EQ and the object
+				 * value is greater-than the cond */
+				if (cond->cond == SOS_COND_EQ && rc > 0)
 					break;
 			}
 		}
@@ -1132,6 +1133,7 @@ static sos_obj_t continue_next(sos_filter_t filt)
 	rc = sos_iter_next(filt->iter);
 	if (!rc)
 		return next_match(filt);
+	filt->empty = 1;
 	return NULL;
 }
 
@@ -1159,8 +1161,9 @@ static sos_obj_t prev_match(sos_filter_t filt)
 				/* Conditions GE and GT cannot follow */
 				if (cond->cond > SOS_COND_EQ)
 					break;
-				/* The condition is EQ and the key was GT the cond */
-				if (cond->cond == SOS_COND_EQ && rc > 0)
+				/* The condition is EQ and the object
+				 * value was less-than the cond */
+				if (cond->cond == SOS_COND_EQ && rc < 0)
 					break;
 			}
 		}
@@ -1190,6 +1193,7 @@ static sos_obj_t continue_prev(sos_filter_t filt)
 	}
 	if (!rc)
 		return prev_match(filt);
+	filt->empty = 1;
 	return NULL;
 }
 
@@ -1307,6 +1311,7 @@ sos_obj_t sos_filter_next(sos_filter_t filt)
 		return continue_next(filt);
 	if (0 == sos_iter_next(filt->iter))
 		return next_match(filt);
+	filt->empty = 1;
 	return NULL;
 }
 
@@ -1350,6 +1355,7 @@ sos_obj_t sos_filter_prev(sos_filter_t filt)
 		return continue_prev(filt);
 	if (0 == sos_iter_prev(filt->iter));
 		return prev_match(filt);
+	filt->empty = 1;
 	return NULL;
 }
 
