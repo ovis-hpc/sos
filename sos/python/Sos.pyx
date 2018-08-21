@@ -3451,12 +3451,13 @@ cdef class Query(object):
             if row:
                 row_count += 1
                 if inputer.input(row) == False:
+                    # The input limit has been reached
                     break
             else:
                 if wait:
-                    wait[0](self, row, row_count, wait[1])
-                    row = self.next()
-                    continue
+                    if wait[0](self, row, row_count, wait[1]) == False:
+                        # The waiter says we have enough
+                        break
                 else:
                     break
 
