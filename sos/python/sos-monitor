@@ -6,6 +6,7 @@ from sosdb import Sos
 from datetime import datetime
 import time
 import sys
+import math
 
 t0 = 0.0
 
@@ -51,7 +52,7 @@ class SchemaMonitor(object):
             s = stats['size']
 
             if t0 != 0.0:
-                diff_time = t1 - t0
+                diff_time = math.floor(t1 - t0)
                 insert_rate = (c - self.cards[i]) / diff_time
                 dup_rate = (d - self.dups[i]) / diff_time
                 size_rate  = (s - self.sizes[i]) / diff_time
