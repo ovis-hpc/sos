@@ -672,6 +672,24 @@ ods_key_comp_t __sos_set_key_comp(ods_key_comp_t comp, sos_value_t v, size_t *co
 /**
  * \brief Builds a join key from the attributes provided va_list
  *
+ * This function populates the \c key with the formatted values in the
+ * argument list. The \c join_attr is treated like a format
+ * specificiation. Each attribute type in the join attribute list is
+ * consulted to interpret the arguments following \c join_attr. Array
+ * attribute types have two values in the call list, the first is a
+ * size_t length, and the second is a pointer to the array containing
+ * the values.
+ *
+ * The key must be of sufficient size to contain the formatted key
+ * value. See the sos_key_join_size() function for determining the
+ * size of a join key given a join attribute and a set of attribute
+ * values.
+ *
+ * \param key The key handle.
+ * \param join_attr The attribute handle.
+ * \param ... The attribute values.
+ *
+ * \returns 0 on success or an errno on error.
  */
 int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 {
@@ -684,8 +702,14 @@ int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...)
 }
 
 /**
- * \brief Builds a join key from the attributes in the arguement list
+ * \brief Builds a join key from the attributes in the argument list
  *
+ * See sos_key_join() for more information.
+ *
+ * \param key The key handle.
+ * \param join_attr The join attribute handle.
+ * \param ap The va_list argument pointer.
+ * \returns 0 on success or an errno on error.
  */
 int sos_key_join_va(sos_key_t key, sos_attr_t join_attr, va_list ap)
 {
