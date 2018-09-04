@@ -1229,6 +1229,7 @@ static sos_schema_t __schema_by_name(sos_t sos, const char *name)
 	sos_obj_ref_t obj_ref;
 	ods_obj_t schema_obj;
 	sos_schema_t schema = NULL;
+	int rc;
 	SOS_KEY(key);
 
 	ods_key_set(key, name, strlen(name)+1);
@@ -1236,6 +1237,16 @@ static sos_schema_t __schema_by_name(sos_t sos, const char *name)
 		obj_ref.idx_data = data;
 		schema_obj = ods_ref_as_obj(sos->schema_ods, obj_ref.ref.obj);
 		schema = __sos_schema_init(sos, schema_obj);
+		if (!schema) {
+			ods_obj_put(schema_obj);
+			return NULL;
+		}
+		rc = __sos_schema_open(sos, schema);
+		if (rc) {
+			errno = rc;
+			__sos_schema_free(schema);
+			return NULL;
+		}
 	}
 	return schema;
 }
