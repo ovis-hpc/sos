@@ -774,6 +774,10 @@ int sos_filter_flags_set(sos_filter_t f, sos_iter_flags_t flags)
 	return sos_iter_flags_set(f->iter, flags);
 }
 
+sos_iter_flags_t sos_filter_flags_get(sos_filter_t f)
+{
+	return sos_iter_flags_get(f->iter);
+}
 
 static int __attr_join_idx(sos_attr_t filt_attr, sos_attr_t attr)
 {

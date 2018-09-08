@@ -676,3 +676,4 @@ cdef extern from "sos/sos.h":
     int sos_filter_pos_get(sos_filter_t filt, sos_pos_t *pos)
     sos_obj_t sos_filter_obj(sos_filter_t filt)
     int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags)
+    sos_iter_flags_t sos_filter_flags_get(sos_filter_t filt)
