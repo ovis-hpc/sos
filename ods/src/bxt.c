@@ -461,7 +461,8 @@ static int bxt_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 }
 
 static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
-			    ods_iter_flags_t flags)
+			    ods_iter_flags_t flags,
+			    uint32_t *ent)
 {
 	int i;
 	ods_ref_t head_ref = 0;
@@ -518,6 +519,8 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 	tail_ref = L_ENT(leaf,0).tail_ref;
 	rec = ods_ref_as_obj(t->ods, tail_ref);
  found:
+	if (ent)
+		*ent = i;
 	if (flags & ODS_ITER_F_UNIQUE) {
 		ods_obj_put(rec);
 		return leaf;
@@ -535,7 +538,7 @@ static int bxt_find_lub(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	rc = __int_lock(t, NULL);
 	if (rc)
 		return rc;
-	rec = __find_lub(idx, key, 0);
+	rec = __find_lub(idx, key, 0, NULL);
 	if (!rec) {
 		rc = ENOENT;
 		goto out;
@@ -548,7 +551,8 @@ static int bxt_find_lub(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 }
 
 static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
-			    ods_iter_flags_t flags)
+			    ods_iter_flags_t flags,
+			    uint32_t *ent)
 {
 	int i;
 	bxt_t t = idx->priv;
@@ -576,6 +580,8 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
 	ods_obj_put(leaf);
 	return NULL;
  out:
+	if (ent)
+		*ent = i;
 	if (flags & ODS_ITER_F_UNIQUE) {
 		ods_obj_put(rec);
 		return leaf;
@@ -593,7 +599,7 @@ static int bxt_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 	rc = __int_lock(t, NULL);
 	if (rc)
 		return rc;
-	rec = __find_glb(idx, key, 0);
+	rec = __find_glb(idx, key, 0, NULL);
 	if (!rec) {
 		rc = ENOENT;
 		goto out;
@@ -2183,7 +2189,7 @@ static int _iter_find_lub_unique(bxt_iter_t iter, ods_key_t key)
 	assert(0 != (iter->iter.flags & ODS_ITER_F_UNIQUE));
 	if (iter->node)
 		ods_obj_put(iter->node);
-	iter->node = __find_lub(iter->iter.idx, key, iter->iter.flags);
+	iter->node = __find_lub(iter->iter.idx, key, iter->iter.flags, &iter->ent);
 	return iter->node ? 0 : ENOENT;
 }
 
@@ -2192,7 +2198,7 @@ static int _iter_find_lub(bxt_iter_t iter, ods_key_t key)
 	assert(0 == (iter->iter.flags & ODS_ITER_F_UNIQUE));
 	if (iter->rec)
 		ods_obj_put(iter->rec);
-	iter->rec = __find_lub(iter->iter.idx, key, iter->iter.flags);
+	iter->rec = __find_lub(iter->iter.idx, key, iter->iter.flags, NULL);
 	return iter->rec ? 0 : ENOENT;
 }
 
@@ -2209,7 +2215,7 @@ static int _iter_find_glb(bxt_iter_t iter, ods_key_t key)
 	assert(0 == (iter->iter.flags & ODS_ITER_F_UNIQUE));
 	if (iter->rec)
 		ods_obj_put(iter->rec);
-	iter->rec = __find_glb(iter->iter.idx, key, iter->iter.flags);
+	iter->rec = __find_glb(iter->iter.idx, key, iter->iter.flags, NULL);
 	return iter->rec ? 0 : ENOENT;
 }
 
@@ -2218,7 +2224,7 @@ static int _iter_find_glb_unique(bxt_iter_t iter, ods_key_t key)
 	assert(0 != (iter->iter.flags & ODS_ITER_F_UNIQUE));
 	if (iter->node)
 		ods_obj_put(iter->node);
-	iter->node = __find_glb(iter->iter.idx, key, iter->iter.flags);
+	iter->node = __find_glb(iter->iter.idx, key, iter->iter.flags, &iter->ent);
 	return iter->node ? 0 : ENOENT;
 }
 
