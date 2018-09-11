@@ -2396,7 +2396,10 @@ cdef class Filter(object):
         returned for each unique key.
 
         """
-        sos_filter_flags_set(self.c_filt, SOS_ITER_F_UNIQUE)
+        cdef sos_iter_flags_t flags
+        flags = sos_filter_flags_get(self.c_filt)
+        flags |= SOS_ITER_F_UNIQUE
+        sos_filter_flags_set(self.c_filt, flags)
 
     def attr_iter(self):
         """Return the AttrIter for the primary attribute underlying this Filter"""
@@ -3299,6 +3302,7 @@ cdef class Query(object):
     cpdef cursor                # array of objects at the current index position
     cdef group_fn               # function that decides how objects are grouped
     cdef last_row               # indeed...
+    cdef unique                 # Boolean indicating if queries are unique
     def __init__(self, container):
         """Implements a Query interface to the SOS container.
 
@@ -3480,6 +3484,8 @@ cdef class Query(object):
         if schema.name() not in self.filter_idx:
             ts = schema[self.primary]
             f = Sos.Filter(schema[self.primary])
+            if self.unique:
+                f.unique()
             idx = len(self.filters)
             self.filter_idx[schema.name()] = idx
             self.filters.append(f)
@@ -3488,7 +3494,7 @@ cdef class Query(object):
         colspec.update(self, idx, attr)
         self.columns.append(colspec)
 
-    def select(self, columns, order_by=None, where=None, from_=None):
+    def select(self, columns, order_by=None, where=None, from_=None, unique=False):
         """Set the attribute list returned in the result
 
         Positional Parmeters:
@@ -3528,6 +3534,7 @@ cdef class Query(object):
         from_     -- An array of schema names
         where     -- An array of conditions to filter the data
         order_by  -- The attribute to use as the primary index
+        unique    -- Return only a single result for each matching key
 
         FROM_
 
@@ -3561,6 +3568,8 @@ cdef class Query(object):
             order_by = 'job_comp_time'
 
         """
+        self.unique = unique
+
         if order_by:
             # Must be before the Filter(s) are created
             self._order_by(order_by)
