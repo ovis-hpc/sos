@@ -1068,7 +1068,6 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 		}
 	}
 	ods_unlock(sos->schema_ods, 0);
-	ods_iter_delete(iter);
 
 	/*
 	 * Open the partitions
@@ -1079,6 +1078,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 		goto err;
 	}
 
+	ods_iter_delete(iter);
 	__pos_cleanup(sos);
 
 	pthread_mutex_lock(&cont_list_lock);
