@@ -570,7 +570,6 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 		break;
 	}
 	sos_filter_free(filt);
-	sos_iter_free(iter);
 	return 0;
 }
 
