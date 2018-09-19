@@ -745,6 +745,14 @@ sos_filter_fn_t fn_table[] = {
 	[SOS_COND_NE] = ne_fn,
 };
 
+/**
+ * \brief allocate a Sos Filter
+ *
+ * This function inherits the iterator reference from the caller.
+ *
+ * \param iter The iterator handle.
+ * \returns A new filter object or NULL if there is an error
+ */
 sos_filter_t sos_filter_new(sos_iter_t iter)
 {
 	sos_filter_t f = calloc(1, sizeof *f);
@@ -766,6 +774,7 @@ void sos_filter_free(sos_filter_t f)
 		TAILQ_REMOVE(&f->cond_list, cond, entry);
 		free(cond);
 	}
+	sos_iter_free(f->iter);
 	free(f);
 }
 
