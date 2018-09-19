@@ -1341,6 +1341,7 @@ TYPE_TIMESTAMP = SOS_TYPE_TIMESTAMP
 TYPE_OBJ = SOS_TYPE_OBJ
 TYPE_STRUCT = SOS_TYPE_STRUCT
 TYPE_JOIN = SOS_TYPE_JOIN
+TYPE_IS_ARRAY = SOS_TYPE_BYTE_ARRAY
 TYPE_BYTE_ARRAY = SOS_TYPE_BYTE_ARRAY
 TYPE_CHAR_ARRAY = SOS_TYPE_CHAR_ARRAY
 TYPE_STRING = SOS_TYPE_CHAR_ARRAY
@@ -2233,7 +2234,6 @@ cdef class Filter(object):
     ```
     """
     cdef Attr attr
-    cdef sos_iter_t c_iter
     cdef sos_filter_t c_filt
     cdef sos_obj_t c_obj
     cdef double start_us
@@ -2243,12 +2243,13 @@ cdef class Filter(object):
         """Positional Parameters:
         -- The primary filter attribute
         """
+        cdef sos_iter_t c_iter
         self.attr = attr
-        self.c_iter = sos_attr_iter_new(attr.c_attr)
-        if self.c_iter == NULL:
+        c_iter = sos_attr_iter_new(attr.c_attr)
+        if c_iter == NULL:
             raise ValueError("The attribute {0} must be indexed.".format(attr.name()))
 
-        self.c_filt = sos_filter_new(self.c_iter)
+        self.c_filt = sos_filter_new(c_iter)
         self.start_us = 0.0
         self.end_us = 0.0
 
@@ -3132,9 +3133,9 @@ cdef class Filter(object):
                 sos_obj_put(c_o)
                 break
 
-        if idx < count:
-            c_o = sos_filter_end(self.c_filt)
-            sos_obj_put(c_o)
+        # if idx < count:
+        #     c_o = sos_filter_end(self.c_filt)
+        #     sos_obj_put(c_o)
 
         free(tmp_res)
         free(res_attr)
@@ -3150,9 +3151,6 @@ cdef class Filter(object):
         if self.c_obj:
             sos_obj_put(self.c_obj)
             self.c_obj = NULL
-        if self.c_iter:
-            sos_iter_free(self.c_iter)
-            self.c_iter = NULL
         if self.c_filt:
             sos_filter_free(self.c_filt)
             self.c_filt = NULL
@@ -3223,6 +3221,10 @@ cdef class ColSpec(object):
         return self.attr.attr_id()
 
     @property
+    def is_array(self):
+        return self.attr.is_array()
+
+    @property
     def value(self):
         if self.query is None:
             return None
@@ -3232,15 +3234,6 @@ cdef class ColSpec(object):
             v = self.cvt_fn(v)
 
         return v
-
-        obj = self.query[self.cursor_idx]
-        if obj:
-            if self.cvt_fn:
-                return self.cvt_fn(obj[self.attr.attr_id()])
-            else:
-                return obj[self.attr.attr_id()]
-        else:
-            return None
 
     @property
     def float_value(self):
@@ -4048,16 +4041,22 @@ cdef set_INT16(sos_attr_t c_attr, sos_value_data_t c_data, val):
     c_data.prim.int16_ = <int16_t>val
 
 cdef set_STRUCT(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef unsigned char *s
+    cdef const unsigned char *s
     cdef int count
+    cdef int l, i
     if c_attr == NULL:
         raise ValueError("Cannot set a STRUCT attribute value without an sos_attr_t value")
-    s = val
     count = sos_attr_size(c_attr)
-    if len(val) < count:
-        memset(c_data.struc.byte_, 0, count)
-        count = len(val)
-    memcpy(c_data.struc.byte_, s, count)
+    l = min(len(val), count)
+    if l < count:
+        memset(&c_data.struc.byte_[l], 0, count - l)
+    if isinstance(val, np.ndarray):
+        b = bytearray(val.tobytes())
+        for i in range(0, l):
+            c_data.struc.byte_[i] = b[i]
+    else:
+        s = val
+        memcpy(c_data.struc.byte_, s, l)
 
 cdef set_ERROR(sos_attr_t c_attr, sos_value_data_t c_data, val):
     raise ValueError("Set is not supported on this attribute type")
