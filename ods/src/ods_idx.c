@@ -260,13 +260,14 @@ void ods_idx_close(ods_idx_t idx, int flags)
 	if (!idx)
 		return;
 	if (0 == ods_atomic_dec(&idx->ref_count)) {
+		ods_lwarn("%s index is closing.\n", idx->ods->path);
 		idx->idx_class->prv->close(idx);
 		ods_close(idx->ods, flags);
 		free(idx);
 	} else {
-		ods_lwarn("%s not closing due to %d open iterators.\n",
-			  idx->ods->path, idx->ref_count);
-		ods_commit(idx->ods, flags);
+		ods_ldebug("%s NOT closing due to %d open iterators.\n",
+			   idx->ods->path, idx->ref_count);
+		assert((ods_atomic_t)-1 != idx->ref_count);
 	}
 }
 
