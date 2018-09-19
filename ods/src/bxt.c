@@ -554,7 +554,7 @@ static ods_obj_t __find_glb(ods_idx_t idx, ods_key_t key,
 			    ods_iter_flags_t flags,
 			    uint32_t *ent)
 {
-	int i;
+	int i = 0;
 	bxt_t t = idx->priv;
 	ods_obj_t leaf = leaf_find(t, key);
 	ods_obj_t rec = NULL;
