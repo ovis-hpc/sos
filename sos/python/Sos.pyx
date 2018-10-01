@@ -2,6 +2,7 @@ from __future__ import print_function
 from cpython cimport PyObject, Py_INCREF
 from libc.stdint cimport *
 from libc.stdlib cimport malloc, free
+import datetime as dt
 import numpy as np
 import struct
 import sys
@@ -4008,8 +4009,12 @@ cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
     elif type(val) == int:
         secs = val
         usecs = 0
+    elif type(val) == dt.datetime:
+        ts = (val - dt.datetime(1970,1,1)).total_seconds()
+        secs = int(ts)
+        usecs = int((ts - secs) * 1.e6)
     else:
-        raise ValueError("timestamp must be float, tuple or int")
+        raise ValueError("timestamp of type {0}, must be float, tuple or int".format(type(val)))
     c_data.prim.timestamp_.tv.tv_sec = secs
     c_data.prim.timestamp_.tv.tv_usec = usecs
 
