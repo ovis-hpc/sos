@@ -123,6 +123,11 @@ if __name__ == "__main__":
                 attr = schema.attr_by_name(fn_args[0])
                 attr_id = attr.attr_id()
             a.append(attr_id)
+            if fn_args[1] == -1:
+                last_col += 1
+                fn_args[1] = last_col
+            else:
+                last_col = fn_args[1]
             a.append(fn_args[1])
             if action == "assign":
                 input_process.append([assign, make_cast(attr), a])
