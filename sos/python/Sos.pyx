@@ -3176,6 +3176,8 @@ cdef class ColSpec(object):
     cdef fill
     cdef align
 
+    cdef data                   # A place where an application can store it's data
+
     def __init__(self, name,
                  cvt_fn=None, default_fn=None, attr_type=None,
                  col_width=None, align=ColSpec.RIGHT, fill=' '):
@@ -3188,6 +3190,7 @@ cdef class ColSpec(object):
             self.col_width = 0
         self.align = align
         self.fill = fill
+        self.data = None
 
     def set_idx(self, idx):
         cursor_idx = idx
@@ -3200,6 +3203,12 @@ cdef class ColSpec(object):
 
     def get_query(self):
         return self.query
+
+    def set_data(self, data):
+        self.data = data
+
+    def get_data(self):
+        return self.data
 
     @property
     def col_name(self):
@@ -3359,6 +3368,12 @@ cdef class Query(object):
 
     def get_col_width(self):
         return self.col_width
+
+    def col_by_name(self, name):
+        for col in self.columns:
+            if name == col.col_name:
+                return col
+        return None
 
     def get_schemas(self):
         """Return all schema names in the container"""
@@ -3993,26 +4008,30 @@ cdef set_CHAR_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
 cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int secs
     cdef int usecs
-    if type(val) == tuple:
+    cdef typ = type(val)
+    if typ == tuple:
         try:
             secs = <int>val[0]
             usecs = <int>val[1]
         except:
-            raise ValueError("The time value is a tuple"
-                             " of ( int(secs), int(usecs) )")
-    elif type(val) == float or type(val) == np.float64 or type(val) == np.float32:
+            raise ValueError("A timestamp is a tuple of ( int(secs), int(usecs) )")
+    elif typ == float or typ == np.float64 or typ == np.float32:
         try:
             secs = int(val)
             usecs = int((val - secs) * 1.e6)
         except:
             raise ValueError("The time value is a floating point secs.usecs number")
-    elif type(val) == int:
-        secs = val
-        usecs = 0
-    elif type(val) == dt.datetime:
+    elif typ == np.datetime64:
+        ts = val.astype('int')
+        secs = ts / 1000000
+        usecs = ts % 1000000
+    elif typ == dt.datetime:
         ts = (val - dt.datetime(1970,1,1)).total_seconds()
         secs = int(ts)
         usecs = int((ts - secs) * 1.e6)
+    elif typ == int:
+        secs = val
+        usecs = 0
     else:
         raise ValueError("timestamp of type {0}, must be float, tuple or int".format(type(val)))
     c_data.prim.timestamp_.tv.tv_sec = secs
