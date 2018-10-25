@@ -23,6 +23,7 @@ class TestHTBL(TestIndexBase, unittest.TestCase):
             itr.begin()
             for obj in SosIterWrap(itr):
                 t = obj2tuple(obj)
+                t = ( t[0], str(t[1]) )
                 data.add(t)
             self.assertEqual(data, set(self.input_data))
 
@@ -33,6 +34,7 @@ class TestHTBL(TestIndexBase, unittest.TestCase):
             itr.end()
             for obj in SosIterWrap(itr, rev=True):
                 t = obj2tuple(obj)
+                t = ( t[0], str(t[1]) )
                 data.add(t)
             self.assertEqual(data, set(self.input_data))
 
