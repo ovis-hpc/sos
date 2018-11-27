@@ -12,7 +12,6 @@ Sos_la_CFLAGS = -g -O0  $(PY_INCLUDES) $(PYTHON_CPPFLAGS)
 Sos_la_LDFLAGS = $(PYTHON_LDFLAGS) -module -shared
 Sos_la_LIBADD = $(top_builddir)/sos/src/libsos.la
 
-# Array_la_SOURCES = Array.pyx Array.pxd
 Array_la_SOURCES = Array.pyx
 nodist_Array_la_SOURCES = Array.c
 Array_la_CFLAGS = -g -O0  $(PY_INCLUDES) $(PYTHON_CPPFLAGS)
@@ -21,7 +20,7 @@ Array_la_LIBADD = $(top_builddir)/sos/src/libsos.la
 
 pkgpyexecdir = $(pkgpythondir)
 
-pkgpython_PYTHON = __init__.py bollinger.py Analysis.py
+pkgpython_PYTHON = __init__.py DataSet.py
 
 dist_bin_SCRIPTS = sos-db sos-part sos-schema sos-import-csv sos-monitor lmq
 

@@ -227,6 +227,7 @@ cdef extern from "sos/sos.h":
         SOS_TYPE_BYTE_ARRAY,
         SOS_TYPE_ARRAY,
         SOS_TYPE_CHAR_ARRAY,
+        SOS_TYPE_STRING,
         SOS_TYPE_INT16_ARRAY,
         SOS_TYPE_INT32_ARRAY,
         SOS_TYPE_INT64_ARRAY,

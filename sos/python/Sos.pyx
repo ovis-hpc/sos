@@ -1,12 +1,13 @@
 from __future__ import print_function
 from cpython cimport PyObject, Py_INCREF
 from libc.stdint cimport *
-from libc.stdlib cimport malloc, free
+from libc.stdlib cimport calloc, malloc, free, realloc
 import datetime as dt
 import numpy as np
 import struct
 import sys
 import copy
+from DataSet import DataSet
 cimport numpy as np
 cimport Sos
 
@@ -3294,390 +3295,6 @@ cdef class ColSpec(object):
         else:
             return v.center(self.col_width, self.fill)
 
-cdef class Query(object):
-    cdef Container cont         # The container
-    cdef filter_idx             # dictionary mapping schema to filter index
-    cdef filters                # array of filters
-    cdef schema                 # array of schema
-    cdef columns                # array of columns
-    cdef int col_width          # default width of an output column
-    cdef primary                # primary attribute
-    cpdef cursor                # array of objects at the current index position
-    cdef group_fn               # function that decides how objects are grouped
-    cdef last_row               # indeed...
-    cdef unique                 # Boolean indicating if queries are unique
-    def __init__(self, container):
-        """Implements a Query interface to the SOS container.
-
-        The Query API roughly mirrors an SQL select statement. There
-        are API for each of the fundamental clauses in an SQL select
-        statement, i.e. select(), where(), from_(), and order_by().
-
-        select() - identifies which attributes (columns) will be returned
-        from_() - specifies which schema (tables) are being queried
-        where()  - specifies the object(row) selection criteria
-        order_by() - specifies the index being searched
-
-        Positional Parameters:
-        container -- The Sos.Container to query
-        """
-        self.primary = 'timestamp'
-        self.cont = container
-        self.filter_idx = {}
-        self.filters = []
-        self.columns = []
-        self.cursor = []
-        self.schema = []
-        self.col_width = 15
-
-    cdef __find_schema_with_attr(self, name):
-        if len(self.schema) > 0:
-            for s in self.schema:
-                if name in s:
-                    return s
-        else:
-            for s in self.cont.schema_iter():
-                if name in s:
-                    return s
-        return None
-
-    cdef __decode_attr_name(self, name):
-        try:
-            i = name.find('.')
-            if i >= 0:
-                sname = name[:i]
-                aname = name[i+1:]
-                schema = self.cont.schema_by_name(sname)
-            else:
-                schema = self.__find_schema_with_attr(name)
-                aname = name
-        except:
-            return (None, None)
-        if schema:
-            return (schema, schema[aname])
-        raise ValueError('No schema contains the attribute "{0}"'.format(aname))
-
-    def __getitem__(self, idx):
-        obj = self.cursor[idx[0]]
-        if obj is None:
-            return None
-        return obj[idx[1]]
-
-    def set_col_width(self, width):
-        self.col_width = width
-
-    def get_col_width(self):
-        return self.col_width
-
-    def col_by_name(self, name):
-        for col in self.columns:
-            if name == col.col_name:
-                return col
-        return None
-
-    def get_schemas(self):
-        """Return all schema names in the container"""
-        result = []
-        for schema in self.cont.schema_iter():
-            result.append(schema.name())
-        return result
-
-    def get_indices(self):
-        """Return all indexed attributes in the container"""
-        result = []
-        for schema in self.cont.schema_iter():
-            for attr in schema.attr_iter():
-                if attr.is_indexed():
-                    result.append(schema.name() + '.' + attr.name())
-        return result
-
-    def query(self, inputer, reset=True, wait=None):
-        """Calls the inputer class' input function for every row in the result
-
-        If the input() function returns True, the query continues and
-        the input() function is called again with the next record. If
-        the input() function returns False and wait is None, the query
-        is discontinued and the call returns with the number of times
-        input() was called.
-
-        If wait is None, the query completes when the data is
-        exhausted, or the row limit has been reached. Otherwise, wait
-        must be a tuple containing a wait_fn and a wait_arg. The
-        wait_fn(self, row, row_count, wait_arg) is called if input()
-        returns False before the limit is reached. If wait_fn returns
-        False, the query returns with the data already obtained, if
-        wait_fn return True, the query loop continues.
-
-        If query() is called again with reset=False, the query will
-        continue with the next record following the last one delivered
-        to input().
-
-        The record argument to the input() function is a list of
-        column values as defined in the column argument to select()
-
-        Positional Parameters:
-
-        -- An instance of an Inputer class that defines an
-           input(self, record) function and a get_results(self)
-           function. The input() fuction is called as each record is
-           read from the DataSource. The get_results() function is
-           called when the desired data has been read and is to be
-           returned to the caller as a DataSet instance.
-
-        Keyword Parameters:
-        reset -- Start at the beginning of the query (default is True)
-        wait  -- A tuple containing a wait_fn and a wait_arg
-                 (default is None)
-
-        Returns:
-
-            The number of times the Inputer's input function was
-            called and returned True.
-
-        Example:
-
-            class Inputer(object):
-                def __init__(self, query, row_limit=16, file=sys.stdout):
-                    self.row_count = 0
-                    self.row_limit = row_limit
-                    self.query = query
-                    self.file = file
-
-                def input(self, row):
-                    if self.row_count >= self.row_limit:
-                        return False
-                    for col in self.query.get_columns():
-                        print(col, end=' ', file=self.file)
-                    print("", file=self.file)
-                    self.row_count += 1
-                    return True
-
-        """
-        cdef int row_count = 0
-
-        if reset:
-            row = self.begin()
-        else:
-            row = self.next()
-
-        while True:
-            if row:
-                row_count += 1
-                if inputer.input(row) == False:
-                    # The input limit has been reached
-                    break
-            else:
-                if wait:
-                    if wait[0](self, row, row_count, wait[1]) == False:
-                        # The waiter says we have enough
-                        break
-                else:
-                    break
-
-            row = self.next()
-
-        return row_count
-
-    def _from_(self, schema):
-        self.schema = []
-        for name in schema:
-            self.schema.append(self.cont.schema_by_name(name))
-
-    def _order_by(self, name):
-        self.primary = name
-
-    cdef _add_colspec(self, ColSpec colspec):
-        schema, attr = self.__decode_attr_name(colspec.name)
-        if not schema:
-            raise ValueError("The attribute {0} was not found in any schema.".format(colspec.name))
-        if schema.name() not in self.filter_idx:
-            ts = schema[self.primary]
-            f = Sos.Filter(schema[self.primary])
-            if self.unique:
-                f.unique()
-            idx = len(self.filters)
-            self.filter_idx[schema.name()] = idx
-            self.filters.append(f)
-        else:
-            idx = self.filter_idx[schema.name()]
-        colspec.update(self, idx, attr)
-        self.columns.append(colspec)
-
-    def select(self, columns, order_by=None, where=None, from_=None, unique=False):
-        """Set the attribute list returned in the result
-
-        Positional Parmeters:
-
-        -- An array of column-specifications. A column-specification is
-           either an attribute name (string), or a ColSpec object. The
-           ColSpec object allows for the specification of how the data
-           will be converted and formatted on output.
-
-           Examples:
-
-           The simplest format is simply an array of names:
-
-             [ 'meminfo.timestamp',
-               'vmstat.timestamp',
-               'meminfo.job_id',
-               'meminfo.MemFree',
-               'vmstat.nr_free_pages'
-             ]
-
-           A ColSpec object can be used to control data conversion and formatting:
-
-              def fmt_timestamp(ts):
-                  return str(dt.datetime.fromtimestamp(ts[0]))
-
-              [ Sos.ColSpec('meminfo.timestamp', cvt_fn=fmt_timestamp,
-                   col_width=24, align=Sos.ColSpec.LEFT),
-                Sos.ColSpec('vmstat.timestamp', cvt_fn=fmt_timestamp,
-                   col_width=24, align=Sos.ColSpec.LEFT),
-                Sos.ColSpec('meminfo.job_id', cvt_fn=int, col_width=12),
-                'meminfo.MemFree',
-                'vmstat.nr_free_pages',
-              ]
-
-        Keyword Parameters:
-
-        from_     -- An array of schema names
-        where     -- An array of conditions to filter the data
-        order_by  -- The attribute to use as the primary index
-        unique    -- Return only a single result for each matching key
-
-        FROM_
-
-          The 'from_' keyword is an arrray of schema names to search
-          for attribute names.
-
-          Example:
-
-            from_ = [ 'meminfo', 'jobinfo' ]
-
-        WHERE
-
-          The 'where' keyword is an array of filter condition tuples.
-          Each condition must be applicable to every schema. A
-          condition tuple contains three elements as follows:
-
-          ( attribute_name, condition, value )
-
-          Example:
-
-            where = [( 'timestamp', COND_GE, 1510597567.001617 )]
-
-        ORDER_BY
-
-          Specifies the name of the primary key. This attribute must be
-          indexed and present in all schema referenced in the columns
-          list.
-
-          Example:
-
-            order_by = 'job_comp_time'
-
-        """
-        self.unique = unique
-
-        if order_by:
-            # Must be before the Filter(s) are created
-            self._order_by(order_by)
-
-        if from_:
-            self._from_(from_)
-
-        self.filter_idx = {}
-        self.filters = []
-        self.columns = []
-        for col in columns:
-            if type(col) == ColSpec:
-                spec = copy.copy(col)
-                self._add_colspec(spec)
-            else:
-                if '*' in col:
-                    if '*' == col:
-                        if len(self.columns) > 1:
-                            raise ValueError("Ambiguous wildcard in column specification, "
-                                             "use schema-name.* to identify column source")
-                        if from_ is None:
-                            raise ValueError("from_ is required with wildcard column names")
-                        name = from_[0]
-                    else:
-                        name = col.split('.')[0]
-                    schema = self.cont.schema_by_name(name)
-                    if schema is None:
-                        raise ValueError("Schema {0} was not found.".format(name))
-                    for attr in schema.attr_iter():
-                        if attr.type() == SOS_TYPE_JOIN:
-                            continue
-                        if len(from_) > 1:
-                            spec = ColSpec(name + '.' + attr.name(), col_width=self.get_col_width())
-                        else:
-                            spec = ColSpec(attr.name(), col_width=self.get_col_width())
-                        self._add_colspec(spec)
-                else:
-                    spec = ColSpec(col, col_width=self.get_col_width())
-                    self._add_colspec(spec)
-
-        if where:
-            # Must be after the Filter(s) are created
-            self._where(where)
-
-    def get_columns(self):
-        """Return list of columns-specification (ColSpec)"""
-        return self.columns
-
-    def get_filters(self):
-        """Return list of Sos.Filter objects"""
-        return self.filters
-
-    def default_group_fn(self, o1, o2):
-        pass
-
-    def set_group_fn(self, group_fn):
-        """Sets the function that will be called when collection objects into a single row
-        """
-        self.group_fn = group_fn
-
-    def _where(self, clause):
-        for c in clause:
-            for f in self.filters:
-                f.add_condition(f.get_attr().schema()[c[0]], c[1], c[2])
-
-    cdef object make_row(self):
-        row = []
-        for col in self.columns:
-            v = col.value
-            if v is None:
-                return None
-            row.append(v)
-        return row
-
-    def begin(self):
-        """Position the cursor at the first object"""
-        self.cursor = []
-        for f in self.filters:
-            self.cursor.append(f.begin())
-        return self.make_row()
-
-    def end(self):
-        self.cursor = []
-        for f in self.filters:
-            self.cursor.append(f.end())
-        return self.make_row()
-
-    def next(self):
-        self.cursor = []
-        for f in self.filters:
-            self.cursor.append(f.next())
-        return self.make_row()
-
-    def prev(self):
-        self.cursor = []
-        for f in self.filters:
-            self.cursor.append(f.prev())
-        return self.make_row()
-
 cdef class Index(object):
     cdef sos_index_t c_index
     cdef sos_index_stat_s c_stats
@@ -4023,8 +3640,8 @@ cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
             raise ValueError("The time value is a floating point secs.usecs number")
     elif typ == np.datetime64:
         ts = val.astype('int')
-        secs = ts / 1000000
-        usecs = ts % 1000000
+        secs = ts / 1000000L
+        usecs = ts % 1000000L
     elif typ == dt.datetime:
         ts = (val - dt.datetime(1970,1,1)).total_seconds()
         secs = int(ts)
@@ -4809,3 +4426,1046 @@ class ObjAttrError(NameError):
         NameError.__init__(self,
                            "Object has not attribute with the name '{0}'" \
                            .format(attr, schema))
+
+ctypedef void (*nda_setter_fn_t)(np.ndarray nda, int idx, sos_value_t v)
+ctypedef void (*nda_resample_fn_t)(np.ndarray nda, int idx, sos_value_t v,
+                                   double bin_samples, double bin_width)
+cdef struct nda_setter_opt_s:
+    sos_attr_t attr             # attribute in schema
+    int idx                     # index of this object in objects[]
+    nda_setter_fn_t setter_fn
+    nda_resample_fn_t resample_fn
+ctypedef nda_setter_opt_s *nda_setter_opt
+
+cdef void int16_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    nda[idx] = v.data.prim.int16_
+
+cdef void int32_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    nda[idx] = v.data.prim.int32_
+
+cdef void int64_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    nda[idx] = v.data.prim.int64_
+
+cdef void uint16_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    # have to force unsigned to double
+    nda[idx] = <double>v.data.prim.uint16_
+
+cdef void uint32_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    # have to force unsigned to double
+    nda[idx] = <double>v.data.prim.uint32_
+
+cdef void uint64_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    nda[idx] = <double>v.data.prim.uint64_
+
+cdef void float_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    nda[idx] = v.data.prim.float_
+
+cdef void double_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    nda[idx] = v.data.prim.double_
+
+cdef void timestamp_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    # destination numpy data type is assumed to be datetime64[us]
+    nda[idx] = (v.data.prim.timestamp_.tv.tv_sec * 1000000L) + \
+            v.data.prim.timestamp_.tv.tv_usec
+
+cdef void uint8_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = v.data.array.data.byte_[i]
+
+cdef void int8_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    nda[idx] = str(v.data.array.data.char_[:v.data.array.count])
+
+cdef void int16_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = v.data.array.data.int16_[i]
+
+cdef void int32_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = v.data.array.data.int32_[i]
+
+cdef void int64_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = v.data.array.data.int64_[i]
+
+cdef void uint16_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = <double>v.data.array.data.uint16_[i]
+
+cdef void uint32_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = <double>v.data.array.data.uint32_[i]
+
+cdef void uint64_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = <double>v.data.array.data.uint64_[i]
+
+cdef void float_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = v.data.array.data.float_[i]
+
+cdef void double_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = v.data.array.data.double_[i]
+
+cdef nda_setter_fn_t *nda_setters = [
+    int16_nda_setter,
+    int32_nda_setter,
+    int64_nda_setter,
+    uint16_nda_setter,
+    uint32_nda_setter,
+    uint64_nda_setter,
+    float_nda_setter,
+    double_nda_setter,
+    NULL,                       # long double
+    timestamp_nda_setter,
+    NULL,                       # obj
+    NULL,                       # struct
+    NULL,                       # join
+    NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL,     # twenty zeros to get to 32, i.e. SOS_TYPE_BYTE_ARRAY
+    uint8_array_nda_setter,     # byte_array
+    int8_array_nda_setter,      # char_array
+    int16_array_nda_setter,
+    int32_array_nda_setter,
+    int64_array_nda_setter,
+    uint16_array_nda_setter,
+    uint32_array_nda_setter,
+    uint64_array_nda_setter,
+    float_array_nda_setter,
+    double_array_nda_setter,
+    NULL,                       # long double
+    NULL,                       # obj array
+]
+
+cdef void int16_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                             double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    nda[idx] = ((nda[idx] * bc) + v.data.prim.int16_) / (bc + 1)
+
+cdef void int32_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                             double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    nda[idx] = ((nda[idx] * bc) + v.data.prim.int32_) / (bc + 1)
+
+cdef void int64_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                             double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    nda[idx] = ((nda[idx] * bc) + v.data.prim.int16_) / (bc + 1)
+
+cdef void uint16_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                              double bin_samples, double bin_width):
+    nda[idx] = ((nda[idx] * bin_samples) + <double>v.data.prim.uint16_) / (bin_samples + 1.0)
+
+cdef void uint32_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                              double bin_samples, double bin_width):
+    nda[idx] = ((nda[idx] * bin_samples) + <double>v.data.prim.uint32_) / (bin_samples + 1.0)
+
+cdef void uint64_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                              double bin_samples, double bin_width):
+    nda[idx] = ((nda[idx] * bin_samples) + <double>v.data.prim.uint64_) / (bin_samples + 1.0)
+
+cdef void float_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                             double bin_samples, double bin_width):
+    nda[idx] = ((nda[idx] * bin_samples) + v.data.prim.float_) / (bin_samples + 1.0)
+
+cdef void double_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                              double bin_samples, double bin_width):
+    nda[idx] = ((nda[idx] * bin_samples) + v.data.prim.double_) / (bin_samples + 1.0)
+
+cdef void timestamp_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                 double bin_samples, double bin_width):
+    cdef uint64_t t
+    cdef uint64_t bw
+    if bin_samples == 0.0:
+        bw = int(bin_width)
+        t = (v.data.prim.timestamp_.tv.tv_sec * 1000000L) + \
+            v.data.prim.timestamp_.tv.tv_usec
+        nda[idx] = t - (t % bw)
+
+cdef void uint8_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                   double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bc) + v.data.array.data.byte_[i]) / (bc + 1)
+
+cdef void int8_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                  double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bc) + v.data.array.data.char_[i]) / (bc + 1)
+
+cdef void int16_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                   double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bc) + v.data.array.data.int16_[i]) / (bc + 1)
+
+cdef void int32_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                   double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bc) + v.data.array.data.int32_[i]) / (bc + 1)
+
+cdef void int64_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                   double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bc) + v.data.array.data.int64_[i]) / (bc + 1)
+
+cdef void uint16_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                    double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bc) + v.data.array.data.uint16_[i]) / (bc + 1)
+
+cdef void uint32_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                    double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bc) + v.data.array.data.uint32_[i]) / (bc + 1)
+
+cdef void uint64_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                    double bin_samples, double bin_width):
+    cdef int bc = int(bin_samples)
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bc) + v.data.array.data.uint64_[i]) / (bc + 1)
+
+cdef void float_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                    double bin_samples, double bin_width):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bin_samples) + v.data.array.data.float_[i]) / (bin_samples + 1.0)
+
+cdef void double_array_nda_resample(np.ndarray nda, int idx, sos_value_t v,
+                                    double bin_samples, double bin_width):
+    cdef int i
+    ndb = nda[idx]
+    for i in range(0, v.data.array.count):
+        ndb[i] = ((ndb[i] * bin_samples) + v.data.array.data.double_[i]) / (bin_samples + 1)
+
+
+cdef nda_resample_fn_t *nda_resamplers = [
+    int16_nda_resample,
+    int32_nda_resample,
+    int64_nda_resample,
+    uint16_nda_resample,
+    uint32_nda_resample,
+    uint64_nda_resample,
+    float_nda_resample,
+    double_nda_resample,
+    NULL,                       # long double
+    timestamp_nda_resample,
+    NULL,                       # obj
+    NULL,                       # struct
+    NULL,                       # join
+    NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL,     # twenty zeros to get to 32, i.e. SOS_TYPE_BYTE_ARRAY
+    uint8_array_nda_resample,     # byte_array
+    int8_array_nda_resample,      # char_array
+    int16_array_nda_resample,
+    int32_array_nda_resample,
+    int64_array_nda_resample,
+    uint16_array_nda_resample,
+    uint32_array_nda_resample,
+    uint64_array_nda_resample,
+    float_array_nda_resample,
+    double_array_nda_resample,
+    NULL,                       # long double
+    NULL,                       # obj array
+]
+
+cdef class QueryInputer(object):
+    DEFAULT_ARRAY_LIMIT = 256
+    cdef int start
+    cdef int row_limit
+    cdef int col_count
+    cdef int row_count
+    cdef Query query
+    cdef sos_obj_t *objects
+
+    def __init__(self, Query q, int limit, int start=0):
+        self.query = q
+        self.row_limit = limit
+        self.col_count = len(q.filters)
+        self.objects = <sos_obj_t *>calloc(self.row_limit,
+                                           sizeof(sos_obj_t) * self.col_count)
+        if self.objects == NULL:
+            raise MemoryError("Memory allocation failure")
+        self.row_count = 0
+
+    @property
+    def capacity(self):
+        """Return the row capacity of the result"""
+        return self.row_limit
+
+    @property
+    def count(self):
+        """Return the number of rows in the result"""
+        return self.row_count
+
+    def __len__(self):
+        """Return the number of rows in the result"""
+        return self.row_limit
+
+    def __dealloc__(self):
+        cdef int row_no
+        cdef int filt_no
+        cdef int idx
+        if self.objects == NULL:
+            return
+        for row_no in range(0, self.row_limit):
+            for col_no in range(0, self.col_count):
+                idx = row_no * self.col_count
+                if self.objects[idx] != NULL:
+                    sos_obj_put(self.objects[idx])
+        free(self.objects)
+        self.objects = NULL
+        self.query = None
+
+    def __getitem__(self, idx):
+        cdef int idx_ = (idx[0] * self.col_count) + idx[1]
+        o = Object()
+        o.assign(self.objects[idx_])
+        return o
+
+    def __setitem__(self, idx, value):
+        cdef int idx_ = (idx[0] * self.col_count) + idx[1]
+        self.objects[idx_] = <sos_obj_t>value
+
+    def concat(self, QueryInputer result):
+        """Concatenate query results
+
+        Appends the QueryResult 'result' to the end of this result.
+
+        A MemoryError exception is raised if there are insufficient
+        resources to expand this result buffer.
+
+        Postional Parameters:
+        result -- The query result to append
+
+        """
+        cdef int newRows = self.row_count + result.row_count
+        cdef int newBytes, oldBytes
+        oldBytes = self.row_count * self.col_count * sizeof(sos_obj_t)
+        newBytes = newRows * self.col_count * sizeof(sos_obj_t)
+        if newRows > self.row_limit:
+            self.objects = <sos_obj_t *>realloc(self.objects, newBytes)
+            if self.objects == NULL:
+                raise MemoryError("Insufficent resources for {0} bytes".format(newBytes))
+        memcpy(&self.objects[oldBytes], result.objects, newBytes - oldBytes)
+        self.row_count += result.row_count
+
+    def input(self, reset=True):
+        """Reads query results into memory
+
+        Read as many as self.limit records from the container. If
+        there is no more matching data or the input buffer is
+        exhausted, the function returns False. Otherwise, the function
+        returns True (i.e. more data remaining).
+
+        Returns:
+        True  -- There is more data available, but buffer space is exhausted
+        False -- There is no buffer space available or there is no more matching data
+        """
+        cdef int filt_count = len(self.query.filters)
+        cdef int idx, start, row_no, filt_no
+        cdef sos_obj_t c_obj
+        cdef Filter f
+
+        if filt_count == 0:
+            raise ValueError("The select method must be called before query")
+
+        if reset:
+            start = self.start
+        else:
+            start = self.row_count
+
+        for filt_no in range(start, filt_count):
+            f = self.query.filters[filt_no]
+            if reset:
+                c_obj = sos_filter_begin(f.c_filt)
+            else:
+                c_obj = sos_filter_next(f.c_filt)
+            if c_obj == NULL:
+                return False
+            else:
+                self.objects[filt_no] = c_obj
+            self.row_count = 1
+
+        for row_no in range(start+1, self.row_limit):
+            for filt_no in range(0, filt_count):
+                f = self.query.filters[filt_no]
+                c_obj = sos_filter_next(f.c_filt)
+                if c_obj == NULL:
+                    return False
+                idx = (row_no * filt_count) + filt_no
+                self.objects[idx] = c_obj
+                self.row_count += 1
+
+        if c_obj:
+            return False
+        return True
+
+    def to_timeseries(self, timestamp='timestamp', interval_ms=None,
+                      max_array=DEFAULT_ARRAY_LIMIT,
+                      max_string=DEFAULT_ARRAY_LIMIT):
+        """Return the QueryResult data as a DataSet"""
+        cdef sos_obj_t c_o
+        cdef sos_value_s v_, t_
+        cdef sos_value_t v, t
+        cdef int idx
+        cdef int attr_idx
+        cdef int res_idx
+        cdef int atype
+        cdef int nattr
+        cdef Schema schema
+        cdef Attr attr
+        cdef sos_attr_t c_attr, t_attr
+        cdef sos_attr_t *res_attr
+        cdef int *res_type
+        cdef nda_setter_opt res_acc
+        cdef int type_id
+        cdef double obj_time
+        cdef double bin_width, bin_time, bin_value, bin_samples
+        cdef typ_str
+        cdef ColSpec col
+
+        nattr = len(self.query.columns)
+
+        res_attr = <sos_attr_t *>malloc(sizeof(sos_attr_t) * nattr)
+        if res_attr == NULL:
+            raise MemoryError("Insufficient memory to allocate dimension array")
+        res_type = <int *>malloc(sizeof(uint64_t) * nattr)
+        if res_type == NULL:
+            free(res_attr)
+            raise MemoryError("Insufficient memory to allocate type array")
+        res_acc = <nda_setter_opt>malloc(sizeof(nda_setter_opt_s) * nattr)
+        if res_acc == NULL:
+            free(res_attr)
+            free(res_type)
+            raise MemoryError("Insufficient memory to allocate type array")
+
+        schema = self.query.filters[0].get_attr().schema()
+        t_attr = sos_schema_attr_by_name(schema.c_schema, timestamp.encode())
+        if t_attr == NULL:
+            raise ValueError("The timestamp attribute was not found in the schema. "
+                             "Consider specifying the timestamp keyword parameter")
+        if sos_attr_type(t_attr) != SOS_TYPE_TIMESTAMP:
+            raise ValueError("The timestamp attribute {0} "
+                             "is not a SOS_TYPE_TIMESTAMP".format(timestamp))
+
+        result = []
+        try:
+            idx = 0
+            for col in self.query.columns:
+
+                attr = col.attr
+                res_attr[idx] = <sos_attr_t>attr.c_attr
+                res_type[idx] = attr.type()
+
+                # set access defaults
+                res_acc[idx].idx = col.cursor_idx
+                res_acc[idx].setter_fn = nda_setters[res_type[idx]]
+                res_acc[idx].resample_fn = nda_resamplers[res_type[idx]]
+
+                atyp = col.attr_type
+                if atyp == SOS_TYPE_TIMESTAMP:
+                    typ_str = 'datetime64[us]'
+                elif atyp == SOS_TYPE_STRUCT:
+                    typ_str = 'uint8'
+                elif atyp == SOS_TYPE_UINT64:
+                    typ_str = 'double'
+                elif atyp == SOS_TYPE_UINT32:
+                    typ_str = 'double'
+                elif atyp == SOS_TYPE_INT64:
+                    typ_str = 'double'
+                elif atyp == SOS_TYPE_INT32:
+                    typ_str = 'double'
+                else:
+                    typ_str = sos_type_strs[atyp].lower()
+                    typ_str = typ_str.replace('_array', '')
+
+                if atyp >= TYPE_IS_ARRAY:
+                    if atyp == SOS_TYPE_STRING:
+                        data = np.zeros([ self.row_limit ],
+                                        dtype=np.dtype('|S{0}'.format(max_string)))
+                    else:
+                        data = np.zeros([ self.row_limit, self.max_array ],
+                                        dtype=np.dtype(typ_str))
+                else:
+                    data = np.zeros([ self.row_limit ], dtype=np.dtype(typ_str))
+                result.append(data)
+                idx += 1
+        except Exception as e:
+                free(res_attr)
+                free(res_type)
+                free(res_acc)
+                raise ValueError("Error '{0}' processing the "
+                                 "shape keyword parameter".format(str(e)))
+
+        c_o = self.objects[0]
+        t = sos_value_init(&t_, c_o, t_attr)
+        obj_time = (<double>t.data.prim.timestamp_.tv.tv_sec * 1.0e6) + \
+                   <double>t.data.prim.timestamp_.tv.tv_usec
+        sos_value_put(t)
+
+        if interval_ms is not None:
+            bin_width = interval_ms * 1.0e3
+        else:
+            bin_width = 0.0
+
+        res_idx = 0
+        obj_idx = 0
+
+        if bin_width == 0.0:
+            for row_idx in range(0, self.row_limit):
+                obj_idx = row_idx * self.col_count
+                for attr_idx in range(0, nattr):
+                    c_o = self.objects[obj_idx + res_acc[attr_idx].idx]
+                    v = sos_value_init(&v_, c_o, res_attr[attr_idx])
+                    res_acc[attr_idx].setter_fn(result[attr_idx], res_idx, v)
+                    sos_value_put(v)
+                res_idx += 1
+        else:
+            bin_start = obj_time - (obj_time % bin_width)
+            bin_end = bin_start + bin_width
+            bin_samples = 0.0
+            for row_idx in range(0, self.row_limit):
+
+                for attr_idx in range(0, nattr):
+                    c_o = self.objects[obj_idx + res_acc[attr_idx].idx]
+                    v = sos_value_init(&v_, c_o, res_attr[attr_idx])
+                    res_acc[attr_idx].resample_fn(result[attr_idx], res_idx, v,
+                                                  bin_samples, bin_width)
+                    sos_value_put(v)
+
+                obj_idx += self.col_count
+                c_o = self.objects[obj_idx]
+                t = sos_value_init(&t_, c_o, t_attr)
+                obj_time = (<double>t.data.prim.timestamp_.tv.tv_sec * 1.0e6) + \
+                           <double>t.data.prim.timestamp_.tv.tv_usec
+                sos_value_put(t)
+
+                if obj_time >= bin_end:
+                    bin_start = bin_end
+                    bin_end = bin_start + bin_width
+                    bin_samples = 0.0
+                    res_idx += 1
+                else:
+                    bin_samples += 1.0
+
+        free(res_attr)
+        free(res_type)
+        free(res_acc)
+        res = DataSet()
+        for attr_idx in range(0, nattr):
+            res.append_array(res_idx, self.query.columns[attr_idx].col_name,
+                             result[attr_idx])
+        return res
+
+    def to_dataset(self, max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
+        """Return the QueryResult data as a DataSet"""
+        cdef sos_obj_t c_o
+        cdef sos_value_s v_
+        cdef sos_value_t v
+        cdef int idx
+        cdef int attr_idx
+        cdef int res_idx
+        cdef int nattr
+        cdef Attr attr
+        cdef int *res_type
+        cdef nda_setter_opt res_acc
+        cdef typ_str
+        cdef ColSpec col
+
+        nattr = len(self.query.columns)
+        if nattr == 0 or self.row_count == 0:
+            return None
+
+        res_acc = <nda_setter_opt>malloc(sizeof(nda_setter_opt_s) * nattr)
+        if res_acc == NULL:
+            raise MemoryError("Insufficient memory")
+
+        idx = 0
+        result = []
+
+        for col in self.query.columns:
+
+            attr = col.attr
+
+            res_acc[idx].attr = <sos_attr_t>attr.c_attr
+            res_acc[idx].idx = col.cursor_idx
+            res_acc[idx].setter_fn = nda_setters[attr.type()]
+            res_acc[idx].resample_fn = nda_resamplers[attr.type()]
+
+            atyp = col.attr_type
+            if atyp == SOS_TYPE_TIMESTAMP:
+                typ_str = 'datetime64[us]'
+            elif atyp == SOS_TYPE_STRUCT:
+                typ_str = 'uint8'
+            elif atyp == SOS_TYPE_UINT64:
+                typ_str = 'double'
+            elif atyp == SOS_TYPE_UINT32:
+                typ_str = 'double'
+            elif atyp == SOS_TYPE_INT64:
+                typ_str = 'double'
+            elif atyp == SOS_TYPE_INT32:
+                typ_str = 'double'
+            else:
+                typ_str = sos_type_strs[atyp].lower()
+                typ_str = typ_str.replace('_array', '')
+
+            if atyp >= TYPE_IS_ARRAY:
+                if atyp == SOS_TYPE_STRING:
+                    data = np.zeros([ self.row_count ],
+                                    dtype=np.dtype('|S{0}'.format(max_string)))
+                else:
+                    data = np.zeros([ self.row_count, max_array ],
+                                    dtype=np.dtype(typ_str))
+            else:
+                data = np.zeros([ self.row_count ], dtype=np.dtype(typ_str))
+            result.append(data)
+            idx += 1
+
+        res_idx = 0
+        obj_idx = 0
+
+        for row_idx in range(0, self.row_count):
+            obj_idx = row_idx * self.col_count
+            for attr_idx in range(0, nattr):
+                c_o = self.objects[obj_idx + res_acc[attr_idx].idx]
+                v = sos_value_init(&v_, c_o, res_acc[attr_idx].attr)
+                res_acc[attr_idx].setter_fn(result[attr_idx], res_idx, v)
+                sos_value_put(v)
+            res_idx += 1
+
+        res = DataSet()
+        for attr_idx in range(0, nattr):
+            res.append_array(res_idx,
+                             str(sos_attr_name(res_acc[attr_idx].attr)),
+                             result[attr_idx])
+        res.set_series_size(res_idx)
+        free(res_acc)
+        return res
+
+cdef class Query(object):
+    cdef Container cont     # The container
+    cdef filter_idx             # dictionary mapping schema to filter index
+    cdef filters                # array of filters
+    cdef schema                 # array of schema
+    cdef columns                # array of columns
+    cdef int col_width          # default width of an output column
+    cdef primary                # primary attribute
+    cpdef cursor                # array of objects at the current index position
+    cdef group_fn               # function that decides how objects are grouped
+    cdef last_row               # indeed...
+    cdef unique                 # Boolean indicating if queries are unique
+    cdef QueryInputer inputer   # Maintains query results
+
+    def __init__(self, container):
+        """Implements a Query interface to the SOS container.
+
+        The Query API roughly mirrors an SQL select statement. There
+        are API for each of the fundamental clauses in an SQL select
+        statement, i.e. select(), where(), from_(), and order_by().
+
+        select() - identifies which attributes (columns) will be returned
+        from_() - specifies which schema (tables) are being queried
+        where()  - specifies the object(row) selection criteria
+        order_by() - specifies the index being searched
+
+        Positional Parameters:
+        container -- The Container to query
+        """
+        self.primary = 'timestamp'
+        self.cont = container
+        self.filter_idx = {}
+        self.filters = []
+        self.columns = []
+        self.cursor = []
+        self.schema = []
+        self.col_width = 15
+
+    cdef __find_schema_with_attr(self, name):
+        if len(self.schema) > 0:
+            for s in self.schema:
+                if name in s:
+                    return s
+        else:
+            for s in self.cont.schema_iter():
+                if name in s:
+                    return s
+        return None
+
+    cdef __decode_attr_name(self, name):
+        try:
+            i = name.find('.')
+            if i >= 0:
+                sname = name[:i]
+                aname = name[i+1:]
+                schema = self.cont.schema_by_name(sname)
+            else:
+                schema = self.__find_schema_with_attr(name)
+                aname = name
+        except:
+            return (None, None)
+        if schema:
+            return (schema, schema[aname])
+        raise ValueError('No schema contains the attribute "{0}"'.format(aname))
+
+    def __getitem__(self, idx):
+        obj = self.cursor[idx[0]]
+        if obj is None:
+            return None
+        return obj[idx[1]]
+
+    def set_col_width(self, width):
+        self.col_width = width
+
+    def get_col_width(self):
+        return self.col_width
+
+    def col_by_name(self, name):
+        for col in self.columns:
+            if name == col.col_name:
+                return col
+        return None
+
+    def get_schemas(self):
+        """Return all schema names in the container"""
+        result = []
+        for schema in self.cont.schema_iter():
+            result.append(schema.name())
+        return result
+
+    def get_indices(self):
+        """Return all indexed attributes in the container"""
+        result = []
+        for schema in self.cont.schema_iter():
+            for attr in schema.attr_iter():
+                if attr.is_indexed():
+                    result.append(schema.name() + '.' + attr.name())
+        return result
+
+    def query(self, inputer, reset=True, wait=None):
+        """Calls the inputer class' input function
+
+        If the input() function returns True, the query continues and
+        the input() function is called again with the next record. If
+        the input() function returns False and wait is None, the query
+        is discontinued and the call returns with the number of times
+        input() was called.
+
+        If wait is None, the query completes when the data is
+        exhausted, or the row limit has been reached. Otherwise, wait
+        must be a tuple containing a wait_fn and a wait_arg. The
+        wait_fn(self, row, row_count, wait_arg) is called if input()
+        returns False before the limit is reached. If wait_fn returns
+        False, the query returns with the data already obtained, if
+        wait_fn return True, the query loop continues.
+
+        If query() is called again with reset=False, the query will
+        continue with the next record following the last one delivered
+        to input().
+
+        The record argument to the input() function is a list of
+        column values as defined in the column argument to select()
+
+        Positional Parameters:
+
+        -- An instance of an Inputer class that defines an
+           Inputer.input() function and a Inputer.to_dataset(self)
+           function. The input() fuction is called to read from the
+           DataSource. The to_dataset() function is called to return
+           the data as a DataSet. See the Inputer() class for more
+           information.
+
+        Keyword Parameters:
+        reset -- Start at the beginning of the query (default is True)
+        wait  -- A tuple containing a wait_fn and a wait_arg
+                 (default is None)
+
+        Returns:
+
+            The number of times the Inputer's input function was
+            called and returned True.
+
+        Example:
+
+            class Inputer(object):
+                def __init__(self, query, row_limit=16, file=sys.stdout):
+                    self.row_count = 0
+                    self.row_limit = row_limit
+                    self.query = query
+                    self.file = file
+
+                def input(self, row):
+                    if self.row_count >= self.row_limit:
+                        return False
+                    for col in self.query.get_columns():
+                        print(col, end=' ', file=self.file)
+                    print("", file=self.file)
+                    self.row_count += 1
+                    return True
+
+        """
+        cdef int reset_
+        if reset:
+            reset_ = 1
+        else:
+            reset_ = 0
+        while True:
+            if inputer.input(reset=reset_) == False:
+                # The input limit has been reached
+                break
+            else:
+                reset_ = 0
+                if wait:
+                    if wait[0](self, inputer, wait[1]) == False:
+                        # The waiter says we have enough
+                        break
+                else:
+                    break
+
+        return inputer.count
+
+    def _from_(self, schema):
+        self.schema = []
+        for name in schema:
+            self.schema.append(self.cont.schema_by_name(name))
+
+    def _order_by(self, name):
+        self.primary = name
+
+    cdef _add_colspec(self, ColSpec colspec):
+        schema, attr = self.__decode_attr_name(colspec.name)
+        if not schema:
+            raise ValueError("The attribute {0} was not found "
+                             "in any schema.".format(colspec.name))
+        if schema.name() not in self.filter_idx:
+            ts = schema[self.primary]
+            f = Filter(schema[self.primary])
+            if self.unique:
+                f.unique()
+            idx = len(self.filters)
+            self.filter_idx[schema.name()] = idx
+            self.filters.append(f)
+        else:
+            idx = self.filter_idx[schema.name()]
+        colspec.update(self, idx, attr)
+        self.columns.append(colspec)
+
+    def select(self, columns, order_by=None, where=None, from_=None, unique=False):
+        """Set the attribute list returned in the result
+
+        Positional Parmeters:
+
+        -- An array of column-specifications. A column-specification is
+           either an attribute name (string), or a ColSpec object. The
+           ColSpec object allows for the specification of how the data
+           will be converted and formatted on output.
+
+           Examples:
+
+           The simplest format is simply an array of names:
+
+             [ 'meminfo.timestamp',
+               'vmstat.timestamp',
+               'meminfo.job_id',
+               'meminfo.MemFree',
+               'vmstat.nr_free_pages'
+             ]
+
+           A ColSpec object can be used to control data conversion and formatting:
+
+              def fmt_timestamp(ts):
+                  return str(dt.datetime.fromtimestamp(ts[0]))
+
+              [ ColSpec('meminfo.timestamp', cvt_fn=fmt_timestamp,
+                   col_width=24, align=ColSpec.LEFT),
+                ColSpec('vmstat.timestamp', cvt_fn=fmt_timestamp,
+                   col_width=24, align=ColSpec.LEFT),
+                ColSpec('meminfo.job_id', cvt_fn=int, col_width=12),
+                'meminfo.MemFree',
+                'vmstat.nr_free_pages',
+              ]
+
+        Keyword Parameters:
+
+        from_     -- An array of schema names
+        where     -- An array of conditions to filter the data
+        order_by  -- The attribute to use as the primary index
+        unique    -- Return only a single result for each matching key
+
+        FROM_
+
+          The 'from_' keyword is an arrray of schema names to search
+          for attribute names.
+
+          Example:
+
+            from_ = [ 'meminfo', 'jobinfo' ]
+
+        WHERE
+
+          The 'where' keyword is an array of filter condition tuples.
+          Each condition must be applicable to every schema. A
+          condition tuple contains three elements as follows:
+
+          ( attribute_name, condition, value )
+
+          Example:
+
+            where = [( 'timestamp', COND_GE, 1510597567.001617 )]
+
+        ORDER_BY
+
+          Specifies the name of the primary key. This attribute must be
+          indexed and present in all schema referenced in the columns
+          list.
+
+          Example:
+
+            order_by = 'job_comp_time'
+
+        """
+        self.unique = unique
+
+        if order_by:
+            # Must be before the Filter(s) are created
+            self._order_by(order_by)
+
+        if from_:
+            self._from_(from_)
+
+        self.filter_idx = {}
+        self.filters = []
+        self.columns = []
+        for col in columns:
+            if type(col) == ColSpec:
+                spec = copy.copy(col)
+                self._add_colspec(spec)
+            else:
+                if '*' in col:
+                    if '*' == col:
+                        if len(self.columns) > 1:
+                            raise ValueError("Ambiguous wildcard in column specification, "
+                                             "use schema-name.* to identify column source")
+                        if from_ is None:
+                            raise ValueError("from_ is required with wildcard column names")
+                        name = from_[0]
+                    else:
+                        name = col.split('.')[0]
+                    schema = self.cont.schema_by_name(name)
+                    if schema is None:
+                        raise ValueError("Schema {0} was not found.".format(name))
+                    for attr in schema.attr_iter():
+                        if attr.type() == SOS_TYPE_JOIN:
+                            continue
+                        if len(from_) > 1:
+                            spec = ColSpec(name + '.' + attr.name(),
+                                           col_width=self.get_col_width())
+                        else:
+                            spec = ColSpec(attr.name(), col_width=self.get_col_width())
+                        self._add_colspec(spec)
+                else:
+                    spec = ColSpec(col, col_width=self.get_col_width())
+                    self._add_colspec(spec)
+
+        if where:
+            # Must be after the Filter(s) are created
+            self._where(where)
+
+    def get_columns(self):
+        """Return list of columns-specification (ColSpec)"""
+        return self.columns
+
+    def get_filters(self):
+        """Return list of Filter objects"""
+        return self.filters
+
+    def default_group_fn(self, o1, o2):
+        pass
+
+    def set_group_fn(self, group_fn):
+        """Sets the function that will be called when collection objects into a single row
+        """
+        self.group_fn = group_fn
+
+    def _where(self, clause):
+        for c in clause:
+            for f in self.filters:
+                f.add_condition(f.get_attr().schema()[c[0]], c[1], c[2])
+
+    cdef object make_row(self):
+        row = []
+        for col in self.columns:
+            v = col.value
+            if v is None:
+                return None
+            row.append(v)
+        return row
+
+    def begin(self):
+        """Position the cursor at the first object"""
+        self.cursor = []
+        for f in self.filters:
+            self.cursor.append(f.begin())
+        return self.make_row()
+
+    def end(self):
+        self.cursor = []
+        for f in self.filters:
+            self.cursor.append(f.end())
+        return self.make_row()
+
+    def next(self):
+        self.cursor = []
+        for f in self.filters:
+            self.cursor.append(f.next())
+        return self.make_row()
+
+    def prev(self):
+        self.cursor = []
+        for f in self.filters:
+            self.cursor.append(f.prev())
+        return self.make_row()
