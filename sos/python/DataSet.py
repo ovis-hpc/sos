@@ -8,6 +8,34 @@ import time
 import os
 import sys
 
+class DataSetIter(object):
+    def __init__(self, dataSet, reverse=False):
+        self.dataSet = dataSet
+        self.array = dataSet.array_with_series_idx[0]
+        self.reverse = reverse
+        self.series_size = dataSet.series_size
+        if reverse:
+            self.row_no = self.series_size - 1
+        else:
+            self.row_no = 0
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        if self.reverse:
+            if self.row_no < 0:
+                raise StopIteration
+            res = self.array[self.row_no]
+            self.row_no -= 1
+        else:
+            if self.row_no == self.series_size:
+                raise StopIteration
+            res = self.array[self.row_no]
+            self.row_no += 1
+        return res
+
+
 class DataSet(object):
     """A class for accessing datasource results
 
@@ -71,6 +99,8 @@ class DataSet(object):
         -- The desired new series name
 
         """
+        if type(oldname) == int:
+            oldname = self.series_names[oldname]
         if newname in self.series_names:
             raise ValueError("The series name {0} already exists.".format(newname))
         if oldname not in self.series_names:
@@ -138,15 +168,26 @@ class DataSet(object):
         return newds
 
     def append_array(self, series_size, series_name, array):
-        """Append a numpy array to a DataSet"""
+        """Append a numpy array to a DataSet
+
+        Add a series to the DataSet.
+
+        Positional Parameters:
+        -- The size of the series being added
+        -- The series name
+        -- The Numpy array containing the series data
+        """
         if series_name in self.series_names:
-            raise ValueError("A series named {0} already exists "
-                             "in the dset.".format(series_name))
+            raise ValueError("A series named '{0}' already exists "
+                             "in the set.".format(series_name))
+        if type(array) == DataSet:
+            raise ValueError("The array parameter must be a numpy array")
 
         self.series_names.append(series_name)
         self.array_with_series_idx.append(array)
         self.array_with_series_name[series_name] = array
         self.set_series_size(series_size)
+        return self
 
     def append_series(self, aset, series_list=None):
         """Append series from one DataSet to another
@@ -176,6 +217,7 @@ class DataSet(object):
         for ser in series_list:
             self.append_array(aset.series_size, ser,
                               aset.array_with_series_name[ser])
+        return self
 
     def tolist(self):
         """Return a JSon encode-able representaiton of this dataset.
@@ -212,20 +254,17 @@ class DataSet(object):
         return aSet
 
     def __getitem__(self, idx):
-        if type(idx) == str:
-            nda = self.array_with_series_name[idx]
-            return nda[:self.get_series_size()]
-        elif type(idx) == int:
-            nda = self.array_with_series_idx[idx]
-            return nda[:self.get_series_size()]
-        elif type(idx) == tuple:
-            ser = idx[0]
-            if type(ser) == str:
-                return self.array_with_series_name[ser][idx[1]]
-            else:
-                return self.array_with_series_idx[ser][idx[1]]
-        else:
-            raise ValueError("Unsupported index type {0}".format(type(idx)))
+        if type(idx) == str or type(idx) == int:
+            idx = [ idx ]
+        ds = DataSet()
+        for i in idx:
+            if type(i) == str:
+                ds.append_array(self.series_size, i,
+                                self.array_with_series_name[i])
+            elif type(i) == int:
+                ds.append_array(self.series_size, self.series_names[i],
+                                self.array_with_series_idx[i])
+        return ds
 
     def __setitem__(self, idx, value):
         if type(idx) == str:
@@ -279,9 +318,11 @@ class DataSet(object):
             limit = min(limit, self.get_series_size())
         for i in range(0, limit):
             for ser in series_names:
-                v = self[ser, i]
-                if type(v) == float:
-                    print("{0:{width}}".format(v, width=width), end=' ')
+                v = self.array(ser)[i]
+                if type(v) == np.timedelta64 or type(v) == np.datetime64:
+                    print("{0:{width}}".format(str(v), width=width), end=' ')
+                elif type(v) == float:
+                    print("{0:{width}f}".format(v, width=width), end=' ')
                 else:
                     print("{0:{width}}".format(v, width=width), end=' ')
             print('')
@@ -334,3 +375,129 @@ class DataSet(object):
         series count.
         """
         return copy.copy(self.series_names)
+
+    def array(self, series):
+        """Returns the array for the series"""
+        if type(series) == int:
+            return self.array_with_series_idx[series][0:self.series_size]
+        return self.array_with_series_name[series][0:self.series_size]
+
+    def toset(self, series):
+        """Returns a DataSet with a single series"""
+        return self[series]
+
+    def __iter__(self):
+        return DataSetIter(self)
+
+    def __reversed__(self):
+        return DataSetIter(self, reverse=True)
+
+    def __sub__(self, rhs):
+        """Implements lhs - rhs"""
+        result = DataSet()
+        if type(rhs) == DataSet:
+            for idx in range(0, len(self.array_with_series_idx)):
+                ser_name = '(' + self.series_names[idx] + '-' + rhs.series_names[idx] + ')'
+                ary = self.array(idx) - rhs.array(idx)
+                result.append_array(self.series_size, ser_name, ary)
+        else:
+            for idx in range(0, len(self.array_with_series_idx)):
+                ser_name = '(' + self.series_names[idx] + '-' + str(rhs) + ')'
+                ary = self.array(idx) - rhs
+                result.append_array(self.series_size, ser_name, ary)
+        return result
+
+    def __add__(self, rhs):
+        """Implements lhs + rhs"""
+        result = DataSet()
+        if type(rhs) == DataSet:
+            for idx in range(0, len(self.array_with_series_idx)):
+                ser_name = '(' + self.series_names[idx] + '+' + rhs.series_names[idx] + ')'
+                ary = self.array(idx) + rhs.array(idx)
+                result.append_array(self.series_size, ser_name, ary)
+        else:
+            for idx in range(0, len(self.array_with_series_idx)):
+                ser_name = '(' + self.series_names[idx] + '+' + str(rhs) + ')'
+                ary = self.array(idx) + rhs
+                result.append_array(self.series_size, ser_name, ary)
+        return result
+
+    def __mul__(self, rhs):
+        """Implements lhs * rhs"""
+        result = DataSet()
+        if type(rhs) == DataSet:
+            for idx in range(0, len(self.array_with_series_idx)):
+                ser_name = '(' + self.series_names[idx] + '*' + rhs.series_names[idx] + ')'
+                ary = self.array(idx) * rhs.array(idx)
+                result.append_array(self.series_size, ser_name, ary)
+        else:
+            for idx in range(0, len(self.array_with_series_idx)):
+                ser_name = '(' + self.series_names[idx] + '*' + str(rhs) + ')'
+                ary = self.array(idx) * rhs
+                result.append_array(self.series_size, ser_name, ary)
+        return result
+
+    def __div__(self, rhs):
+        """Implements lhs / rhs"""
+        result = DataSet()
+        if type(rhs) == DataSet:
+            for idx in range(0, len(self.array_with_series_idx)):
+                ser_name = '(' + self.series_names[idx] + '/' + rhs.series_names[idx] + ')'
+                with np.errstate(all='ignore'):
+                    ary = self.array(idx) / rhs.array(idx)
+                ary[np.isnan(ary)] = 0
+                result.append_array(self.series_size, ser_name, ary)
+        else:
+            for idx in range(0, len(self.array_with_series_idx)):
+                ser_name = '(' + self.series_names[idx] + '/' + str(rhs) + ')'
+                ary = self.array(idx) / rhs
+                result.append_array(self.series_size, ser_name, ary)
+        return result
+
+    def __lshift__(self, val):
+        ds = DataSet()
+        for i in range(0, len(self.series_names)):
+            ds.append_array(self.series_size, self.series_names[i], self.array_with_series_idx[i])
+        if type(val) == DataSet:
+            for i in range(0, len(val.series_names)):
+                ds.append_array(val.series_size, val.series_names[i], val.array_with_series_idx[i])
+        elif type(val) == tuple:
+            # ( count, series-name, np.dtype, initial-value )
+            nda = np.ndarray(val[0], dtype=val[2])
+            nda[:] = val[3]
+            ds.append_array(val[0], val[1], nda)
+        return ds
+
+    def __rshift__(self, rename):
+        if type(rename) == str:
+            self.rename(0, rename)
+        else:
+            self.rename(rename[0], rename[1])
+        return self
+
+    def min(self, series_list=None):
+        """Compute min for series across rows
+        """
+        if series_list is None:
+            series_list = self.series_names
+        res = DataSet()
+        for ser in series_list:
+            m = np.min(self.array(ser))
+            nda = np.ndarray([ 1 ], dtype=m.dtype)
+            nda[0] = m
+            res.append_array(1, ser, nda)
+        return res
+
+    def max(self, series_list=None):
+        """Compute min for series across rows
+        """
+        if series_list is None:
+            series_list = self.series_names
+        res = DataSet()
+        for ser in series_list:
+            m = np.max(self.array(ser))
+            nda = np.ndarray([ 1 ], dtype=m.dtype)
+            nda[0] = m
+            res.append_array(1, ser, nda)
+        return res
+
