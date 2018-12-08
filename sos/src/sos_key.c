@@ -111,7 +111,7 @@ int sos_key_copy(sos_key_t dst, sos_key_t src)
  * \brief Create a memory key
  *
  * A key is just a an object with a set of convenience routines to
- * help with getting and setting it's value based on the key type used
+ * help with getting and setting its value based on the key type used
  * on an index.
  *
  * A memory key is used to look up objects in the ODS. The storage for
@@ -1044,9 +1044,9 @@ size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec)
 }
 
 /**
- * \brief Split a key into it's component parts.
+ * \brief Split a key into its component parts.
  *
- * This function splits the input key into it's component parts and
+ * This function splits the input key into its component parts and
  * returns the result in the \c key_spec array parameter. The length
  * of this array is returned in the \c len parameter. On input \c len
  * is the number of elements in the \c key_spec parameter array. If

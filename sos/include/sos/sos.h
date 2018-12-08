@@ -452,8 +452,8 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
  * - sos_obj_delete()    Delete an object from the container
  * - sos_obj_get()	 Take a reference on an object
  * - sos_obj_put()	 Drop a reference on an object
- * - sos_obj_index()	 Add an object to it's indices
- * - sos_obj_remove()	 Remove an object from it's indices
+ * - sos_obj_index()	 Add an object to its indices
+ * - sos_obj_remove()	 Remove an object from its indices
  * - sos_obj_ptr()       Returns a pointer to the object's data
  * - sos_obj_find()	 Find an object based on an attribute value
  * - sos_value()	 Return a value given object and attribute handles.
@@ -541,7 +541,7 @@ typedef struct ods_obj_s *sos_key_t;
 typedef int (*sos_ins_cb_fn_t)(sos_index_t index, sos_key_t key,
 			       int missing, sos_obj_ref_t *ref, void *arg);
 typedef enum sos_visit_action {
-	SOS_VISIT_ADD = ODS_VISIT_ADD,	/*! Add the key and set it's data to idx_data */
+	SOS_VISIT_ADD = ODS_VISIT_ADD,	/*! Add the key and set its data to idx_data */
 	SOS_VISIT_DEL = ODS_VISIT_DEL,	/*! Delete the key */
 	SOS_VISIT_UPD = ODS_VISIT_UPD,	/*! Update the index data for key */
 	SOS_VISIT_NOP = ODS_VISIT_NOP	/*! Do nothing */

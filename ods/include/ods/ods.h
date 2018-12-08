@@ -196,7 +196,7 @@ extern int ods_stat(ods_t ods, struct stat *sb);
 extern void ods_dump_maps(const char *name);
 
 /**
- * \brief Truncate an ODS to it's minimum size
+ * \brief Truncate an ODS to its minimum size
  *
  * An ODS has both allocated and unallocated space. This function
  * releases unallocated storage and reduces the storage size to the
@@ -638,7 +638,7 @@ extern void ods_unlock(ods_t ods, int lock_id);
  * can be used to coordinate access among multiple threads and
  * processes.
  *
- * Each lock is identified by it's \em lock_id which is an integer
+ * Each lock is identified by its \em lock_id which is an integer
  * between zero and the number reported by this function - 1. The
  * association of a \em lock_id with a particular lock domain is
  * application specific.

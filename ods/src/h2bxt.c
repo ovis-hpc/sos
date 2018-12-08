@@ -115,7 +115,7 @@ static void print_node(ods_idx_t idx, int ent, ods_obj_t n, int indent, FILE *fp
 	fflush(stdout);
 	if (NODE(n)->is_leaf)
 		return;
-	/* Now print all it's children */
+	/* Now print all its children */
 	for (i = 0; i < NODE(n)->count; i++) {
 		ods_obj_t node = ods_ref_as_obj(t->ods, N_ENT(n,i).node_ref);
 		print_node(idx, i, node, indent + 2, fp);

@@ -50,11 +50,11 @@
  * Container. A Partition is in one of the following states:
  *
  * - \b Primary  The Partition is the target of all new
- *               object allocations and it's contents may
+ *               object allocations and its contents may
  *               be referred to by entries in one or more
  *               Indices.
  * - \b Active   The contents of the Partition are
- *               accessible and it's objects may be
+ *               accessible and its objects may be
  *               referred to by one or more Indices.
  * - \b Offline  The contents of the Partition are not accessible.
  * - \b Busy     The Parition is being updated and cannot be changed.
@@ -266,7 +266,7 @@ static ods_obj_t __sos_part_create(sos_t sos, char *tmp_path,
 
 /*
  * This function uses the part reference. If the caller wants to
- * continue using it, it must take it's own reference.
+ * continue using it, it must take its own reference.
  */
 static int __sos_open_partition(sos_t sos, sos_part_t part)
 {
@@ -1107,7 +1107,7 @@ int64_t sos_part_index(sos_part_t part)
  * \brief Drop a reference on a partition
  *
  * Partitions are reference counted. When the reference count goes to
- * zero, it is destroyed and all of it's storage is released. The
+ * zero, it is destroyed and all of its storage is released. The
  * sos_part_first(), sos_part_next(), and sos_part_find() functions
  * take a reference on behalf of the application. This reference
  * should be dropped by the application when the application is
@@ -1459,7 +1459,7 @@ int sos_part_delete(sos_part_t part)
 /**
  * \brief Move a partition
  *
- * Move a partition from it's current storage location to another. Any
+ * Move a partition from its current storage location to another. Any
  * references to objects in the partition by indices or other objects
  * are preserved by the move.
  *

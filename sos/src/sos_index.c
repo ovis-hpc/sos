@@ -369,7 +369,7 @@ int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
 }
 
 /**
- * \brief Find an object in the index by it's key
+ * \brief Find an object in the index by its key
  *
  * \param index The index handle
  * \param key The key

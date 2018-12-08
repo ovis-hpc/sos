@@ -56,8 +56,8 @@ static const char *get_type(void)
 
 static const char *get_doc(void)
 {
-	return  "The key is an set of concatenated keys. Each key,\n"
-		"it's type and length are encoded in the key data.\n";
+	return  "The key is n set of concatenated keys. Each key,\n"
+		"its type and length are encoded in the key data.\n";
 }
 
 #define min(a, b) (a < b ? a : b)

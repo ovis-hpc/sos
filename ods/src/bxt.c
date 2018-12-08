@@ -122,7 +122,7 @@ static void print_node(ods_idx_t idx, int ent, ods_obj_t n, int indent, FILE *fp
 	fflush(stdout);
 	if (NODE(n)->is_leaf)
 		return;
-	/* Now print all it's children */
+	/* Now print all its children */
 	for (i = 0; i < NODE(n)->count; i++) {
 		ods_obj_t node = ods_ref_as_obj(t->ods, N_ENT(n,i).node_ref);
 		print_node(idx, i, node, indent + 2, fp);
@@ -510,7 +510,7 @@ static ods_obj_t __find_lub(ods_idx_t idx, ods_key_t key,
 	rec = ods_ref_as_obj(t->ods, next_ref);
 	if (0 == (flags & ODS_ITER_F_LUB_LAST_DUP))
 		goto found;
-	/* Get the parent of next_ref and return it's last_dup */
+	/* Get the parent of next_ref and return its last_dup */
 	key = ods_ref_as_obj(t->ods, REC(rec)->key_ref);
 	ods_obj_put(rec);
 	ods_obj_put(leaf);
@@ -777,7 +777,7 @@ int leaf_insert(bxt_t t, ods_obj_t leaf, ods_obj_t new_rec, int ent, int dup)
 		assert(REC(new_rec)->key_ref == 0);
 		/*
 		 * Simple case. The entry must exist and leaf does not
-		 * need to be expanded or have it's count updated.
+		 * need to be expanded or have its count updated.
 		 * Simply chain this new record to the tail of the record
 		 * list.
 		 */
@@ -1025,7 +1025,7 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 		if (ods_obj_ref(left_node) == N_ENT(left_parent,i).node_ref)
 			break;
 	}
-	/* Right is the succesor of left, so insert it at it's position + 1 */
+	/* Right is the succesor of left, so insert it at its position + 1 */
 	ins_idx = i + 1;
 	assert(i < NODE(left_parent)->count);
 
@@ -1057,7 +1057,7 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 
 		/*
 		 * Put the new item in the entry list. Right is the
-		 * successor of left, therefore it's insertion index
+		 * successor of left, therefore its insertion index
 		 * cannot be zero.
 		 */
 		assert(ins_idx);
@@ -1694,7 +1694,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 				/*
 				 * The root is not a leaf, but it only
 				 * has a single entry left, so promote
-				 * it's only child as the new root.
+				 * its only child as the new root.
 				 */
 				ods_ref_t root_ref;
 				root_ref = N_ENT(node,0).node_ref;

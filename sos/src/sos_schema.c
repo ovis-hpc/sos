@@ -147,7 +147,7 @@ static uint32_t type_sizes[] = {
  * with the sos_schema_by_name() and sos_schema_by_id() functions.
  *
  * Objects are created with the sos_obj_new() function. This function
- * takes a schema-handle as it's argument. The schema-id is saved
+ * takes a schema-handle as its argument. The schema-id is saved
  * internally with the object data. An object is therefore
  * self-describing.
  *
@@ -182,7 +182,7 @@ void sos_schema_free(sos_schema_t schema)
 
 void __sos_schema_free(sos_schema_t schema)
 {
-	/* Free all of our attributes and close it's indices */
+	/* Free all of our attributes and close its indices */
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		sos_attr_t attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);

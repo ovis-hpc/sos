@@ -376,7 +376,7 @@ typedef struct ods_comp_key_s {	/* overloads the ods_key_value_t */
  * \brief Create an key in the ODS store
  *
  * A key is a counted byte array with a set of convenience routines to
- * help with getting and setting it's value based on the key type used
+ * help with getting and setting its value based on the key type used
  * on an index.
  *
  * Keys allocated with this function come from the ODS store. See the
@@ -424,7 +424,7 @@ void ods_key_copy(ods_key_t dst, ods_key_t src);
  * \brief Create a memory key
  *
  * A key is just a an object with a set of convenience routines to
- * help with getting and setting it's value based on the key type used
+ * help with getting and setting its value based on the key type used
  * on an index.
  *
  * A memory key is used to look up an object key in the ODS. The
@@ -569,7 +569,7 @@ typedef int64_t (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
 /**
  * \brief Insert a key and associated value into the index
  *
- * Insert an key and it's associated value into the index. The 'data'
+ * Insert an key and its associated value into the index. The 'data'
  * is the value associated with the key and there is no special
  * processing or consideration given to its value other than the value
  * cannot 0. The 'key' parameter is duplicated on entry and stored in
@@ -619,7 +619,7 @@ int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data);
  *			specified is 0
  */
 typedef enum ods_visit_action {
-	ODS_VISIT_ADD = 1,	/*! Add the key and set it's data to idx_data */
+	ODS_VISIT_ADD = 1,	/*! Add the key and set its data to idx_data */
 	ODS_VISIT_DEL,		/*! Delete the key */
 	ODS_VISIT_UPD,		/*! Update the index data for key */
 	ODS_VISIT_NOP		/*! Do nothing */
@@ -669,7 +669,7 @@ int ods_idx_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *idx_data);
 /**
  * \brief Update the data value associated with a key in the index
  *
- * Update a key and it's associated value into the index. The 'data'
+ * Update a key and its associated value into the index. The 'data'
  * is the value associated with the key and there is no special
  * processing or consideration given to its value other than the value
  * cannot 0. The 'key' parameter is duplicated on entry and stored in
@@ -691,7 +691,7 @@ int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data);
 /**
  * \brief Delete a key and associated value from the index
  *
- * Delete a key and it's associated value from the index. The
+ * Delete a key and its associated value from the index. The
  * resources associated with the 'key' are released. The 'data' is
  * the return value.
  *

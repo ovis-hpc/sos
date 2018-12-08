@@ -89,7 +89,7 @@
  * types. The Container has a directory of Schemas. When Objects are
  * created, the Schema handle is specified to inform the object store
  * of the size and format of the object and whether or not one or more
- * of it's attributes has an Index.
+ * of its attributes has an Index.
  *
  * See \ref schema_overview for more information.
  *
@@ -178,7 +178,7 @@ pthread_mutex_t cont_list_lock;
  * - sos_container_open() Open a previously created Container
  * - sos_container_close() Close a container
  * - sos_container_commit() Commit a Container's contents to stable storage
- * - sos_container_delete() Destroy a Container and all of it's contents
+ * - sos_container_delete() Destroy a Container and all of its contents
  * - sos_container_move() Reset a Container's path after it has been copied to a new location
  * - sos_container_info() - Print Container information to a FILE pointer
  * - sos_container_lock_info() - Print Container lock information to a FILE pointer
@@ -1261,7 +1261,7 @@ sos_part_t __sos_container_part_find(sos_t sos, const char *name)
  * This call will automatically extend the size of the backing store
  * to accomodate the new object. This call will fail if there is
  * insufficient disk space. Use the sos_obj_index() to add the object
- * to all indices defined by it's object class.
+ * to all indices defined by its object class.
  *
  * See the sos_schema_by_name() function call for information on how to
  * obtain a schema handle.
@@ -1593,9 +1593,9 @@ int sos_obj_remove(sos_obj_t obj)
 }
 
 /**
- * \brief Add an object to it's indexes
+ * \brief Add an object to its indexes
  *
- * Add an object to all the indices defined in it's schema. This
+ * Add an object to all the indices defined in its schema. This
  * function should only be called after all attributes that have
  * indexes have had their values set.
  *

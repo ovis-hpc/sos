@@ -1028,7 +1028,7 @@ static void update_dirty(ods_t ods, ods_ref_t ref, size_t size)
 		if (start >= dirty->start && end <= dirty->end)
 			return;
 		/*
-		 * If the dirty range adjoins this page, extend it's range to
+		 * If the dirty range adjoins this page, extend its range to
 		 * cover this page.
 		 */
 		if (dirty->end == start) {
@@ -1045,7 +1045,7 @@ static void update_dirty(ods_t ods, ods_ref_t ref, size_t size)
 		dirty = container_of(n, struct ods_dirty_s, rbn);
 		if (end == dirty->start) {
 			/*
-			 * Remove it from the tree, change it's start
+			 * Remove it from the tree, change its start
 			 * and add it back to the tree.
 			*/
 			rbt_del(&ods->dirty_tree, n);
@@ -1171,7 +1171,7 @@ int ods_extend(ods_t ods, size_t sz)
 	/* Now extend the obj file */
 	rc = ftruncate(ods->obj_fd, n_sz + obj_sb.st_size);
 	if (rc) {
-		/* Restore page file to it's original size */
+		/* Restore page file to its original size */
 		n_sz = ftruncate(ods->pg_fd, pg_sb.st_size);
 		goto out;
 	}

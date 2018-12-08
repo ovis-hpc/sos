@@ -850,7 +850,7 @@ cdef class Key(object):
         return self
 
     def split(self):
-        """Split a join key into it's component parts"""
+        """Split a join key into its component parts"""
         cdef int rc, i, j
         cdef int typ
         cdef size_t count
@@ -3177,7 +3177,7 @@ cdef class ColSpec(object):
     cdef fill
     cdef align
 
-    cdef data                   # A place where an application can store it's data
+    cdef data                   # A place where an application can store its data
 
     def __init__(self, name,
                  cvt_fn=None, default_fn=None, attr_type=None,
