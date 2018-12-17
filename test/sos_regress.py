@@ -7,6 +7,8 @@ import sys
 logger = logging.getLogger(__name__)
 
 from schema_test import SchemaTest
+from query_test import QueryTest
+from query_test2 import QueryTest2
 from value_test_from_str import ValueTestFromStr
 from obj_test_set_get import ObjTestSetGet
 from index_test_min_max import IndexTestMinMax
@@ -56,6 +58,8 @@ tests = [ SchemaTest,
           TimestampTest,
           ArrayTest,
           VersionTest,
+          QueryTest,
+          QueryTest2,
           ]
 
 if __name__ == "__main__":

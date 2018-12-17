@@ -106,6 +106,7 @@ class FilterTest(SosTestCase):
             self.assertTrue( v >= min_v )
             self.assertTrue( v <= max_v )
             o = f.next()
+        self.assertTrue( next_count > 0 )
 
         # iterate backwards, the count should be the same
         o = f.end()
@@ -120,6 +121,7 @@ class FilterTest(SosTestCase):
             self.assertTrue( v >= min_v )
             self.assertTrue( v <= max_v )
             o = f.prev()
+        self.assertTrue( prev_count > 0 )
 
         self.assertEqual(next_count, prev_count)
 
