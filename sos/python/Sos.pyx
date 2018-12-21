@@ -953,6 +953,14 @@ cdef class Key(object):
         self.c_key = c_key
         return self
 
+    def __del__(self):
+        self.__dealloc__()
+
+    def __dealloc__(self):
+        if self.c_key:
+            sos_key_put(self.c_key)
+            self.c_key = NULL
+
     def get_attr(self):
         return self.attr
 
