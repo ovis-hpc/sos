@@ -1079,7 +1079,9 @@ sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt, int *ret)
 		if (!rc)
 			return cond;
 	}
-	sos_key_copy(filt->last_match, sos_iter_key(filt->iter));
+	sos_key_t key = sos_iter_key(filt->iter);
+	sos_key_copy(filt->last_match, key);
+	sos_key_put(key);
 	return NULL;
 }
 
