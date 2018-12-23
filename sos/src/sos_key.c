@@ -1090,6 +1090,9 @@ int sos_comp_key_get(sos_key_t key, size_t *len, sos_comp_key_spec_t key_values)
 			case SOS_TYPE_LONG_DOUBLE:
 				spec->data.prim.long_double_ = comp->value.long_double_;
 				break;
+			case SOS_TYPE_TIMESTAMP:
+				spec->data.prim.timestamp_.tv = comp->value.tv_;
+				break;
 			default:
 				memcpy(spec->data.array.data.byte_,
 				       comp->value.str.str, comp->value.str.len);
