@@ -391,8 +391,8 @@ void ods_iter_delete(ods_iter_t iter)
 {
 	ods_idx_t idx = iter->idx;
 	iter->idx->idx_class->prv->iter_delete(iter);
-	if (0 == ods_atomic_dec(&idx->ref_count))
-		ods_idx_close(idx, ODS_COMMIT_ASYNC);
+	assert(idx->ref_count);
+	ods_atomic_dec(&idx->ref_count);
 }
 
 int ods_iter_find(ods_iter_t iter, ods_key_t key)
