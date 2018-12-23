@@ -788,6 +788,10 @@ cdef class Key(object):
             return self.str_fmt.format(v.prim.uint16_)
         elif self.sos_type == SOS_TYPE_LONG_DOUBLE:
             return self.str_fmt.format(v.prim.long_double_)
+        elif self.sos_type == SOS_TYPE_JOIN:
+            return self.str_fmt.format(self.split())
+        elif self.sos_type == SOS_TYPE_STRUCT:
+            return self.str_fmt.format(bytearray(v.prim.struc_[:self.c_size]))
         elif self.sos_type == SOS_TYPE_BYTE_ARRAY:
             return bytearray(v.array.char_[:v.array.count])
         elif self.sos_type == SOS_TYPE_CHAR_ARRAY:
@@ -856,6 +860,8 @@ cdef class Key(object):
         cdef size_t count
         cdef sos_comp_key_spec_t specs
         cdef sos_key_t c_key
+        cdef uint32_t secs
+        cdef uint32_t usecs
 
         rc = sos_comp_key_get(self.c_key, &count, NULL);
         if rc != 0:
@@ -867,6 +873,7 @@ cdef class Key(object):
 
         rc = sos_comp_key_get(self.c_key, &count, specs)
         if rc:
+            free(specs)
             raise ValueError("Error {0} decoding key after allocation.".format(rc))
 
         res = []
@@ -891,6 +898,12 @@ cdef class Key(object):
                 res.append(specs[i].data.prim.uint16_)
             elif typ == SOS_TYPE_LONG_DOUBLE:
                 res.append(specs[i].data.prim.long_double_)
+            elif typ == SOS_TYPE_TIMESTAMP:
+                secs = specs[i].data.prim.timestamp_.tv.tv_sec
+                usecs = specs[i].data.prim.timestamp_.tv.tv_usec
+                res.append(( secs, usecs ))
+            elif typ == SOS_TYPE_STRUCT:
+                res.append(bytearray(specs[i].data.array.data.char_[:specs[i].data.array.count]))
             elif typ == SOS_TYPE_BYTE_ARRAY:
                 res.append(bytearray(specs[i].data.array.data.char_[:specs[i].data.array.count]))
             elif typ == SOS_TYPE_CHAR_ARRAY:
@@ -941,6 +954,7 @@ cdef class Key(object):
                     a.append(specs[i].data.array.data.long_double_[j])
                 res.append(a)
             else:
+                free(specs)
                 raise ValueError("Invalid type {0} found in key.".format(typ))
         free(specs)
         return res
@@ -1197,7 +1211,7 @@ cdef class AttrIter(SosObject):
         cdef sos_key_t c_key
         c_key = sos_iter_key(self.c_iter)
         if c_key:
-            k = Key(attr=self.attr)
+            k = Key(size=sos_key_len(c_key), attr=self.attr)
             k.assign(c_key)
             return k
         return None
@@ -1333,7 +1347,7 @@ cdef class AttrIter(SosObject):
             return sos_iter_pos_put(self.c_iter, c_pos)
         return rc
 
-    def __del__(self):
+    def __dealloc__(self):
         if self.c_iter != NULL:
             sos_iter_free(self.c_iter)
             self.c_iter = NULL
@@ -3165,7 +3179,7 @@ cdef class Filter(object):
             sos_filter_free(self.c_filt)
             self.c_filt = NULL
 
-cdef class ColSpec(object):
+cdef class ColSpec:
 
     LEFT = 1
     RIGHT = 2
@@ -3199,25 +3213,6 @@ cdef class ColSpec(object):
             self.col_width = 0
         self.align = align
         self.fill = fill
-        self.data = None
-
-    def set_idx(self, idx):
-        cursor_idx = idx
-
-    def get_idx(self):
-        return self.cursor_idx
-
-    def set_query(self, query):
-        self.query = query
-
-    def get_query(self):
-        return self.query
-
-    def set_data(self, data):
-        self.data = data
-
-    def get_data(self):
-        return self.data
 
     @property
     def col_name(self):
@@ -3240,44 +3235,19 @@ cdef class ColSpec(object):
         return self.attr.attr_id()
 
     @property
+    def attr_idx(self):
+        return self.cursor_idx
+
+    @property
     def is_array(self):
         return self.attr.is_array()
-
-    @property
-    def value(self):
-        if self.query is None:
-            return None
-
-        v = self.query[self.cursor_idx, self.attr.attr_id()]
-        if self.cvt_fn:
-            v = self.cvt_fn(v)
-
-        return v
-
-    @property
-    def float_value(self):
-        cdef int typ = self.attr.type()
-        cdef int aid = self.attr.attr_id()
-        cdef double dv = 0.0
-        v = self.query[self.cursor_idx, self.attr.attr_id()]
-        if v is not None:
-            try:
-                if typ == SOS_TYPE_TIMESTAMP:
-                    dv = float(v[0]) + float(v[1]) / 1.0e6
-                else:
-                    dv = v
-            except:
-                pass
-            return dv
-        else:
-            return None
 
     @property
     def width(self):
         return self.col_width
 
     def update(self, query, cursor_idx, attr):
-        self.query = query
+        # self.query = query
         self.cursor_idx = cursor_idx
         self.attr = attr
         if self.col_width == 0:
@@ -3294,8 +3264,8 @@ cdef class ColSpec(object):
         r += "fill      : {0}".format(self.fill)
         return r
 
-    def __str__(self):
-        v = str(self.value)
+    def format(self, value):
+        v = str(value)
         if self.align == ColSpec.RIGHT:
             return v.rjust(self.col_width, self.fill)
         elif self.align == ColSpec.LEFT:
@@ -4721,17 +4691,15 @@ cdef nda_resample_fn_t *nda_resamplers = [
     NULL,                       # obj array
 ]
 
-cdef class QueryInputer(object):
+cdef class QueryInputer:
     DEFAULT_ARRAY_LIMIT = 256
     cdef int start
     cdef int row_limit
     cdef int col_count
     cdef int row_count
-    cdef Query query
     cdef sos_obj_t *objects
 
     def __init__(self, Query q, int limit, int start=0):
-        self.query = q
         self.row_limit = limit
         self.col_count = len(q.filters)
         self.objects = <sos_obj_t *>calloc(self.row_limit,
@@ -4767,7 +4735,6 @@ cdef class QueryInputer(object):
                     sos_obj_put(self.objects[idx])
         free(self.objects)
         self.objects = NULL
-        self.query = None
 
     def __getitem__(self, idx):
         cdef int idx_ = (idx[0] * self.col_count) + idx[1]
@@ -4802,7 +4769,7 @@ cdef class QueryInputer(object):
         memcpy(&self.objects[oldBytes], result.objects, newBytes - oldBytes)
         self.row_count += result.row_count
 
-    def input(self, reset=True):
+    def input(self, Query query, reset=True):
         """Reads query results into memory
 
         Read as many as self.limit records from the container. If
@@ -4814,7 +4781,7 @@ cdef class QueryInputer(object):
         True  -- There is more data available, but buffer space is exhausted
         False -- There is no buffer space available or there is no more matching data
         """
-        cdef int filt_count = len(self.query.filters)
+        cdef int filt_count = len(query.filters)
         cdef int idx, start, row_no, filt_no
         cdef sos_obj_t c_obj
         cdef Filter f
@@ -4828,7 +4795,7 @@ cdef class QueryInputer(object):
             start = self.row_count
 
         for filt_no in range(start, filt_count):
-            f = self.query.filters[filt_no]
+            f = query.filters[filt_no]
             if reset:
                 c_obj = sos_filter_begin(f.c_filt)
             else:
@@ -4841,7 +4808,7 @@ cdef class QueryInputer(object):
 
         for row_no in range(start+1, self.row_limit):
             for filt_no in range(0, filt_count):
-                f = self.query.filters[filt_no]
+                f = query.filters[filt_no]
                 c_obj = sos_filter_next(f.c_filt)
                 if c_obj == NULL:
                     return False
@@ -4853,7 +4820,7 @@ cdef class QueryInputer(object):
             return False
         return True
 
-    def to_timeseries(self, timestamp='timestamp', interval_ms=None,
+    def to_timeseries(self, Query query, timestamp='timestamp', interval_ms=None,
                       max_array=DEFAULT_ARRAY_LIMIT,
                       max_string=DEFAULT_ARRAY_LIMIT):
         """Return the QueryResult data as a DataSet"""
@@ -4877,7 +4844,7 @@ cdef class QueryInputer(object):
         cdef typ_str
         cdef ColSpec col
 
-        nattr = len(self.query.columns)
+        nattr = len(query.columns)
 
         res_attr = <sos_attr_t *>malloc(sizeof(sos_attr_t) * nattr)
         if res_attr == NULL:
@@ -4892,7 +4859,7 @@ cdef class QueryInputer(object):
             free(res_type)
             raise MemoryError("Insufficient memory to allocate type array")
 
-        schema = self.query.filters[0].get_attr().schema()
+        schema = query.filters[0].get_attr().schema()
         t_attr = sos_schema_attr_by_name(schema.c_schema, timestamp.encode())
         if t_attr == NULL:
             raise ValueError("The timestamp attribute was not found in the schema. "
@@ -4904,7 +4871,7 @@ cdef class QueryInputer(object):
         result = []
         try:
             idx = 0
-            for col in self.query.columns:
+            for col in query.columns:
 
                 attr = col.attr
                 res_attr[idx] = <sos_attr_t>attr.c_attr
@@ -5006,12 +4973,12 @@ cdef class QueryInputer(object):
         free(res_acc)
         res = DataSet()
         for attr_idx in range(0, nattr):
-            res.append_array(res_idx, self.query.columns[attr_idx].col_name,
+            res.append_array(res_idx, query.columns[attr_idx].col_name,
                              result[attr_idx])
         return res
 
-    def to_dataset(self, max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
-        """Return the QueryResult data as a DataSet"""
+    def to_dataset(self, Query query, max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
+        """Return the Query data as a DataSet"""
         cdef sos_obj_t c_o
         cdef sos_value_s v_
         cdef sos_value_t v
@@ -5025,7 +4992,7 @@ cdef class QueryInputer(object):
         cdef typ_str
         cdef ColSpec col
 
-        nattr = len(self.query.columns)
+        nattr = len(query.columns)
         if nattr == 0 or self.row_count == 0:
             return None
 
@@ -5036,7 +5003,7 @@ cdef class QueryInputer(object):
         idx = 0
         result = []
 
-        for col in self.query.columns:
+        for col in query.columns:
 
             attr = col.attr
 
@@ -5084,7 +5051,10 @@ cdef class QueryInputer(object):
                 v = sos_value_init(&v_, c_o, res_acc[attr_idx].attr)
                 res_acc[attr_idx].setter_fn(result[attr_idx], res_idx, v)
                 sos_value_put(v)
+                # sos_obj_put(c_o)
+                # self.objects[obj_idx + res_acc[attr_idx].idx] = NULL
             res_idx += 1
+        self.row_count = 0
 
         res = DataSet()
         for attr_idx in range(0, nattr):
@@ -5095,7 +5065,8 @@ cdef class QueryInputer(object):
         free(res_acc)
         return res
 
-cdef class Query(object):
+cdef class Query:
+    QUERY_RESULT_LIMIT = 4096
     cdef Container cont     # The container
     cdef filter_idx             # dictionary mapping schema to filter index
     cdef filters                # array of filters
@@ -5103,11 +5074,10 @@ cdef class Query(object):
     cdef columns                # array of columns
     cdef int col_width          # default width of an output column
     cdef primary                # primary attribute
-    cpdef cursor                # array of objects at the current index position
     cdef group_fn               # function that decides how objects are grouped
     cdef last_row               # indeed...
     cdef unique                 # Boolean indicating if queries are unique
-    cdef QueryInputer inputer   # Maintains query results
+    cdef inputer                # Maintains query results
 
     def __init__(self, container):
         """Implements a Query interface to the SOS container.
@@ -5129,7 +5099,6 @@ cdef class Query(object):
         self.filter_idx = {}
         self.filters = []
         self.columns = []
-        self.cursor = []
         self.schema = []
         self.col_width = 15
 
@@ -5160,12 +5129,6 @@ cdef class Query(object):
             return (schema, schema[aname])
         raise ValueError('No schema contains the attribute "{0}"'.format(aname))
 
-    def __getitem__(self, idx):
-        obj = self.cursor[idx[0]]
-        if obj is None:
-            return None
-        return obj[idx[1]]
-
     def set_col_width(self, width):
         self.col_width = width
 
@@ -5194,7 +5157,7 @@ cdef class Query(object):
                     result.append(schema.name() + '.' + attr.name())
         return result
 
-    def query(self, inputer, reset=True, wait=None):
+    def query(self, inputer=None, reset=True, wait=None):
         """Calls the inputer class' input function
 
         If the input() function returns True, the query continues and
@@ -5261,8 +5224,11 @@ cdef class Query(object):
             reset_ = 1
         else:
             reset_ = 0
+        if inputer is None:
+            inputer = QueryInputer(self, self.QUERY_RESULT_LIMIT)
+        self.inputer = inputer
         while True:
-            if inputer.input(reset=reset_) == False:
+            if inputer.input(self, reset=reset_) == False:
                 # The input limit has been reached
                 break
             else:
@@ -5444,36 +5410,67 @@ cdef class Query(object):
             for f in self.filters:
                 f.add_condition(f.get_attr().schema()[c[0]], c[1], c[2])
 
-    cdef object make_row(self):
+    def to_timeseries(self, timestamp='timestamp', interval_ms=None,
+                      max_array=QueryInputer.DEFAULT_ARRAY_LIMIT,
+                      max_string=QueryInputer.DEFAULT_ARRAY_LIMIT):
+        if self.inputer:
+            return self.inputer.to_timeseries(self, timestamp, interval_ms, max_array, max_string)
+        return None
+
+    def to_dataset(self, max_array=QueryInputer.DEFAULT_ARRAY_LIMIT,
+                   max_string=QueryInputer.DEFAULT_ARRAY_LIMIT):
+        if self.inputer:
+            return self.inputer.to_dataset(self, max_array, max_string)
+        return None
+
+    def __dealloc__(self):
+        for col in self.columns:
+            del col
+
+    cdef object make_row(self, cursor):
         row = []
         for col in self.columns:
-            v = col.value
-            if v is None:
-                return None
-            row.append(v)
+            value = cursor[col.attr_idx][col.attr_id]
+            row.append(col.format(value))
         return row
 
     def begin(self):
         """Position the cursor at the first object"""
-        self.cursor = []
+        cursor = []
         for f in self.filters:
-            self.cursor.append(f.begin())
-        return self.make_row()
+            o = f.begin()
+            if o:
+                cursor.append(o)
+            else:
+                return None
+        return self.make_row(cursor)
 
     def end(self):
-        self.cursor = []
+        cursor = []
         for f in self.filters:
-            self.cursor.append(f.end())
-        return self.make_row()
+            o = f.end()
+            if o:
+                cursor.append(o)
+            else:
+                return None
+        return self.make_row(cursor)
 
     def next(self):
-        self.cursor = []
+        cursor = []
         for f in self.filters:
-            self.cursor.append(f.next())
-        return self.make_row()
+            o = f.next()
+            if o:
+                cursor.append(o)
+            else:
+                return None
+        return self.make_row(cursor)
 
     def prev(self):
-        self.cursor = []
+        cursor = []
         for f in self.filters:
-            self.cursor.append(f.prev())
-        return self.make_row()
+            o = f.prev()
+            if o:
+                cursor.append(o)
+            else:
+                return None
+        return self.make_row(cursor)
