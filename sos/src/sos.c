@@ -738,8 +738,13 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 	sos_obj_t obj;
 
 	/* There should be no objects on the active list */
-	if (!LIST_EMPTY(&sos->obj_list))
+	if (!LIST_EMPTY(&sos->obj_list)) {
 		sos_inuse_obj_info(sos, __ods_log_fp);
+		LIST_FOREACH(obj, &sos->obj_list, entry) {
+			obj->sos = NULL;
+			obj->obj->ods = NULL;
+		}
+	}
 
 	/* Iterate through the object free list and free all the objects */
 	while (!LIST_EMPTY(&sos->obj_free_list)) {
@@ -1533,6 +1538,8 @@ void sos_obj_put(sos_obj_t obj)
 {
 	if (obj && !ods_atomic_dec(&obj->ref_count)) {
 		sos_t sos = obj->sos;
+		if (!sos)
+			return;
 		ods_obj_put(obj->obj);
 		pthread_mutex_lock(&sos->lock);
 		LIST_REMOVE(obj, entry);
@@ -1544,6 +1551,8 @@ void __sos_obj_put_no_lock(sos_obj_t obj)
 {
 	if (obj && !ods_atomic_dec(&obj->ref_count)) {
 		sos_t sos = obj->sos;
+		if (!sos)
+			return;
 		ods_obj_put(obj->obj);
 		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
 	}
