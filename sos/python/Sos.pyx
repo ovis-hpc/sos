@@ -1429,7 +1429,8 @@ cdef class Attr(SosObject):
                 name = attr_name
             else:
                 name = "unspecified"
-            raise SchemaAttrError(name, schema.name())
+            raise ValueError("The attribute '{0}' is not present in schema '{1}'".
+                             format(name, schema.name()))
 
     def __richcmp__(self, b, op):
         if type(b) == type(self):
@@ -3264,7 +3265,14 @@ cdef class ColSpec:
         r += "fill      : {0}".format(self.fill)
         return r
 
+    def convert(self, value):
+        """Return the value with any data conversion defined for the column"""
+        if self.cvt_fn:
+            return self.cvt_fn(value)
+        return value
+
     def format(self, value):
+        """Return a column formatted string for the input value"""
         v = str(value)
         if self.align == ColSpec.RIGHT:
             return v.rjust(self.col_width, self.fill)
@@ -4393,12 +4401,6 @@ cdef class Object(object):
             sos_obj_put(arr_obj)
         return res
 
-class SchemaAttrError(NameError):
-    def __init__(self, attr, schema):
-        NameError.__init__(self,
-                           "Attribute name '{0}' is not " \
-                           "present in schema '{1}'".format(attr, schema))
-
 class ObjAttrError(NameError):
     def __init__(self, attr, schema):
         NameError.__init__(self,
@@ -5094,7 +5096,7 @@ cdef class Query:
         Positional Parameters:
         container -- The Container to query
         """
-        self.primary = 'timestamp'
+        self.primary = None
         self.cont = container
         self.filter_idx = {}
         self.filters = []
@@ -5123,11 +5125,12 @@ cdef class Query:
             else:
                 schema = self.__find_schema_with_attr(name)
                 aname = name
-        except:
+        except Exception as e:
             return (None, None)
         if schema:
             return (schema, schema[aname])
-        raise ValueError('No schema contains the attribute "{0}"'.format(aname))
+        raise ValueError("The attribute '{0}' is not present in any schema".
+                         format(aname))
 
     def set_col_width(self, width):
         self.col_width = width
@@ -5243,9 +5246,14 @@ cdef class Query:
         return inputer.count
 
     def _from_(self, schema):
+        if type(schema) != tuple and type(schema) != list:
+            raise ValueError("The from_ argument must be a list or tuple")
         self.schema = []
         for name in schema:
-            self.schema.append(self.cont.schema_by_name(name))
+            sch = self.cont.schema_by_name(name)
+            if sch is None:
+                raise ValueError("The schema name '{0}' does not exist.".format(name))
+            self.schema.append(sch)
 
     def _order_by(self, name):
         self.primary = name
@@ -5256,10 +5264,20 @@ cdef class Query:
             raise ValueError("The attribute {0} was not found "
                              "in any schema.".format(colspec.name))
         if schema.name() not in self.filter_idx:
-            ts = schema[self.primary]
-            f = Filter(schema[self.primary])
-            if self.unique:
-                f.unique()
+            # There is no filter yet for this schema. If there is
+            # already a primary key, use it, otherwise this atttribute
+            # becomes the primary key.
+            if self.primary is None:
+                self.primary = colspec.name
+            try:
+                primary_attr = schema[self.primary]
+                f = Filter(primary_attr)
+                if self.unique:
+                    f.unique()
+            except:
+                raise ValueError("The schema {0} does not have the primary "
+                                 "key attribute {1}".format(schema.name(),
+                                                            self.primary))
             idx = len(self.filters)
             self.filter_idx[schema.name()] = idx
             self.filters.append(f)
@@ -5342,6 +5360,10 @@ cdef class Query:
             order_by = 'job_comp_time'
 
         """
+        if type(columns) != list and type(columns) != tuple:
+            raise ValueError("The columns argument must be a list or tuple.")
+        self.primary = None
+        self.schema = []
         self.unique = unique
 
         if order_by:
@@ -5430,8 +5452,8 @@ cdef class Query:
     cdef object make_row(self, cursor):
         row = []
         for col in self.columns:
-            value = cursor[col.attr_idx][col.attr_id]
-            row.append(col.format(value))
+            value = col.convert(cursor[col.attr_idx][col.attr_id])
+            row.append(value)
         return row
 
     def begin(self):
