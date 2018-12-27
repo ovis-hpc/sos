@@ -75,7 +75,6 @@ class DataSet(object):
 
     def __init__(self):
         """Create an instance of a DataSet"""
-        self.arrays = []
         self.series_size = 0
         self.series_names = []
         self.array_with_series_name = {}
@@ -234,7 +233,7 @@ class DataSet(object):
         for row_no in range(0, self.series_size):
             aRow = []
             for col in range(0, self.series_count):
-                v = self[col, row_no]
+                v = self.array_with_series_idx[col][row_no]
                 typ = type(v)
                 if typ == np.ndarray or typ == np.string_:
                     v = str(v)
