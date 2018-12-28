@@ -5428,7 +5428,12 @@ cdef class Query:
         self.group_fn = group_fn
 
     def _where(self, clause):
+        if type(clause) != list and type(clause) != tuple:
+            raise ValueError("The where arguement is a list of conditions.")
         for c in clause:
+            if type(c) != list and type(c) != tuple:
+                raise ValueError("Each condition is a list/tuple; "
+                                 "[<attr-name>, <condition>, <value>]")
             for f in self.filters:
                 f.add_condition(f.get_attr().schema()[c[0]], c[1], c[2])
 
