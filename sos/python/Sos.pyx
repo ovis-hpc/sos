@@ -2463,13 +2463,6 @@ cdef class Filter(object):
         o = Object()
         return o.assign(c_obj)
 
-    def skip(self, count):
-        cdef sos_obj_t c_obj = sos_filter_skip(self.c_filt, count)
-        if c_obj == NULL:
-            return None
-        o = Object()
-        return o.assign(c_obj)
-
     def count(self):
         """Return the number of objects matching all conditions"""
         cdef size_t count = 0
@@ -4785,20 +4778,21 @@ cdef class QueryInputer:
         """
         cdef int filt_count = len(query.filters)
         cdef int idx, start, row_no, filt_no
+        cdef int reset_ = int(reset)
         cdef sos_obj_t c_obj
         cdef Filter f
 
         if filt_count == 0:
             raise ValueError("The select method must be called before query")
 
-        if reset:
+        if reset_:
             start = self.start
         else:
             start = self.row_count
 
         for filt_no in range(start, filt_count):
             f = query.filters[filt_no]
-            if reset:
+            if reset_:
                 c_obj = sos_filter_begin(f.c_filt)
             else:
                 c_obj = sos_filter_next(f.c_filt)
