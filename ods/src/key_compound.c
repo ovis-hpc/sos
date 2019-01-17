@@ -77,68 +77,76 @@ static int64_t cmp(ods_key_t a, ods_key_t b)
 	for (koff = 0; koff < cmp_len;) {
 		comp_a = (ods_key_comp_t)&((char *)ck_a->value)[koff];
 		comp_b = (ods_key_comp_t)&((char *)ck_b->value)[koff];
-
+#ifdef ODS_DEBUG
 		assert(comp_a->type == comp_b->type);
-
+#endif
 		switch (comp_a->type) {
 		case SOS_TYPE_DOUBLE:
 			if (comp_a->value.double_ < comp_b->value.double_)
 				return -1;
 			if (comp_a->value.double_ > comp_b->value.double_)
 				return 1;
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.double_);
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.double_);
 			break;
 		case SOS_TYPE_TIMESTAMP:
-			res = (int64_t)comp_a->value.tv_.tv_sec - (int64_t)comp_b->value.tv_.tv_sec;
-			if (res)
-				return res;
-			res = (int64_t)comp_a->value.tv_.tv_usec - (int64_t)comp_b->value.tv_.tv_usec;
-			if (res)
-				return res;
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.tv_);
+			if (comp_a->value.tv_.tv_sec < comp_b->value.tv_.tv_sec)
+				return -1;
+			if (comp_a->value.tv_.tv_sec > comp_b->value.tv_.tv_sec)
+				return 1;
+			if (comp_a->value.tv_.tv_usec < comp_b->value.tv_.tv_usec)
+				return -1;
+			if (comp_a->value.tv_.tv_usec > comp_b->value.tv_.tv_usec)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.tv_);
 			break;
 		case SOS_TYPE_UINT64:
 			if (comp_a->value.uint64_ < comp_b->value.uint64_)
 				return -1;
 			if (comp_a->value.uint64_ > comp_b->value.uint64_)
 				return 1;
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.uint64_);
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.uint64_);
 			break;
 		case SOS_TYPE_INT64:
-			res = comp_a->value.int64_ - comp_b->value.int64_;
-			if (res)
-				return res;
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.int64_);
+			if (comp_a->value.int64_ < comp_b->value.int64_)
+				return -1;
+			if (comp_a->value.int64_ > comp_b->value.int64_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.int64_);
 			break;
 		case SOS_TYPE_FLOAT:
-			res = (int64_t)(comp_a->value.float_ - comp_b->value.float_);
-			if (res)
-				return res;
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.float_);
+			if (comp_a->value.float_ < comp_b->value.float_)
+				return -1;
+			if (comp_a->value.float_ > comp_b->value.float_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.float_);
 			break;
 		case SOS_TYPE_UINT32:
-			res = (int64_t)comp_a->value.uint32_ - (int64_t)comp_b->value.uint32_;
-			if (res)
-				return res;
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.uint32_);
+			if (comp_a->value.uint32_ < comp_b->value.uint32_)
+				return -1;
+			if (comp_a->value.uint32_ > comp_b->value.uint32_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.uint32_);
 			break;
 		case SOS_TYPE_INT32:
-			res = comp_a->value.int32_ - comp_b->value.int32_;
-			if (res)
-				return res;
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.int32_);
+			if (comp_a->value.int32_ < comp_b->value.int32_)
+				return -1;
+			if (comp_a->value.int32_ > comp_b->value.int32_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.int32_);
 			break;
 		case SOS_TYPE_UINT16:
-			res = (int64_t)comp_a->value.uint16_ - (int64_t)comp_b->value.uint16_;
-			if (res)
-				return res;
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.uint16_);
+			if (comp_a->value.uint16_ < comp_b->value.uint16_)
+				return -1;
+			if (comp_a->value.uint16_ > comp_b->value.uint16_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.uint16_);
 			break;
 		case SOS_TYPE_INT16:
-			res = comp_a->value.int16_ - comp_b->value.int16_;
-			if (res)
-				return res;
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.int16_);
+			if (comp_a->value.int16_ < comp_b->value.int16_)
+				return -1;
+			if (comp_a->value.int16_ > comp_b->value.int16_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.int16_);
 			break;
 		case SOS_TYPE_STRUCT:
 		case SOS_TYPE_BYTE_ARRAY:
@@ -149,7 +157,7 @@ static int64_t cmp(ods_key_t a, ods_key_t b)
 			if (res)
 				return res;
 			/* NB: if we get here we know the value and length of the two values are identical */
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.str.len) + comp_a->value.str.len;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.str.len) + comp_a->value.str.len;
 			break;
 		case SOS_TYPE_CHAR_ARRAY:
 			res = min(comp_a->value.str.len, comp_b->value.str.len);
@@ -159,7 +167,7 @@ static int64_t cmp(ods_key_t a, ods_key_t b)
 			if (res)
 				return res;
 			/* NB: if we get here we know the value and length of the two strings are identical */
-			koff += sizeof(comp_a->type) + sizeof(comp_a->value.str.len) + comp_a->value.str.len;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.str.len) + comp_a->value.str.len;
 			break;
 		case SOS_TYPE_LONG_DOUBLE:
 		case SOS_TYPE_INT16_ARRAY:
@@ -172,7 +180,9 @@ static int64_t cmp(ods_key_t a, ods_key_t b)
 		case SOS_TYPE_DOUBLE_ARRAY:
 		case SOS_TYPE_LONG_DOUBLE_ARRAY:
 		default:
+#if ODS_DEBUG
 			assert(0 == "unsupported compound key component");
+#endif
 			break;
 		}
 	}
