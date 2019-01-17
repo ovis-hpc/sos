@@ -13,6 +13,14 @@ def Dprint(*args):
     if _sos_test_debug:
         print(*args)
 
+def DprintEnable():
+    global _sos_test_debug
+    _sos_test_debug = True
+
+def DprintDisable():
+    global _sos_test_debug
+    _sos_test_debug = False
+
 class SosTestCase(unittest.TestCase):
     @classmethod
     def setUpDb(cls, db_name):
