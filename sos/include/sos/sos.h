@@ -723,6 +723,7 @@ sos_obj_t sos_filter_begin(sos_filter_t filt);
 sos_obj_t sos_filter_next(sos_filter_t filt);
 sos_obj_t sos_filter_prev(sos_filter_t filt);
 sos_obj_t sos_filter_end(sos_filter_t filt);
+int sos_filter_miss_count(sos_filter_t filt);
 int sos_filter_pos_set(sos_filter_t filt, const sos_pos_t pos);
 int sos_filter_pos_get(sos_filter_t filt, sos_pos_t *pos);
 int sos_filter_pos_put(sos_filter_t filt, const sos_pos_t pos);

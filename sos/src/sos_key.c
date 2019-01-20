@@ -526,6 +526,39 @@ ods_key_comp_t __sos_next_key_comp(ods_key_comp_t comp)
 	return (ods_key_comp_t)&((char *)comp)[koff];
 }
 
+int __sos_value_is_min(sos_value_t v)
+{
+	switch (sos_value_type(v)) {
+	case SOS_TYPE_TIMESTAMP:
+		return (v->data->prim.timestamp_.tv.tv_sec == 0
+			&&
+			v->data->prim.timestamp_.tv.tv_usec == 0);
+	case SOS_TYPE_UINT64:
+		return (v->data->prim.uint64_ == 0);
+	case SOS_TYPE_INT64:
+		return (v->data->prim.int64_ == LONG_MIN);
+	case SOS_TYPE_UINT32:
+		return (v->data->prim.uint32_ == 0);
+	case SOS_TYPE_INT32:
+		return (v->data->prim.int32_ == INT_MIN);
+	case SOS_TYPE_DOUBLE:
+		return (v->data->prim.double_ == DBL_MIN);
+	case SOS_TYPE_FLOAT:
+		return (v->data->prim.float_ == FLT_MIN);
+	case SOS_TYPE_INT16:
+		return (v->data->prim.int16_ == SHRT_MIN);
+	case SOS_TYPE_UINT16:
+		return (v->data->prim.uint16_ == 0);
+	case SOS_TYPE_LONG_DOUBLE:
+		sos_error("Unsupported type in sos_key_join\n");
+		break;
+	default:
+		assert(0 == "unsupported type for function");
+		break;
+	}
+	return 0;
+}
+
 ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size_t *comp_len)
 {
 	comp->type = sos_attr_type(a);
@@ -533,6 +566,7 @@ ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size
 	case SOS_TYPE_TIMESTAMP:
 		comp->value.tv_.tv_sec = 0;
 		comp->value.tv_.tv_usec = 0;
+		*comp_len = sizeof(comp->value.tv_) + sizeof(uint16_t);
 		break;
 	case SOS_TYPE_UINT64:
 		comp->value.uint64_ = 0;
@@ -576,6 +610,39 @@ ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size
 	return __sos_next_key_comp(comp);
 }
 
+int __sos_value_is_max(sos_value_t v)
+{
+	switch (sos_value_type(v)) {
+	case SOS_TYPE_TIMESTAMP:
+		return (v->data->prim.timestamp_.tv.tv_sec == UINT_MAX
+			&&
+			v->data->prim.timestamp_.tv.tv_usec == UINT_MAX);
+	case SOS_TYPE_UINT64:
+		return (v->data->prim.uint64_ == ULONG_MAX);
+	case SOS_TYPE_INT64:
+		return (v->data->prim.int64_ == LONG_MAX);
+	case SOS_TYPE_UINT32:
+		return (v->data->prim.uint32_ == UINT_MAX);
+	case SOS_TYPE_INT32:
+		return (v->data->prim.int32_ == INT_MAX);
+	case SOS_TYPE_DOUBLE:
+		return (v->data->prim.double_ == DBL_MAX);
+	case SOS_TYPE_FLOAT:
+		return (v->data->prim.float_ == FLT_MAX);
+	case SOS_TYPE_INT16:
+		return (v->data->prim.int16_ == SHRT_MAX);
+	case SOS_TYPE_UINT16:
+		return (v->data->prim.uint16_ == USHRT_MAX);
+	case SOS_TYPE_LONG_DOUBLE:
+		sos_error("Unsupported type in sos_key_join\n");
+		break;
+	default:
+		assert(0 == "unsupported type for function");
+		break;
+	}
+	return 0;
+}
+
 ods_key_comp_t __sos_set_key_comp_to_max(ods_key_comp_t comp, sos_attr_t a, size_t *comp_len)
 {
 	comp->type = sos_attr_type(a);
@@ -583,6 +650,7 @@ ods_key_comp_t __sos_set_key_comp_to_max(ods_key_comp_t comp, sos_attr_t a, size
 	case SOS_TYPE_TIMESTAMP:
 		comp->value.tv_.tv_sec = UINT_MAX;
 		comp->value.tv_.tv_usec = UINT_MAX;
+		*comp_len = sizeof(comp->value.tv_) + sizeof(uint16_t);
 		break;
 	case SOS_TYPE_UINT64:
 		comp->value.uint64_ = ULONG_MAX;

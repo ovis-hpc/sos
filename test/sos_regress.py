@@ -24,6 +24,8 @@ from join_test_u32_str_str import JoinTestU32_Str_Str
 from join_test_key import JoinTestKey
 from join_test_getter import JoinTestGet
 from filter_test import FilterTest
+from test_filt_join_cond import FilterJoinCond
+from test_gui_filt import GuiFilter
 from pos_test import FilterPosTest
 from filt_count_test import FilterCountTest
 from delete_test import DeleteTest
@@ -51,6 +53,8 @@ tests = [ SchemaTest,
           FilterTest,
           FilterPosTest,
           FilterCountTest,
+          FilterJoinCond,
+          GuiFilter,
           DeleteTest,
           PatternTest,
           H2HTBLTest,

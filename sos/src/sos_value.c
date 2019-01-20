@@ -66,12 +66,20 @@ typedef int (*cmp_fn_t)(sos_value_t a, sos_value_t b, size_t size);
 
 static int INT16_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	return a->data->prim.int16_ - b->data->prim.int16_;
+	if (a->data->prim.int16_ < b->data->prim.int16_)
+		return -1;
+	if (a->data->prim.int16_ > b->data->prim.int16_)
+		return 1;
+	return 0;
 }
 
 static int INT32_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	return a->data->prim.int32_ - b->data->prim.int32_;
+	if (a->data->prim.int32_ < b->data->prim.int32_)
+		return -1;
+	if (a->data->prim.int32_ > b->data->prim.int32_)
+		return 1;
+	return 0;
 }
 
 static int INT64_cmp(sos_value_t a, sos_value_t b, size_t size)
@@ -85,12 +93,20 @@ static int INT64_cmp(sos_value_t a, sos_value_t b, size_t size)
 
 static int UINT16_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	return a->data->prim.uint16_ - b->data->prim.uint16_;
+	if (a->data->prim.uint16_ < b->data->prim.uint16_)
+		return -1;
+	if (a->data->prim.uint16_ > b->data->prim.uint16_)
+		return 1;
+	return 0;
 }
 
 static int UINT32_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	return a->data->prim.uint32_ - b->data->prim.uint32_;
+	if (a->data->prim.uint32_ < b->data->prim.uint32_)
+		return -1;
+	if (a->data->prim.uint32_ > b->data->prim.uint32_)
+		return 1;
+	return 0;
 }
 
 static int UINT64_cmp(sos_value_t a, sos_value_t b, size_t size)

@@ -370,6 +370,7 @@ struct sos_filter_cond_s {
 	sos_iter_t iter;
 	sos_filter_fn_t cmp_fn;
 	enum sos_cond_e cond;
+	int ret;
 	TAILQ_ENTRY(sos_filter_cond_s) entry;
 };
 
@@ -378,6 +379,7 @@ struct sos_filter_s {
 	SOS_KEY_VALUE(last_match_key);
 	struct ods_obj_s last_match_obj;
 	sos_key_t last_match;
+	int miss_cnt;
 	int empty;
 	TAILQ_HEAD(sos_cond_list, sos_filter_cond_s) cond_list;
 };
@@ -452,6 +454,8 @@ ods_key_comp_t __sos_next_key_comp(ods_key_comp_t comp);
 ods_key_comp_t __sos_set_key_comp(ods_key_comp_t comp, sos_value_t v, size_t *comp_len);
 ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size_t *comp_len);
 ods_key_comp_t __sos_set_key_comp_to_max(ods_key_comp_t comp, sos_attr_t a, size_t *comp_len);
+int __sos_value_is_max(sos_value_t v);
+int __sos_value_is_min(sos_value_t v);
 
 extern FILE *__ods_log_fp;
 extern uint64_t __ods_log_mask;

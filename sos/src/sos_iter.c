@@ -58,6 +58,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <assert.h>
 #include <inttypes.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -75,8 +76,11 @@
 #include "sos_priv.h"
 
 static int __attr_join_idx(sos_attr_t filt_attr, sos_attr_t attr);
+
 static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key,
 				int min_not_max, int last_match);
+static sos_filter_cond_t __sos_find_filter_condition(sos_filter_t filt,
+						     int attr_id);
 static sos_obj_t next_match(sos_filter_t filt);
 static sos_obj_t prev_match(sos_filter_t filt);
 
@@ -1066,7 +1070,7 @@ int sos_filter_cond_add(sos_filter_t filt,
 	return 0;
 }
 
-sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt, int *ret)
+static sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt)
 {
 	sos_filter_cond_t cond;
 	struct sos_value_s v_;
@@ -1074,7 +1078,7 @@ sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt, int *ret)
 	int rc;
 	TAILQ_FOREACH(cond, &filt->cond_list, entry) {
 		obj_value = sos_value_init(&v_, obj, cond->attr);
-		rc = cond->cmp_fn(obj_value, cond->value, ret);
+		rc = cond->cmp_fn(obj_value, cond->value, &cond->ret);
 		sos_value_put(obj_value);
 		if (!rc)
 			return cond;
@@ -1087,38 +1091,168 @@ sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt, int *ret)
 
 static sos_obj_t next_match(sos_filter_t filt)
 {
-	int rc;
+	SOS_KEY(key);
+	int rc, i, join_idx;
 	sos_obj_t obj;
 	sos_filter_cond_t cond;
-	int join;
+	sos_array_t attr_ids;
+	struct sos_value_s v_;
+	sos_value_t obj_value = NULL;
+	ods_comp_key_t comp_key;
+	ods_key_comp_t key_comp;
+	size_t comp_len;
+	sos_filter_cond_t join_cond;
+	ods_ref_t last_ref = 0;
+
+	filt->miss_cnt = 0;
 	do {
 		obj = sos_iter_obj(filt->iter);
 		if (!obj)
 			break;
-		cond = sos_filter_eval(obj, filt, &rc);
+		cond = sos_filter_eval(obj, filt);
 		if (!cond) {
 			filt->empty = 0;
 			return obj;
 		}
-		sos_obj_put(obj);
-		join = __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
-		/* We can't assume anything about not-equal */
-		if (cond->cond != SOS_COND_NE) {
-			/* Is the condition on the filter's index attribute,
-			 * or the first member of a join on the filter's index */
-			if (cond->attr->index == filt->iter->index || join == 0) {
-				/* We can assume key[n+1] >= key[n] */
-				/* Conditions LT, and LE cannot follow */
-				if (cond->cond < SOS_COND_EQ)
-					break;
-				/* The condition is EQ and the object
-				 * value is greater-than the cond */
-				if (cond->cond == SOS_COND_EQ && rc > 0)
-					break;
-			}
+		filt->miss_cnt += 1;
+		/*
+		 * One or more conditions failed, determine if there
+		 * can be any subsequent key that matches all
+		 * conditions given the index ordering.
+		 */
+		if (cond->cond == SOS_COND_NE)
+			/* No ordering optimizations for NE */
+			goto next;
+
+		join_idx = __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
+		if (join_idx < 0) {
+			/*
+			 * The filter key is not a join or the
+			 * condition attribute is not in the join key
+			 */
+			if (cond->attr->index != filt->iter->index)
+				/*
+				 * The filter index is not on
+				 * condition attribute nothing can be
+				 * assumed about the ordering
+				 */
+				goto next;
+			if (cond->cond < SOS_COND_GE)
+				/*
+				 * The condition requires <=, this
+				 * attribute is the key and the
+				 * comparison failed. There can be no
+				 * more matches
+				 */
+				break;
+			/*
+			 * Missing optimization to skip to 1st
+			 * possibly matching key
+			 */
+			goto next;
 		}
+
+		if (sos_attr_is_array(cond->attr))
+			goto next;
+
+		/* Key = { k[0], k[1], ... k[join_idx], ..., k[N] }
+		 *                              ^
+		 *                              |
+		 * Failing Condition :----------+
+		 *
+		 */
+
+		if (join_idx == 0 || cond == TAILQ_FIRST(&filt->cond_list)) {
+			if (join_idx)
+				/* 1st condition skips join prefix, we know nothing */
+				goto next;
+			/*
+			 * The failing condition was <, <= or ==. If the match
+			 * was >, then there can not possibly be any more
+			 * matches for this condition past this point in the
+			 * index.
+			 */
+			if (cond->cond <= SOS_COND_GE) {
+				if (cond->ret >= 0)
+					break;
+
+				/* Cond is <, <=, and key is smaller
+				 * than value, keep searching.
+				 */
+			}
+			/* Cond is >=, >, keep searching */
+		}
+		/*
+		 * Construct a key putting max in the component
+		 * key position associated with the failing condition
+		 * and search for the least upper bound (i.e. next)
+		 */
+		comp_key = (ods_comp_key_t)ods_key_value(key);
+		comp_key->len = 0;
+		key_comp = comp_key->value;
+		attr_ids = sos_attr_join_list(sos_iter_attr(filt->iter));
+
+		for (i = 0; i < attr_ids->count; i++) {
+			int attr_id = attr_ids->data.uint32_[i];
+			obj_value = sos_value_by_id(&v_, obj, attr_id);
+			join_cond = __sos_find_filter_condition(filt, attr_id);
+			if (i < join_idx) {
+				if (!join_cond)
+					goto next;
+				key_comp = __sos_set_key_comp(key_comp, obj_value, &comp_len);
+			} else if (i == join_idx) {
+				switch (cond->cond) {
+				case SOS_COND_LT:
+				case SOS_COND_LE:
+					if (__sos_value_is_max(obj_value))
+						goto next;
+					key_comp = __sos_set_key_comp_to_max(key_comp, obj_value->attr, &comp_len);
+					break;
+				case SOS_COND_EQ:
+					if (cond->ret < 0) {
+						key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+					} else {
+						if (__sos_value_is_max(obj_value))
+							goto next;
+						key_comp = __sos_set_key_comp_to_max(key_comp, obj_value->attr, &comp_len);
+					}
+					break;
+				case SOS_COND_GE:
+					key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+					break;
+				case SOS_COND_GT:
+					if (cond->ret < 0)
+						key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+					else
+						goto next;
+					break;
+				case SOS_COND_NE:
+					goto next;
+				}
+			} else {
+				if (sos_attr_is_array(obj_value->attr))
+					goto next;
+				key_comp = __sos_set_key_comp_to_min(key_comp, obj_value->attr, &comp_len);
+			}
+			sos_value_put(obj_value);
+			comp_key->len += comp_len;
+		}
+		rc = sos_iter_sup(filt->iter, key);
+		if (rc)
+			break;
+		if (last_ref == obj->obj->ref)
+			goto out;
+		last_ref = obj->obj->ref;
+		sos_obj_put(obj);
+		continue;
+	next:
+		sos_value_put(obj_value);
 		rc = sos_iter_next(filt->iter);
+		if (!rc)
+			sos_obj_put(obj);
 	} while (rc == 0);
+ out:
+	sos_obj_put(obj);
 	filt->empty = 1;
 	return NULL;
 }
@@ -1133,12 +1267,9 @@ static sos_obj_t continue_next(sos_filter_t filt)
 	case 0:
 		rc = sos_iter_begin(filt->iter);
 		break;
-	case ESRCH:
+	default:
 		rc = sos_iter_sup(filt->iter, key);
 		break;
-	default:
-		errno = rc;
-		return NULL;
 	}
 	/*
 	 * The last_match key positions us at the last record we
@@ -1154,36 +1285,151 @@ static sos_obj_t continue_next(sos_filter_t filt)
 
 static sos_obj_t prev_match(sos_filter_t filt)
 {
-	int rc, join;
+	SOS_KEY(key);
+	int rc, i, join_idx;
 	sos_obj_t obj;
 	sos_filter_cond_t cond;
+	sos_array_t attr_ids;
+	struct sos_value_s v_;
+	sos_value_t obj_value = NULL;
+	ods_comp_key_t comp_key;
+	ods_key_comp_t key_comp;
+	size_t comp_len;
+	sos_filter_cond_t join_cond;
+	ods_ref_t last_ref = 0;
 	do {
 		obj = sos_iter_obj(filt->iter);
 		if (!obj)
 			break;
-		cond = sos_filter_eval(obj, filt, &rc);
+		cond = sos_filter_eval(obj, filt);
 		if (!cond) {
 			filt->empty = 0;
 			return obj;
 		}
-		sos_obj_put(obj);
-		join = __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
-		/* We can't assume anything about not-equal */
-		if (cond->cond != SOS_COND_NE) {
-			/* Is the condition on the filter's index attribute */
-			if (cond->attr->index == filt->iter->index || join == 0) {
-				/* We can assume key[n-1] <= key[n] */
-				/* Conditions GE and GT cannot follow */
-				if (cond->cond > SOS_COND_EQ)
-					break;
-				/* The condition is EQ and the object
-				 * value was less-than the cond */
-				if (cond->cond == SOS_COND_EQ && rc < 0)
-					break;
-			}
+		/*
+		 * One or more conditions failed, determine if there
+		 * can be any subsequent key that matches all
+		 * conditions given the index ordering.
+		 */
+		if (cond->cond == SOS_COND_NE)
+			/* No ordering optimizations for NE */
+			goto prev;
+
+		join_idx = __attr_join_idx(sos_iter_attr(filt->iter), cond->attr);
+		if (join_idx < 0) {
+			/*
+			 * The filter key is not a join or the
+			 * condition attribute is not in the join key
+			 */
+			if (cond->attr->index != filt->iter->index)
+				/*
+				 * The filter index is not on
+				 * condition attribute nothing can be
+				 * assumed about the ordering
+				 */
+				goto prev;
+			if (cond->cond > SOS_COND_EQ)
+				/*
+				 * The condition requires >=, this
+				 * attribute is the key and the
+				 * comparison failed. There can be no
+				 * more matches
+				 */
+				break;
+			goto prev;
 		}
+
+		if (join_idx == 0 || cond == TAILQ_FIRST(&filt->cond_list)) {
+			if (join_idx)
+				/* 1st condition skips join prefix, we know nothing */
+				goto prev;
+			/*
+			 * The failing condition was ==, >=, or >. If
+			 * the match was <, then there can not
+			 * possibly be any more matches for this
+			 * condition prior to this point in the index.
+			 */
+			if (cond->cond >= SOS_COND_EQ) {
+				if (cond->ret <= 0)
+					break;
+
+				/* Cond is ==, >=,  or > and key is greater
+				 * than value, keep searching.
+				 */
+				assert(0);
+			}
+			/* Cond is ==, <=, or < keep searching */
+			goto prev;
+		}
+
+		if (sos_attr_is_array(cond->attr))
+			goto prev;
+
+		comp_key = (ods_comp_key_t)ods_key_value(key);
+		comp_key->len = 0;
+		key_comp = comp_key->value;
+		attr_ids = sos_attr_join_list(sos_iter_attr(filt->iter));
+
+		for (i = 0; i < attr_ids->count; i++) {
+			int attr_id = attr_ids->data.uint32_[i];
+			obj_value = sos_value_by_id(&v_, obj, attr_id);
+			join_cond = __sos_find_filter_condition(filt, attr_id);
+			if (i < join_idx) {
+				if (!join_cond)
+					goto prev;
+				key_comp = __sos_set_key_comp(key_comp, obj_value, &comp_len);
+			} else if (i == join_idx) {
+				switch (cond->cond) {
+				case SOS_COND_LT:
+				case SOS_COND_LE:
+					if (cond->ret > 0)
+						key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+					else
+						goto prev;
+					break;
+				case SOS_COND_EQ:
+					if (cond->ret < 0) {
+						key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+					} else {
+						if (__sos_value_is_min(obj_value))
+							goto prev;
+						key_comp = __sos_set_key_comp_to_min(key_comp, obj_value->attr, &comp_len);
+					}
+					break;
+				case SOS_COND_GE:
+				case SOS_COND_GT:
+					if (__sos_value_is_min(obj_value))
+						goto prev;
+					key_comp = __sos_set_key_comp_to_min(key_comp, obj_value->attr, &comp_len);
+					break;
+				case SOS_COND_NE:
+					goto prev;
+				}
+			} else {
+				if (sos_attr_is_array(obj_value->attr))
+					goto prev;
+				key_comp = __sos_set_key_comp_to_max(key_comp, obj_value->attr, &comp_len);
+			}
+			sos_value_put(obj_value);
+			comp_key->len += comp_len;
+		}
+		rc = sos_iter_inf(filt->iter, key);
+		if (rc)
+			break;
+		if (last_ref == obj->obj->ref)
+			goto out;
+		last_ref = obj->obj->ref;
+		sos_obj_put(obj);
+		continue;
+	prev:
+		sos_value_put(obj_value);
 		rc = sos_iter_prev(filt->iter);
+		if (!rc)
+			sos_obj_put(obj);
 	} while (rc == 0);
+
+ out:
+	sos_obj_put(obj);
 	filt->empty = 1;
 	return NULL;
 }
@@ -1236,23 +1482,72 @@ static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_ma
 		return ESRCH;
 	}
 
-	if (sos_attr_type(filt_attr) == SOS_TYPE_JOIN) {
-		ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
-		ods_key_comp_t key_comp = comp_key->value;
+	if (sos_attr_type(filt_attr) != SOS_TYPE_JOIN) {
+		/* Find the first condition that matches the filter attr */
+		cond = __sos_find_filter_condition(filt, filt_attr_id);
+		if (!cond)
+			goto out;
+		sos_key_set(key, sos_value_as_key(cond->value),
+			    sos_value_size(cond->value));
+		if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
+			search = ESRCH;
+	} else {
+		ods_comp_key_t comp_key;
+		ods_key_comp_t key_comp;
+		comp_key = (ods_comp_key_t)ods_key_value(key);
+		key_comp = comp_key->value;
 		comp_key->len = 0;
 		for (join_idx = 0; join_idx < attr_ids->count; join_idx++) {
 			int join_attr_id = attr_ids->data.uint32_[join_idx];
 			size_t comp_len;
 			/* Search the condition list for this attribute */
 			cond = __sos_find_filter_condition(filt, join_attr_id);
+
 			if (cond) {
-				key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+				if (sos_attr_is_array(cond->attr)) {
+					key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+				} else if (min_not_max) {
+					switch (cond->cond) {
+					case SOS_COND_LT:
+					case SOS_COND_NE:
+					case SOS_COND_LE:
+						key_comp = __sos_set_key_comp_to_min(key_comp, cond->attr, &comp_len);
+						search = ESRCH;
+						break;
+					case SOS_COND_EQ:
+					case SOS_COND_GE:
+					case SOS_COND_GT:
+						key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+						search = ESRCH;
+						break;
+					}
+				} else {
+					switch (cond->cond) {
+					case SOS_COND_LT:
+					case SOS_COND_LE:
+					case SOS_COND_EQ:
+						key_comp = __sos_set_key_comp(key_comp, cond->value, &comp_len);
+						search = ESRCH;
+						break;
+					case SOS_COND_NE:
+					case SOS_COND_GE:
+					case SOS_COND_GT:
+						key_comp = __sos_set_key_comp_to_max(key_comp, cond->attr, &comp_len);
+						search = ESRCH;
+						break;
+					}
+				}
 				comp_key->len += comp_len;
-				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
-					search = ESRCH;
 			} else {
-				sos_attr_t attr = sos_schema_attr_by_id(sos_attr_schema(filt_attr),
-									join_attr_id);
+				sos_attr_t attr;
+				/*
+				 * If there is no condition on the prefix,
+				 * don't bother with a search
+				 */
+				if (!join_idx)
+					goto out;
+				attr = sos_schema_attr_by_id(sos_attr_schema(filt_attr),
+							     join_attr_id);
 				if (sos_attr_is_array(attr) || sos_attr_is_ref(attr)) {
 					/* There is no condition for this key component and the
 					 * attribute has a variable length. The key order after the
@@ -1260,28 +1555,34 @@ static int __sos_filter_key_set(sos_filter_t filt, sos_key_t key, int min_not_ma
 					 */
 					goto out;
 				}
-				if (min_not_max)
+				if (min_not_max) {
 					key_comp = __sos_set_key_comp_to_min(key_comp, attr, &comp_len);
-				else
+				} else {
 					key_comp = __sos_set_key_comp_to_max(key_comp, attr, &comp_len);
+				}
+				search = ESRCH;
 				comp_key->len += comp_len;
-			}
-		}
-	} else {
-		/* Find the first condition that matches the filter attr */
-		TAILQ_FOREACH(cond, &filt->cond_list, entry) {
-			if (filt_attr_id == sos_attr_id(cond->attr)) {
-				sos_key_set(key, sos_value_as_key(cond->value),
-					    sos_value_size(cond->value));
-				if (cond->cond != SOS_COND_NE && (cond->cond >= SOS_COND_EQ))
-					search = ESRCH;
-				break;
 			}
 		}
 	}
  out:
 	return search;
 }
+
+/**
+ * \brief Return the miss-compare count
+ *
+ * A miss-compare is an object on the iterator that was skipped due to
+ * a failure to match all conditions on the filter. This value can be
+ * useful when tuning queries for performance.
+ *
+ * \returns The miss count
+ */
+int sos_filter_miss_count(sos_filter_t filt)
+{
+	return filt->miss_cnt;
+}
+
 
 /**
  * \brief Return the first matching object.
@@ -1301,12 +1602,9 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
 	case 0:
 		rc = sos_iter_begin(filt->iter);
 		break;
-	case ESRCH:
+	default:
 		rc = sos_iter_sup(filt->iter, key);
 		break;
-	default:
-		errno = rc;
-		return NULL;
 	}
 	if (!rc)
 		return next_match(filt);
@@ -1328,25 +1626,6 @@ sos_obj_t sos_filter_next(sos_filter_t filt)
 		return next_match(filt);
 	filt->empty = 1;
 	return NULL;
-}
-
-sos_obj_t sos_filter_skip(sos_filter_t filt, int count)
-{
-	sos_obj_t obj = NULL;
-	while (count) {
-		if (obj)
-			sos_obj_put(obj);
-		if (count < 0) {
-			count++;
-			obj = sos_filter_prev(filt);
-		} else {
-			count--;
-			obj = sos_filter_next(filt);
-		}
-		if (!obj)
-			break;
-	}
-	return obj;
 }
 
 int sos_filter_pos_set(sos_filter_t filt, const sos_pos_t pos)
@@ -1385,12 +1664,9 @@ sos_obj_t sos_filter_end(sos_filter_t filt)
 	case 0:
 		rc = sos_iter_end(filt->iter);
 		break;
-	case ESRCH:
+	default:
 		rc = sos_iter_inf(filt->iter, key);
 		break;
-	default:
-		errno = rc;
-		return NULL;
 	}
 	if (!rc)
 		return prev_match(filt);

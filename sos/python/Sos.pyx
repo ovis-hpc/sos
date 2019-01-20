@@ -2463,6 +2463,10 @@ cdef class Filter(object):
         o = Object()
         return o.assign(c_obj)
 
+    def miss_count(self):
+        """Return the filter miss compare count"""
+        return sos_filter_miss_count(self.c_filt)
+
     def count(self):
         """Return the number of objects matching all conditions"""
         cdef size_t count = 0
