@@ -1089,6 +1089,35 @@ static sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt)
 	return NULL;
 }
 
+/*
+ * Searches for the next object that matches all of the conditions in
+ * filt->cond_list. To avoid testing every object, conditions are sorted
+ * and objects that can't match are skipped by building a key and searching
+ * on the index.
+ *
+ * This table specifies how the key is constructed given the 1st
+ * failing condition on an object.
+ *
+ * +==================+==================+==================+==================+
+ * | obj-value ? key  |         <        |        ==        |         >        |
+ * +==================I==================+==================+==================+
+ * | condition   <    I         X        |    seek(max)     |    seek(max)     |
+ * +------------------I------------------+------------------+------------------+
+ * |             <=   I         X        |        X         |    seek(max)     |
+ * +------------------I------------------+------------------+------------------+
+ * |             ==   I seek(cond->value)|        X         |    seek(max)     |
+ * +------------------I------------------+------------------+------------------+
+ * |             >=   I seek(cond->value)|        X         |         X        |
+ * +------------------I------------------+------------------+------------------+
+ * |             >    I seek(cond->value)|      next        |         X        |
+ * +------------------+------------------+------------------+------------------+
+ *
+ * The 'X' means "can't happen". The seek(min) sets the join key in
+ * question to the minimum value for the value-type of the condition
+ * attribute.
+ *
+ * seek(cond->value) means set the key to the value tested in the condition.
+ */
 static sos_obj_t next_match(sos_filter_t filt)
 {
 	SOS_KEY(key);
@@ -1283,6 +1312,35 @@ static sos_obj_t continue_next(sos_filter_t filt)
 	return NULL;
 }
 
+/*
+ * Searches for the previous object that matches all of the conditions in
+ * filt->cond_list. To avoid testing every object, conditions are sorted
+ * and objects that can't match are skipped by building a key and searching
+ * on the index.
+ *
+ * This table specifies how the key is constructed given the 1st
+ * failing condition on an object.
+ *
+ * +==================+==================+==================+==================+
+ * | obj-value ? key  |         <        |        ==        |         >        |
+ * +==================I==================+==================+==================+
+ * | condition   <    I         X        |       prev       | seek(cond->value)|
+ * +------------------I------------------+------------------+------------------+
+ * |             <=   I         X        |        X         | seek(cond->value)|
+ * +------------------I------------------+------------------+------------------+
+ * |             ==   I    seek(min)     |        X         | seek(cond->value)|
+ * +------------------I------------------+------------------+------------------+
+ * |             >=   I    seek(min)     |        X         |         X        |
+ * +------------------I------------------+------------------+------------------+
+ * |             >    I    seek(min)     |    seek(min)     |         X        |
+ * +------------------+------------------+------------------+------------------+
+ *
+ * The 'X' means "can't happen". The seek(min) sets the join key in
+ * question to the minimum value for the value-type of the condition
+ * attribute.
+ *
+ * Seek(cond->value) means set the key to the value tested in the condition.
+ */
 static sos_obj_t prev_match(sos_filter_t filt)
 {
 	SOS_KEY(key);
