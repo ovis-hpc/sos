@@ -4904,7 +4904,7 @@ cdef class QueryInputer:
                         data = np.zeros([ self.row_limit ],
                                         dtype=np.dtype('|S{0}'.format(max_string)))
                     else:
-                        data = np.zeros([ self.row_limit, self.max_array ],
+                        data = np.zeros([ self.row_limit, int(max_array) ],
                                         dtype=np.dtype(typ_str))
                 else:
                     data = np.zeros([ self.row_limit ], dtype=np.dtype(typ_str))
@@ -5451,6 +5451,8 @@ cdef class Query:
     def __dealloc__(self):
         for col in self.columns:
             del col
+        self.filters = None
+        self.inputer = None
 
     cdef object make_row(self, cursor):
         row = []
