@@ -150,7 +150,7 @@ class DataSet(object):
             shape = nda.shape
             if len(shape) > 1:
                 # arrays
-                array = np.zeros([ row_count ] + shape[1:], dtype=nda.dtype)
+                array = np.zeros([ row_count ] + list(shape[1:]), dtype=nda.dtype)
             else:
                 array = np.zeros([ row_count ], dtype=nda.dtype)
             newds.append_array(row_count, ser, array)
