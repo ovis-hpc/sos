@@ -3618,7 +3618,7 @@ cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
     elif typ == float or typ == np.float64 or typ == np.float32:
         try:
             secs = int(val)
-            usecs = int((val - secs) * 1.e6)
+            usecs = int((val * 1.e6) - (secs * 1.e6))
         except:
             raise ValueError("The time value is a floating point secs.usecs number")
     elif typ == np.datetime64:
