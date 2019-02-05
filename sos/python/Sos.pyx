@@ -4445,6 +4445,9 @@ cdef void timestamp_nda_setter(np.ndarray nda, int idx, sos_value_t v):
     nda[idx] = (v.data.prim.timestamp_.tv.tv_sec * 1000000L) + \
             v.data.prim.timestamp_.tv.tv_usec
 
+cdef void struct_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    nda[idx] = bytearray(v.data.prim.struc_[:sos_attr_size(v.attr)])
+
 cdef void uint8_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
     cdef int i
     ndb = nda[idx]
@@ -4502,6 +4505,10 @@ cdef void double_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
     for i in range(0, v.data.array.count):
         ndb[i] = v.data.array.data.double_[i]
 
+cdef void unsupp_nda_setter(np.ndarray nda, int idx, sos_value_t v):
+    raise ValueError("The attribute {0} has an unsupported data type."
+                     .format(str(sos_attr_name(v.attr))))
+
 cdef nda_setter_fn_t *nda_setters = [
     int16_nda_setter,
     int32_nda_setter,
@@ -4511,11 +4518,11 @@ cdef nda_setter_fn_t *nda_setters = [
     uint64_nda_setter,
     float_nda_setter,
     double_nda_setter,
-    NULL,                       # long double
+    unsupp_nda_setter,          # long double
     timestamp_nda_setter,
-    NULL,                       # obj
-    NULL,                       # struct
-    NULL,                       # join
+    unsupp_nda_setter,          # obj
+    struct_nda_setter,          # struct
+    unsupp_nda_setter,          # join
     NULL, NULL, NULL, NULL, NULL,
     NULL, NULL, NULL, NULL, NULL,
     NULL, NULL, NULL, NULL, NULL,
@@ -4530,8 +4537,8 @@ cdef nda_setter_fn_t *nda_setters = [
     uint64_array_nda_setter,
     float_array_nda_setter,
     double_array_nda_setter,
-    NULL,                       # long double
-    NULL,                       # obj array
+    unsupp_nda_setter,          # long double
+    unsupp_nda_setter,          # obj array
 ]
 
 cdef void int16_nda_resample(np.ndarray nda, int idx, sos_value_t v,
@@ -4906,6 +4913,9 @@ cdef class QueryInputer:
                     else:
                         data = np.zeros([ self.row_limit, int(max_array) ],
                                         dtype=np.dtype(typ_str))
+                elif atyp == SOS_TYPE_STRUCT:
+                    data = np.zeros([ self.row_limit, sos_attr_size(attr.c_attr) ],
+                                    dtype=np.dtype(np.uint8))
                 else:
                     data = np.zeros([ self.row_limit ], dtype=np.dtype(typ_str))
                 result.append(data)
@@ -5036,6 +5046,9 @@ cdef class QueryInputer:
                 else:
                     data = np.zeros([ self.row_count, max_array ],
                                     dtype=np.dtype(typ_str))
+            elif atyp == SOS_TYPE_STRUCT:
+                data = np.zeros([ self.row_limit, sos_attr_size(attr.c_attr) ],
+                                dtype=np.dtype(np.uint8))
             else:
                 data = np.zeros([ self.row_count ], dtype=np.dtype(typ_str))
             result.append(data)
