@@ -5366,6 +5366,10 @@ cdef class Query:
           indexed and present in all schema referenced in the columns
           list.
 
+          If the order_by keyword argument is omitted, the first column in the column
+          list is used. If this attribute is not indexed, an exception
+          will be raised.
+
           Example:
 
             order_by = 'job_comp_time'
