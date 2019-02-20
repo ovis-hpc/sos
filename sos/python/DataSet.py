@@ -502,3 +502,29 @@ class DataSet(object):
             res.append_array(1, ser, nda)
         return res
 
+    def mean(self, series_list=None):
+        """Compute min for series across rows
+        """
+        if series_list is None:
+            series_list = self.series_names
+        res = DataSet()
+        for ser in series_list:
+            m = np.mean(self.array(ser))
+            nda = np.ndarray([ 1 ], dtype=m.dtype)
+            nda[0] = m
+            res.append_array(1, ser, nda)
+        return res
+
+    def std(self, series_list=None):
+        """Compute min for series across rows
+        """
+        if series_list is None:
+            series_list = self.series_names
+        res = DataSet()
+        for ser in series_list:
+            m = np.std(self.array(ser))
+            nda = np.ndarray([ 1 ], dtype=m.dtype)
+            nda[0] = m
+            res.append_array(1, ser, nda)
+        return res
+
