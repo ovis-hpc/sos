@@ -173,10 +173,10 @@ int create(const char *path, int o_mode)
 
 int col_widths[] = {
 	[SOS_TYPE_INT16] = 6,
-	[SOS_TYPE_INT32] = 10,
+	[SOS_TYPE_INT32] = 12,
 	[SOS_TYPE_INT64] = 18,
 	[SOS_TYPE_UINT16] = 6,
-	[SOS_TYPE_UINT32] = 10,
+	[SOS_TYPE_UINT32] = 12,
 	[SOS_TYPE_UINT64] = 18,
 	[SOS_TYPE_FLOAT] = 12,
 	[SOS_TYPE_DOUBLE] = 24,
