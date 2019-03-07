@@ -4731,14 +4731,17 @@ cdef class QueryInputer:
     def __dealloc__(self):
         cdef int row_no
         cdef int filt_no
-        cdef int idx
+        cdef int row_idx
+        cdef int obj_idx
         if self.objects == NULL:
             return
         for row_no in range(0, self.row_limit):
+            row_idx = row_no * self.col_count
             for col_no in range(0, self.col_count):
-                idx = row_no * self.col_count
-                if self.objects[idx] != NULL:
-                    sos_obj_put(self.objects[idx])
+                obj_idx = row_idx + col_no
+                if self.objects[obj_idx] != NULL:
+                    sos_obj_put(self.objects[obj_idx])
+                    self.objects[obj_idx] = NULL
         free(self.objects)
         self.objects = NULL
 
@@ -4811,7 +4814,7 @@ cdef class QueryInputer:
                 return False
             else:
                 self.objects[filt_no] = c_obj
-            self.row_count = 1
+        self.row_count = 1
 
         for row_no in range(start+1, self.row_limit):
             for filt_no in range(0, filt_count):
@@ -4821,7 +4824,7 @@ cdef class QueryInputer:
                     return False
                 idx = (row_no * filt_count) + filt_no
                 self.objects[idx] = c_obj
-                self.row_count += 1
+            self.row_count += 1
 
         if c_obj:
             return False
@@ -4995,6 +4998,8 @@ cdef class QueryInputer:
         cdef int idx
         cdef int attr_idx
         cdef int res_idx
+        cdef int obj_idx
+        cdef int row_idx
         cdef int nattr
         cdef Attr attr
         cdef int *res_type
@@ -5055,8 +5060,6 @@ cdef class QueryInputer:
             idx += 1
 
         res_idx = 0
-        obj_idx = 0
-
         for row_idx in range(0, self.row_count):
             obj_idx = row_idx * self.col_count
             for attr_idx in range(0, nattr):
@@ -5064,8 +5067,6 @@ cdef class QueryInputer:
                 v = sos_value_init(&v_, c_o, res_acc[attr_idx].attr)
                 res_acc[attr_idx].setter_fn(result[attr_idx], res_idx, v)
                 sos_value_put(v)
-                # sos_obj_put(c_o)
-                # self.objects[obj_idx + res_acc[attr_idx].idx] = NULL
             res_idx += 1
         self.row_count = 0
 
