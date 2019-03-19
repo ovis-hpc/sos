@@ -2694,7 +2694,7 @@ cdef class Filter(object):
                 elif type(opt) == dict:
                     aname = opt['name']
                 else:
-                    raise ValueError("shape elements must be either <str> or <dict.")
+                    raise ValueError("shape elements must be either <str> or <dict>.")
                 attr = schema.attr_by_name(aname)
                 res_attr[idx] = attr.c_attr
                 res_type[idx] = sos_attr_type(attr.c_attr)
@@ -5310,7 +5310,7 @@ cdef class Query:
 
            Examples:
 
-           The simplest format is simply an array of names:
+           The simplest format is an array of names:
 
              [ 'meminfo.timestamp',
                'vmstat.timestamp',
@@ -5374,6 +5374,15 @@ cdef class Query:
           Example:
 
             order_by = 'job_comp_time'
+
+        UNIQUE
+
+          Set the unique keyword to True to return only the 1st result
+          if there are duplicate values for a key.
+
+          Example:
+
+            unique = True
 
         """
         if type(columns) != list and type(columns) != tuple:
