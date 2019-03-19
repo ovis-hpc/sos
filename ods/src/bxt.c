@@ -21,6 +21,7 @@
 /* #define ODS_DEBUG */
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 
+static int split_midpoint(int order);
 static struct bxt_obj_el *alloc_el(bxt_t t);
 ods_atomic_t el_count;
 static void free_el(bxt_t t, struct bxt_obj_el *el);
@@ -150,7 +151,7 @@ static void print_info(ods_idx_t idx, FILE *fp)
 }
 
 #ifdef ODS_DEBUG
-static void verify_node(bxt_t t, ods_obj_t node)
+static void debug_verify_node(bxt_t t, ods_obj_t node)
 {
 	int i, j;
 	ods_obj_t rec;
@@ -178,6 +179,169 @@ static void verify_node(bxt_t t, ods_obj_t node)
 	}
 }
 #endif
+
+static int verify_record(bxt_t t, ods_obj_t rec, FILE *fp)
+{
+	int rc = 0;
+	if (REC(rec)->next_ref == rec->ref) {
+		fprintf(fp, "The record's next pointer %p creates a cycle.\n",
+			(void *)rec->ref);
+		rc = 1;
+	}
+	if (REC(rec)->prev_ref == rec->ref) {
+		fprintf(fp, "The record's prev pointer %p creates a cycle.\n",
+			(void *)rec->ref);
+		rc = 1;
+	}
+	return rc;
+}
+
+static int verify_leaf(bxt_t t, ods_obj_t l, int is_root, FILE *fp)
+{
+	int i, j, rc = 0;
+	ods_obj_t rec;
+	ods_ref_t rec_ref;
+	int midpoint = split_midpoint(t->udata->order);
+
+	if (!is_root && NODE(l)->count < midpoint) {
+		fprintf(fp, "The leaf %p has only %d < %d entries\n",
+			(void *)l->ref, NODE(l)->count, midpoint);
+		rc = 1;
+	}
+	if (NODE(l)->count > t->udata->order) {
+		fprintf(fp, "The leaf %p has too many %d > %d entries\n",
+			(void *)l->ref, NODE(l)->count, t->udata->order);
+		rc = 1;
+	}
+	for (i = 0; i < NODE(l)->count; i++) {
+		for (j = 0; j < NODE(l)->count; j++) {
+			if (L_ENT(l,i).head_ref == 0) {
+				fprintf(fp, "Leaf %p's entry %d head reference should not be NULL\n", (void *)l->ref, i);
+				rc = 1;
+				continue;
+			}
+			if (L_ENT(l,i).tail_ref == 0) {
+				fprintf(fp, "Leaf %p's entry %d tail reference should not be NULL\n", (void *)l->ref, i);
+				rc = 1;
+				continue;
+			}
+			if (i != j && L_ENT(l,i).head_ref == L_ENT(l,j).head_ref) {
+				fprintf(fp, "Leaf %p's entry %d head_ref %p should not equal entry %d\n",
+					(void *)l->ref, i, (void *)L_ENT(l, i).head_ref, j);
+				rc = 1;
+			}
+			if (i != j && L_ENT(l,i).tail_ref == L_ENT(l,j).tail_ref) {
+				fprintf(fp, "Leaf %p's entry %d tail_ref %p should not equal entry %d\n",
+					(void *)l->ref, i, (void *)L_ENT(l, i).tail_ref, j);
+				rc = 1;
+			}
+		}
+		rec_ref = L_ENT(l, i).head_ref;
+		rec = ods_ref_as_obj(t->ods, rec_ref);
+		if (!rec) {
+			fprintf(fp, "Leaf %p entry %d record reference %p is invalid.\n",
+				(void *)l->ref, i, (void *)rec_ref);
+			rc = 1;
+			continue;
+		}
+		rc |= verify_record(t, rec, fp);
+		ods_obj_put(rec);
+	}
+	return rc;
+}
+
+static int verify_node(bxt_t t, ods_obj_t n, FILE *fp)
+{
+	int i;
+	int rc = 0;
+	int midpoint = split_midpoint(t->udata->order);
+
+	if (NODE(n)->is_leaf) {
+		rc |= verify_leaf(t, n, 0, fp);
+		return rc;
+	}
+
+	/* Verify the node's cardinality */
+	if (!((NODE(n)->count >= midpoint) &&
+	       (NODE(n)->count <= t->udata->order))) {
+		fprintf(fp, "Node %p's cardinality is incorrect %d <= %d <= %d\n",
+			(void *)n->ref,
+			midpoint, NODE(n)->count, t->udata->order);
+		rc = 1;
+	}
+
+	/* Verify the node's children */
+	for (i = 0; i < NODE(n)->count; i++) {
+		ods_ref_t c_ref;
+		ods_obj_t c;
+
+		c_ref = N_ENT(n, i).node_ref;
+		if (!c_ref) {
+			fprintf(fp, "Node %p's entry %d should not be NULL\n", (void *)n->ref, i);
+			rc |= 1;
+			continue;
+		}
+		c = ods_ref_as_obj(t->ods, c_ref);
+		if (!c) {
+			fprintf(fp, "Node %p's entry %d reference %p is invalid.\n",
+				(void *)n->ref, i, (void *)c_ref);
+			rc |= 1;
+			continue;
+		}
+		rc |= verify_node(t, c, fp);
+		ods_obj_put(c);
+	}
+	return rc;
+}
+
+static int verify_idx(ods_idx_t idx, FILE* fp)
+{
+	bxt_t t = idx->priv;
+	ods_obj_t root;
+	int i, rc = 0;
+
+	if (t->udata->root_ref == 0)
+		return 0;
+
+	root = ods_ref_as_obj(t->ods, t->udata->root_ref);
+	if (!root) {
+		fprintf(fp, "The root reference %p is invalid.\n",
+			(void *)t->udata->root_ref);
+		return 1;
+	}
+
+	/* Parent should be nil */
+	if (NODE(root)->parent != 0)
+		fprintf(fp, "The root %p's parent should be NULL, not %p\n",
+			(void *)root->ref, (void *)NODE(root)->parent);
+
+	/* Check if root is leaf */
+	if (NODE(root)->is_leaf)
+		return verify_leaf(t, root, 1, fp);
+
+	/* Verify all its children */
+	for (i = 0; i < NODE(root)->count; i++) {
+		ods_ref_t ref = N_ENT(root,i).node_ref;
+		ods_obj_t node;
+		if (!ref) {
+			fprintf(fp, "Root node %p's entry %d should not be NULL\n",
+				(void *)root->ref, i);
+			rc |= 1;
+			continue;
+		}
+		node = ods_ref_as_obj(t->ods, ref);
+		if (!node) {
+			fprintf(fp, "Root node %p's entry %d reference %p is invalid.\n",
+				(void *)root->ref, i, (void *)ref);
+			rc |= 1;
+			continue;
+		}
+		rc |= verify_node(t, node, fp);
+		ods_obj_put(node);
+	}
+	ods_obj_put(root);
+	return rc;
+}
 
 static int bxt_open(ods_idx_t idx)
 {
@@ -882,8 +1046,8 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 	NODE(right)->parent = NODE(left)->parent;
 
 #ifdef ODS_DEBUG
-	verify_node(t, left);
-	verify_node(t, right);
+	debug_verify_node(t, left);
+	debug_verify_node(t, right);
 #endif
 	/* Insert the new record in the list */
 	if (ins_idx < NODE(left)->count) {
@@ -961,8 +1125,8 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 		NODE(right)->count++;
 	}
 #ifdef ODS_DEBUG
-	verify_node(t, left);
-	verify_node(t, right);
+	debug_verify_node(t, left);
+	debug_verify_node(t, right);
 #endif
 }
 
@@ -1003,8 +1167,8 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 	int midpoint = split_midpoint(t->udata->order);
 
 #ifdef ODS_DEBUG
-	verify_node(t, left_node);
-	verify_node(t, right_node);
+	debug_verify_node(t, left_node);
+	debug_verify_node(t, right_node);
 #endif
 	/* Take our own reference on these parameters */
 	left_node = ods_obj_get(left_node);
@@ -1150,7 +1314,7 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 	ods_obj_t new_rec;
 
 #ifdef ODS_DEBUG
-	verify_node(t, leaf);
+	debug_verify_node(t, leaf);
 #endif
 	if (!t->udata->root_ref) {
 		assert(leaf == NULL);
@@ -1159,6 +1323,19 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 			goto err_1;
 		NODE(leaf)->is_leaf = 1;
 		t->udata->root_ref = ods_obj_ref(leaf);
+
+		new_rec = rec_new(idx, new_key, data, 0);
+		if (!new_rec)
+			goto err_1;
+
+		NODE(leaf)->count = 1;
+		L_ENT(leaf, 0).head_ref = ods_obj_ref(new_rec);
+		L_ENT(leaf, 0).tail_ref = ods_obj_ref(new_rec);
+
+		ods_atomic_inc(&t->udata->card);
+		ods_obj_put(leaf);
+		ods_obj_put(new_rec);
+		return 0;
 	}
 	/* Allocate a record object */
 	new_rec = rec_new(idx, new_key, data, is_dup);
@@ -1184,7 +1361,7 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 			ods_obj_put(parent);
 		}
 #ifdef ODS_DEBUG
-		verify_node(t, leaf);
+		debug_verify_node(t, leaf);
 #endif
 		ods_atomic_inc(&t->udata->card);
 		ods_obj_put(leaf);
@@ -1233,9 +1410,9 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 	parent = node_split_insert(idx, t, leaf, new_leaf_key_ref, new_leaf);
  out:
 #ifdef ODS_DEBUG
-	verify_node(t, leaf);
-	verify_node(t, new_leaf);
-	verify_node(t, parent);
+	debug_verify_node(t, leaf);
+	debug_verify_node(t, new_leaf);
+	debug_verify_node(t, parent);
 #endif
 	ods_atomic_inc(&t->udata->card);
 	ods_obj_put(leaf);
@@ -1513,8 +1690,8 @@ static int combine_right(bxt_t t, ods_obj_t right, int idx, ods_obj_t node)
 		idx++;
 	}
 #ifdef ODS_DEBUG
-	verify_node(t, right);
-	verify_node(t, node);
+	debug_verify_node(t, right);
+	debug_verify_node(t, node);
 #endif
 	return idx;
 }
@@ -1544,8 +1721,8 @@ static int combine_left(bxt_t t, ods_obj_t left, ods_obj_t node)
 		NODE(left)->count++;
 	}
 #ifdef ODS_DEBUG
-	verify_node(t, left);
-	verify_node(t, node);
+	debug_verify_node(t, left);
+	debug_verify_node(t, node);
 #endif
 	return j;
 }
@@ -1607,8 +1784,8 @@ static void merge_from_left(bxt_t t, ods_obj_t left, ods_obj_t node, int midpoin
 		NODE(node)->count++;
 	}
 #ifdef ODS_DEBUG
-	verify_node(t, node);
-	verify_node(t, left);
+	debug_verify_node(t, node);
+	debug_verify_node(t, left);
 #endif
 }
 
@@ -1640,8 +1817,8 @@ static void merge_from_right(bxt_t t, ods_obj_t right, ods_obj_t node, int midpo
 		NODE(right)->entries[j] = ENTRY_INITIALIZER;
 
 #ifdef ODS_DEBUG
-	verify_node(t, node);
-	verify_node(t, right);
+	debug_verify_node(t, node);
+	debug_verify_node(t, right);
 #endif
 	/* Fixup right's parents. */
 	parent = ods_ref_as_obj(t->ods, NODE(right)->parent);
@@ -1671,8 +1848,8 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
  next_level:
 	parent = ods_ref_as_obj(t->ods, NODE(node)->parent);
 #ifdef ODS_DEBUG
-	verify_node(t, node);
-	verify_node(t, parent);
+	debug_verify_node(t, node);
+	debug_verify_node(t, parent);
 #endif
 	/* Remove the record and object from the node */
 	for (i = ent; i < NODE(node)->count - 1; i++)
@@ -1725,9 +1902,9 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 	node_idx = node_neigh(t, node, &left, &right);
 	count = space(t, left) + space(t, right);
 #ifdef ODS_DEBUG
-	verify_node(t, left);
-	verify_node(t, right);
-	verify_node(t, node);
+	debug_verify_node(t, left);
+	debug_verify_node(t, right);
+	debug_verify_node(t, node);
 #endif
 	if (count < NODE(node)->count) {
 		/*
@@ -1741,8 +1918,8 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 				merge_from_left(t, left, node, midpoint);
 			}
 #ifdef ODS_DEBUG
-			verify_node(t, left);
-			verify_node(t, node);
+			debug_verify_node(t, left);
+			debug_verify_node(t, node);
 #endif
 			ods_obj_put(left);
 		}
@@ -2563,7 +2740,8 @@ static struct ods_idx_provider bxt_provider = {
 	.iter_key = bxt_iter_key,
 	.iter_data = bxt_iter_data,
 	.print_idx = print_idx,
-	.print_info = print_info
+	.print_info = print_info,
+	.verify_idx = verify_idx
 };
 
 struct ods_idx_provider *get(void)

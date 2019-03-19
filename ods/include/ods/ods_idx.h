@@ -1028,7 +1028,8 @@ ods_idx_data_t ods_iter_data(ods_iter_t iter);
  * \param fp	The file pointer
  */
 void ods_idx_print(ods_idx_t idx, FILE* fp);
-/*
+
+/**
  * \brief Print Index information
  *
  * Print information about the index
@@ -1037,6 +1038,17 @@ void ods_idx_print(ods_idx_t idx, FILE* fp);
  * \param file	The file pointer
  */
 void ods_idx_info(ods_idx_t idx, FILE* fp);
+
+/**
+ * \brief Verify an index
+ *
+ * Verify the internal consistency of an index. Errors in the index
+ * are printed to the \c fp FILE.
+ *
+ * \param idx	The index handle
+ * \param file	The file pointer
+ */
+int ods_idx_verify(ods_idx_t idx, FILE* fp);
 EXTERN_C_END
 
 #endif

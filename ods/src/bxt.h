@@ -57,7 +57,7 @@ typedef struct bxt_udata {
 	uint32_t order;		/* The order or each internal node */
 	ods_ref_t root_ref;	/* The root of the tree */
 	ods_atomic_t depth;	/* The current tree depth */
-	ods_atomic_t card;	/* Cardinatliy */
+	ods_atomic_t card;	/* Cardinality */
 	ods_atomic_t dups;	/* Duplicate keys */
 } *bxt_udata_t;
 

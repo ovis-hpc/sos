@@ -582,9 +582,11 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 
 	/* Commit all the attribute indices */
 	LIST_FOREACH(schema, &sos->schema_list, entry) {
+		if (schema->state != SOS_SCHEMA_OPEN)
+			continue;
 		TAILQ_FOREACH(attr, &schema->attr_list, entry) {
-			if (attr->index)
-				sos_index_commit(attr->index, commit);
+			if (sos_attr_index(attr))
+				sos_index_commit(sos_attr_index(attr), commit);
 		}
 	}
 	return 0;
@@ -596,6 +598,11 @@ void sos_index_info(sos_index_t index, FILE *fp)
 	ods_info(ods_idx_ods(index->idx), fp, ODS_ALL_INFO);
 }
 
+int sos_index_verify(sos_index_t index, FILE *fp)
+{
+	return ods_idx_verify(index->idx, fp);
+}
+
 int print_schema(struct rbn *n, void *fp_, int level)
 {
 	FILE *fp = fp_;
@@ -605,8 +612,8 @@ int print_schema(struct rbn *n, void *fp_, int level)
 	sos_schema_print(schema, fp);
 
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
-		if (attr->index)
-			sos_index_info(attr->index, fp);
+		if (sos_attr_index(attr))
+			sos_index_info(sos_attr_index(attr), fp);
 	}
 	return 0;
 }
@@ -1065,12 +1072,14 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 			ods_unlock(sos->schema_ods, 0);
 			goto err;
 		}
+#if 0
 		rc = __sos_schema_open(sos, schema);
 		if (rc) {
 			errno = rc;
 			ods_unlock(sos->schema_ods, 0);
 			goto err;
 		}
+#endif
 	}
 	ods_unlock(sos->schema_ods, 0);
 
@@ -1095,6 +1104,41 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 		ods_iter_delete(iter);
 	free_sos(sos, SOS_COMMIT_ASYNC);
 	return NULL;
+}
+
+/**
+ * \brief Verify a container
+ *
+ * Perform internal consistency checks on the container. Use this to
+ * verify that the container is not corrrupted.
+ *
+ * \param sos The container handle
+ * \returns 0 if the database is healthy
+ */
+int sos_container_verify(sos_t sos)
+{
+	char path[PATH_MAX];
+	sos_obj_ref_t idx_ref;
+	ods_idx_t idx;
+	int rc, res = 0;
+	ods_iter_t iter = ods_iter_new(sos->idx_idx);
+	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_next(iter)) {
+		idx_ref.idx_data = ods_iter_data(iter);
+		ods_obj_t idx_obj = ods_ref_as_obj(sos->idx_ods, idx_ref.ref.obj);
+		fprintf(stdout, "Verifying %s\n", SOS_IDX(idx_obj)->name);
+		snprintf(path, PATH_MAX, "%s/%s_idx", sos->path, SOS_IDX(idx_obj)->name);
+		idx = ods_idx_open(path, sos->o_perm);
+		ods_obj_put(idx_obj);
+		if (!idx) {
+			fprintf(stdout, "Error %d opening %s\n",
+				errno, path);
+			goto out;
+		}
+		res = ods_idx_verify(idx, stdout);
+	}
+ out:
+	ods_iter_delete(iter);
+	return res;
 }
 
 /**
@@ -1577,11 +1621,12 @@ int sos_obj_remove(sos_obj_t obj)
 	size_t key_sz;
 	int rc;
 	sos_key_t key;
-
 	TAILQ_FOREACH(attr, &obj->schema->attr_list, entry) {
+		sos_index_t index;
 		struct sos_value_s v_;
 		sos_value_t value;
-		if (!attr->data->indexed)
+		index = sos_attr_index(attr);
+		if (!index)
 			continue;
 		value = sos_value_init(&v_, obj, attr);
 		key_sz = sos_value_size(value);
@@ -1591,7 +1636,7 @@ int sos_obj_remove(sos_obj_t obj)
 			return ENOMEM;
 		}
 		ods_key_set(key, sos_value_as_key(value), key_sz);
-		rc = ods_idx_delete(attr->index->idx, key, &obj->obj_ref.idx_data);
+		rc = ods_idx_delete(index->idx, key, &obj->obj_ref.idx_data);
 		sos_key_put(key);
 		sos_value_put(value);
 		if (rc)
@@ -1624,7 +1669,9 @@ int sos_obj_index(sos_obj_t obj)
 	int rc;
 
 	TAILQ_FOREACH(attr, &obj->schema->idx_attr_list, idx_entry) {
-		assert(attr->data->indexed);
+		sos_index_t index = sos_attr_index(attr);
+		if (!index)
+			return errno;
 		value = sos_value_init(&v_, obj, attr);
 		if (!value) {
 			/* Array value not set, skip */
@@ -1637,7 +1684,7 @@ int sos_obj_index(sos_obj_t obj)
 			the_key = sos_key_new(key_sz);
 		}
 		sos_key_set(the_key, sos_value_as_key(value), key_sz);
-		rc = sos_index_insert(attr->index, the_key, obj);
+		rc = sos_index_insert(index, the_key, obj);
 		if (the_key != key)
 			sos_key_put(the_key);
 		sos_value_put(value);

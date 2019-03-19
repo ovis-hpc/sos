@@ -66,7 +66,7 @@
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
-const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:idcqlLRv";
+const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:tidcqlLRv";
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
@@ -86,6 +86,7 @@ struct option long_options[] = {
 	{"csv",		required_argument,  0,  'I'},
 	{"map",         required_argument,  0,  'M'},
 	{"filter",	required_argument,  0,  'F'},
+	{"test",	no_argument,        0,  't'},
 	{"threads",	required_argument,  0,  'T'},
 	{"option",      optional_argument,  0,  'K'},
 	{"column",      optional_argument,  0,  'V'},
@@ -116,6 +117,7 @@ void usage(int argc, char *argv[])
 	printf("       -S <schema> The schema for objects.\n");
 	printf("       -M <map>    String that maps CSV columns to object attributes.\n");
 	printf("\n");
+	printf("    -t             Test indices in the database for consistency.\n");
 	printf("    -L             Show database lock information.\n");
 	printf("    -R             Clean up locks held by dead processes.\n");
 	printf("\n");
@@ -830,6 +832,8 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 #define MOVE		0x0800
 #define DEBUG		0x1000
 #define VERSION		0x2000
+#define TEST		0x4000
+
 struct cond_key_s {
 	char *name;
 	enum sos_cond_e cond;
@@ -1009,6 +1013,9 @@ int main(int argc, char **argv)
 				exit(9);
 			}
 			break;
+		case 't':
+			action |= TEST;
+			break;
 		case 'T':
 			thread_count = atoi(optarg);
 			break;
@@ -1090,6 +1097,12 @@ int main(int argc, char **argv)
 
 	if (action & DEBUG)
 		sos_container_info(sos, stdout);
+
+	if (action & TEST) {
+		rc = sos_container_verify(sos);
+		action &= TEST;
+		return rc;
+	}
 
 	if (action & QUERY) {
 		if (!index_name || !schema_name) {

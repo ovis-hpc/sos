@@ -472,8 +472,10 @@ int ods_iter_entry_delete(ods_iter_t iter, ods_idx_data_t *data)
 
 ods_key_t _ods_key_alloc(ods_idx_t idx, size_t sz, const char *func, int line)
 {
-	if (!idx->o_perm)
+	if (!idx->o_perm) {
+		errno = EACCES;
 		return NULL;
+	}
 
 	ods_key_t key =
 		_ods_obj_alloc(idx->ods,
@@ -557,6 +559,13 @@ ods_t ods_idx_ods(ods_idx_t idx)
 void ods_idx_info(ods_idx_t idx, FILE *fp)
 {
 	idx->idx_class->prv->print_info(idx, fp);
+}
+
+int ods_idx_verify(ods_idx_t idx, FILE *fp)
+{
+	if (idx->idx_class->prv->verify_idx)
+		return idx->idx_class->prv->verify_idx(idx, fp);
+	return 0;
 }
 
 static void __attribute__ ((constructor)) ods_idx_init(void)

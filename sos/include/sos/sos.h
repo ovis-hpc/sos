@@ -112,6 +112,7 @@ struct sos_version_s {
 struct sos_version_s sos_container_version(sos_t sos);
 int sos_container_new(const char *path, int o_mode);
 sos_t sos_container_open(const char *path, sos_perm_t o_perm);
+int sos_container_verify(sos_t sos);
 int sos_container_move(const char *path_arg, const char *new_path);
 int sos_container_delete(sos_t c);
 int sos_container_stat(sos_t sos, struct stat *sb);

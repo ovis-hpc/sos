@@ -90,6 +90,7 @@ struct ods_idx_provider {
 	ods_idx_data_t (*iter_data)(ods_iter_t iter);
 	void (*print_idx)(ods_idx_t idx, FILE *fp);
 	void (*print_info)(ods_idx_t idx, FILE *fp);
+	int (*verify_idx)(ods_idx_t idx, FILE *fp);
 };
 
 struct ods_idx_comparator {
