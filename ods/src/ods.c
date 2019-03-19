@@ -1479,23 +1479,7 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 ods_obj_t _ods_get_user_data(ods_t ods, const char *func, int line)
 {
 	/* User data starts immediately after the object data header */
-	ods_ref_t user_ref = sizeof(struct ods_obj_data_s);
-	ods_obj_t obj;
-
-	obj = obj_new(ods, user_ref);
-	if (!obj)
-		return NULL;
-
-	if (__ods_debug) {
-		__ods_lock(ods);
-		LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
-		__ods_unlock(ods);
-	}
-
-	obj->thread = pthread_self();
-	obj->alloc_line = line;
-	obj->alloc_func = func;
-	return obj;
+	return _ods_ref_as_obj(ods, sizeof(struct ods_obj_data_s), func, line);
 }
 
 static uint64_t alloc_pages(ods_t ods, size_t pg_needed)
@@ -1738,9 +1722,9 @@ ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz, const char *func, int line)
 		obj->thread = pthread_self();
 		obj->alloc_line = line;
 		obj->alloc_func = func;
-	}
-	if (!obj)
+	} else {
 		errno = ENOMEM;
+	}
 	return obj;
 }
 
