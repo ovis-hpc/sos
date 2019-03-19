@@ -262,6 +262,10 @@ typedef struct sos_schema_data_s {
 	struct sos_attr_data_s attr_dict[0];
 } *sos_schema_data_t;
 
+enum sos_schema_state {
+	SOS_SCHEMA_CLOSED,
+	SOS_SCHEMA_OPEN,
+};
 #define SOS_SCHEMA_F_INTERNAL	0x01
 struct sos_schema_s {
 	ods_atomic_t ref_count;
@@ -269,6 +273,7 @@ struct sos_schema_s {
 	sos_schema_data_t data;
 	struct sos_schema_data_s data_;
 	sos_t sos;
+	enum sos_schema_state state;
 	ods_obj_t schema_obj;
 	struct rbn name_rbn;
 	struct rbn id_rbn;

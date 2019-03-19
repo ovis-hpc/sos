@@ -298,7 +298,10 @@ sos_key_t sos_key_for_attr(sos_key_t key, sos_attr_t attr, ...)
  */
 sos_key_t sos_attr_key_new(sos_attr_t attr, size_t size)
 {
-	return sos_index_key_new(attr->index, size);
+	sos_index_t index = sos_attr_index(attr);
+	if (!index)
+		return NULL;
+	return sos_index_key_new(index, size);
 }
 
 
@@ -313,7 +316,10 @@ sos_key_t sos_attr_key_new(sos_attr_t attr, size_t size)
  */
 int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
 {
-	return sos_index_key_from_str(attr->index, key, str);
+	sos_index_t index = sos_attr_index(attr);
+	if (!index)
+		return -1;
+	return sos_index_key_from_str(index, key, str);
 }
 
 /**
@@ -325,7 +331,10 @@ int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)
  */
 const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key)
 {
-	return sos_index_key_to_str(attr->index, key);
+	sos_index_t index = sos_attr_index(attr);
+	if (!index)
+		return NULL;
+	return sos_index_key_to_str(index, key);
 }
 
 /**
@@ -340,7 +349,10 @@ const char *sos_attr_key_to_str(sos_attr_t attr, sos_key_t key)
  */
 int sos_attr_key_cmp(sos_attr_t attr, sos_key_t a, sos_key_t b)
 {
-	return sos_index_key_cmp(attr->index, a, b);
+	sos_index_t index = sos_attr_index(attr);
+	if (!index)
+		return 0;
+	return sos_index_key_cmp(index, a, b);
 }
 
 /**
@@ -359,6 +371,7 @@ size_t sos_attr_key_size(sos_attr_t attr)
 	sos_schema_t schema;
 	size_t size;
 	int i;
+	sos_index_t index;
 
 	switch (sos_attr_type(attr)) {
 	case SOS_TYPE_JOIN:
@@ -371,8 +384,9 @@ size_t sos_attr_key_size(sos_attr_t attr)
 		}
 		return size;
 	default:
-		if (attr->index)
-			return sos_index_key_size(attr->index);
+		index = sos_attr_index(attr);
+		if (index)
+			return sos_index_key_size(index);
 		return sos_attr_size(attr);
 	}
 }

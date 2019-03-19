@@ -885,14 +885,22 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
 }
 
 /**
- * \brief Test if an attribute has an index.
+ * \brief Return the index for an attribute
  *
  * \param attr	The sos_attr_t handle
- * \returns !0 if the attribute has an index
+ * \returns The attribute index handle or NULL if the attribute is not indexed
  */
 sos_index_t sos_attr_index(sos_attr_t attr)
 {
-	return attr->index;
+	if (attr->data->indexed) {
+		int rc = __sos_schema_open(attr->schema->sos, attr->schema);
+		if (rc) {
+			errno = rc;
+			return NULL;
+		}
+		return attr->index;
+	}
+	return NULL;
 }
 
 /**
@@ -1138,6 +1146,7 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	TAILQ_INIT(&schema->idx_attr_list);
 	schema->schema_obj = schema_obj;
 	schema->sos = sos;
+	schema->state = SOS_SCHEMA_CLOSED;
 	schema->data = schema_obj->as.ptr;
 	schema->dict = calloc(schema->data->attr_cnt, sizeof(sos_attr_t));
 	if (!schema->dict)
@@ -1200,6 +1209,9 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 	sos_attr_t attr;
 	char idx_name[SOS_SCHEMA_NAME_LEN + SOS_ATTR_NAME_LEN + 2];
 
+	if (schema->state == SOS_SCHEMA_OPEN)
+		return 0;
+
 	TAILQ_FOREACH(attr, &schema->idx_attr_list, idx_entry) {
 		assert(attr->data->indexed);
 	retry:
@@ -1218,6 +1230,7 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 			goto retry;
 		}
 	}
+	schema->state = SOS_SCHEMA_OPEN;
 	return 0;
  err:
 	return rc;
@@ -1383,8 +1396,13 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	};
 
 	key_len = strlen(schema->data->name) + 1;
+ retry:
 	schema_key = ods_key_alloc(sos->schema_idx, key_len);
 	if (!schema_key) {
+		rc = ods_extend(ods_idx_ods(sos->schema_idx),
+				ods_size(ods_idx_ods(sos->schema_idx)) * 2);
+		if (!rc)
+			goto retry;
 		rc = ENOMEM;
 		goto err_2;
 	}
@@ -1448,7 +1466,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	ods_obj_put(schema_key);
 	ods_obj_put(udata);
 	ods_unlock(sos->schema_ods, 0);
-	return __sos_schema_open(sos, schema);
+	return 0; // __sos_schema_open(sos, schema);
  err_3:
 	ods_obj_delete(schema_key);
 	ods_obj_put(schema_key);

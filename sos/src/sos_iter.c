@@ -1159,7 +1159,7 @@ static sos_obj_t next_match(sos_filter_t filt)
 			 * The filter key is not a join or the
 			 * condition attribute is not in the join key
 			 */
-			if (cond->attr->index != filt->iter->index)
+			if (cond->attr != filt->iter->attr)
 				/*
 				 * The filter index is not on
 				 * condition attribute nothing can be
@@ -1379,7 +1379,7 @@ static sos_obj_t prev_match(sos_filter_t filt)
 			 * The filter key is not a join or the
 			 * condition attribute is not in the join key
 			 */
-			if (cond->attr->index != filt->iter->index)
+			if (cond->attr != filt->iter->attr)
 				/*
 				 * The filter index is not on
 				 * condition attribute nothing can be

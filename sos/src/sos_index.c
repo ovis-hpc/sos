@@ -165,8 +165,12 @@ int sos_index_new(sos_t sos, const char *name,
 		rc = EEXIST;
 		goto out;
 	}
+ retry:
 	idx_obj = ods_obj_alloc(sos->idx_ods, sizeof(struct sos_idx_data_s));
 	if (!idx_obj) {
+		rc = ods_extend(sos->idx_ods, ods_size(sos->idx_ods) * 2);
+		if (!rc)
+			goto retry;
 		rc = ENOMEM;
 		goto out;
 	}
@@ -414,9 +418,10 @@ int sos_index_find_ref(sos_index_t index, sos_key_t key, sos_obj_ref_t *ref)
  */
 sos_obj_t sos_obj_find(sos_attr_t attr, sos_key_t key)
 {
-	if (attr->index)
-		return sos_index_find(attr->index, key);
-	return NULL;
+	sos_index_t index = sos_attr_index(attr);
+	if (!index)
+		return NULL;
+	return sos_index_find(index, key);
 }
 
 /**
