@@ -26,7 +26,7 @@ dist_bin_SCRIPTS = sos-db sos-part sos-schema sos-import-csv sos-monitor lmq
 
 Sos.c: Sos.pyx Sos.pxd
 	echo PYTHON_LDFLAGS are "$(PYTHON_LDFLAGS)"
-	cython --gdb $< -o $@
+	cython --gdb --directive language_level=2 $< -o $@
 
 Array.c : Array.pyx
 	cython --gdb $< -o $@
