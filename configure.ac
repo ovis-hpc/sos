@@ -51,6 +51,33 @@ AC_SUBST(ac_configure_args)
 AC_SUBST(prefix)
 AC_SUBST(distdir)
 
+AC_SUBST([SOS_SUBST_RULE],["sed \
+-e 's,[[@]]mandir[[@]],\$(mandir),g' \
+-e 's,[[@]]localedir[[@]],\$(localedir),g' \
+-e 's,[[@]]libdir[[@]],\$(libdir),g' \
+-e 's,[[@]]psdir[[@]],\$(psdir),g' \
+-e 's,[[@]]pdfdir[[@]],\$(pdfdir),g' \
+-e 's,[[@]]dvidir[[@]],\$(dvidir),g' \
+-e 's,[[@]]htmldir[[@]],\$(htmldir),g' \
+-e 's,[[@]]infodir[[@]],\$(infodir),g' \
+-e 's,[[@]]docdir[[@]],\$(docdir),g' \
+-e 's,[[@]]includedir[[@]],\$(includedir),g' \
+-e 's,[[@]]localstatedir[[@]],\$(localstatedir),g' \
+-e 's,[[@]]sharedstatedir[[@]],\$(sharedstatedir),g' \
+-e 's,[[@]]sysconfdir[[@]],\$(sysconfdir),g' \
+-e 's,[[@]]datadir[[@]],\$(datadir),g' \
+-e 's,[[@]]datarootdir[[@]],\$(datarootdir),g' \
+-e 's,[[@]]libexecdir[[@]],\$(libexecdir),g' \
+-e 's,[[@]]sbindir[[@]],\$(sbindir),g' \
+-e 's,[[@]]bindir[[@]],\$(bindir),g' \
+-e 's,[[@]]prefix[[@]],\$(prefix),g' \
+-e 's,[[@]]exec_prefix[[@]],\$(exec_prefix),g' \
+-e 's,[[@]]pkglibdir[[@]],\$(pkglibdir),g' \
+-e 's,[[@]]PYTHON[[@]],\$(PYTHON),g' \
+-e 's,[[@]]pythondir[[@]],\$(pythondir),g' \
+"
+])
+
 AC_CONFIG_FILES([
 		Makefile
 		doc/Doxyfile
