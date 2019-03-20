@@ -1,0 +1,24 @@
+#! /bin/sh
+sos_mandir=@mandir@
+sos_localedir=@localedir@
+sos_libdir=@libdir@
+sos_psdir=@psdir@
+sos_pdfdir=@pdfdir@
+sos_dvidir=@dvidir@
+sos_htmldir=@htmldir@
+sos_infodir=@infodir@
+sos_docdir=@docdir@
+sos_includedir=@includedir@
+sos_localstatedir=@localstatedir@
+sos_sharedstatedir=@sharedstatedir@
+sos_sysconfdir=@sysconfdir@
+sos_datadir=@datadir@
+sos_datarootdir=@datarootdir@
+sos_libexecdir=@libexecdir@
+sos_sbindir=@sbindir@
+sos_bindir=@bindir@
+sos_prefix=@prefix@
+sos_exec_prefix=@exec_prefix@
+sos_pkglibdir=@pkglibdir@
+sos_python=@PYTHON@
+sos_pythondir=@pythondir@
