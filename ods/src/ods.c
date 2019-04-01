@@ -2346,8 +2346,9 @@ static void __attribute__ ((constructor)) ods_lib_init(void)
 		if (__ods_gc_timeout <= 0)
 			__ods_gc_timeout = ODS_DEF_GC_TIMEOUT;
 	}
-	pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
-
+	int rc = pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
+	if (!rc)
+		pthread_setname_np(gc_thread, "ods:unmap");
 	/* Override the default map size */
 	env = getenv("ODS_MAP_SIZE");
 	if (env) {
