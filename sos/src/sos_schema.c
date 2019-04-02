@@ -1205,12 +1205,13 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 
 int __sos_schema_open(sos_t sos, sos_schema_t schema)
 {
-	int rc;
+	int rc = 0;
 	sos_attr_t attr;
 	char idx_name[SOS_SCHEMA_NAME_LEN + SOS_ATTR_NAME_LEN + 2];
 
+	pthread_mutex_lock(&sos->lock);
 	if (schema->state == SOS_SCHEMA_OPEN)
-		return 0;
+		goto out;
 
 	TAILQ_FOREACH(attr, &schema->idx_attr_list, idx_entry) {
 		assert(attr->data->indexed);
@@ -1230,9 +1231,10 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 			goto retry;
 		}
 	}
+ out:
 	schema->state = SOS_SCHEMA_OPEN;
-	return 0;
  err:
+	pthread_mutex_unlock(&sos->lock);
 	return rc;
 }
 

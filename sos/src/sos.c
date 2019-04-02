@@ -1072,14 +1072,6 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 			ods_unlock(sos->schema_ods, 0);
 			goto err;
 		}
-#if 0
-		rc = __sos_schema_open(sos, schema);
-		if (rc) {
-			errno = rc;
-			ods_unlock(sos->schema_ods, 0);
-			goto err;
-		}
-#endif
 	}
 	ods_unlock(sos->schema_ods, 0);
 
