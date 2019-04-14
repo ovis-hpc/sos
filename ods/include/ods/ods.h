@@ -525,11 +525,15 @@ ods_atomic_t ods_obj_count(ods_t ods);
  */
 ods_obj_t ods_obj_get(ods_obj_t obj);
 
-/*
- * Create a memory object from a persistent reference
+/**
+ * \brief Return object given the object's reference
+ * \param ods The ODS handle
+ * \param ref The object reference
+ * \returns The object
  */
 ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref, const char *func, int line);
 #define ods_ref_as_obj(ods, ref) _ods_ref_as_obj(ods, ref, __func__, __LINE__)
+
 /*
  * Return an object's reference
  */
