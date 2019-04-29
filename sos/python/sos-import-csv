@@ -1,4 +1,48 @@
 #!/usr/bin/env python
+# Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
+# Copyright (c) 2019 NTESS Corporation. All rights reserved.
+# Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
+# license for use of this work by or on behalf of the U.S. Government.
+# Export of this program may require a license from the United States
+# Government.
+#
+# This software is available to you under a choice of one of two
+# licenses.  You may choose to be licensed under the terms of the GNU
+# General Public License (GPL) Version 2, available from the file
+# COPYING in the main directory of this source tree, or the BSD-type
+# license below:
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+#      Redistributions of source code must retain the above copyright
+#      notice, this list of conditions and the following disclaimer.
+#
+#      Redistributions in binary form must reproduce the above
+#      copyright notice, this list of conditions and the following
+#      disclaimer in the documentation and/or other materials provided
+#      with the distribution.
+#
+#      Neither the name of NTESS Corporation, Open Grid Computing nor
+#      the names of any contributors may be used to endorse or promote
+#      products derived from this software without specific prior
+#      written permission.
+#
+#      Modified source versions must be plainly marked as such, and
+#      must not be misrepresented as being the original software.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 from __future__ import print_function
 import time
 import sys
@@ -64,20 +108,65 @@ def make_cast(attr):
         return lambda s : float(s)
     elif t == Sos.TYPE_TIMESTAMP:
         return lambda s : float(s)
+    elif t == Sos.TYPE_STRUCT:
+        return lambda s : bytearray(s)
     elif t == Sos.TYPE_CHAR_ARRAY:
         return lambda s : str(s)
-    raise ValueError("{0} is an unsupported cast".format(repr(t)))
+    elif t == Sos.TYPE_BYTE_ARRAY:
+        return lambda s : bytearray(s)
+    elif t == Sos.TYPE_INT16_ARRAY:
+        return lambda s : [ int(e) for e in s ]
+    elif t == Sos.TYPE_INT32_ARRAY:
+        return lambda s : [ int(e) for e in s ]
+    elif t == Sos.TYPE_INT64_ARRAY:
+        return lambda s : [ int(e) for e in s ]
+    elif t == Sos.TYPE_UINT16_ARRAY:
+        return lambda s : [ int(e) for e in s ]
+    elif t == Sos.TYPE_UINT32_ARRAY:
+        return lambda s : [ int(e) for e in s ]
+    elif t == Sos.TYPE_UINT64_ARRAY:
+        return lambda s : [ int(e) for e in s ]
+    elif t == Sos.TYPE_FLOAT_ARRAY:
+        return lambda s : [ float(e) for e in s ]
+    elif t == Sos.TYPE_DOUBLE_ARRAY:
+        return lambda s : [ float(e) for e in s ]
+    elif t == Sos.TYPE_LONG_DOUBLE_ARRAY:
+        return lambda s : [ float(e) for e in s ]
+    raise ValueError("Attribute {0} with type {1} is an unsupported cast".format(attr.name(), repr(t)))
 
 def assign(obj, line, cast, args):
     # print("assigning attr_id {0} = {1}".format(args[0], line[args[1]]))
-    obj[args[0]] = cast(line[args[1]])
+    if len(args) == 2:
+        obj[args[0]] = cast(line[args[1]])
+    elif len(args) == 4:
+        obj[args[0]] = cast([ line[col] for col in range(int(args[1]) + int(args[2]), int(args[1]) + int(args[3])) ])
+    else:
+        ValueError("The argument list must contain 2 elements for a scalar and 4 for an array")
 
 def setter(obj, line, cast, args):
     # print("setting attr_id {0} = {1}".format(args[0], args[1]))
     obj[args[0]] = cast(args[1])
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Query metric data in a container")
+    """
+    The sos-import-csv command is used to import Comma Separated Files
+    (CSV) into a SOS Container. The selection of which column in the CSV
+    file is associated what column in a Container schema is defined in a
+    map-file. The map-file is specifid by the --map command line
+    argument. A map-file is JSon encoded array of actions. Each each
+    action is undertaken serially from the first to the last for each line
+    encountered in the CSV file. Lines that begin with '#' are skipped.
+
+    The format of the map file is as follows:
+
+    {[
+       { 'action' : <action-name>, [ <action-args> ] },
+       . . .
+     ]
+    }
+    """
+
+    parser = argparse.ArgumentParser(description="Import CSV data into a SOS container")
     parser.add_argument("--path", required=True,
                         help="The path to the container.")
     parser.add_argument("--schema", required=True,
@@ -128,7 +217,8 @@ if __name__ == "__main__":
                 fn_args[1] = last_col
             else:
                 last_col = fn_args[1]
-            a.append(fn_args[1])
+            for i in fn_args[1:]:
+                a.append(i)
             if action == "assign":
                 input_process.append([assign, make_cast(attr), a])
             else:
@@ -142,6 +232,8 @@ if __name__ == "__main__":
     new_recs = 0
     obj = None
     for l in df:
+        if l.startswith("#"):
+            continue
         if l.endswith("\n"):
             l = l[:-1]
         cols = l.split(',')
