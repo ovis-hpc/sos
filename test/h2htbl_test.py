@@ -9,6 +9,7 @@ import random
 import numpy as np
 import numpy.random as nprnd
 import time
+import sys
 class Debug(object): pass
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class H2HTBLTest(SosTestCase):
 
     def test_00_add_tokens(self):
         global next_tkn_id
-        f = open("eng-dictionary", "r")
+        f = open(os.path.dirname(sys.argv[0]) + "/eng-dictionary", "r")
         for word in f:
             tkn_text = word.rstrip()
             if next_tkn_id % 300 == 0:
