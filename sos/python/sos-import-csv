@@ -51,41 +51,6 @@ from sosdb import Sos
 import struct
 import json
 
-def pack_it(cols, fmt, idx_ary):
-    vals = []
-    for spec in idx_ary:
-        if type(spec) == unicode:
-            try:
-                arg = int(float(spec))
-            except:
-                arg = spec
-        else:
-            arg = int(float(cols[spec]))
-        vals.append(arg)
-    if len(vals) == 1:
-        return vals[0]
-    tpl = tuple(v for v in vals)
-    return struct.pack(fmt, *tpl)
-
-def make_combo(fmt, ary):
-    return lambda cols: pack_it(cols, fmt, ary)
-
-def make_lambda(attr, col_no):
-    t = attr.type()
-    if t < Sos.TYPE_FLOAT:
-        return lambda cols: int(cols[col_no])
-    elif t < Sos.TYPE_TIMESTAMP:
-        return lambda cols: float(cols[col_no])
-    return lambda cols: cols[col_no]
-
-def make_value(attr, value):
-    t = attr.type()
-    if t < Sos.TYPE_FLOAT:
-        return lambda cols: int(value)
-    elif t < Sos.TYPE_TIMESTAMP:
-        return lambda cols: float(value)
-    return lambda cols: value
-
 def make_cast(attr):
     t = attr.type()
     if t == Sos.TYPE_INT16:
@@ -134,18 +99,17 @@ def make_cast(attr):
         return lambda s : [ float(e) for e in s ]
     raise ValueError("Attribute {0} with type {1} is an unsupported cast".format(attr.name(), repr(t)))
 
-def assign(obj, line, cast, args):
-    # print("assigning attr_id {0} = {1}".format(args[0], line[args[1]]))
-    if len(args) == 2:
-        obj[args[0]] = cast(line[args[1]])
-    elif len(args) == 4:
-        obj[args[0]] = cast([ line[col] for col in range(int(args[1]) + int(args[2]), int(args[1]) + int(args[3])) ])
-    else:
-        ValueError("The argument list must contain 2 elements for a scalar and 4 for an array")
+def assign_value(obj, line, attr, cast, value):
+    """Value is assigned directly to object attribute"""
+    obj[attr.attr_id()] = value
 
-def setter(obj, line, cast, args):
-    # print("setting attr_id {0} = {1}".format(args[0], args[1]))
-    obj[args[0]] = cast(args[1])
+def assign_column(obj, line, attr, cast, value):
+    """Value is the column number in line"""
+    obj[attr.attr_id()] = cast(line[value])
+
+def assign_list(obj, line, attr, cast, value):
+    """Value is a list of columns in line to assign to an array attribute in object"""
+    obj[attr.attr_id()] = cast([ line[col] for col in value ])
 
 if __name__ == "__main__":
     """
@@ -177,6 +141,8 @@ if __name__ == "__main__":
                         help="The path to the CSV file to import")
     parser.add_argument("--status", action="store_true",
                         help="Show detail import status")
+    parser.add_argument("--sep", required=False, default=",",
+                        help="Specify a column separator orther than ','")
     args = parser.parse_args()
 
     cont = Sos.Container()
@@ -201,28 +167,24 @@ if __name__ == "__main__":
 
     input_process = []
     for spec in mapspec:
-        action = spec['action']
-        a = []
-        fn_args = spec['args']
-        if action == "assign" or action == "set":
-            if type(fn_args[0]) == int:
-                attr_id = fn_args[0]
-                attr = schema.attr_by_id(attr_id)
-            else:
-                attr = schema.attr_by_name(fn_args[0])
-                attr_id = attr.attr_id()
-            a.append(attr_id)
-            if fn_args[1] == -1:
-                last_col += 1
-                fn_args[1] = last_col
-            else:
-                last_col = fn_args[1]
-            for i in fn_args[1:]:
-                a.append(i)
-            if action == "assign":
-                input_process.append([assign, make_cast(attr), a])
-            else:
-                input_process.append([setter, make_cast(attr), a])
+
+        target = spec['target']
+        source = spec['source']
+
+        if type(target) == int:
+            attr = schema.attr_by_id(target)
+        else:
+            attr = schema.attr_by_name(target)
+
+        if 'value' in source:
+            input_process.append([ assign_value, attr, make_cast(attr), source['value'] ])
+        elif 'column' in source:
+            input_process.append([ assign_column, attr, make_cast(attr), source['column'] ])
+        elif 'list' in source:
+            input_process.append([ assign_list, attr, make_cast(attr), source['list'] ])
+        elif 'range' in source:
+            input_process.append([ assign_list, attr, make_cast(attr),
+                                   range(source['range'][0], source['range'][1]+1) ])
         else:
             raise ValueError("Error processing {0}".format(spec))
 
@@ -236,19 +198,19 @@ if __name__ == "__main__":
             continue
         if l.endswith("\n"):
             l = l[:-1]
-        cols = l.split(',')
+        cols = l.split(args.sep)
         obj = schema.alloc()
         if not obj:
             print("An object with schema {0} could not be allocated.".format(schema.name()))
             sys.exit(1)
         for action in input_process:
             try:
-                action[0](obj, cols, action[1], action[2])
+                action[0](obj, cols, action[1], action[2], action[3])
             except Exception as ex:
                 print("An exception occurred parsing the CSV input.")
                 print("Exception Detail : {0}".format(ex))
                 print("Action           : {0}".format(action))
-                sys.exit(1)
+                continue
 
         if obj:
             obj.index_add()
