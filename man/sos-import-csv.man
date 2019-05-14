@@ -1,0 +1,112 @@
+.\" Manpage for sos-import-csv
+.\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
+.TH man 8 "May 14 2019" "v4" "sos-import-csv man page"
+
+.SH NAME
+sos-import-csv \- Import data from a comma-separated text file into a SOS Container
+
+.SH SYNOPSIS
+sos-import-csv --path SOS-PATH --csv CSV-FILE--schema SCHEMA-FILE --map MAP-FILE [ --sep SEP-STR --status ]
+
+.SH DESCRIPTION
+The \fBsos-import-csv\fR commannd parses CSV text data and imports
+this data into a SOS container. There are three files read by the
+\fBsos-import-csv\fB command: the CSV text file containing the data to
+import, a \fIschema-file\fR that defines the type of object created
+for each line of the CSV text file, and a \fImap-file\fR that specifies
+how object attribute values are obtained from columns in the CSV file.
+
+.SH OPTIONS
+.TP
+.BI --path " SOS-PATH"
+.br
+Specifies the path to the SOS container. The container must already exist.
+.TP
+.BI --schema " SCHEMA"
+.br
+The name of the SOS schema used to create objects. The schema must exist in the container.
+.TP
+.BI --csv " CSV-FILE"
+.br
+The path to the CSV text file containing the data to import.
+.TP
+.BI --map " MAP-FILE"
+.br
+The path to a JSON formatted text file specifying how columns in the
+CSV file map to attributes in the object schema.
+.br
+.TP
+.BI --sep " SEP-STR"
+.br
+A string specifying the characters that will be interpretted as column separators.
+By default this is a comma (",").
+.TP
+.BI --status
+.br
+If the \fIstatus\fR option is present, import progress status will be
+provided as the CSV file is processed.
+
+.SH CSV file format
+
+The CSV text file must contain newline terminated lines of text. Each
+line may contain multiple columns separated by the \fIseparator\fR
+character. By default, the character separating each column is a
+comma, however, this can be overriden with the \fB--sep\fR command line
+option.
+
+.SH Map File Format
+
+The map file contains a single \fIlist\fR object where each element in
+the list is an \fIaction-specification\fR. An
+\fIaction-specification\fR is an object that tells the
+\fBsos-import-cmd\fR what to do with each line of the input CSV file.
+
+Each \fIaction-specification\fR contains two attributes, a
+\fItarget\fR, and a \fIsource\fR. The \fItarget\fR specifies the
+attribute in the object to be assigned a value. The value of the
+\fItarget\fR attribute can be a string, in which it is the name of the
+object attribute from the schema, or an integer in which case is the
+attribute id.
+
+The \fIsource-specification\fR defines the value that will be assigned to
+the target attribute and is specified as a JSON object. The JSON
+object contains only one of four possible attribute names: "value",
+"column", "list", and "range".
+
+If the attribute named "value" is present, the value of the "value"
+attribute is assigned to the target attribute. This is useful for
+assigning values to object attributes that are not contained in
+the CSV file.
+
+If the attribute named "column" is present, the value of the "column"
+attribute is an ordinal column number in the CSV file. In this case,
+the value contained in that column of the text file is cast to the
+target attribute type and assigned to the target attribute.  If a
+conversion from the column text string to the target attribute type is
+not possible, an error is given and processing continues.
+
+If the attribute named "list" is present, the target attribute must be
+an array, and the value of the "list" attribute is a JSON list of
+columns that will be assigned to each element in the target array
+beginning with 0. Text to target attribute type conversion is
+performed for each column specifed in the list.
+
+If the attribute named "range" is present, the target attribute must
+be an array and the value of the "range" attribute is a list of two
+column numbers. All values in the range from the first column to the
+last column are assigned to the elements of the target list
+attribute. The range is inclusive.Text to target attribute type
+conversion is performed for each column in the range.
+
+.EX
+
+[
+    { "target" : "component_id", "source" : { "value" : 10000 } },
+    { "target" : 0, "source" : { "column" : 0 } },
+    { "target" : 2, "source" : { "list" : [ 1, 3, 5 } },
+    { "target" : 3, "source" : { "range" : [ 1, 5 } }
+]
+
+.SH SEE ALSO
+sos_cmd(8), sos-schema(7)
+

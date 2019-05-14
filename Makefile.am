@@ -2,7 +2,7 @@ ACLOCAL_AMFLAGS = -I m4
 SUBDIRS = ods sos
 
 if ENABLE_DOC
-SUBDIRS += doc
+SUBDIRS += doc man
 endif
 
 # Make rule for RPM on RHEL7
