@@ -3,7 +3,7 @@ AC_INIT([sosdb], 4.3.1, tom@ogc.us)
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR(config)
 AM_CONFIG_HEADER(config.h)
-AM_INIT_AUTOMAKE([foreign])
+AM_INIT_AUTOMAKE([foreign tar-pax])
 AM_PROG_LIBTOOL
 
 COMMIT_ID="$(git rev-parse HEAD 2>/dev/null)"
