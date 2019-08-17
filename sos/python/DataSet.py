@@ -298,7 +298,18 @@ class DataSet(object):
             aSet.append(aRow)
         return aSet
 
+    def __return_value_tuple__(self, idx):
+        i = idx[0]
+        if type(i) == str:
+            return self.array_with_series_name[i][idx[1]]
+        elif type(i) == int:
+            return self.array_with_series_idx[i][idx[1]]
+        else:
+            raise ValueError("First list element must be a string or integer")
+
     def __getitem__(self, idx):
+        if type(idx) == list:
+            return self.__return_value_tuple__(idx)
         if type(idx) == str or type(idx) == int:
             idx = [ idx ]
         ds = DataSet()
@@ -530,7 +541,7 @@ class DataSet(object):
             m = np.min(self.array(ser))
             nda = np.ndarray([ 1 ], dtype=m.dtype)
             nda[0] = m
-            res.append_array(1, ser, nda)
+            res.append_array(1, ser + '_min', nda)
         return res
 
     def max(self, series_list=None):
@@ -543,7 +554,7 @@ class DataSet(object):
             m = np.max(self.array(ser))
             nda = np.ndarray([ 1 ], dtype=m.dtype)
             nda[0] = m
-            res.append_array(1, ser, nda)
+            res.append_array(1, ser + '_max', nda)
         return res
 
     def mean(self, series_list=None):
@@ -556,7 +567,7 @@ class DataSet(object):
             m = np.mean(self.array(ser))
             nda = np.ndarray([ 1 ], dtype=m.dtype)
             nda[0] = m
-            res.append_array(1, ser, nda)
+            res.append_array(1, ser + '_mean', nda)
         return res
 
     def std(self, series_list=None):
@@ -569,6 +580,133 @@ class DataSet(object):
             m = np.std(self.array(ser))
             nda = np.ndarray([ 1 ], dtype=m.dtype)
             nda[0] = m
-            res.append_array(1, ser, nda)
+            res.append_array(1, ser + '_std', nda)
         return res
 
+
+    def __gt__(self, b):
+        """Returns a dataset where the values in series_0 are greater than the value b
+
+        b is either a single value, or a tuple of (column, value)
+
+        If b is a single value, then the selection is on the 1-st
+        series. If b is a tuple, then b[0] is the series
+        selector, and b[1] is the value.
+        """
+        res = DataSet()
+        if type(b) == list or type(b) == tuple:
+            a = self.array(b[0])
+            mask = a > b[1]
+        else:
+            a = self.array(0)
+            mask = a > b
+        for ser in self.series_names:
+            nda = self.array(ser)[mask]
+            res.append_array(len(nda), ser, nda)
+        return res
+
+    def __ge__(self, b):
+        """Returns a dataset where the values in series_0 are greater or equal the value b
+
+        b is either a single value, or a tuple of (column, value)
+
+        If b is a single value, then the selection is on the 1-st
+        series. If b is a tuple, then b[0] is the series
+        selector, and b[1] is the value.
+
+        """
+        res = DataSet()
+        if type(b) == list or type(b) == tuple:
+            a = self.array(b[0])
+            mask = a >= b[1]
+        else:
+            a = self.array(0)
+            mask = a >= b
+        for ser in self.series_names:
+            nda = self.array(ser)[mask]
+            res.append_array(len(nda), ser, nda)
+        return res
+
+    def __lt__(self, b):
+        """Returns a dataset where the values in series_0 are less than the value b
+
+        b is either a single value, or a tuple of (column, value)
+
+        If b is a single value, then the selection is on the 1-st
+        series. If b is a tuple, then b[0] is the series
+        selector, and b[1] is the value.
+        """
+        res = DataSet()
+        if type(b) == list or type(b) == tuple:
+            a = self.array(b[0])
+            mask = a < b[1]
+        else:
+            a = self.array(0)
+            mask = a < b
+        for ser in self.series_names:
+            nda = self.array(ser)[mask]
+            res.append_array(len(nda), ser, nda)
+        return res
+
+    def __le__(self, b):
+        """Returns a dataset where the values in series_0 are less or equal the value b
+
+        b is either a single value, or a tuple of (column, value)
+
+        If b is a single value, then the selection is on the 1-st
+        series. If b is a tuple, then b[0] is the series
+        selector, and b[1] is the value.
+        """
+        res = DataSet()
+        if type(b) == list or type(b) == tuple:
+            a = self.array(b[0])
+            mask = a <= b[1]
+        else:
+            a = self.array(0)
+            mask = a <= b
+        for ser in self.series_names:
+            nda = self.array(ser)[mask]
+            res.append_array(len(nda), ser, nda)
+        return res
+
+    def __eq__(self, b):
+        """Returns a dataset where the values in series_0 are equal the value b
+
+        b is either a single value, or a tuple of (column, value)
+
+        If b is a single value, then the selection is on the 1-st
+        series. If b is a tuple, then b[0] is the series
+        selector, and b[1] is the value.
+        """
+        res = DataSet()
+        if type(b) == list or type(b) == tuple:
+            a = self.array(b[0])
+            mask = a == b[1]
+        else:
+            a = self.array(0)
+            mask = a == b
+        for ser in self.series_names:
+            nda = self.array(ser)[mask]
+            res.append_array(len(nda), ser, nda)
+        return res
+
+    def __ne__(self, b):
+        """Returns a dataset where the values in series_0 are not equal the value b
+
+        b is either a single value, or a tuple of (column, value)
+
+        If b is a single value, then the selection is on the 1-st
+        series. If b is a tuple, then b[0] is the series
+        selector, and b[1] is the value.
+        """
+        res = DataSet()
+        if type(b) == list or type(b) == tuple:
+            a = self.array(b[0])
+            mask = a != b[1]
+        else:
+            a = self.array(0)
+            mask = a != b
+        for ser in self.series_names:
+            nda = self.array(ser)[mask]
+            res.append_array(len(nda), ser, nda)
+        return res
