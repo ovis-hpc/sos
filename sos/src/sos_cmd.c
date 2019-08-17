@@ -862,7 +862,7 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str)
 	sos_value_t cond_value;
 	char attr_name[64];
 	char cond_str[16];
-	char value_str[64];
+	char value_str[256];
 	int rc;
 
 	/*
@@ -875,7 +875,7 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str)
 		return rc;
 	}
 
-	rc = sscanf(str, "%64[^:]:%16[^:]:%64[^\t\n]", attr_name, cond_str, value_str);
+	rc = sscanf(str, "%64[^:]:%16[^:]:%256[^\t\n]", attr_name, cond_str, value_str);
 	if (rc != 3) {
 		printf("Error %d parsing the filter clause '%s'.\n", rc, str);
 		return EINVAL;
