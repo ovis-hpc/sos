@@ -1029,7 +1029,7 @@ int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char 
 	 * TODO: Make the delimiters a container configuration option
 	 */
 	if (sos_attr_type(attr) == SOS_TYPE_CHAR_ARRAY) {
-		sz = strlen(str) + 1;
+		sz = strlen(str);
 	} else {
 		const char *p = str;
 		char *q;
