@@ -35,17 +35,6 @@ then
   AC_SUBST([NUMPY_INCLUDE_PATH])
 fi
 
-dnl Check for tcmalloc
-OCFLAGS=$CFLAGS
-CFLAGS=""
-LIB_TCMALLOC=""
-AC_CHECK_LIB(tcmalloc,
-		malloc,
-		[LIB_TCMALLOC="-ltcmalloc"],
-		[AC_MSG_WARN(You may wish to install libtcmalloc for better performance)])
-AC_SUBST([LIB_TCMALLOC])
-CFLAGS=$OCFLAGS
-
 distdir=${PACKAGE_NAME}-${PACKAGE_VERSION}
 AC_SUBST(ac_configure_args)
 AC_SUBST(prefix)
