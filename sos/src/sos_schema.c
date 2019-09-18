@@ -441,6 +441,8 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, 
 	char **join_attrs;
 	sos_array_t ext_ptr = NULL;
 
+	if (strlen(name) >= SOS_ATTR_NAME_LEN)
+		return E2BIG;
 	if (schema->schema_obj)
 		return EBUSY;
 
