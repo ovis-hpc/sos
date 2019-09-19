@@ -1556,6 +1556,8 @@ cdef class Attr(SosObject):
 
     def join_list(self):
         cdef sos_array_t array = sos_attr_join_list(self.c_attr)
+        if array == NULL:
+            return None
         res = np.ndarray([ array.count ], dtype=np.dtype('uint32'), order="C")
         for i in range(0, array.count):
             res[i] = array.data.uint32_[i]
@@ -5124,6 +5126,92 @@ cdef class QueryInputer:
         free(res_acc)
         return res
 
+    def to_dataframe(self, Query query, max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
+        """Return the Query data as a DataFrame"""
+        import pandas as pd
+        cdef sos_obj_t c_o
+        cdef sos_value_s v_
+        cdef sos_value_t v
+        cdef int idx
+        cdef int attr_idx
+        cdef int res_idx
+        cdef int obj_idx
+        cdef int row_idx
+        cdef int nattr
+        cdef Attr attr
+        cdef int *res_type
+        cdef nda_setter_opt res_acc
+        cdef typ_str
+        cdef ColSpec col
+
+        nattr = len(query.columns)
+        if nattr == 0 or self.row_count == 0:
+            return None
+
+        res_acc = <nda_setter_opt>malloc(sizeof(nda_setter_opt_s) * nattr)
+        if res_acc == NULL:
+            raise MemoryError("Insufficient memory")
+
+        idx = 0
+        result = []
+
+        for col in query.columns:
+
+            attr = col.attr
+
+            res_acc[idx].attr = <sos_attr_t>attr.c_attr
+            res_acc[idx].idx = col.cursor_idx
+            res_acc[idx].setter_fn = nda_setters[attr.type()]
+            res_acc[idx].resample_fn = nda_resamplers[attr.type()]
+
+            atyp = col.attr_type
+            if atyp == SOS_TYPE_TIMESTAMP:
+                typ_str = 'datetime64[us]'
+            elif atyp == SOS_TYPE_STRUCT:
+                typ_str = 'uint8'
+            elif atyp == SOS_TYPE_UINT64:
+                typ_str = 'double'
+            elif atyp == SOS_TYPE_UINT32:
+                typ_str = 'double'
+            elif atyp == SOS_TYPE_INT64:
+                typ_str = 'double'
+            elif atyp == SOS_TYPE_INT32:
+                typ_str = 'double'
+            else:
+                typ_str = sos_type_strs[atyp].lower()
+                typ_str = typ_str.replace('_array', '')
+
+
+            if atyp >= TYPE_IS_ARRAY:
+                if atyp == SOS_TYPE_STRING:
+                    data = np.zeros([ self.row_count ],
+                                    dtype=np.dtype('|S{0}'.format(max_string)))
+                else:
+                    data = np.zeros([ self.row_count, max_array ],
+                                    dtype=np.dtype(typ_str))
+            elif atyp == SOS_TYPE_STRUCT:
+                data = np.zeros([ self.row_limit, sos_attr_size(attr.c_attr) ],
+                                dtype=np.dtype(np.uint8))
+            else:
+                data = np.zeros([ self.row_count ], dtype=np.dtype(typ_str))
+            result.append(data)
+            idx += 1
+
+        res_idx = 0
+        for row_idx in range(0, self.row_count):
+            obj_idx = row_idx * self.col_count
+            for attr_idx in range(0, nattr):
+                c_o = self.objects[obj_idx + res_acc[attr_idx].idx]
+                v = sos_value_init(&v_, c_o, res_acc[attr_idx].attr)
+                res_acc[attr_idx].setter_fn(result[attr_idx], res_idx, v)
+                sos_value_put(v)
+            res_idx += 1
+        self.row_count = 0
+
+        res = pd.DataFrame(result)
+        free(res_acc)
+        return res
+
 cdef class Query:
     QUERY_RESULT_LIMIT = 4096
     cdef Container cont     # The container
@@ -5312,8 +5400,33 @@ cdef class Query:
                 raise ValueError("The schema name '{0}' does not exist.".format(name))
             self.schema.append(sch)
 
-    def _order_by(self, name):
-        self.primary = name
+    def _order_by(self, attr_name, from_):
+        self.primary = None
+        try:
+            for schema_name in from_:
+                schema = self.cont.schema_by_name(schema_name)
+                # check for exact match
+                for attr in schema:
+                    if attr.is_indexed():
+                        if attr_name == attr.name():
+                            self.primary = attr_name
+                            return
+                # check for closest match
+                match = []
+                for attr in schema:
+                    if attr.is_indexed():
+                        if attr.name().startswith(attr_name):
+                            match.append(attr)
+                maxlen = -1
+                best = None
+                # The best match is the one with the longest common prefix
+                for m in match:
+                    l = len(m.name())
+                    if l > maxlen:
+                        best = m.name()
+                self.primary = best
+        except:
+            self.primary = None
 
     cdef _add_colspec(self, ColSpec colspec):
         schema, attr = self.__decode_attr_name(colspec.name)
@@ -5380,14 +5493,14 @@ cdef class Query:
 
         Keyword Parameters:
 
-        from_     -- An array of schema names
-        where     -- An array of conditions to filter the data
+        from_     -- A list of schema names
+        where     -- A list of conditions to filter the data
         order_by  -- The attribute to use as the primary index
         unique    -- Return only a single result for each matching key
 
         FROM_
 
-          The 'from_' keyword is an arrray of schema names to search
+          The 'from_' keyword is a list of schema names to search
           for attribute names.
 
           Example:
@@ -5396,7 +5509,7 @@ cdef class Query:
 
         WHERE
 
-          The 'where' keyword is an array of filter condition tuples.
+          The 'where' keyword is a list of filter condition tuples.
           Each condition must be applicable to every schema. A
           condition tuple contains three elements as follows:
 
@@ -5438,7 +5551,7 @@ cdef class Query:
 
         if order_by:
             # Must be before the Filter(s) are created
-            self._order_by(order_by)
+            self._order_by(order_by, from_)
 
         if from_:
             self._from_(from_)
@@ -5518,6 +5631,12 @@ cdef class Query:
                    max_string=QueryInputer.DEFAULT_ARRAY_LIMIT):
         if self.inputer:
             return self.inputer.to_dataset(self, max_array, max_string)
+        return None
+
+    def to_dataframe(self, max_array=QueryInputer.DEFAULT_ARRAY_LIMIT,
+                     max_string=QueryInputer.DEFAULT_ARRAY_LIMIT):
+        if self.inputer:
+            return self.inputer.to_dataframe(self, max_array, max_string)
         return None
 
     def __dealloc__(self):
