@@ -5265,10 +5265,10 @@ cdef class Query:
 
     cdef __decode_attr_name(self, name):
         try:
-            i = name.find('.')
+            i = name.find('[')
             if i >= 0:
                 sname = name[:i]
-                aname = name[i+1:]
+                aname = name[i+1:-1]
                 schema = self.cont.schema_by_name(sname)
             else:
                 schema = self.__find_schema_with_attr(name)
@@ -5309,7 +5309,7 @@ cdef class Query:
         for schema in self.cont.schema_iter():
             for attr in schema.attr_iter():
                 if attr.is_indexed():
-                    result.append(schema.name() + '.' + attr.name())
+                    result.append(schema.name() + '[' + attr.name() + ']')
         return result
 
     def query(self, inputer=None, reset=True, wait=None):
@@ -5487,11 +5487,11 @@ cdef class Query:
 
            The simplest format is an array of names:
 
-             [ 'meminfo.timestamp',
-               'vmstat.timestamp',
-               'meminfo.job_id',
-               'meminfo.MemFree',
-               'vmstat.nr_free_pages'
+             [ 'meminfo[timestamp]',
+               'vmstat[timestamp]',
+               'meminfo[job_id]',
+               'meminfo[MemFree]',
+               'vmstat[nr_free_pages]'
              ]
 
            A ColSpec object can be used to control data conversion and formatting:
@@ -5499,13 +5499,13 @@ cdef class Query:
               def fmt_timestamp(ts):
                   return str(dt.datetime.fromtimestamp(ts[0]))
 
-              [ ColSpec('meminfo.timestamp', cvt_fn=fmt_timestamp,
+              [ ColSpec('meminfo[timestamp]', cvt_fn=fmt_timestamp,
                    col_width=24, align=ColSpec.LEFT),
-                ColSpec('vmstat.timestamp', cvt_fn=fmt_timestamp,
+                ColSpec('vmstat[timestamp]', cvt_fn=fmt_timestamp,
                    col_width=24, align=ColSpec.LEFT),
-                ColSpec('meminfo.job_id', cvt_fn=int, col_width=12),
-                'meminfo.MemFree',
-                'vmstat.nr_free_pages',
+                ColSpec('meminfo[job_id]', cvt_fn=int, col_width=12),
+                'meminfo[MemFree]',
+                'vmstat[nr_free_pages]',
               ]
 
         Keyword Parameters:
@@ -5590,7 +5590,7 @@ cdef class Query:
                             raise ValueError("from_ is required with wildcard column names")
                         name = from_[0]
                     else:
-                        name = col.split('.')[0]
+                        name = col.split('[')[0]
                     schema = self.cont.schema_by_name(name)
                     if schema is None:
                         raise ValueError("Schema {0} was not found.".format(name))
@@ -5598,7 +5598,7 @@ cdef class Query:
                         if attr.type() == SOS_TYPE_JOIN:
                             continue
                         if len(from_) > 1:
-                            spec = ColSpec(name + '.' + attr.name(),
+                            spec = ColSpec(name + '[' + attr.name() + ']',
                                            col_width=self.get_col_width())
                         else:
                             spec = ColSpec(attr.name(), col_width=self.get_col_width())
