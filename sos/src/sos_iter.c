@@ -1705,7 +1705,7 @@ sos_obj_t sos_filter_prev(sos_filter_t filt)
 {
 	if (filt->empty)
 		return continue_prev(filt);
-	if (0 == sos_iter_prev(filt->iter));
+	if (0 == sos_iter_prev(filt->iter))
 		return prev_match(filt);
 	filt->empty = 1;
 	return NULL;

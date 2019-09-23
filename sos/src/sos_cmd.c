@@ -226,7 +226,7 @@ TAILQ_HEAD(col_list_s, col_s) col_list = TAILQ_HEAD_INITIALIZER(col_list);
 int add_column(const char *str)
 {
 	char *width;
-	char *s;
+	char *s = NULL;
 	struct col_s *col = calloc(1, sizeof *col);
 	if (!col)
 		goto err;
