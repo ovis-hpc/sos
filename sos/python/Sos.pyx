@@ -661,7 +661,10 @@ cdef class Schema(SosObject):
                 raise ValueError("Invalid attribute type {0}.".format(n))
 
             if t == SOS_TYPE_JOIN:
-                join_attrs = attr['join_attrs']
+                try:
+                    join_attrs = attr['join_attrs']
+                except:
+                    ValueError("The 'join_attrs' attribute is required for the 'join' attribute type.")
                 join_count = len(join_attrs)
                 join_args = <char **>malloc(join_count * 8)
                 rc = 0
@@ -5277,6 +5280,10 @@ cdef class Query:
         raise ValueError("The attribute '{0}' is not present in any schema".
                          format(aname))
 
+    @property
+    def index_name(self):
+        return self.primary
+
     def set_col_width(self, width):
         self.col_width = width
 
@@ -5402,31 +5409,41 @@ cdef class Query:
 
     def _order_by(self, attr_name, from_):
         self.primary = None
-        try:
-            for schema_name in from_:
-                schema = self.cont.schema_by_name(schema_name)
-                # check for exact match
-                for attr in schema:
-                    if attr.is_indexed():
-                        if attr_name == attr.name():
-                            self.primary = attr_name
-                            return
-                # check for closest match
-                match = []
-                for attr in schema:
-                    if attr.is_indexed():
-                        if attr.name().startswith(attr_name):
-                            match.append(attr)
-                maxlen = -1
-                best = None
-                # The best match is the one with the longest common prefix
-                for m in match:
-                    l = len(m.name())
-                    if l > maxlen:
-                        best = m.name()
-                self.primary = best
-        except:
-            self.primary = None
+        if from_ is None:
+            schema_list = [ s for s in self.cont.schema_iter() ]
+        else:
+            schema_list = [ self.cont.schema_by_name(n) for n in from_ ]
+        for schema in schema_list:
+            # Check for exact match
+            for attr in schema:
+                if attr.is_indexed():
+                    if attr_name == attr.name():
+                        self.primary = attr_name
+                        return
+
+        for schema in schema_list:
+            # If there is no exact match, check the prefix against join keys
+            match = []
+            for attr in schema:
+                if attr.is_indexed() and attr.join_list() is not None:
+                    if attr.name().startswith(attr_name):
+                        match.append(attr.name())
+
+        if len(match) == 0:
+            raise ValueError("There is no index that "
+                             "could be matched with {0}".format(attr_name))
+
+        best = match[0]
+        maxlen = len(best)
+
+        # The best match is the one with the longest common prefix
+        for m in match[1:]:
+            l = len(m)
+            if l > maxlen:
+                best = m
+                maxlen = l
+
+        self.primary = best
 
     cdef _add_colspec(self, ColSpec colspec):
         schema, attr = self.__decode_attr_name(colspec.name)

@@ -40,6 +40,10 @@ class QueryTest(SosTestCase):
                                  { "name" : "float_array", "type" : "float_array", "index" : {} },
                                  { "name" : "double_array", "type" : "double_array", "index" : {} },
                                  { "name" : "int32_no_idx", "type" : "int32" },
+                                 { "name" : "int16_int32_", "type" : "join",
+                                   "join_attrs" : [ "int16", "int32" ], "index" : {} },
+                                 { "name" : "int16_int32_int64", "type" : "join",
+                                   "join_attrs" : [ "int16", "int32", "int64" ], "index" : {} }
                                ])
         cls.schema1.add(cls.db)
         cls.schema2 = Sos.Schema()
@@ -267,6 +271,14 @@ class QueryTest(SosTestCase):
                           order_by = 'int32')
         self.query.select(['int32_2'],
                           from_ = ['query_test_2'])
+
+    # test unqualified attribute-naming "attr_name" errors
+
+    def test_104_order_by(self):
+        # test longest join match
+        self.query.select(['int32'],
+                          order_by = 'int16_int32')
+        self.assertEqual(self.query.index_name, "int16_int32_int64")
 
     # test unqualified attribute-naming "attr_name" errors
 
