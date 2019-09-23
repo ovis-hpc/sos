@@ -170,20 +170,23 @@ sos_key_t sos_key_for_attr(sos_key_t key, sos_attr_t attr, ...)
 	va_start(ap, attr);
 	int len;
 	char *data;
+	sos_key_t key_;
 
 	switch (sos_attr_type(attr)) {
 	case SOS_TYPE_JOIN:
 		len = sos_key_join_size_va(attr, ap);
 		va_end(ap);
 		va_start(ap, attr);
-		key = __sos_key_maybe_new(key, len);
-		if (key) {
-			int rc = sos_key_join_va(key, attr, ap);
+		key_ = __sos_key_maybe_new(key, len);
+		if (key_) {
+			int rc = sos_key_join_va(key_, attr, ap);
 			if (rc) {
-				if (key != key)
+				if (key_ != key)
 					sos_key_put(key);
 				errno = rc;
 				key = NULL;
+			} else {
+				key = key_;
 			}
 		}
 		break;
