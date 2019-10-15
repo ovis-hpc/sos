@@ -128,6 +128,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/file.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -370,6 +371,7 @@ int sos_container_new(const char *path, int o_mode)
 	int rc;
 	int x_mode;
 	struct stat sb;
+	int dfd = -1;
 
 	/* Check to see if the container already exists */
 	rc = stat(path, &sb);
@@ -394,6 +396,15 @@ int sos_container_new(const char *path, int o_mode)
 		rc = errno;
 		goto err_1;
 	}
+
+	dfd = open(path, O_DIRECTORY | O_RDONLY);
+	if (dfd < 0) {
+		rc = errno;
+		goto err_1;
+	}
+	rc = flock(dfd, LOCK_EX);
+	if (rc)
+		goto err_1;
 
 	/* Create the ODS to contain configuration objects */
 	sprintf(tmp_path, "%s/.__config", path);
@@ -500,6 +511,7 @@ int sos_container_new(const char *path, int o_mode)
 	rc = __create_pos_info(tmp_path, path, o_mode);
 	if (rc)
 		goto err_8;
+	close(dfd);
 	return 0;
  err_8:
 	sprintf(tmp_path, "%s/.__index_idx", path);
@@ -523,6 +535,8 @@ int sos_container_new(const char *path, int o_mode)
 	sprintf(tmp_path, "%s/.__config", path);
 	ods_destroy(tmp_path);
  err_1:
+ 	if (dfd >= 0)
+ 		close(dfd); /* The file descriptor will be unlocked automatically */
 	rmdir(path);
 	errno = rc;		/* rmdir will stomp errno */
  err_0:
@@ -940,6 +954,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	struct stat sb;
 	ods_iter_t iter = NULL;
 	int rc;
+	int dfd = -1;
 
 	if (strlen(path_arg) >= SOS_PART_PATH_LEN) {
 		errno = E2BIG;
@@ -977,11 +992,21 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	rc = stat(sos->path, &sb);
 	if (rc)
 		goto err;
+
 	sos->o_mode = sb.st_mode;
 	sos->o_perm = (ods_perm_t)o_perm;
 	rbt_init(&sos->schema_name_rbt, __sos_schema_name_cmp);
 	rbt_init(&sos->schema_id_rbt, schema_id_cmp);
 	sos->schema_count = 0;
+
+	dfd = open(sos->path, O_DIRECTORY | O_RDONLY);
+	if (dfd < 0) {
+		rc = errno;
+		goto err;
+	}
+	rc = flock(dfd, LOCK_EX);
+	if (rc)
+		goto err;
 
 	rc = __sos_config_init(sos);
 	if (rc) {
@@ -1090,8 +1115,11 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	pthread_mutex_lock(&cont_list_lock);
 	LIST_INSERT_HEAD(&cont_list, sos, entry);
 	pthread_mutex_unlock(&cont_list_lock);
+	close(dfd);
 	return sos;
  err:
+ 	if (dfd >= 0)
+ 		close(dfd); /* The file descriptor will be unlocked automatically */
 	if (iter)
 		ods_iter_delete(iter);
 	free_sos(sos, SOS_COMMIT_ASYNC);
