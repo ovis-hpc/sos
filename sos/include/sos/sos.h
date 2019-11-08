@@ -77,8 +77,8 @@ typedef enum sos_perm_e {
 
 #define SOS_POS_KEEP_TIME			"POS_KEEP_TIME"
 
-#define SOS_CONTAINER_NAME_LEN  64
-#define SOS_CONFIG_NAME_LEN	64
+#define SOS_CONTAINER_NAME_LEN  128
+#define SOS_CONFIG_NAME_LEN	128
 
 /**
  * \brief Specifies whether to commit synchronously or asynchronously
@@ -161,9 +161,9 @@ typedef struct sos_index_s *sos_index_t;
 typedef struct sos_schema_s *sos_schema_t;
 typedef struct sos_obj_s *sos_obj_t;
 
-#define SOS_SCHEMA_NAME_LEN	64
-#define SOS_ATTR_NAME_LEN	64
-#define SOS_INDEX_NAME_LEN	128
+#define SOS_SCHEMA_NAME_LEN	256
+#define SOS_ATTR_NAME_LEN	256
+#define SOS_INDEX_NAME_LEN	256
 #define SOS_INDEX_KEY_TYPE_LEN	64
 #define SOS_INDEX_TYPE_LEN	64
 #define SOS_INDEX_ARGS_LEN	256
@@ -366,9 +366,9 @@ size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr);
  */
 #define SOS_PART_NAME_DEFAULT			"00000000"
 /** The maximum length of a partition name */
-#define SOS_PART_NAME_LEN			64
+#define SOS_PART_NAME_LEN			256
 /** The maximum length of a partition path */
-#define SOS_PART_PATH_LEN			512
+#define SOS_PART_PATH_LEN			1024
 typedef enum sos_part_state_e {
 	/** Partition is not being used */
 	SOS_PART_STATE_OFFLINE = 0,
