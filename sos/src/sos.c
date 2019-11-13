@@ -1004,7 +1004,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 		rc = errno;
 		goto err;
 	}
-	rc = flock(dfd, LOCK_EX);
+	rc = flock(dfd, LOCK_SH);
 	if (rc)
 		goto err;
 
