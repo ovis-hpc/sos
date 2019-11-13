@@ -2287,6 +2287,28 @@ static int q4_del_fn(struct rbn *rbn, void *arg, int l)
 	return 0;
 }
 
+void release_dead_pgt_locks(ods_t ods)
+{
+	ods_pgt_t pgt;
+	pthread_mutex_t *mtx;
+	int id;
+
+	__ods_lock(ods);
+	pgt = pgt_get(ods);
+	if (!pgt)
+		goto out;
+
+	mtx = &pgt->pgt_lock.mutex;
+	check_lock(mtx, 1);
+
+	for (id = 0; id < ODS_LOCK_CNT; id++) {
+		mtx = &pgt->lck_tbl[id].mutex;
+		check_lock(mtx, 1);
+	}
+ out:
+	__ods_unlock(ods);
+}
+
 time_t __ods_gc_timeout = ODS_DEF_GC_TIMEOUT;
 static pthread_t gc_thread;
 static void *gc_thread_fn(void *arg)
@@ -2299,6 +2321,7 @@ static void *gc_thread_fn(void *arg)
 	mapped = 0;
 	pthread_mutex_lock(&ods_list_lock);
 	LIST_FOREACH(ods, &ods_list, entry) {
+		release_dead_pgt_locks(ods);
 		/*
 		 * Traverse the map_tree and add the maps that can be
 		 * deleted to the del_list
