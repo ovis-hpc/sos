@@ -941,6 +941,7 @@ void __ods_obj_put(ods_obj_t obj, int lock)
 			free(obj);
 			return;
 		}
+		ods_atomic_dec(&obj->ods->obj_count);
 		assert(obj->refcount == 0);
 		if (__ods_debug) {
 			if (lock)
