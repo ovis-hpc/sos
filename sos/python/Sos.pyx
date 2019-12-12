@@ -1162,7 +1162,7 @@ cdef class Key(object):
             raise ValueError("Invalid type {0} found in key.".format(self.sos_type))
 
     def join(self, *args):
-        cdef int i, j, count, typ
+        cdef int i, j, count, typ, sz
         cdef sos_comp_key_spec_t specs
         cdef sos_key_t c_key
 
@@ -1173,22 +1173,28 @@ cdef class Key(object):
         specs = <sos_comp_key_spec_t>malloc(count * sizeof(sos_comp_key_spec))
         if specs == NULL:
             raise MemoryError("Could not allocate the component key spec list.")
-
         i = 0
         j = 0
         while i < len(args):
             typ = <int>args[i]
-            if typ < SOS_TYPE_LAST:
-                specs[j].type = typ
-            else:
+            if typ >= SOS_TYPE_LAST:
                 raise ValueError("Invalid value type {0} specifed".format(typ))
-            type_setters[typ](self.attr.c_attr, &specs[j].data, args[i+1])
+
+            if typ >= TYPE_IS_ARRAY:
+                sz = len(args[i+1])
+            else:
+                sz = 0
+            specs[j].data = sos_value_data_new(<sos_type_t>typ, sz)
+            specs[j].type = typ
+            type_setters[typ](NULL, specs[j].data, args[i+1])
             i += 2
             j += 1
 
         i = sos_comp_key_set(self.c_key, count, specs);
         if i != 0:
             raise ValueError("Error encoding the composite key")
+        for i in range(0, count):
+            sos_value_data_del(specs[i].data)
         free(specs)
         return self
 
@@ -1202,18 +1208,9 @@ cdef class Key(object):
         cdef uint32_t secs
         cdef uint32_t usecs
 
-        rc = sos_comp_key_get(self.c_key, &count, NULL);
-        if rc != 0:
-            raise ValueError("Error {0} decoding key.".format(rc))
-
-        specs = <sos_comp_key_spec_t>malloc(count * sizeof(sos_comp_key_spec))
+        specs = sos_comp_key_get(self.c_key, &count)
         if specs == NULL:
-            raise MemoryError("Could not allocate the component key spec list.")
-
-        rc = sos_comp_key_get(self.c_key, &count, specs)
-        if rc:
-            free(specs)
-            raise ValueError("Error {0} decoding key after allocation.".format(rc))
+            raise ValueError("Error decoding component key")
 
         res = []
         for i in range(count):
@@ -1295,6 +1292,8 @@ cdef class Key(object):
             else:
                 free(specs)
                 raise ValueError("Invalid type {0} found in key.".format(typ))
+        for i in range(count):
+            sos_value_data_del(specs[i].data)
         free(specs)
         return res
 
@@ -1696,9 +1695,9 @@ PERM_RW = SOS_PERM_RW
 PERM_RO = SOS_PERM_RO
 PERM_CREAT = SOS_PERM_CREAT
 
-VERS_MAJOR = ODS_VER_MAJOR
-VERS_MINOR = ODS_VER_MINOR
-VERS_FIX = ODS_VER_FIX
+VERS_MAJOR = SOS_VERS_MAJOR
+VERS_MINOR = SOS_VERS_MINOR
+VERS_FIX = SOS_VERS_FIX
 GIT_COMMIT_ID = ODS_COMMIT_ID
 
 cdef class AttrJoinIter(object):
@@ -1853,7 +1852,7 @@ cdef class Attr(SosObject):
         cdef size_t size
         cdef sos_comp_key_spec_t specs
         cdef size_t specs_len
-        cdef int i, typ
+        cdef int i, j, typ
         cdef sos_attr_t attr
 
         typ = sos_attr_type(self.c_attr)
@@ -1873,10 +1872,17 @@ cdef class Attr(SosObject):
                 typ = sos_attr_type(attr)
                 arg = args[i]
                 specs[i].type = typ
-                type_setters[typ](attr, &specs[i].data, arg)
+                if typ >= TYPE_IS_ARRAY:
+                    j = len(arg)
+                else:
+                    j = 0;
+                specs[i].data = sos_value_data_new(<sos_type_t>typ, j)
+                type_setters[typ](attr, specs[i].data, arg)
             size = sos_comp_key_size(specs_len, specs)
             key = Key(size=size, sos_type=SOS_TYPE_JOIN)
             i = sos_comp_key_set(key.c_key, specs_len, specs)
+            for j in range(0, specs_len):
+                sos_value_data_del(specs[j].data)
             free(specs)
             if i != 0:
                 raise ValueError("Error {0} encoding the key.".format(i))
@@ -2697,6 +2703,8 @@ cdef class Filter(object):
         cond_v = sos_value_new()
         if typ_is_array != 0:
             cond_v = sos_array_new(cond_v, cond_attr.c_attr, NULL, count)
+            if cond_v == NULL:
+                raise MemoryError()
         else:
             cond_v = sos_value_init(cond_v, NULL, cond_attr.c_attr)
 
@@ -3830,84 +3838,100 @@ type_getters[<int>SOS_TYPE_DOUBLE_ARRAY] = get_DOUBLE_ARRAY
 type_getters[<int>SOS_TYPE_LONG_DOUBLE_ARRAY] = get_LONG_DOUBLE_ARRAY
 type_getters[<int>SOS_TYPE_OBJ_ARRAY] = get_ERROR
 
+cdef check_len(sos_value_data_t c_data, int sz):
+    if c_data.array.count < sz:
+        raise ValueError("The array can only accomodate "
+                         "{0} members, {1} were provided".\
+                         format(c_data.array.count, sz))
+
 ################################
 # Object attribute setter functions
 ################################
 cdef set_LONG_DOUBLE_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
+    cdef int i, sz = len(val)
+    check_len(c_data, sz)
     for i in range(sz):
         c_data.array.data.long_double_[i] = val[i]
 
 cdef set_DOUBLE_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
-    c_data.array.count = sz
+    cdef int i, sz = len(val)
+    check_len(c_data, sz)
     for i in range(sz):
         c_data.array.data.double_[i] = val[i]
 
 cdef set_FLOAT_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
-    c_data.array.count = sz
+    cdef int i, sz = len(val)
+    check_len(c_data, sz)
     for i in range(sz):
         c_data.array.data.float_[i] = val[i]
 
 cdef set_UINT64_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
-    c_data.array.count = sz
+    cdef int i, sz = len(val)
+    check_len(c_data, sz)
     for i in range(sz):
         c_data.array.data.uint64_[i] = val[i]
 
 cdef set_UINT32_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
-    c_data.array.count = sz
+    cdef int i, sz = len(val)
+    check_len(c_data, sz)
     for i in range(sz):
         c_data.array.data.uint32_[i] = val[i]
 
 cdef set_UINT16_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
+    cdef int i, sz = len(val)
+    check_len(c_data, sz)
     for i in range(sz):
         c_data.array.data.uint16_[i] = val[i]
 
 cdef set_BYTE_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
-    c_data.array.count = sz
-    for i in range(sz):
-        c_data.array.data.byte_[i] = <uint8_t>val[i]
+    cdef uint8_t *s
+    cdef int sz = len(val)
+    check_len(c_data, sz)
+    t = type(val)
+    if t != bytearray:
+        if t == str:
+            val = val.encode()
+        elif t == list:
+            val = bytearray(val)
+        else:
+            raise ValueError(f"BYTE_ARRAY accepts only "
+                             "str, list, and bytearray, not {t}")
+    s = val
+    memcpy(c_data.array.data.byte_, s, sz);
 
 cdef set_INT64_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
-    c_data.array.count = sz
+    cdef int i, sz = len(val)
+    check_len(c_data, sz)
     for i in range(sz):
         c_data.array.data.int64_[i] = <int64_t>val[i]
 
 cdef set_INT32_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
-    c_data.array.count = sz
+    cdef int i, sz = len(val)
+    check_len(c_data, sz)
     for i in range(sz):
         c_data.array.data.int32_[i] = val[i]
 
 cdef set_INT16_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    sz = len(val)
-    c_data.array.count = sz
+    cdef int i, sz = len(val)
+    check_len(c_data, sz)
     for i in range(sz):
         c_data.array.data.int16_[i] = val[i]
 
 cdef set_CHAR_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int i, sz
-    s = val.encode()
-    sz = len(s)
-    c_data.array.count = sz
-    for i in range(sz):
-        c_data.array.data.char_[i] = <bytes>s[i]
+    cdef char *s
+    cdef int sz = len(val)
+    check_len(c_data, sz)
+    t = type(val)
+    if t != bytearray:
+        if t == str:
+            val = val.encode()
+        elif t == list:
+            val = bytearray(val)
+        else:
+            raise ValueError(f"CHAR_ARRAY accepts only "
+                             "str, list, and bytearray, not {t}")
+    s = val
+    memcpy(c_data.array.data.char_, s, sz);
 
 cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int secs
@@ -4381,7 +4405,9 @@ cdef class Value(object):
         else:
             sz = len(v)
             self.c_v = sos_array_new(&self.c_v_, self.c_attr, self.c_obj, sz)
-            self.set_fn(self.c_attr, self.c_v.data, v)
+            if self.c_v == NULL:
+                raise MemoryError()
+            self.set_fn(self.c_attr, <sos_value_data_t>sos_array(self.c_v), v)
 
     cdef assign(self, sos_obj_t c_obj):
         cdef int typ
@@ -4483,6 +4509,9 @@ cdef class Object(object):
         self.__dealloc__()
 
     def __dealloc__(self):
+        self.release()
+
+    def release(self):
         if self.c_obj:
             sos_obj_put(self.c_obj)
             self.c_obj = NULL
@@ -4503,6 +4532,8 @@ cdef class Object(object):
         cdef sos_value_s *v
         cdef int t = sos_attr_type(c_attr)
         v = sos_array_new(&v_, c_attr, self.c_obj, len(val))
+        if v == NULL:
+            raise MemoryError()
         <object>type_setters[<int>t](c_attr, v.data, val)
         sos_value_put(v)
 
@@ -4636,12 +4667,18 @@ cdef class Object(object):
             raise MemoryError()
         sos_value_put(v)
 
+    def commit(self):
+        return sos_obj_commit(self.c_obj)
+
     def index_add(self):
         """
         Add the object to all schema indices
         """
         if self.c_obj == NULL:
             self.abort("There is no container object associated with this Object")
+        rc = sos_obj_commit(self.c_obj)
+        if rc:
+            return rc
         return sos_obj_index(self.c_obj)
 
     def index_del(self):
@@ -4711,10 +4748,10 @@ cdef class Object(object):
         return res
 
 class ObjAttrError(NameError):
-    def __init__(self, attr, schema):
+    def __init__(self, attr):
         NameError.__init__(self,
                            "Object has not attribute with the name '{0}'" \
-                           .format(attr, schema))
+                           .format(attr))
 
 ctypedef void (*nda_setter_fn_t)(np.ndarray nda, int idx, sos_value_t v)
 ctypedef void (*nda_resample_fn_t)(np.ndarray nda, int idx, sos_value_t v,

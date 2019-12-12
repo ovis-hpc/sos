@@ -93,6 +93,7 @@ class ObjTestSetGet(SosTestCase):
 
     def chk_set_array_attr(self, obj, idx, name, v0, v1):
         # check set by name
+        obj.set_array_size(name, 16)
         obj[name] = v0
         self.assertEqual(len(obj[name]), len(v0))
         for i in range(len(obj[name])):
@@ -114,6 +115,7 @@ class ObjTestSetGet(SosTestCase):
         test_str = 'this is not a test'
         # check set by name
         obj = self.schema.alloc()
+        obj.set_array_size('char_array', 32)
         obj['char_array'] = test_str
         self.assertEqual(len(obj['char_array']), len(test_str))
         self.assertEqual(obj['char_array'], test_str)

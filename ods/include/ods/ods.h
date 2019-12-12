@@ -113,8 +113,8 @@ extern const char *ods_path(ods_t ods);
 extern ods_t ods_open(const char *path, ods_perm_t o_perm, ...);
 
 #define ODS_VER_MAJOR	4
-#define ODS_VER_MINOR	3
-#define ODS_VER_FIX		5
+#define ODS_VER_MINOR	4
+#define ODS_VER_FIX	1
 
 #pragma pack(1)
 struct ods_version_s {

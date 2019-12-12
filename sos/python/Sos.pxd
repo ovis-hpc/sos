@@ -242,6 +242,11 @@ cdef extern from "uuid/uuid.h":
 
 cdef extern from "sos/sos.h":
 
+    cdef enum:
+        SOS_VERS_MAJOR
+        SOS_VERS_MINOR
+        SOS_VERS_FIX
+
     cdef struct sos_attr_s
     cdef struct sos_index_s
     cdef struct sos_schema_s
@@ -547,6 +552,7 @@ cdef extern from "sos/sos.h":
         SOS_OBJ_LE
 
     sos_obj_t sos_obj_new(sos_schema_t schema)
+    int sos_obj_commit(sos_obj_t obj)
     sos_schema_t sos_obj_schema(sos_obj_t obj)
 
     sos_obj_ref_t sos_obj_ref(sos_obj_t obj)
@@ -566,6 +572,7 @@ cdef extern from "sos/sos.h":
     int sos_attr_is_array(sos_attr_t attr)
     size_t sos_array_count(sos_value_t val)
     sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count)
+    sos_array_t sos_array(sos_value_t val)
     sos_value_t sos_value_new()
     void sos_value_free(sos_value_t v)
     void *sos_obj_ptr(sos_obj_t obj)
@@ -575,6 +582,8 @@ cdef extern from "sos/sos.h":
     void sos_value_put(sos_value_t value)
     int sos_value_cmp(sos_value_t a, sos_value_t b)
     size_t sos_value_size(sos_value_t value)
+    sos_value_data_t sos_value_data_new(sos_type_t typ, size_t count)
+    void sos_value_data_del(sos_value_data_t vd)
     size_t sos_value_memcpy(sos_value_t value, void *buf, size_t buflen)
     size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr)
     char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
@@ -593,7 +602,7 @@ cdef extern from "sos/sos.h":
 
     cdef struct sos_comp_key_spec:
         int type
-        sos_value_data_u data
+        sos_value_data_t data
 
     ctypedef sos_comp_key_spec *sos_comp_key_spec_t
 
@@ -660,7 +669,7 @@ cdef extern from "sos/sos.h":
     unsigned char *sos_key_value(sos_key_t key)
     void *sos_value_as_key(sos_value_t value)
     int sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec)
-    int sos_comp_key_get(sos_key_t key, size_t *len, sos_comp_key_spec_t key_spec)
+    sos_comp_key_spec_t sos_comp_key_get(sos_key_t key, size_t *len)
     size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec)
 
     int sos_attr_key_from_str(sos_attr_t attr, sos_key_t key, const char *str)

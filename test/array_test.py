@@ -64,8 +64,8 @@ class ArrayTest(SosTestCase):
                     a = self.schema[i].name()
                 else:
                     a = list(range(0, 16))
+                b = o[i]
                 for j in range(0, len(a)):
-                    b = o[i]
                     self.assertEqual(a[j], b[j])
             o = next(f)
 
@@ -98,8 +98,8 @@ class ArrayTest(SosTestCase):
                     a = "new_"+self.schema[i].name()
                 else:
                     a = list(range(16, 32))
+                b = o[i]
                 for j in range(0, len(a)):
-                    b = o[i]
                     self.assertEqual(a[j], b[j])
             o = next(f)
 

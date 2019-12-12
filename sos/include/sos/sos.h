@@ -106,6 +106,9 @@ typedef struct sos_config_data_s {
  * @{
  */
 #pragma pack(1)
+#define SOS_VERS_MAJOR	ODS_VER_MAJOR
+#define SOS_VERS_MINOR	ODS_VER_MINOR
+#define SOS_VERS_FIX	ODS_VER_FIX
 struct sos_version_s {
 	uint8_t major;		/* Binary compatability */
 	uint8_t minor;		/* Feature availability */
@@ -237,11 +240,15 @@ union sos_array_element_u {
 	sos_obj_ref_t ref_[0];
 };
 
+typedef struct sos_array_info_s {
+	uint32_t size;
+	uint32_t offset;
+} *sos_array_info_t;
+
 typedef struct sos_array_s {
 	uint32_t count;
 	union sos_array_element_u data;
 } *sos_array_t;
-#define SOS_ARRAY_SIZE(_count_, _type_)   ((sizeof(_type_) * _count_) + sizeof(uint32_t))
 
 struct sos_timeval_s {
 	uint32_t usecs;
@@ -273,6 +280,7 @@ union sos_primary_u {
 typedef union sos_value_data_u {
 	union sos_primary_u prim;
 	union sos_array_element_u struc;
+	struct sos_array_info_s array_info;
 	struct sos_array_s array;
 	struct sos_array_s join;
 	char __pad[256];
@@ -285,6 +293,11 @@ typedef struct sos_value_s {
 	sos_value_data_t data;	      /*! Points at data_ or into obj */
 	union sos_value_data_u data_; /*! Memory based value data */
 } *sos_value_t;
+
+sos_array_t sos_array(sos_value_t v);
+#define sos_array_count(_v_) sos_array(_v_)->count
+#define sos_array_data(_v_, _m_) (sos_array(_v_)->data._m_)
+size_t sos_array_data_size(sos_type_t typ, size_t count);
 
 #define SOS_STRUCT_VALUE(_name_, _sz_)					\
 	unsigned char _name_ ## value_data [_sz_ + sizeof(struct sos_value_s)]; \
@@ -498,6 +511,7 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
 #define SOS_OBJ_LE	2
 
 sos_obj_t sos_obj_new(sos_schema_t schema);
+int sos_obj_commit(sos_obj_t obj);
 sos_schema_t sos_obj_schema(sos_obj_t obj);
 int sos_obj_copy(sos_obj_t dst, sos_obj_t src);
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj);
@@ -515,7 +529,6 @@ sos_value_t sos_value_by_id(sos_value_t value, sos_obj_t obj, int attr_id);
 sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count);
 int sos_attr_is_ref(sos_attr_t attr);
 int sos_attr_is_array(sos_attr_t attr);
-size_t sos_array_count(sos_value_t val);
 sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count);
 sos_value_t sos_value_new();
 void sos_value_free(sos_value_t v);
@@ -527,6 +540,8 @@ sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src);
 sos_value_t sos_value(sos_obj_t obj, sos_attr_t attr);
 void sos_value_put(sos_value_t value);
 sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *arr_obj);
+sos_value_data_t sos_value_data_new(sos_type_t typ, size_t count);
+void sos_value_data_del(sos_value_data_t vd);
 size_t sos_value_data_set(sos_value_data_t vd, sos_type_t type, ...);
 size_t sos_value_data_set_va(sos_value_data_t vd, sos_type_t type, va_list ap);
 size_t sos_value_data_size(sos_value_data_t vd, sos_type_t type);
@@ -619,7 +634,7 @@ sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter);
 
 typedef struct sos_comp_key_spec {
 	sos_type_t type;
-	union sos_value_data_u data;
+	sos_value_data_t data;
 } *sos_comp_key_spec_t;
 
 /**
@@ -672,7 +687,7 @@ int sos_key_join_size(sos_attr_t join_attr, ...);
 int sos_key_join_size_va(sos_attr_t join_attr, va_list ap);
 int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...);
 int sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec);
-int sos_comp_key_get(sos_key_t key, size_t *len, sos_comp_key_spec_t key_spec);
+sos_comp_key_spec_t sos_comp_key_get(sos_key_t key, size_t *len);
 size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec);
 size_t sos_key_size(sos_key_t key);
 size_t sos_key_len(sos_key_t key);

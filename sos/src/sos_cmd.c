@@ -1235,7 +1235,7 @@ int main(int argc, char **argv)
 		return 0;
 
 	if (action & VERSION) {
-		printf("Library Version   : %d.%d.%d\n", ODS_VER_MAJOR, ODS_VER_MINOR, ODS_VER_FIX);
+		printf("Library Version   : %d.%d.%d\n", SOS_VERS_MAJOR, SOS_VERS_MINOR, SOS_VERS_FIX);
 		printf("Git Commit ID     : %s\n", ODS_COMMIT_ID);
 	}
 	if (action & CLEANUP)

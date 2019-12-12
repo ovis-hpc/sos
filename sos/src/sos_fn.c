@@ -114,53 +114,53 @@ static size_t struct_size_fn(sos_value_t value)
  */
 static size_t byte_array_size_fn(sos_value_t value)
 {
-	return value->data->array.count;
+	return sos_array_count(value);
 }
 
 static size_t char_array_size_fn(sos_value_t value)
 {
-	return value->data->array.count;
+	return sos_array_count(value);
 }
 
 static size_t int16_array_size_fn(sos_value_t value)
 {
-	return value->data->array.count * sizeof(int16_t);
+	return sos_array_count(value) * sizeof(int16_t);
 }
 
 static size_t int32_array_size_fn(sos_value_t value)
 {
-	return value->data->array.count * sizeof(int32_t);
+	return sos_array_count(value) * sizeof(int32_t);
 }
 
 static size_t int64_array_size_fn(sos_value_t value)
 {
-	return value->data->array.count * sizeof(int64_t);
+	return sos_array_count(value) * sizeof(int64_t);
 }
 
 static size_t float_array_size_fn(sos_value_t value)
 {
-	return value->data->array.count * sizeof(float);
+	return sos_array_count(value) * sizeof(float);
 }
 
 static size_t double_array_size_fn(sos_value_t value)
 {
-	return value->data->array.count * sizeof(double);
+	return sos_array_count(value) * sizeof(double);
 }
 
 static size_t long_double_array_size_fn(sos_value_t value)
 {
-	return value->data->array.count * sizeof(long double);
+	return sos_array_count(value) * sizeof(long double);
 }
 
 static size_t obj_array_size_fn(sos_value_t value)
 {
-	return value->data->array.count * sizeof(ods_ref_t);
+	return sos_array_count(value) * sizeof(ods_ref_t);
 }
 
 static size_t join_size_fn(sos_value_t value)
 {
 	/* join value is a byte array */
-	return value->data->array.count;
+	return sos_array_count(value);
 }
 
 static sos_value_size_fn_t __attr_size_fn_for_type[] = {
@@ -231,7 +231,7 @@ static size_t obj_strlen_fn(sos_value_t v)
 /* Value is formatted as %02X:%02X:...%02X\0 */
 static size_t byte_array_strlen_fn(sos_value_t v)
 {
-	return v ? v->data->array.count * 3 : 1;
+	return v ? sos_array_count(v) * 3 : 1;
 }
 
 static size_t struct_strlen_fn(sos_value_t v)
@@ -246,7 +246,7 @@ static size_t join_strlen_fn(sos_value_t v)
 
 static size_t char_array_strlen_fn(sos_value_t v)
 {
-	return v ? v->data->array.count + 1 : 1;
+	return v ? sos_array_count(v) + 1 : 1;
 }
 
 #define PRIMITIVE_ARRAY_STRLEN_FN(_name_, _fmt_, _member_)		\
@@ -255,10 +255,11 @@ static size_t char_array_strlen_fn(sos_value_t v)
 		size_t i, count = 1;					\
 		if (!v)							\
 			goto out;					\
-		for (i = 0; i < v->data->array.count; i++) {		\
+		for (i = 0; i < sos_array_count(v); i++) { \
 			if (i)						\
 				count += snprintf(NULL, 0, ",");	\
-			count += snprintf(NULL, 0, _fmt_, v->data->array.data. _member_ [i]); \
+			count += snprintf(NULL, 0, _fmt_,		\
+					sos_array_data(v, _member_ )[i]);\
 		}							\
 	out:								\
 		return count;						\
@@ -283,7 +284,7 @@ static size_t obj_array_strlen_fn(sos_value_t v)
 	size_t i, count = 1;
 	if (!v)
 		goto out;
-	for (i = 0; i < v->data->array.count; i++) {
+	for (i = 0; i < sos_array_count(v); i++) {
 		if (i)
 			count += snprintf(NULL, 0, ",");
 		sos_obj_ref_str_t str;
@@ -371,12 +372,12 @@ static char *byte_array_to_str_fn(sos_value_t v, char *str, size_t len)
 	char *p = str;
 	if (!v)
 		return "";
-	for (i = 0; i < v->data->array.count && len > 0; i++) {
+	for (i = 0; i < sos_array_count(v) && len > 0; i++) {
 		if (p == str)
 			fmt = "%02X";
 		else
 			fmt = ":%02X";
-		res_cnt = snprintf(p, len, fmt, v->data->array.data.byte_[i]);
+		res_cnt = snprintf(p, len, fmt, sos_array_data(v, byte_)[i]);
 		if (res_cnt > len)
 			break;
 		p += res_cnt;
@@ -417,8 +418,8 @@ static char *char_array_to_str_fn(sos_value_t v, char *str, size_t len)
 {
 	if (!v)
 		return "";
-	strncpy(str, (char *)v->data->array.data.char_, v->data->array.count);
-	str[v->data->array.count] = '\0';
+	strncpy(str, sos_array_data(v, char_), sos_array_count(v));
+	str[sos_array_count(v)] = '\0';
 	return str;
 }
 
@@ -430,14 +431,14 @@ static char *char_array_to_str_fn(sos_value_t v, char *str, size_t len)
 		int i;							\
 		if (!v)							\
 			return "";					\
-		for (i = 0; i < v->data->array.count && len > 0; i++) { \
+		for (i = 0; i < sos_array_count(v) && len > 0; i++) { \
 			if (i) {					\
 				count = snprintf(p, len, ",");		\
 				p++; len--;				\
 				if (!len)				\
 					break;				\
 			}						\
-			count = snprintf(p, len, _fmt_, v->data->array.data. _member_ [i]); \
+			count = snprintf(p, len, _fmt_, sos_array_data(v, _member_)[i]); \
 			if (count > len)				\
 				break;					\
 			p += count; len -= count;			\
@@ -464,7 +465,7 @@ static char *obj_array_to_str_fn(sos_value_t v, char *str, size_t len)
 	size_t count;
 	int i;
 
-	for (i = 0; i < v->data->array.count && len > 0; i++) {
+	for (i = 0; i < sos_array_count(v) && len > 0; i++) {
 		if (i) {
 			count = snprintf(p, len, ",");
 			p++; len--;
@@ -641,12 +642,12 @@ static int byte_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 	const char *str;
 	char c;
 
-	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
+	for (i = 0, str = value; i < sos_array_count(v) && *str != '\0';
 	     i++, str += cnt) {
 		match = sscanf(str, "%hhx%n", &c, &cnt);
 		if (match < 1)
 			return EINVAL;
-		v->data->array.data.byte_[i] = c;
+		sos_array_data(v, byte_)[i] = c;
 		if (str[cnt] != '\0')
 			cnt ++;	/* skip delimiter */
 	}
@@ -675,9 +676,9 @@ static int char_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 		} else {
 			v->data = &v->data_;
 		}
-		v->data->array.count = cnt;
+		sos_array_count(v) = cnt;
 	}
-	strncpy(v->data->array.data.char_, value, v->data->array.count);
+	strncpy(sos_array_data(v, char_), value, sos_array_count(v));
 	if (endptr)
 		*endptr = (char *)(value + strlen(value));
 	return 0;
@@ -699,7 +700,7 @@ static int char_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 				cnt += 1;				\
 				p = q + 1;				\
 			}						\
-			sz = cnt * sizeof(v->data->array.data._member_[0]) \
+			sz = cnt * sizeof(sos_array_data(v, _member_)[0]) \
 				+ sizeof(v->data_.array);		\
 			if (sz > sizeof(v->data_)) {			\
 				v->data = malloc(sz);			\
@@ -708,13 +709,13 @@ static int char_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 			} else {					\
 				v->data = &v->data_;			\
 			}						\
-			v->data->array.count = cnt;			\
+			sos_array_count(v) = cnt;			\
 		}							\
 									\
-		for (i = 0, str = value; i < v->data->array.count && *str != '\0'; \
+		for (i = 0, str = value; i < sos_array_count(v) && *str != '\0'; \
 		     i++, str += cnt) {					\
 			match = sscanf(str, _fmt_ "%n",			\
-				       &v->data->array.data. _member_ [i], \
+				       &(sos_array_data(v, _member_)[i]), \
 				       &cnt);				\
 			if (match < 1) {				\
 				return EINVAL;				\
@@ -859,47 +860,47 @@ static void *struct_key_value_fn(sos_value_t val)
 
 static void *join_key_value_fn(sos_value_t val)
 {
-	return val->data->join.data.byte_;
+	return sos_array_data(val, byte_);
 }
 
 static void *byte_array_key_value_fn(sos_value_t val)
 {
-	return val->data->array.data.byte_;
+	return sos_array_data(val, byte_);
 }
 
 static void *char_array_key_value_fn(sos_value_t val)
 {
-	return val->data->array.data.char_;
+	return sos_array_data(val, char_);
 }
 
 static void *int16_array_key_value_fn(sos_value_t val)
 {
-	return val->data->array.data.int16_;
+	return sos_array_data(val, int16_);
 }
 
 static void *int32_array_key_value_fn(sos_value_t val)
 {
-	return val->data->array.data.int32_;
+	return sos_array_data(val, int32_);
 }
 
 static void *int64_array_key_value_fn(sos_value_t val)
 {
-	return val->data->array.data.int64_;
+	return sos_array_data(val, int64_);
 }
 
 static void *float_array_key_value_fn(sos_value_t val)
 {
-	return val->data->array.data.float_;
+	return sos_array_data(val, float_);
 }
 
 static void *double_array_key_value_fn(sos_value_t val)
 {
-	return val->data->array.data.double_;
+	return sos_array_data(val, double_);
 }
 
 static void *long_double_array_key_value_fn(sos_value_t val)
 {
-	return val->data->array.data.long_double_;
+	return sos_array_data(val, long_double_);
 }
 
 static void *obj_array_key_value_fn(sos_value_t val)

@@ -746,7 +746,7 @@ ods_key_comp_t __sos_set_key_comp(ods_key_comp_t comp, sos_value_t v, size_t *co
 		break;
 	default:
 		sz = sos_value_size(v);
-		memcpy(comp->value.str.str, v->data->array.data.char_, sz);
+		memcpy(comp->value.str.str, sos_array_data(v, char_), sz);
 		comp->value.str.len = sz;
 		*comp_len = sz + sizeof(comp->value.str.len) + sizeof(uint16_t);
 		break;
@@ -1015,7 +1015,7 @@ int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
 }
 
 /**
- * \brief Set the value of a compnent key
+ * \brief Set the value of a component key
  *
  * Assign the value of a component key from an array of
  * sos_key_comp_spec_t. The caller can either specify the key as input
@@ -1042,7 +1042,7 @@ int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
  * \returns 0 Success
  * \returns EINVAL An invalid component value was specified.
  */
-int  sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec)
+int sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec)
 {
 	ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
 	ods_key_comp_t comp;
@@ -1059,27 +1059,27 @@ int  sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec)
 		case SOS_TYPE_UINT64:
 		case SOS_TYPE_INT64:
 		case SOS_TYPE_DOUBLE:
-			comp->value.uint64_ = spec->data.prim.uint64_;
+			comp->value.uint64_ = spec->data->prim.uint64_;
 			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_TIMESTAMP:
-			comp->value.tv_.tv_sec = spec->data.prim.timestamp_.tv.tv_sec;
-			comp->value.tv_.tv_usec = spec->data.prim.timestamp_.tv.tv_usec;
+			comp->value.tv_.tv_sec = spec->data->prim.timestamp_.tv.tv_sec;
+			comp->value.tv_.tv_usec = spec->data->prim.timestamp_.tv.tv_usec;
 			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_INT32:
 		case SOS_TYPE_UINT32:
 		case SOS_TYPE_FLOAT:
-			comp->value.uint32_ = spec->data.prim.uint32_;
+			comp->value.uint32_ = spec->data->prim.uint32_;
 			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_INT16:
 		case SOS_TYPE_UINT16:
-			comp->value.uint16_ = spec->data.prim.uint16_;
+			comp->value.uint16_ = spec->data->prim.uint16_;
 			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_LONG_DOUBLE:
-			comp->value.long_double_ = spec->data.prim.long_double_;
+			comp->value.long_double_ = spec->data->prim.long_double_;
 			comp_key->len += comp_type_size[comp->type];
 			break;
 		case SOS_TYPE_BYTE_ARRAY:
@@ -1093,9 +1093,9 @@ int  sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec)
 		case SOS_TYPE_FLOAT_ARRAY:
 		case SOS_TYPE_DOUBLE_ARRAY:
 		case SOS_TYPE_LONG_DOUBLE_ARRAY:
-			memcpy(comp->value.str.str, spec->data.array.data.byte_,
-			       spec->data.array.count * comp_type_size[comp->type]);
-			comp->value.str.len = spec->data.array.count;
+			memcpy(comp->value.str.str, spec->data->array.data.byte_,
+			       spec->data->array.count * comp_type_size[comp->type]);
+			comp->value.str.len = spec->data->array.count;
 			comp_key->len +=
 				(comp->value.str.len  * comp_type_size[comp->type])
 				+ sizeof(uint16_t) + sizeof(uint16_t);
@@ -1121,7 +1121,7 @@ size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec)
 			key_len += comp_type_size[spec->type];
 		} else {
 			key_len +=
-				(spec->data.array.count * comp_type_size[spec->type])
+				(spec->data->array.count * comp_type_size[spec->type])
 				+ sizeof(uint16_t) + sizeof(uint16_t);
 		}
 	}
@@ -1145,8 +1145,9 @@ size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec)
  * \retval 0 Success
  * \retval !0 An errno reason
  */
-int sos_comp_key_get(sos_key_t key, size_t *len, sos_comp_key_spec_t key_values)
+sos_comp_key_spec_t sos_comp_key_get(sos_key_t key, size_t *len)
 {
+	sos_comp_key_spec_t key_values;
 	ods_comp_key_t comp_key = (ods_comp_key_t)ods_key_value(key);
 	ods_key_comp_t comp;
 	sos_comp_key_spec_t spec;
@@ -1154,43 +1155,59 @@ int sos_comp_key_get(sos_key_t key, size_t *len, sos_comp_key_spec_t key_values)
 
 	comp = comp_key->value;
 	for (offset = 0, idx = 0; offset < comp_key->len; idx++) {
-		if (key_values) {
-			spec = &key_values[idx];
-			spec->type = comp->type;
-			switch (comp->type) {
-			case SOS_TYPE_UINT64:
-			case SOS_TYPE_INT64:
-			case SOS_TYPE_DOUBLE:
-				spec->data.prim.uint64_ = comp->value.uint64_;
-				break;
-			case SOS_TYPE_INT32:
-			case SOS_TYPE_UINT32:
-			case SOS_TYPE_FLOAT:
-				spec->data.prim.uint32_ = comp->value.uint32_;
-				break;
-			case SOS_TYPE_INT16:
-			case SOS_TYPE_UINT16:
-				spec->data.prim.uint16_ = comp->value.uint16_;
-				break;
-			case SOS_TYPE_LONG_DOUBLE:
-				spec->data.prim.long_double_ = comp->value.long_double_;
-				break;
-			case SOS_TYPE_TIMESTAMP:
-				spec->data.prim.timestamp_.tv = comp->value.tv_;
-				break;
-			default:
-				memcpy(spec->data.array.data.byte_,
-				       comp->value.str.str, comp->value.str.len);
-				spec->data.array.count =
-					comp->value.str.len / comp_type_size[comp->type];
-				break;
-			}
+		comp = __sos_next_key_comp(comp);
+		offset = (((unsigned long)comp - (unsigned long)comp_key->value));
+	}
+	*len = idx;
+
+	key_values = malloc(idx * sizeof(struct sos_comp_key_spec));
+	if (!key_values)
+		goto out;
+
+	comp = comp_key->value;
+	for (offset = 0, idx = 0; offset < comp_key->len; idx++) {
+		spec = &key_values[idx];
+		spec->type = comp->type;
+		switch (comp->type) {
+		case SOS_TYPE_UINT64:
+		case SOS_TYPE_INT64:
+		case SOS_TYPE_DOUBLE:
+			spec->data = sos_value_data_new(spec->type, 0);
+			spec->data->prim.uint64_ = comp->value.uint64_;
+			break;
+		case SOS_TYPE_INT32:
+		case SOS_TYPE_UINT32:
+		case SOS_TYPE_FLOAT:
+			spec->data = sos_value_data_new(spec->type, 0);
+			spec->data->prim.uint32_ = comp->value.uint32_;
+			break;
+		case SOS_TYPE_INT16:
+		case SOS_TYPE_UINT16:
+			spec->data = sos_value_data_new(spec->type, 0);
+			spec->data->prim.uint16_ = comp->value.uint16_;
+			break;
+		case SOS_TYPE_LONG_DOUBLE:
+			spec->data = sos_value_data_new(spec->type, 0);
+			spec->data->prim.long_double_ = comp->value.long_double_;
+			break;
+		case SOS_TYPE_TIMESTAMP:
+			spec->data = sos_value_data_new(spec->type, 0);
+			spec->data->prim.timestamp_.tv = comp->value.tv_;
+			break;
+		default:
+			spec->data = sos_value_data_new(spec->type, comp->value.str.len);
+			memcpy(spec->data->array.data.byte_,
+			       comp->value.str.str, comp->value.str.len);
+			spec->data->array.count =
+				comp->value.str.len / comp_type_size[comp->type];
+			break;
 		}
 		comp = __sos_next_key_comp(comp);
 		offset = (((unsigned long)comp - (unsigned long)comp_key->value));
 	}
 	*len = idx;
-	return 0;
+ out:
+	return key_values;
 }
 
 

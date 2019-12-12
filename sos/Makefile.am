@@ -17,4 +17,4 @@ install-data-hook: sos-configvars.sh
 	$(INSTALL) -m 755 sos-configvars.sh $(DESTDIR)$(libdir)
 
 uninstall-hook:
-	rm $(DESTDIR)$(libdir)/sos-configvars.sh
+	rm $(DESTDIR)/$(libdir)/sos-configvars.sh

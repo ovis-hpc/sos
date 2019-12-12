@@ -170,12 +170,12 @@ static int STRUCT_cmp(sos_value_t a, sos_value_t b, size_t size)
 
 static int BYTE_ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	int cmp_len = a->data->array.count;
-	if (cmp_len > b->data->array.count)
-		cmp_len = b->data->array.count;
-	int res = memcmp(a->data->array.data.byte_, b->data->array.data.byte_, cmp_len);
+	int cmp_len = sos_array_count(a);
+	if (cmp_len > sos_array_count(b))
+		cmp_len = sos_array_count(b);
+	int res = memcmp(sos_array_data(a, byte_), sos_array_data(b, byte_), cmp_len);
 	if (res == 0)
-		return a->data->array.count - b->data->array.count;
+		return sos_array_count(a) - sos_array_count(b);
 	return res;
 }
 
@@ -186,13 +186,13 @@ static int CHAR_ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 
 static int OBJ_ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	size_t a_len = a->data->array.count;
-	size_t b_len = b->data->array.count;
+	size_t a_len = sos_array_count(a);
+	size_t b_len = sos_array_count(b);
 	int i, res;
 	size_t cmp_len = (a_len < b_len ? a_len : b_len);
 	for (i = 0; i < cmp_len; i++) {
-		res = memcmp(a->data->array.data.ref_[i].idx_data.bytes,
-			     a->data->array.data.ref_[i].idx_data.bytes,
+		res = memcmp(sos_array_data(a, ref_)[i].idx_data.bytes,
+			     sos_array_data(b, ref_)[i].idx_data.bytes,
 			     sizeof(sos_obj_ref_t));
 		if (res)
 			return res;
@@ -222,14 +222,14 @@ static int OBJ_ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 #define ARRAY_CMP(_n_, _t_, _f_)					\
 static int _n_ ## _cmp(sos_value_t a, sos_value_t b, size_t size) \
 {								\
-	size_t a_len = a->data->array.count;			\
-	size_t b_len = b->data->array.count;			\
+	size_t a_len = sos_array_count(a);	\
+	size_t b_len = sos_array_count(b);	\
 	int i;							\
 	size_t cmp_len = (a_len < b_len ? a_len : b_len);	\
 	for (i = 0; i < cmp_len; i++) {				\
-		if (a->data->array.data._f_[i] < b->data->array.data._f_[i]) \
+		if (sos_array_data(a, _f_)[i] < sos_array_data(b, _f_)[i]) \
 			return -1;				\
-		if (a->data->array.data._f_[i] > b->data->array.data._f_[i]) \
+		if (sos_array_data(a, _f_)[i] > sos_array_data(b, _f_)[i])	\
 			return 1;				\
 	}							\
 	return a_len - b_len;					\
@@ -427,7 +427,6 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
  */
 sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 {
-	sos_obj_t ref_obj;
 	sos_value_data_t ref_val;
 	if (!obj)
 		return mem_value_init(val, attr);
@@ -437,20 +436,51 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 
 	val->attr = attr;
 	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
-	if (!sos_attr_is_array(attr)) {
-		val->obj = sos_obj_get(obj);
-		val->data = ref_val;
-		goto out;
-	}
-	ref_obj = sos_ref_as_obj(obj->sos, ref_val->prim.ref_);
-	if (ref_obj) {
-		val->obj = ref_obj; /* ref from sos_ref_as_obj */
-		val->data = (sos_value_data_t)&SOS_OBJ(ref_obj->obj)->data[0];
-	} else {
-		val = NULL;
-	}
- out:
+
+	if (sos_attr_is_array(attr))
+		ref_val = (sos_value_data_t)&(obj->obj->as.bytes[ref_val->array_info.offset]);
+
+	val->obj = sos_obj_get(obj);
+	val->data = ref_val;
 	return val;
+}
+
+static size_t array_element_sizes[] =  {
+	[SOS_TYPE_BYTE_ARRAY] = sizeof(unsigned char),
+	[SOS_TYPE_CHAR_ARRAY] = sizeof(char),
+	[SOS_TYPE_STRING] = sizeof(char),
+	[SOS_TYPE_INT16_ARRAY] = sizeof(int16_t),
+	[SOS_TYPE_INT32_ARRAY] = sizeof(int32_t),
+	[SOS_TYPE_INT64_ARRAY] = sizeof(int64_t),
+	[SOS_TYPE_UINT16_ARRAY] = sizeof(uint16_t),
+	[SOS_TYPE_UINT32_ARRAY] = sizeof(uint32_t),
+	[SOS_TYPE_UINT64_ARRAY] = sizeof(uint64_t),
+	[SOS_TYPE_FLOAT_ARRAY] = sizeof(float),
+	[SOS_TYPE_DOUBLE_ARRAY] = sizeof(double),
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = sizeof(long double),
+	[SOS_TYPE_OBJ_ARRAY] = sizeof(sos_obj_ref_t)
+};
+
+size_t sos_array_data_size(sos_type_t typ, size_t count)
+{
+	if (typ < SOS_TYPE_ARRAY || typ > SOS_TYPE_LAST)
+		return 0;
+	return SOS_ROUNDUP(sizeof(sos_array_t) + (count * array_element_sizes[typ]), 8);
+}
+
+sos_value_data_t sos_value_data_new(sos_type_t typ, size_t count)
+{
+	sos_value_data_t data;
+	if (typ < SOS_TYPE_ARRAY)
+		return malloc(sizeof *data);
+	data = malloc(sos_array_data_size(typ, count));
+	data->array.count = count;
+	return data;
+}
+
+void sos_value_data_del(sos_value_data_t vd)
+{
+	free(vd);
 }
 
 /**
@@ -482,8 +512,8 @@ sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
 	} else {
 		dst->data = &dst->data_;
 	}
-	dst->data->array.count = src->data->array.count;
-	memcpy(dst->data->array.data.byte_, src->data->array.data.byte_, sz);
+	sos_array(dst)->count = sos_array(src)->count;
+	memcpy(sos_array_data(dst, byte_), sos_array_data(src, byte_), sz);
 	return dst;
 }
 
@@ -509,13 +539,19 @@ sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
  */
 sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *arr_obj)
 {
+#if 0
 	sos_obj_t ref_obj;
+#endif
 	sos_value_data_t ref_val = NULL;
 
 	if (arr_obj)
 		*arr_obj = NULL;
 
 	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
+	if (sos_attr_is_array(attr))
+		ref_val = (sos_value_data_t)&(obj->obj->as.bytes[ref_val->array_info.offset]);
+
+#if 0
 	if (!sos_attr_is_array(attr))
 		return ref_val;
 
@@ -528,7 +564,7 @@ sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *ar
 		*arr_obj = ref_obj; /* ref from sos_ref_as_obj */
 		ref_val = (sos_value_data_t)&SOS_OBJ(ref_obj->obj)->data[0];
 	}
-
+#endif
 	return ref_val;
 }
 
@@ -551,7 +587,7 @@ size_t sos_value_memcpy(sos_value_t val, void *buf, size_t buflen)
 	if (!sos_attr_is_array(val->attr))
 		dst = val->data;
 	else
-		dst = &val->data->array.data.byte_[0];
+		dst = sos_array_data(val, byte_);
 	memcpy(dst, buf, buflen);
 	return buflen;
 }
@@ -826,3 +862,10 @@ size_t sos_value_data_size(sos_value_data_t vd, sos_type_t type)
 	}
 	return size;
 }
+
+sos_array_t sos_array(sos_value_t v)
+{
+	return &v->data->array;
+}
+
+
