@@ -90,6 +90,8 @@ static void free_pages(ods_t ods, uint64_t pg_no);
 static void __lock_init(ods_lock_t *lock);
 static void __ods_lock(ods_t ods);
 static void __ods_unlock(ods_t ods);
+static int __pgt_lock(ods_t ods);
+static void __pgt_unlock(ods_t ods);
 static inline void map_put(ods_map_t map);
 
 #if defined(ODS_DEBUG)
@@ -301,6 +303,7 @@ struct ods_version_s ods_version(ods_t ods)
 	static char commit_id[] = "........................................";
 
 	__ods_lock(ods);
+	__pgt_lock(ods);
 	pgt = pgt_get(ods);
 	if (!pgt)
 		goto out;
@@ -308,6 +311,7 @@ struct ods_version_s ods_version(ods_t ods)
 	strncpy(commit_id, pgt->pg_commit_id, sizeof(commit_id));
 	ver.git_commit_id = commit_id;
  out:
+	__pgt_unlock(ods);
 	__ods_unlock(ods);
 	return ver;
 }
@@ -497,6 +501,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 	__ods_lock(ods);
 
 	/* Get the PGT in case it has been resized by another process */
+	__pgt_lock(ods);
 	pgt = pgt_get(ods);
 	if (!pgt)
 		goto err_1;
@@ -509,6 +514,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 	if (map
 	    && (loff >= map->map.off)
 	    && ((map->map.off + map->map.len) >= (loff + sz))) {
+		__pgt_unlock(ods);
 		__ods_unlock(ods);
 		return map;
 	} else if (map) {
@@ -534,6 +540,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 				/* Take a ref on the new last_map */
 				map_get(map);
 			}
+			__pgt_unlock(ods);
 			__ods_unlock(ods);
 			return map;
 		}
@@ -579,12 +586,14 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 	rbn_init(&map->rbn, &map->map);
 	assert(NULL == rbt_find(&ods->map_tree, &map->map));
 	rbt_ins(&ods->map_tree, &map->rbn);
+	__pgt_unlock(ods);
 	__ods_unlock(ods);
 	return map_get(map);	/* The map_tree consumes a reference */
 
  err_2:
 	free(map);
  err_1:
+	__pgt_unlock(ods);
 	__ods_unlock(ods);
 	return NULL;
 }
@@ -1242,13 +1251,16 @@ int ods_stat_get(ods_t ods, ods_stat_t osb)
 	ods_pg_t pg;
 	struct stat sb;
 	__ods_lock(ods);
+	__pgt_lock(ods);
 	pgt = pgt_get(ods);
 	if (!pgt) {
+		__pgt_unlock(ods);
 		__ods_unlock(ods);
 		return ENOMEM;
 	}
 	rc = fstat(ods->obj_fd, &sb);
 	if (rc) {
+		__pgt_unlock(ods);
 		__ods_unlock(ods);
 		return rc;
 	}
@@ -1281,6 +1293,7 @@ int ods_stat_get(ods_t ods, ods_stat_t osb)
 		osb->st_total_blk_free += freeb;
 		osb->st_total_blk_alloc += allocb;
 	}
+	__pgt_unlock(ods);
 	__ods_unlock(ods);
 	return 0;
 }
@@ -2295,6 +2308,7 @@ void release_dead_pgt_locks(ods_t ods)
 	int id;
 
 	__ods_lock(ods);
+	__pgt_lock(ods);
 	pgt = pgt_get(ods);
 	if (!pgt)
 		goto out;
@@ -2307,6 +2321,7 @@ void release_dead_pgt_locks(ods_t ods)
 		check_lock(mtx, 1);
 	}
  out:
+	__pgt_unlock(ods);
 	__ods_unlock(ods);
 }
 
