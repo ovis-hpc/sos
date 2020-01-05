@@ -1,16 +1,13 @@
 AC_PREREQ(2.63)
-AC_INIT([sosdb], 4.3.1, tom@ogc.us)
+AC_INIT([sosdb], 4.3.3, tom@ogc.us)
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR(config)
 AM_CONFIG_HEADER(config.h)
 AM_INIT_AUTOMAKE([foreign tar-pax])
 AM_PROG_LIBTOOL
 
-COMMIT_ID="$(git rev-parse HEAD 2>/dev/null)"
 if test -z "$COMMIT_ID"; then
-	dnl Git OK from ovis repo.
-	AC_MSG_RESULT([The git command is not available, commit_id is "00..."])
-	COMMIT_ID="0000000000000000000000000000000000000000"
+ 	COMMIT_ID="0000000000000000000000000000000000000000"
 fi
 AC_DEFINE_UNQUOTED([ODS_COMMIT_ID],["$COMMIT_ID"], [Git commit id])
 AC_SUBST([ODS_COMMIT_ID],["$COMMIT_ID"])
