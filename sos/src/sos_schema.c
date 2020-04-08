@@ -250,12 +250,21 @@ sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 					 t->attrs[i].type,
 					 t->attrs[i].size,
 					 t->attrs[i].join_list);
-		if (rc)
+		if (rc) {
+			sos_error("Error %d adding the attribute %s to the schema %s\n",
+				  rc, t->attrs[i].name, t->name);
+			errno = rc;
 			goto err;
+		}
 		if (t->attrs[i].indexed) {
 			rc = sos_schema_index_add(schema, t->attrs[i].name);
-			if (rc)
+			if (rc) {
+				sos_error("Error %d adding the index attribute %s "
+					  "to the schema %s\n",
+					  rc, t->attrs[i].name, t->name);
+				errno = rc;
 				goto err;
+			}
 			const char *idx_type = t->attrs[i].idx_type;
 			if (!idx_type)
 				idx_type = "BXTREE";
@@ -265,8 +274,13 @@ sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 				 idx_type,
 				 t->attrs[i].key_type,
 				 t->attrs[i].idx_args);
-			if (rc)
+			if (rc) {
+				sos_error("Error %d modifying the index attribute %s "
+					  "in the schema %s\n",
+					  rc, t->attrs[i].name, t->name);
+				errno = rc;
 				goto err;
+			}
 		}
 	}
 	return schema;
@@ -1470,6 +1484,8 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	ods_obj_put(schema_key);
 	ods_obj_put(udata);
 	ods_unlock(sos->schema_ods, 0);
+	ods_commit(sos->schema_ods, ODS_COMMIT_SYNC);
+	ods_idx_commit(sos->schema_idx, ODS_COMMIT_SYNC);
 	return 0; // __sos_schema_open(sos, schema);
  err_3:
 	ods_obj_delete(schema_key);
