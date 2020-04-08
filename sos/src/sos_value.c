@@ -691,8 +691,8 @@ size_t sos_value_data_set_va(sos_value_data_t vd, sos_type_t type, va_list ap)
 		size = sizeof(vd->prim.int64_);
 		break;
 	case SOS_TYPE_UINT16:
-		vd->prim.int16_ = va_arg(ap, int);
-		size = sizeof(vd->prim.int16_);
+		vd->prim.uint16_ = va_arg(ap, int);
+		size = sizeof(vd->prim.uint16_);
 		break;
 	case SOS_TYPE_UINT32:
 		vd->prim.uint32_ = va_arg(ap, uint32_t);
@@ -703,6 +703,9 @@ size_t sos_value_data_set_va(sos_value_data_t vd, sos_type_t type, va_list ap)
 		size = sizeof(vd->prim.uint64_);
 		break;
 	case SOS_TYPE_FLOAT:
+		vd->prim.float_ = va_arg(ap, double);
+		size = sizeof(vd->prim.float_);
+		break;
 	case SOS_TYPE_DOUBLE:
 		vd->prim.double_ = va_arg(ap, double);
 		size = sizeof(vd->prim.double_);
@@ -772,7 +775,7 @@ size_t sos_value_data_size(sos_value_data_t vd, sos_type_t type)
 		size = sizeof(vd->prim.int64_);
 		break;
 	case SOS_TYPE_UINT16:
-		size = sizeof(vd->prim.int16_);
+		size = sizeof(vd->prim.uint16_);
 		break;
 	case SOS_TYPE_UINT32:
 		size = sizeof(vd->prim.uint32_);
