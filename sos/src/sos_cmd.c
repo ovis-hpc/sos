@@ -482,19 +482,32 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 
 	schema = sos_schema_by_name(sos, schema_name);
 	if (!schema) {
-		printf("The schema '%s' was not found.\n", schema_name);
+		printf("The schema '%s' was not found, error %d.\n", schema_name, errno);
 		return ENOENT;
 	}
 	attr = sos_schema_attr_by_name(schema, index_name);
 	if (!attr) {
-		printf("The attribute '%s' does not exist in '%s'.\n",
-		       index_name, schema_name);
+		printf("The attribute '%s' does not exist in '%s', error %d.\n",
+		       index_name, schema_name, errno);
+		return ENOENT;
+	}
+	if (!sos_attr_index(attr)) {
+		printf("The attribute '%s' is not indexed in '%s', error %d.\n",
+		       index_name, schema_name, errno);
 		return ENOENT;
 	}
 	iter = sos_attr_iter_new(attr);
-	if (!iter)
-		return ENOMEM;
+	if (!iter) {
+		printf("Error %d creating and iterator for the index '%s'.\n",
+		       errno, index_name);
+		return errno;
+	}
 	filt = sos_filter_new(iter);
+	if (!filt) {
+		printf("Error %d creating a filter for the index '%s'.\n",
+		       errno, index_name);
+		return errno;
+	}
 
 	/* Create the col_list from the schema if the user didn't specify one */
 	if (TAILQ_EMPTY(&col_list)) {
