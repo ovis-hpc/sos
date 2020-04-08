@@ -194,6 +194,8 @@ int sos_index_new(sos_t sos, const char *name,
 	ods_obj_put(idx_obj);
  out:
 	ods_unlock(sos->idx_ods, 0);
+	ods_commit(sos->idx_ods, ODS_COMMIT_SYNC);
+	ods_idx_commit(sos->idx_idx, ODS_COMMIT_SYNC);
 	return rc;
  err_1:
 	sos_ref_reset(idx_ref);
