@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2012-2017 Open Grid Computing, Inc. All rights reserved.
- * Copyright (c) 2012-2017 Sandia Corporation. All rights reserved.
+ * Copyright (c) 2012-2020 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2012-2020 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -921,6 +921,13 @@ struct sos_version_s sos_container_version(sos_t sos)
 	return vers;
 }
 
+static int is_supported_version(uint64_t v1, uint64_t v2)
+{
+	if ((v1 & SOS_VERSION_MASK) == (v2 & SOS_VERSION_MASK))
+		return 1;
+	return 0;
+}
+
 /**
  * \brief Open a Container
  *
@@ -1041,7 +1048,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 		goto err;
 	}
 
-	if (SOS_SCHEMA_UDATA(udata)->version != SOS_LATEST_VERSION) {
+	if (!is_supported_version(SOS_SCHEMA_UDATA(udata)->version, SOS_LATEST_VERSION)) {
 		errno = EPROTO;
 		sos_error("Schema ODS in %s is an unsupported version expected %llX, got %llx\n",
 			  path_arg,
