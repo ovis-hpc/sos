@@ -83,7 +83,8 @@ typedef enum sos_internal_schema_e {
 	SOS_SCHEMA_FIRST_USER = 128,
 } sos_ischema_t;
 
-#define SOS_LATEST_VERSION 0x04030300
+#define SOS_LATEST_VERSION 0x04030400
+#define SOS_VERSION_MASK 0xffff0000
 #define SOS_SCHEMA_SIGNATURE 0x534f535348434D41 /* 'SOSSCHMA' */
 typedef struct sos_schema_udata_s {
 	uint64_t signature;
