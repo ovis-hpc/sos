@@ -1140,7 +1140,6 @@ static sos_obj_t next_match(sos_filter_t filt)
 			break;
 		cond = sos_filter_eval(obj, filt);
 		if (!cond) {
-			filt->empty = 0;
 			return obj;
 		}
 		filt->miss_cnt += 1;
@@ -1282,33 +1281,6 @@ static sos_obj_t next_match(sos_filter_t filt)
 	} while (rc == 0);
  out:
 	sos_obj_put(obj);
-	filt->empty = 1;
-	return NULL;
-}
-
-static sos_obj_t continue_next(sos_filter_t filt)
-{
-	int rc;
-	SOS_KEY(key);
-	__sort_filter_conds_fwd(filt);
-	rc = __sos_filter_key_set(filt, key, 1, 1);
-	switch (rc) {
-	case 0:
-		rc = sos_iter_begin(filt->iter);
-		break;
-	default:
-		rc = sos_iter_sup(filt->iter, key);
-		break;
-	}
-	/*
-	 * The last_match key positions us at the last record we
-	 * returned, skip it or the last record will keep getting
-	 * returned
-	 */
-	rc = sos_iter_next(filt->iter);
-	if (!rc)
-		return next_match(filt);
-	filt->empty = 1;
 	return NULL;
 }
 
@@ -1361,7 +1333,6 @@ static sos_obj_t prev_match(sos_filter_t filt)
 			break;
 		cond = sos_filter_eval(obj, filt);
 		if (!cond) {
-			filt->empty = 0;
 			return obj;
 		}
 		/*
@@ -1488,31 +1459,6 @@ static sos_obj_t prev_match(sos_filter_t filt)
 
  out:
 	sos_obj_put(obj);
-	filt->empty = 1;
-	return NULL;
-}
-
-static sos_obj_t continue_prev(sos_filter_t filt)
-{
-	int rc;
-	SOS_KEY(key);
-
-	__sort_filter_conds_bkwd(filt);
-	rc = __sos_filter_key_set(filt, key, 0, 1);
-	switch (rc) {
-	case 0:
-		rc = sos_iter_end(filt->iter);
-		break;
-	case ESRCH:
-		rc = sos_iter_inf(filt->iter, key);
-		break;
-	default:
-		errno = rc;
-		return NULL;
-	}
-	if (!rc)
-		return prev_match(filt);
-	filt->empty = 1;
 	return NULL;
 }
 
@@ -1678,11 +1624,14 @@ sos_obj_t sos_filter_begin(sos_filter_t filt)
  */
 sos_obj_t sos_filter_next(sos_filter_t filt)
 {
-	if (filt->empty)
-		return continue_next(filt);
 	if (0 == sos_iter_next(filt->iter))
 		return next_match(filt);
-	filt->empty = 1;
+	/*
+	 * There are no more entries in the iterator. Position the cursor
+	 * at the last object so that sos_filter_next will return any
+	 * appended data.
+	 */
+	sos_iter_end(filt->iter);
 	return NULL;
 }
 
@@ -1703,11 +1652,14 @@ int sos_filter_pos_put(sos_filter_t filt, sos_pos_t pos)
 
 sos_obj_t sos_filter_prev(sos_filter_t filt)
 {
-	if (filt->empty)
-		return continue_prev(filt);
 	if (0 == sos_iter_prev(filt->iter))
 		return prev_match(filt);
-	filt->empty = 1;
+	/*
+	 * There are no more entries in the iterator. Position the cursor
+	 * at the 1st object so that sos_filter_prev will pick up any data
+	 * added before this entry
+	 */
+	sos_iter_begin(filt->iter);
 	return NULL;
 }
 
