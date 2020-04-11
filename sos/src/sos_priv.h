@@ -385,7 +385,6 @@ struct sos_filter_s {
 	struct ods_obj_s last_match_obj;
 	sos_key_t last_match;
 	int miss_cnt;
-	int empty;
 	TAILQ_HEAD(sos_cond_list, sos_filter_cond_s) cond_list;
 };
 
