@@ -345,12 +345,12 @@ static int ht_update(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 
 static int ht_find_lub(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
-	return ENOSYS;
+	return ht_find(idx, key, data);
 }
 
 static int ht_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
-	return ENOSYS;
+	return ht_find(idx, key, data);
 }
 
 static ods_key_t key_new(ods_idx_t idx, ods_key_t key)
@@ -722,11 +722,11 @@ static int ht_iter_find(ods_iter_t oi, ods_key_t key)
 
 static int ht_iter_find_lub(ods_iter_t oi, ods_key_t key)
 {
-	return ENOSYS;
+	return ht_iter_find(oi, key);
 }
 static int ht_iter_find_glb(ods_iter_t oi, ods_key_t key)
 {
-	return ENOSYS;
+	return ht_iter_find(oi, key);
 }
 
 static int64_t next_bucket(ht_t t, int64_t bkt)
