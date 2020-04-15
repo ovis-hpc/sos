@@ -387,6 +387,29 @@ class DataSet(object):
             print("{0:{width}}".format('-'.ljust(width, '-'), width=width), end=' ')
         print('\n{0} results'.format(count))
 
+    def clone(self, rows = None):
+        """Create a clone of the dataset
+
+        Creates a new DataSet with all of the series from this data
+        set. If the rows parameter is specifed, the series in the new
+        DataSet will have the specified number of rows.
+
+        """
+        newds = DataSet()
+        if rows is None:
+            rows = self.series_size
+        for ser in self.series_names:
+            nda = self.array_with_series_name[ser]
+            shape = nda.shape
+            if len(shape) > 1:
+                # arrays
+                array = np.zeros([ rows ] + list(shape[1:]), dtype=nda.dtype)
+            else:
+                array = np.zeros([ rows ], dtype=nda.dtype)
+            newds.append_array(rows, ser, array)
+        newds.set_series_size(rows)
+        return newds
+
     def new(self, series_size, series_list, shapes=None, types=None):
         """Factory function for creating a new DataSet
 
@@ -583,6 +606,39 @@ class DataSet(object):
             res.append_array(1, ser + '_std', nda)
         return res
 
+
+    def minrow(self, series):
+        """Return the row with the minimum value in the series_list
+
+        The result returned will have a single row containing the
+        minimum value in the series specified.
+
+        Positional Parameters:
+        -- The name of the series
+
+        """
+        res = self.clone(rows=1)
+        src = self.array(series)[0:self.get_series_size()]
+        row = np.argmin(src)
+        for col in range(0, self.get_series_count()):
+            res.array_with_series_idx[col][0] = self.array_with_series_idx[col][row]
+        return res
+
+    def maxrow(self, series):
+        """Return the row with the maximum value in the series
+
+        The result returned will have a single row containing the max
+        value of the series specified.
+
+        Positional Parameters:
+        -- The name of the series
+        """
+        res = self.clone(rows=1)
+        src = self.array(series)[0:self.get_series_size()]
+        row = np.argmax(src)
+        for col in range(0, self.get_series_count()):
+            res.array_with_series_idx[col][0] = self.array_with_series_idx[col][row]
+        return res
 
     def __gt__(self, b):
         """Returns a dataset where the values in series_0 are greater than the value b
