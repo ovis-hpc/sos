@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+from past.builtins import execfile
+from builtins import next
+from builtins import range
+from builtins import object
 import unittest
 import shutil
 import logging
@@ -72,7 +76,7 @@ class GuiFilter(SosTestCase):
         while o:
             # Dprint(o[:4])
             count += 1
-            o = f.next()
+            o = next(f)
         Dprint("Misses {0}".format(f.miss_count()))
         Dprint("Count {0}".format(count))
         self.assertTrue(f.miss_count() <= 3)

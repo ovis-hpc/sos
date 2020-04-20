@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 from __future__ import print_function
+from past.builtins import execfile
+from builtins import next
+from builtins import range
+from builtins import object
 import unittest
 import logging
 import random
@@ -68,7 +72,7 @@ class QueryTest(SosTestCase):
                 i, 2*i, 3*i,
                 random.random(), random.random(),
                 (t.second, t.microsecond),
-                "{0}".format(i), bytearray("{0}".format(i)),
+                "{0}".format(i), bytearray("{0}".format(i), encoding='utf-8'),
                 [ -i, -i, -i ], [ -i, -i, -i ], [ -i, -i, -i ],
                 [ i, i, i ], [ i, i, i ], [ i, i, i ],
                 [ random.random(), random.random(), random.random() ],
@@ -101,14 +105,14 @@ class QueryTest(SosTestCase):
                     v2 = v2.tolist()
                 Dprint("checking {0}".format(v2))
                 if v2 < v:
-                    rc = it.next()
+                    rc = next(it)
                 else:
                     self.assertTrue( v == v2 )
                     foundit = True
-                    it.next()
+                    next(it)
                     break
             self.assertTrue( foundit )
-            o = self.query.next()
+            o = next(self.query)
         self.assertTrue( next_count > 0 )
 
         # iterate backwards, the count should be the same
@@ -206,7 +210,7 @@ class QueryTest(SosTestCase):
         o = query.begin()
         while o:
             count = count + 1
-            o = query.next()
+            o = next(query)
         return count
 
     def test_050_unique(self):

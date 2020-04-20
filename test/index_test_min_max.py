@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+from past.builtins import execfile
+from builtins import object
 import unittest
 import shutil
 import logging

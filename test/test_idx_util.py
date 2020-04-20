@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-
+from builtins import next
+from builtins import range
+from builtins import object
 import logging
 import unittest
 import shutil
@@ -55,7 +57,7 @@ class SosIterWrap(object):
         b = True
         while b:
             yield self.itr.item()
-            b = self.itr.next() if not self.rev else self.itr.prev()
+            b = next(self.itr) if not self.rev else self.itr.prev()
 
 
 class TestIndexBase(object):
@@ -79,7 +81,7 @@ class TestIndexBase(object):
             part.state_set("PRIMARY")
             del part
         except Exception as e:
-            raise StandardError("The test container could not be created.".
+            raise Exception("The test container could not be created.".
                                 format(cls.STORE_PATH))
 
         # new schema
@@ -143,7 +145,7 @@ class TestIndexBase(object):
                 obj = itr.item()
                 t = obj2tuple(obj)
                 data.append(t)
-                b = itr.next()
+                b = next(itr)
             self.assertEqual(data, self.input_data)
 
     def test_iter_rev(self):
@@ -166,7 +168,7 @@ class TestIndexBase(object):
             itr.begin()
             for i in range(0, 10):
                 data_fwd.append(obj2tuple(itr.item()))
-                itr.next()
+                next(itr)
             data_rev = []
             itr.prev()
             for i in range(0, 10):
@@ -249,8 +251,8 @@ class TestIndexBase(object):
         for attr in self.schema:
             itr = sos.AttrIter(attr)
             self.assertTrue(itr.begin())
-            self.assertTrue(itr.next())
-            self.assertTrue(itr.next())
+            self.assertTrue(next(itr))
+            self.assertTrue(next(itr))
             obj = itr.item()
             pos = itr.get_pos()
             self.assertIsNotNone(obj)
@@ -268,8 +270,8 @@ class TestIndexBase(object):
             for attr in self.schema:
                 itr = sos.AttrIter(attr)
                 self.assertTrue(itr.begin())
-                self.assertTrue(itr.next())
-                self.assertTrue(itr.next())
+                self.assertTrue(next(itr))
+                self.assertTrue(next(itr))
                 pos = itr.get_pos()
                 self.assertIsNotNone(pos)
                 poss.append([itr, pos])
@@ -290,8 +292,8 @@ class TestIndexBase(object):
             for attr in self.schema:
                 itr = sos.AttrIter(attr)
                 self.assertTrue(itr.begin())
-                self.assertTrue(itr.next())
-                self.assertTrue(itr.next())
+                self.assertTrue(next(itr))
+                self.assertTrue(next(itr))
                 pos = itr.get_pos()
                 self.assertIsNotNone(pos)
                 poss.append([itr, pos])
@@ -312,7 +314,7 @@ class TestIndexBase(object):
             for attr in self.schema:
                 itr = sos.AttrIter(attr)
                 self.assertTrue(itr.begin())
-                self.assertTrue(itr.next())
+                self.assertTrue(next(itr))
                 pos = itr.get_pos()
                 self.assertIsNotNone(pos)
                 poss.append([itr, pos])

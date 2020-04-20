@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+from past.builtins import execfile
+from builtins import next
+from builtins import range
 import unittest
 import shutil
 import logging
@@ -38,7 +41,7 @@ class ArrayTest(SosTestCase):
         a = [ ]
         for i in range(0, self.schema.attr_count()):
             if i == 0:
-                v = bytearray(self.schema[i].name())
+                v = bytearray(self.schema[i].name(), encoding='utf-8')
             elif i == 1:
                 v = self.schema[i].name()
             else:
@@ -56,7 +59,7 @@ class ArrayTest(SosTestCase):
         while o:
             for i in range(0, self.schema.attr_count()):
                 if i == 0:
-                    a = bytearray(self.schema[i].name())
+                    a = bytearray(self.schema[i].name(), encoding='utf-8')
                 elif i == 1:
                     a = self.schema[i].name()
                 else:
@@ -64,7 +67,7 @@ class ArrayTest(SosTestCase):
                 for j in range(0, len(a)):
                     b = o[i]
                     self.assertEqual(a[j], b[j])
-            o = f.next()
+            o = next(f)
 
     def test_02_set_data(self):
         attr = self.schema['char_array']
@@ -74,14 +77,14 @@ class ArrayTest(SosTestCase):
             v = []
             for i in range(0, self.schema.attr_count()):
                 if i == 0:
-                    a = bytearray("new_" + self.schema[i].name())
+                    a = bytearray("new_" + self.schema[i].name(), encoding='utf-8')
                 elif i == 1:
                     a = "new_" + self.schema[i].name()
                 else:
                     a = list(range(16, 32))
                 v.append(a)
             o[:] = v
-            o = f.next()
+            o = next(f)
 
     def test_03_get_data(self):
         attr = self.schema['char_array']
@@ -90,7 +93,7 @@ class ArrayTest(SosTestCase):
         while o:
             for i in range(0, self.schema.attr_count()):
                 if i == 0:
-                    a = bytearray("new_"+self.schema[i].name())
+                    a = bytearray("new_"+self.schema[i].name(), encoding='utf-8')
                 elif i == 1:
                     a = "new_"+self.schema[i].name()
                 else:
@@ -98,7 +101,7 @@ class ArrayTest(SosTestCase):
                 for j in range(0, len(a)):
                     b = o[i]
                     self.assertEqual(a[j], b[j])
-            o = f.next()
+            o = next(f)
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
