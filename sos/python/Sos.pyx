@@ -52,6 +52,7 @@ import numpy as np
 import struct
 import sys
 import copy
+import binascii
 from DataSet import DataSet
 cimport numpy as np
 cimport Sos
@@ -3321,7 +3322,10 @@ cdef class ColSpec:
 
     def format(self, value):
         """Return a column formatted string for the input value"""
-        v = str(value)
+        if type(value) == bytearray:
+            v = repr(value)
+        else:
+            v = str(value)
         if self.align == ColSpec.RIGHT:
             return v.rjust(self.col_width, self.fill)
         elif self.align == ColSpec.LEFT:
