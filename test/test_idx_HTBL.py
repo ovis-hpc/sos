@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+from builtins import str
 from test_idx_util import *
 
 class TestHTBL(TestIndexBase, unittest.TestCase):

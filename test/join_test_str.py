@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+from past.builtins import execfile
+from builtins import next
+from builtins import range
+from builtins import object
 import unittest
 import shutil
 import logging
@@ -57,7 +61,7 @@ class JoinTestStr(SosTestCase):
             self.assertEqual(o.a_1, data[i][0])
             self.assertEqual(o.a_2, data[i][1])
             self.assertEqual(o.a_3, data[i][2])
-            b = it.next()
+            b = next(it)
             i += 1
         self.assertEqual(count, 3)
 
@@ -72,7 +76,7 @@ class JoinTestStr(SosTestCase):
         while o:
             count += 1
             self.assertTrue(cmp_fn(o[idx], expect[0]))
-            o = f.next()
+            o = next(f)
         self.assertEqual(count, counts[0])
         del f
 
@@ -83,7 +87,7 @@ class JoinTestStr(SosTestCase):
         while o:
             count += 1
             self.assertTrue(cmp_fn(o[idx], expect[1]))
-            o = f.next()
+            o = next(f)
         self.assertEqual(count, counts[1])
         del f
 
@@ -94,7 +98,7 @@ class JoinTestStr(SosTestCase):
         while o:
             count += 1
             self.assertTrue(cmp_fn(o[idx], expect[2]))
-            o = f.next()
+            o = next(f)
         self.assertEqual(count, counts[2])
         del f
 
@@ -105,7 +109,7 @@ class JoinTestStr(SosTestCase):
         while o:
             count += 1
             self.assertTrue(cmp_fn(o[idx], expect[3]))
-            o = f.next()
+            o = next(f)
         self.assertEqual(count, counts[3])
         del f
 

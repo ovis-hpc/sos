@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 from __future__ import print_function
+from past.builtins import execfile
+from builtins import next
+from builtins import range
+from builtins import object
 import unittest
 import shutil
 import numpy as np
@@ -56,7 +60,7 @@ class FilterPosTest(SosTestCase):
         while o:
             pos = self.filt.get_pos()
             pos_list.append( [ pos, o[:] ] )
-            o = self.filt.next()
+            o = next(self.filt)
 
         for p in pos_list:
             rc = self.filt.set_pos( p[0] )

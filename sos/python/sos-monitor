@@ -43,6 +43,9 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+from __future__ import print_function
+from builtins import str
+from builtins import object
 import argparse
 import curses
 from curses.textpad import Textbox, rectangle
@@ -97,9 +100,9 @@ class SchemaMonitor(object):
 
             if t0 != 0.0:
                 diff_time = math.floor(t1 - t0)
-                insert_rate = (c - self.cards[i]) / diff_time
-                dup_rate = (d - self.dups[i]) / diff_time
-                size_rate  = (s - self.sizes[i]) / diff_time
+                insert_rate = (c - self.cards[i]) // diff_time
+                dup_rate = (d - self.dups[i]) // diff_time
+                size_rate  = (s - self.sizes[i]) // diff_time
             self.cards[i] = c
             self.dups[i] = d
             self.sizes[i] = s
