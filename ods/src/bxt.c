@@ -2165,6 +2165,9 @@ static int _iter_begin_unique(bxt_iter_t i)
 		ods_obj_put(i->node);
 	i->ent = 0;
 	i->node = bxt_min_node(t);
+#if ODS_DEBUG
+	debug_verify_node(t, i->node);
+#endif
 	return i->node ? 0 : ENOENT;
 }
 
@@ -2206,7 +2209,7 @@ static int _iter_end_unique(bxt_iter_t i)
 	i->node = bxt_max_node(t);
 	if (i->node) {
 #ifdef ODS_DEBUG
-		assert(REC(i->rec)->next_ref != 0xFFFFFFFFFFFFFFFF);
+		debug_verify_node(t, i->node);
 #endif
 		i->ent = NODE(i->node)->count-1;
 	}
@@ -2466,8 +2469,10 @@ static int _iter_next_unique(bxt_iter_t i)
 		i->node = right;
 		i->ent = 0;
 #ifdef ODS_DEBUG
-		if (i->node)
+		if (i->node) {
+			debug_verify_node(t, i->node);
 			assert(REC(i->node)->next_ref != 0xFFFFFFFFFFFFFFFF);
+		}
 #endif
 	}
 	return i->node ? 0 : ENOENT;

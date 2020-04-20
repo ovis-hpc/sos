@@ -643,6 +643,7 @@ cdef class Schema(SosObject):
         cdef const char *idx_args = NULL
         cdef int join_count
         cdef char **join_args
+        cdef char *attr_name
 
         self.c_schema = sos_schema_new(name.encode())
         if self.c_schema == NULL:

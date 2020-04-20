@@ -45,8 +45,8 @@ class FilterCountTest(SosTestCase):
     def test_00_add_objs(self):
         for job in range(1, 6):
             start = int(time.time())
-            for ts in range(start, start + 60 * int(random.random() * 60)):
-                for comp in range(1, int(random.random() * 16) + 1):
+            for ts in range(start, start + 60 * int(random.random() * 60) + 2):
+                for comp in range(1, int(random.random() * 16) + 2):
                     o = self.schema.alloc()
                     o[:] = (job, ( ts, 0 ), comp)
                     o.index_add()
