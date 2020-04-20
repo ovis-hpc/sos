@@ -1,4 +1,9 @@
 #!/usr/bin/env python
+from past.builtins import execfile
+from builtins import next
+from builtins import str
+from builtins import range
+from builtins import object
 import unittest
 import shutil
 import logging
@@ -56,8 +61,8 @@ class KeyTest(SosTestCase):
                 i, i, i,
                 random.random(), random.random(),
                 (t.second, t.microsecond),
-                bytearray(str(-i)),
-                "{0}".format(i), bytearray("{0}".format(i)),
+                bytearray(str(-i), encoding='utf-8'),
+                "{0}".format(i), bytearray("{0}".format(i), encoding='utf-8'),
                 [ -i, -i, -i ], [ -i, -i, -i ], [ -i, -i, -i ],
                 [ i, i, i ], [ i, i, i ], [ i, i, i ],
                 [ random.random(), random.random(), random.random() ],
@@ -181,13 +186,13 @@ class KeyTest(SosTestCase):
             Dprint(o[:])
         self.assertIsNotNone( o )
         self.assertEqual( o['struct'][:len(value)],
-                          bytearray(value) )
+                          bytearray(value, encoding='utf-8') )
 
     def test_11_char_array(self):
         self._test_int_key_type('string', '502')
 
     def test_12_byte_array(self):
-        self._test_array_key_type('byte_array', bytearray('503'))
+        self._test_array_key_type('byte_array', bytearray('503', encoding='utf-8'))
         self._test_array_key_type('byte_array', [53, 48, 51])
 
     def test_13_int16_array(self):

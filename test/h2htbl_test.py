@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+from past.builtins import execfile
+from builtins import object
 import unittest
 import shutil
 import logging
@@ -38,7 +40,8 @@ class H2HTBLTest(SosTestCase):
 
     def test_00_add_tokens(self):
         global next_tkn_id
-        f = open(os.path.dirname(sys.argv[0]) + "/eng-dictionary", "r")
+        #f = open(os.path.dirname(sys.argv[0]) + "/eng-dictionary", "r")
+        f = open("eng-dictionary", "r")
         for word in f:
             tkn_text = word.rstrip()
             if next_tkn_id % 300 == 0:

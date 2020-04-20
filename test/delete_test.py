@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+from __future__ import division
+from past.builtins import execfile
+from builtins import range
+from builtins import object
 import unittest
 import shutil
 import logging
@@ -73,7 +77,7 @@ class DeleteTest(SosTestCase):
     def test_03_del(self):
         k_attr = self.schema['key']
         idx = k_attr.index()
-        for i in range(0, len(data2) / 2):
+        for i in range(0, len(data2) // 2):
             d = data2[i]
             k = k_attr.key(d[0], d[1])
             o = idx.find(k)

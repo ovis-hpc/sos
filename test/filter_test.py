@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 from __future__ import print_function
+from past.builtins import execfile
+from builtins import next
+from builtins import range
+from builtins import object
 import unittest
 import logging
 import os
@@ -73,7 +77,7 @@ class FilterTest(SosTestCase):
                 i, i, i,
                 random.random(), random.random(),
                 (t.second, t.microsecond),
-                "{0}".format(i), bytearray("{0}".format(i)),
+                "{0}".format(i), bytearray("{0}".format(i), encoding='utf-8'),
                 [ -i, -i, -i ], [ -i, -i, -i ], [ -i, -i, -i ],
                 [ i, i, i ], [ i, i, i ], [ i, i, i ],
                 [ random.random(), random.random(), random.random() ],
@@ -105,7 +109,7 @@ class FilterTest(SosTestCase):
             Dprint("{0} <= {1}".format(v, max_v))
             self.assertTrue( v >= min_v )
             self.assertTrue( v <= max_v )
-            o = f.next()
+            o = next(f)
         self.assertTrue( next_count > 0 )
 
         # iterate backwards, the count should be the same
@@ -138,7 +142,7 @@ class FilterTest(SosTestCase):
             next_count += 1
             self.assertTrue( o[attr_name] >= min_v )
             self.assertTrue( o[attr_name] <= max_v )
-            o = f.next()
+            o = next(f)
 
         # iterate backwards, the count should be the same
         o = f.end()

@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+from past.builtins import execfile
+from builtins import next
+from builtins import str
+from builtins import object
 import unittest
 import shutil
 import logging
@@ -52,7 +56,7 @@ class JoinTestGet(SosTestCase):
             self.assertEqual(o.a_1, data[i][0])
             self.assertEqual(o.a_2, data[i][1])
             self.assertEqual(o.a_3, data[i][2])
-            b = it.next()
+            b = next(it)
             i += 1
         self.assertEqual(count, 3)
 
@@ -65,7 +69,7 @@ class JoinTestGet(SosTestCase):
                              str(o['a_1']) + ':' +
                              str(o['a_2']) + ':' +
                              str(o['a_3']))
-            o = f.next()
+            o = next(f)
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
