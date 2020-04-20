@@ -44,6 +44,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 from __future__ import print_function
+from builtins import str
+from builtins import range
+from builtins import object
 import numpy as np
 import datetime as dt
 import textwrap
@@ -66,7 +69,7 @@ class DataSetIter(object):
     def __iter__(self):
         return self
 
-    def next(self):
+    def __next__(self):
         if self.reverse:
             if self.row_no < 0:
                 raise StopIteration
@@ -340,7 +343,9 @@ class DataSet(object):
             for col in range(0, self.series_count):
                 v = self.array_with_series_idx[col][row_no]
                 typ = type(v)
-                if typ == np.ndarray or typ == np.string_:
+                if typ.__module__ == 'builtins':
+                    pass
+                elif typ == np.ndarray or typ == np.string_:
                     v = str(v)
                 elif typ == np.float32 or typ == np.float64:
                     v = float(v)
@@ -352,7 +357,7 @@ class DataSet(object):
                     v = int(v)
                 elif typ == np.datetime64:
                     # convert to milliseconds from microseconds
-                    v = v.astype('int') / 1000
+                    v = v.astype(np.int64) // int(1e6)
                 else:
                     raise ValueError("Unrecognized numpy type {0}".format(typ))
                 aRow.append(v)
@@ -577,7 +582,7 @@ class DataSet(object):
                 result.append_array(self.series_size, ser_name, ary)
         return result
 
-    def __div__(self, rhs):
+    def __truediv__(self, rhs):
         """Implements lhs / rhs"""
         result = DataSet()
         if type(rhs) == DataSet:

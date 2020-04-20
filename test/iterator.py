@@ -1,5 +1,6 @@
 #!/usr/bin/python
 from __future__ import print_function
+from builtins import next
 from sosdb import Sos
 from shutil import rmtree
 from os import chdir
@@ -143,7 +144,7 @@ last_key = 0
 while rc:
     o = it.item()
     tests.test('Iterator returns only the unique keys', (last_key != o['key']))
-    rc = it.next()
+    rc = next(it)
 
 # Iterate unique backward
 rc = it.end()
@@ -162,7 +163,7 @@ while rc:
     tests.test('Iterator returns next object with order {0}'.format(exp_order),
                (exp_order == o['order']))
     exp_order += 1
-    rc = it.next()
+    rc = next(it)
 
 # Iterate backward
 rc = it.end()

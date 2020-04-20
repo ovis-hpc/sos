@@ -71,15 +71,15 @@ class AppendDataTest(SosTestCase):
             self.assertEqual(d[0], v[0])
             self.assertEqual(d[1], v[1])
             count += 1
-            o = f.next()
+            o = next(f)
         self.assertEqual(count, len(data))
 
         # Add more data
         new_data = []
         key, new_data = self.__add_data( key, new_data )
 
-        # f.next should return the new data
-        o = f.next()
+        # next(f) should return the new data
+        o = next(f)
         self.assertIsNotNone( o )
         count = 0
         while o:
@@ -88,7 +88,7 @@ class AppendDataTest(SosTestCase):
             self.assertEqual(d[0], v[0])
             self.assertEqual(d[1], v[1])
             count += 1
-            o = f.next()
+            o = next(f)
         # we should not see any object twice
         self.assertEqual( count, len(new_data) )
         # Make the global data match the container

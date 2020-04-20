@@ -44,6 +44,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 from __future__ import print_function
+from __future__ import division
+from builtins import str
+from builtins import range
 import time
 import sys
 import argparse
@@ -184,7 +187,7 @@ if __name__ == "__main__":
             input_process.append([ assign_list, attr, make_cast(attr), source['list'] ])
         elif 'range' in source:
             input_process.append([ assign_list, attr, make_cast(attr),
-                                   range(source['range'][0], source['range'][1]+1) ])
+                                   list(range(source['range'][0], source['range'][1]+1)) ])
         else:
             raise ValueError("Error processing {0}".format(spec))
 
@@ -223,7 +226,7 @@ if __name__ == "__main__":
             t1 = time.time()
             t = t1 - t0
             if t > 5.0:
-                print("{0} records/second".format(new_recs / t))
+                print("{0} records/second".format(new_recs // t))
                 new_recs = 0.
                 t0 = t1
 
