@@ -3468,7 +3468,7 @@ cdef object get_BYTE_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t 
     return res
 
 cdef object get_CHAR_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
-    return str(c_data.array.data.char_[:c_data.array.count])
+    return c_data.array.data.char_[:c_data.array.count].decode()
 
 cdef object get_INT64_ARRAY(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr):
     res = np.ndarray([ c_data.array.count ], dtype=np.dtype('int64'), order="C")
