@@ -758,7 +758,7 @@ cdef class Schema(SosObject):
         if type(attr_id) == int:
             return Attr(self, attr_id=attr_id)
         elif type(attr_id) == str:
-            return Attr(self, attr_name=attr_id.encode())
+            return Attr(self, attr_name=attr_id)
         raise ValueError("The index must be a string or an integer.")
 
     def __str__(self):
