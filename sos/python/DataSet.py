@@ -79,6 +79,32 @@ class DataSetIter(object):
             self.row_no += 1
         return res
 
+numpy_attr_types = {
+    "INT16" : ( np.int16, False ),
+    "INT32" : ( np.int32, False ),
+    "INT64" : ( np.int64, False ),
+    "UINT16" : ( np.uint16, False ),
+    "UINT32" : ( np.uint32, False ),
+    "UINT64" : ( np.uint64, False ),
+    "FLOAT" : ( np.float32, False ),
+    "DOUBLE" : ( np.double, False ),
+    "LONG_DOUBLE" : ( np.float128, False ),
+    "TIMESTAMP" : ( np.datetime64, False ),
+    "STRUCT" : ( np.bytes_, True ),
+    "BYTE_ARRAY" : ( np.string_, True ),
+    "CHAR_ARRAY" : ( np.string_, True ),
+    "STRING" : ( np.string_, True ),
+    "INTTrue6_ARRAY" : ( np.int16, True ),
+    "INT32_ARRAY" : ( np.int32, True ),
+    "INT64_ARRAY" : ( np.int64, True ),
+    "UINTTrue6_ARRAY" : ( np.uint16, True ),
+    "UINT32_ARRAY" : ( np.uint32, True ),
+    "UINT64_ARRAY" : ( np.uint64, True ),
+    "FLOAT_ARRAY" : ( np.float32, True ),
+    "DOUBLE_ARRAY" : ( np.float64, True ),
+    "LONG_DOUBLE_ARRAY" : ( np.float128, True ),
+}
+
 
 class DataSet(object):
     """A class for accessing datasource results
@@ -117,12 +143,47 @@ class DataSet(object):
 
     """
 
-    def __init__(self):
-        """Create an instance of a DataSet"""
-        self.series_size = 0
+    def __init__(self, schema=None, series_size=1):
+        """Create an instance of a DataSet
+
+        Keyword Parameters:
+
+        schema - A schema template object. This object has the same
+                 format as a SOS schema template
+
+        series_size
+               - The series size
+
+        """
         self.series_names = []
         self.array_with_series_name = {}
         self.array_with_series_idx = []
+
+        if schema:
+            self.series_size = series_size
+            self.schema_name = schema['name']
+            attrs = schema['attrs']
+            for a in attrs:
+                typ = self._map_sos_type(a['type'])
+                dtyp = typ[0]
+                is_array = typ[1]
+                if is_array:
+                    if "size" not in a:
+                        raise ValueError("Array types must contain the 'size' attribute")
+                    size = a['size']
+                    if dtyp == np.string_:
+                        dtyp = np.dtype('|S{0}'.format(size))
+                        shape = series_size
+                    else:
+                        shape = [ series_size, size ]
+                else:
+                    shape = series_size
+                self._add_series((shape, a['name'], dtyp))
+        else:
+            self.series_size = 0
+
+    def _map_sos_type(self, type_name):
+        return numpy_attr_types[type_name.upper()]
 
     def copy(self, my_ser, my_offset, src_set, src_ser, src_offset, count):
         dst = self.array_with_series_name[my_ser]
@@ -533,18 +594,30 @@ class DataSet(object):
                 result.append_array(self.series_size, ser_name, ary)
         return result
 
+    def _add_series(self, val):
+        if type(val) == DataSet:
+            for i in range(0, len(val.series_names)):
+                self.append_array(val.series_size, val.series_names[i], val.array_with_series_idx[i])
+        elif type(val) == tuple:
+            # ( count/shape, series-name, np.dtype, initial-value )
+            nda = np.ndarray(val[0], dtype=val[2])
+            if len(val) == 4:
+                nda[:] = val[3]
+            if type(val[0]) != int:
+                if len(val[0]) > 1:
+                    rows = val[0][0]
+                else:
+                    raise ValueError("The 1st entry in the tuple must be an int or an array")
+            else:
+                rows = val[0]
+            self.append_array(rows, val[1], nda)
+        return self
+
     def __lshift__(self, val):
         ds = DataSet()
         for i in range(0, len(self.series_names)):
             ds.append_array(self.series_size, self.series_names[i], self.array_with_series_idx[i])
-        if type(val) == DataSet:
-            for i in range(0, len(val.series_names)):
-                ds.append_array(val.series_size, val.series_names[i], val.array_with_series_idx[i])
-        elif type(val) == tuple:
-            # ( count, series-name, np.dtype, initial-value )
-            nda = np.ndarray(val[0], dtype=val[2])
-            nda[:] = val[3]
-            ds.append_array(val[0], val[1], nda)
+        ds._add_series(val)
         return ds
 
     def __rshift__(self, rename):
