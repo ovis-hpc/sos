@@ -510,7 +510,6 @@ sos_type_strs = {
 
 sos_attr_types = {
     "INT16" : SOS_TYPE_INT16,
-    "FIRST" : SOS_TYPE_FIRST,
     "INT32" : SOS_TYPE_INT32,
     "INT64" : SOS_TYPE_INT64,
     "UINT16" : SOS_TYPE_UINT16,
@@ -708,6 +707,7 @@ cdef class Schema(SosObject):
                                              <const char *>idx_args)
                 if rc != 0:
                     self.abort(rc)
+        return self
 
     def add(self, Container cont):
         """Add the schema to the container
@@ -4312,6 +4312,7 @@ cdef class Object(object):
         return res
 
     def __setitem__(self, idx, val):
+        cdef int iidx
         cdef sos_attr_t c_attr
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
@@ -4332,12 +4333,14 @@ cdef class Object(object):
             return
 
         # single index assignment
-        if type(idx) == int:
-            c_attr = sos_schema_attr_by_id(self.c_schema, idx)
         elif type(idx) == str:
             c_attr = sos_schema_attr_by_name(self.c_schema, idx.encode())
+        # assume it's a number
         else:
-            raise ValueError("Object has no attribute with id '{0}'".format(idx))
+            iidx = int(idx)
+            c_attr = sos_schema_attr_by_id(self.c_schema, iidx)
+            if c_attr == NULL:
+                raise ValueError("Object has no attribute with id '{0}'".format(idx))
         if 0 == sos_attr_is_array(c_attr):
             self.set_py_value(c_attr, val)
         else:
@@ -4862,9 +4865,15 @@ cdef class QueryInputer:
         for filt_no in range(start, filt_count):
             f = query.filters[filt_no]
             if reset_:
-                c_obj = sos_filter_begin(f.c_filt)
+                if not query.desc:
+                    c_obj = sos_filter_begin(f.c_filt)
+                else:
+                    c_obj = sos_filter_end(f.c_filt)
             else:
-                c_obj = sos_filter_next(f.c_filt)
+                if not query.desc:
+                    c_obj = sos_filter_next(f.c_filt)
+                else:
+                    c_obj = sos_filter_prev(f.c_filt)
             if c_obj == NULL:
                 return False
             else:
@@ -5134,7 +5143,8 @@ cdef class QueryInputer:
         free(res_acc)
         return res
 
-    def to_dataframe(self, Query query, max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
+    def to_dataframe(self, Query query, index=None,
+                     max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
         """Return the Query data as a DataFrame"""
         import pandas as pd
         cdef sos_obj_t c_o
@@ -5216,7 +5226,19 @@ cdef class QueryInputer:
             res_idx += 1
         self.row_count = 0
 
-        res = pd.DataFrame(result)
+        pdres = {}
+        df_idx = None
+        for attr_idx in range(0, nattr):
+            col_name = sos_attr_name(res_acc[attr_idx].attr)
+            pdres[col_name] = result[attr_idx]
+            if index == col_name:
+                df_idx = pd.DatetimeIndex(result[attr_idx])
+        if index and df_idx is None:
+            raise ValueError("The index column {0} is not present in the result".format(index))
+        if df_idx is not None:
+            res = pd.DataFrame(pdres, index=df_idx)
+        else:
+            res = pd.DataFrame(pdres)
         free(res_acc)
         return res
 
@@ -5230,8 +5252,8 @@ cdef class Query:
     cdef int col_width          # default width of an output column
     cdef primary                # primary attribute
     cdef group_fn               # function that decides how objects are grouped
-    cdef last_row               # indeed...
     cdef unique                 # Boolean indicating if queries are unique
+    cdef desc	                # Boolean defining results order
     cdef inputer                # Maintains query results
 
     def __init__(self, container):
@@ -5256,6 +5278,7 @@ cdef class Query:
         self.columns = []
         self.schema = []
         self.col_width = 15
+        self.desc = False
 
     cdef __find_schema_with_attr(self, name):
         if len(self.schema) > 0:
@@ -5288,6 +5311,10 @@ cdef class Query:
     @property
     def index_name(self):
         return self.primary
+
+    @property
+    def descending(self):
+        return self.desc
 
     def set_col_width(self, width):
         self.col_width = width
@@ -5478,7 +5505,8 @@ cdef class Query:
         colspec.update(self, idx, attr)
         self.columns.append(colspec)
 
-    def select(self, columns, order_by=None, where=None, from_=None, unique=False):
+    def select(self, columns, order_by=None, desc=False,
+               where=None, from_=None, unique=False):
         """Set the attribute list returned in the result
 
         Positional Parmeters:
@@ -5518,6 +5546,7 @@ cdef class Query:
         from_     -- A list of schema names
         where     -- A list of conditions to filter the data
         order_by  -- The attribute to use as the primary index
+        desc      -- Boolean to indicate if results should be in reverse order
         unique    -- Return only a single result for each matching key
 
         FROM_
@@ -5555,6 +5584,15 @@ cdef class Query:
 
             order_by = 'job_comp_time'
 
+        DESC
+
+          Specifies if results should be returned in reverse order.
+          The default is False.
+
+          Example:
+
+            desc = True
+
         UNIQUE
 
           Set the unique keyword to True to return only the 1st result
@@ -5570,6 +5608,7 @@ cdef class Query:
         self.primary = None
         self.schema = []
         self.unique = unique
+        self.desc = desc
 
         if order_by:
             # Must be before the Filter(s) are created
@@ -5655,10 +5694,11 @@ cdef class Query:
             return self.inputer.to_dataset(self, max_array, max_string)
         return None
 
-    def to_dataframe(self, max_array=QueryInputer.DEFAULT_ARRAY_LIMIT,
+    def to_dataframe(self, index=None,
+                     max_array=QueryInputer.DEFAULT_ARRAY_LIMIT,
                      max_string=QueryInputer.DEFAULT_ARRAY_LIMIT):
         if self.inputer:
-            return self.inputer.to_dataframe(self, max_array, max_string)
+            return self.inputer.to_dataframe(self, index, max_array, max_string)
         return None
 
     def __dealloc__(self):
