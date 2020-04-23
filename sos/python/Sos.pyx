@@ -186,6 +186,15 @@ cdef class SosObject:
             raise Exception("Error {0}".format[self.error])
 
 cdef class SchemaIter(SosObject):
+    """Implements a Schema iterator
+
+    Example:
+
+    # print names of all the in the container
+    for schema in container.schema_iter():
+        print(schema.name())
+
+    """
     cdef sos_schema_t c_next_schema
     def __init__(self, Container cont):
         self.c_next_schema = sos_schema_first(cont.c_cont)
@@ -202,6 +211,15 @@ cdef class SchemaIter(SosObject):
         return s
 
 cdef class PartIter(SosObject):
+    """Implements a Partition iterator
+
+    Example:
+
+    # print names of all the partitions
+    for part in container.part_iter():
+        print(part.name())
+
+    """
     cdef sos_part_iter_t c_iter
     cdef sos_part_t c_part
     def __init__(self, Container cont):
@@ -231,6 +249,15 @@ cdef class PartIter(SosObject):
             self.c_iter = NULL
 
 cdef class IndexIter(SosObject):
+    """Implements an Index iterator
+
+    Example:
+
+    # print names of all the indices in the container
+    for idx in container.index_iter():
+        print(idx.name())
+
+    """
     cdef sos_container_index_iter_t c_iter
     cdef sos_index_t c_idx
     def __init__(self, Container cont):
@@ -269,11 +296,26 @@ cdef class Container(SosObject):
             self.open(path, o_perm=o_perm)
 
     def version(self):
+        """Return the container version information"""
         if self.c_cont != NULL:
             return sos_container_version(self.c_cont)
         return None
 
     def open(self, path, o_perm=SOS_PERM_RW):
+        """Open the container
+
+        If the container cannot be opened an Exception is thrown with
+        an error string based on the errno.
+
+        Positional Parameters:
+
+        - The path to the container
+
+        Keyword Parameters:
+
+        o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RO
+
+        """
         if self.c_cont != NULL:
             self.abort(EBUSY)
         self.c_cont = sos_container_open(path.encode(), o_perm)
@@ -281,6 +323,22 @@ cdef class Container(SosObject):
             raise self.abort(errno)
 
     def create(self, path, o_mode=0660):
+        """Create an empty container
+
+        Create a new empty container. If the container cannot be
+        created an Exception is thrown. The exception message is based
+        on the errno.
+
+        Positional Parameters:
+
+        - The path to the container
+
+        Keyword Parameters:
+
+        o_mode - An octal number indicating rwx permissions for the
+                 container. These default is 0o664, ie. -rw-rw-r--
+
+        """
         cdef int rc
         if self.c_cont != NULL:
             self.abort(EBUSY)
@@ -289,6 +347,12 @@ cdef class Container(SosObject):
             self.abort(rc)
 
     def delete(self):
+        """Delete a container
+
+        Removes the container from the filesystem. If the container
+        cannot be deleted an Exception is thrown with a message based
+        on the errno.
+        """
         cdef int rc
         if self.c_cont == NULL:
             self.abort(EINVAL)
@@ -297,18 +361,57 @@ cdef class Container(SosObject):
             self.abort(rc)
 
     def close(self, commit=SOS_COMMIT_ASYNC):
+        """Close a container
+
+        Closes the container. If the container is not open, an
+        excception is thrown.
+
+        if the 'commit' keyword parameter is set to SOS_COMMIT_ASYNC,
+        the method will not return until all outstanding data has been
+        written to stable storage.
+
+        Keyword Parameters:
+
+        commit - SOS_COMMIT_SYNC or SOS_COMMIT_ASYNC, The default is
+                 SOS_COMMIT_ASYNC.
+
+        """
         if self.c_cont == NULL:
             self.abort(EINVAL)
         sos_container_close(self.c_cont, commit)
         self.c_cont = NULL
 
     def commit(self, commit=SOS_COMMIT_ASYNC):
+        """Commit objects in memory to storage
+
+        Commits outstanding data to stable storage. If the 'commit'
+        keyword parameter is set to SOS_COMMIT_SYNC, the method will
+        not return until all oustanding data has been written to
+        storage.
+
+        Keyword Parameters:
+
+        commit - SOS_COMMIT_ASYNC (default) or SOS_COMMIT_SYNC
+        """
         cdef int rc
         rc = sos_container_commit(self.c_cont, commit)
         if rc != 0:
             self.abort(rc)
 
     def part_create(self, name, path=None):
+        """Create a new empty partition
+
+        Creates a new empty partition. If the 'path' keyword parameter
+        specified, the partition data is stored at the location specified. By
+        default it is stored under the subdirectory 'name' in the
+        container directory.
+
+        Positional Parameters:
+
+        - The partition name
+        - A path to the partition (default is None)
+
+        """
         cdef int rc
         if self.c_cont == NULL:
             raise ValueError("The container is not open.")
@@ -320,6 +423,16 @@ cdef class Container(SosObject):
             self.abort(rc)
 
     def part_by_name(self, name):
+        """Return the named partition
+
+        Positional Parameters:
+
+        - The name of the partition
+
+        Returns:
+
+        A Partition object, or None if the partition does not exist.
+        """
         cdef sos_part_t c_part = sos_part_find(self.c_cont, name.encode())
         if c_part != NULL:
             p = Partition()
@@ -328,12 +441,26 @@ cdef class Container(SosObject):
         return None
 
     def part_iter(self):
+        """Return a PartIter iterator for the container"""
         return PartIter(self)
 
     def index_iter(self):
+        """Return an IndexIter iterator for the container"""
         return IndexIter(self)
 
     def schema_by_name(self, name):
+        """Return the named schema
+
+        Positional Parameters:
+
+        - The name of the partition
+
+        Returns:
+
+        A Schema object, or None if the named schema does not exist in
+        the container.
+
+        """
         cdef sos_schema_t c_schema = sos_schema_by_name(self.c_cont, name.encode())
         if c_schema != NULL:
             s = Schema()
@@ -342,6 +469,21 @@ cdef class Container(SosObject):
         return None
 
     def schema_by_id(self, id_):
+        """Return the Schema with the specified 'id'
+
+        Every schema has a unique 64b identifier that is stored with
+        every Object with that Schema.
+
+        Positional Parameters:
+
+        - The unique schema id.
+
+        Returns:
+
+        The Schema with the specified id, or None if no schema with
+        that id exists.
+
+        """
         cdef sos_schema_t c_schema = sos_schema_by_id(self.c_cont, id_)
         if c_schema != NULL:
             s = Schema()
@@ -350,6 +492,7 @@ cdef class Container(SosObject):
         return None
 
     def schema_iter(self):
+        """Return a SchemaIter iterator for the container"""
         return SchemaIter(self)
 
 PART_STATE_OFFLINE = SOS_PART_STATE_OFFLINE
@@ -3348,11 +3491,37 @@ cdef class Index(object):
         return self
 
     def insert(self, Key key, Object obj):
+        """Inserts an object in the index
+
+        Positional Parameters:
+
+        - The Key for the object
+        - The Object to associate with the Key
+
+        Returns:
+        0  - Success
+        !0 - An errno indicating the reason for failure.
+        """
         cdef int rc
         rc = sos_index_insert(self.c_index, key.c_key, obj.c_obj)
         return rc
 
     def remove(self, Key key, Object obj):
+        """Remove a key from the index
+
+        Removes a Key from the Index. An Object is specified to allow
+        the code to discriminate between duplicate keys.
+
+        Positional Parameters:
+
+        - The Key to remove
+        - The Object associated with the Key
+
+        Returns:
+        0  - Success
+        !0 - An errno indicating the reason for failure, e.g. ENOENT.
+
+        """
         cdef int rc
         rc = sos_index_remove(self.c_index, key.c_key, obj.c_obj)
         return rc
@@ -3425,6 +3594,7 @@ cdef class Index(object):
         return self.c_stats
 
     def show(self):
+        """Print the contents of the index to stdout"""
         sos_index_print(self.c_index, NULL);
 
 ################################
@@ -4211,7 +4381,7 @@ cdef class Object(object):
     To support python-like usage, it implements an internal
     dictionary of values indexed by the attribute name, and an
     internal list of values indexed by attribute id. From Python,
-    O.<name> will return the value of that attribute as a native
+    O['<name>'] will return the value of that attribute as a native
     Python object. Similarly, O[<id>] will return the same Python
     object where the id == sos_attr_id() of the attribute with
     the name <name>.
