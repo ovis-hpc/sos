@@ -1263,6 +1263,7 @@ static sos_obj_t next_match(sos_filter_t filt)
 				key_comp = __sos_set_key_comp_to_min(key_comp, obj_value->attr, &comp_len);
 			}
 			sos_value_put(obj_value);
+			obj_value = NULL;
 			comp_key->len += comp_len;
 		}
 		rc = sos_iter_sup(filt->iter, key);
@@ -1274,7 +1275,8 @@ static sos_obj_t next_match(sos_filter_t filt)
 		sos_obj_put(obj);
 		continue;
 	next:
-		sos_value_put(obj_value);
+		if (obj_value)
+			sos_value_put(obj_value);
 		rc = sos_iter_next(filt->iter);
 		if (!rc)
 			sos_obj_put(obj);
@@ -1440,6 +1442,7 @@ static sos_obj_t prev_match(sos_filter_t filt)
 				key_comp = __sos_set_key_comp_to_max(key_comp, obj_value->attr, &comp_len);
 			}
 			sos_value_put(obj_value);
+			obj_value = NULL;
 			comp_key->len += comp_len;
 		}
 		rc = sos_iter_inf(filt->iter, key);
@@ -1451,7 +1454,8 @@ static sos_obj_t prev_match(sos_filter_t filt)
 		sos_obj_put(obj);
 		continue;
 	prev:
-		sos_value_put(obj_value);
+		if (obj_value)
+			sos_value_put(obj_value);
 		rc = sos_iter_prev(filt->iter);
 		if (!rc)
 			sos_obj_put(obj);
