@@ -1126,7 +1126,7 @@ static sos_obj_t next_match(sos_filter_t filt)
 	sos_filter_cond_t cond;
 	sos_array_t attr_ids;
 	struct sos_value_s v_;
-	sos_value_t obj_value = NULL;
+	sos_value_t obj_value;
 	ods_comp_key_t comp_key;
 	ods_key_comp_t key_comp;
 	size_t comp_len;
@@ -1135,6 +1135,7 @@ static sos_obj_t next_match(sos_filter_t filt)
 
 	filt->miss_cnt = 0;
 	do {
+		obj_value = NULL;
 		obj = sos_iter_obj(filt->iter);
 		if (!obj)
 			break;
@@ -1275,8 +1276,10 @@ static sos_obj_t next_match(sos_filter_t filt)
 		sos_obj_put(obj);
 		continue;
 	next:
-		if (obj_value)
+		if (obj_value) {
 			sos_value_put(obj_value);
+			obj_value = NULL;
+		}
 		rc = sos_iter_next(filt->iter);
 		if (!rc)
 			sos_obj_put(obj);
@@ -1323,13 +1326,14 @@ static sos_obj_t prev_match(sos_filter_t filt)
 	sos_filter_cond_t cond;
 	sos_array_t attr_ids;
 	struct sos_value_s v_;
-	sos_value_t obj_value = NULL;
+	sos_value_t obj_value;
 	ods_comp_key_t comp_key;
 	ods_key_comp_t key_comp;
 	size_t comp_len;
 	sos_filter_cond_t join_cond;
 	ods_ref_t last_ref = 0;
 	do {
+		obj_value = NULL;
 		obj = sos_iter_obj(filt->iter);
 		if (!obj)
 			break;
@@ -1454,8 +1458,10 @@ static sos_obj_t prev_match(sos_filter_t filt)
 		sos_obj_put(obj);
 		continue;
 	prev:
-		if (obj_value)
+		if (obj_value) {
 			sos_value_put(obj_value);
+			obj_value = NULL;
+		}
 		rc = sos_iter_prev(filt->iter);
 		if (!rc)
 			sos_obj_put(obj);
