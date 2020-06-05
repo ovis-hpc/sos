@@ -36,6 +36,7 @@ from timestamp_test import TimestampTest
 from array_test import ArrayTest
 from version_test import VersionTest
 from append_data_test import AppendDataTest
+from update_test import UpdateTest
 
 tests = [ SchemaTest,
           ObjTestSetGet,
@@ -66,6 +67,7 @@ tests = [ SchemaTest,
           QueryTest,
           QueryTest2,
           AppendDataTest,
+          UpdateTest,
           ]
 
 if __name__ == "__main__":

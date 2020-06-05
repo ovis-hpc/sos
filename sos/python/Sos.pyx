@@ -52,6 +52,7 @@ import numpy as np
 import struct
 import sys
 import copy
+import binascii
 from DataSet import DataSet
 cimport numpy as np
 cimport Sos
@@ -185,6 +186,15 @@ cdef class SosObject:
             raise Exception("Error {0}".format[self.error])
 
 cdef class SchemaIter(SosObject):
+    """Implements a Schema iterator
+
+    Example:
+
+    # print names of all the in the container
+    for schema in container.schema_iter():
+        print(schema.name())
+
+    """
     cdef sos_schema_t c_next_schema
     def __init__(self, Container cont):
         self.c_next_schema = sos_schema_first(cont.c_cont)
@@ -201,6 +211,15 @@ cdef class SchemaIter(SosObject):
         return s
 
 cdef class PartIter(SosObject):
+    """Implements a Partition iterator
+
+    Example:
+
+    # print names of all the partitions
+    for part in container.part_iter():
+        print(part.name())
+
+    """
     cdef sos_part_iter_t c_iter
     cdef sos_part_t c_part
     def __init__(self, Container cont):
@@ -230,6 +249,15 @@ cdef class PartIter(SosObject):
             self.c_iter = NULL
 
 cdef class IndexIter(SosObject):
+    """Implements an Index iterator
+
+    Example:
+
+    # print names of all the indices in the container
+    for idx in container.index_iter():
+        print(idx.name())
+
+    """
     cdef sos_container_index_iter_t c_iter
     cdef sos_index_t c_idx
     def __init__(self, Container cont):
@@ -268,11 +296,26 @@ cdef class Container(SosObject):
             self.open(path, o_perm=o_perm)
 
     def version(self):
+        """Return the container version information"""
         if self.c_cont != NULL:
             return sos_container_version(self.c_cont)
         return None
 
     def open(self, path, o_perm=SOS_PERM_RW):
+        """Open the container
+
+        If the container cannot be opened an Exception is thrown with
+        an error string based on the errno.
+
+        Positional Parameters:
+
+        - The path to the container
+
+        Keyword Parameters:
+
+        o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RO
+
+        """
         if self.c_cont != NULL:
             self.abort(EBUSY)
         self.c_cont = sos_container_open(path.encode(), o_perm)
@@ -280,6 +323,22 @@ cdef class Container(SosObject):
             raise self.abort(errno)
 
     def create(self, path, o_mode=0660):
+        """Create an empty container
+
+        Create a new empty container. If the container cannot be
+        created an Exception is thrown. The exception message is based
+        on the errno.
+
+        Positional Parameters:
+
+        - The path to the container
+
+        Keyword Parameters:
+
+        o_mode - An octal number indicating rwx permissions for the
+                 container. These default is 0o664, ie. -rw-rw-r--
+
+        """
         cdef int rc
         if self.c_cont != NULL:
             self.abort(EBUSY)
@@ -288,6 +347,12 @@ cdef class Container(SosObject):
             self.abort(rc)
 
     def delete(self):
+        """Delete a container
+
+        Removes the container from the filesystem. If the container
+        cannot be deleted an Exception is thrown with a message based
+        on the errno.
+        """
         cdef int rc
         if self.c_cont == NULL:
             self.abort(EINVAL)
@@ -296,18 +361,57 @@ cdef class Container(SosObject):
             self.abort(rc)
 
     def close(self, commit=SOS_COMMIT_ASYNC):
+        """Close a container
+
+        Closes the container. If the container is not open, an
+        excception is thrown.
+
+        if the 'commit' keyword parameter is set to SOS_COMMIT_ASYNC,
+        the method will not return until all outstanding data has been
+        written to stable storage.
+
+        Keyword Parameters:
+
+        commit - SOS_COMMIT_SYNC or SOS_COMMIT_ASYNC, The default is
+                 SOS_COMMIT_ASYNC.
+
+        """
         if self.c_cont == NULL:
             self.abort(EINVAL)
         sos_container_close(self.c_cont, commit)
         self.c_cont = NULL
 
     def commit(self, commit=SOS_COMMIT_ASYNC):
+        """Commit objects in memory to storage
+
+        Commits outstanding data to stable storage. If the 'commit'
+        keyword parameter is set to SOS_COMMIT_SYNC, the method will
+        not return until all oustanding data has been written to
+        storage.
+
+        Keyword Parameters:
+
+        commit - SOS_COMMIT_ASYNC (default) or SOS_COMMIT_SYNC
+        """
         cdef int rc
         rc = sos_container_commit(self.c_cont, commit)
         if rc != 0:
             self.abort(rc)
 
     def part_create(self, name, path=None):
+        """Create a new empty partition
+
+        Creates a new empty partition. If the 'path' keyword parameter
+        specified, the partition data is stored at the location specified. By
+        default it is stored under the subdirectory 'name' in the
+        container directory.
+
+        Positional Parameters:
+
+        - The partition name
+        - A path to the partition (default is None)
+
+        """
         cdef int rc
         if self.c_cont == NULL:
             raise ValueError("The container is not open.")
@@ -319,6 +423,16 @@ cdef class Container(SosObject):
             self.abort(rc)
 
     def part_by_name(self, name):
+        """Return the named partition
+
+        Positional Parameters:
+
+        - The name of the partition
+
+        Returns:
+
+        A Partition object, or None if the partition does not exist.
+        """
         cdef sos_part_t c_part = sos_part_find(self.c_cont, name.encode())
         if c_part != NULL:
             p = Partition()
@@ -327,12 +441,26 @@ cdef class Container(SosObject):
         return None
 
     def part_iter(self):
+        """Return a PartIter iterator for the container"""
         return PartIter(self)
 
     def index_iter(self):
+        """Return an IndexIter iterator for the container"""
         return IndexIter(self)
 
     def schema_by_name(self, name):
+        """Return the named schema
+
+        Positional Parameters:
+
+        - The name of the partition
+
+        Returns:
+
+        A Schema object, or None if the named schema does not exist in
+        the container.
+
+        """
         cdef sos_schema_t c_schema = sos_schema_by_name(self.c_cont, name.encode())
         if c_schema != NULL:
             s = Schema()
@@ -341,6 +469,21 @@ cdef class Container(SosObject):
         return None
 
     def schema_by_id(self, id_):
+        """Return the Schema with the specified 'id'
+
+        Every schema has a unique 64b identifier that is stored with
+        every Object with that Schema.
+
+        Positional Parameters:
+
+        - The unique schema id.
+
+        Returns:
+
+        The Schema with the specified id, or None if no schema with
+        that id exists.
+
+        """
         cdef sos_schema_t c_schema = sos_schema_by_id(self.c_cont, id_)
         if c_schema != NULL:
             s = Schema()
@@ -349,6 +492,7 @@ cdef class Container(SosObject):
         return None
 
     def schema_iter(self):
+        """Return a SchemaIter iterator for the container"""
         return SchemaIter(self)
 
 PART_STATE_OFFLINE = SOS_PART_STATE_OFFLINE
@@ -509,7 +653,6 @@ sos_type_strs = {
 
 sos_attr_types = {
     "INT16" : SOS_TYPE_INT16,
-    "FIRST" : SOS_TYPE_FIRST,
     "INT32" : SOS_TYPE_INT32,
     "INT64" : SOS_TYPE_INT64,
     "UINT16" : SOS_TYPE_UINT16,
@@ -707,6 +850,7 @@ cdef class Schema(SosObject):
                                              <const char *>idx_args)
                 if rc != 0:
                     self.abort(rc)
+        return self
 
     def add(self, Container cont):
         """Add the schema to the container
@@ -3321,7 +3465,10 @@ cdef class ColSpec:
 
     def format(self, value):
         """Return a column formatted string for the input value"""
-        v = str(value)
+        if type(value) == bytearray:
+            v = repr(value)
+        else:
+            v = str(value)
         if self.align == ColSpec.RIGHT:
             return v.rjust(self.col_width, self.fill)
         elif self.align == ColSpec.LEFT:
@@ -3344,11 +3491,37 @@ cdef class Index(object):
         return self
 
     def insert(self, Key key, Object obj):
+        """Inserts an object in the index
+
+        Positional Parameters:
+
+        - The Key for the object
+        - The Object to associate with the Key
+
+        Returns:
+        0  - Success
+        !0 - An errno indicating the reason for failure.
+        """
         cdef int rc
         rc = sos_index_insert(self.c_index, key.c_key, obj.c_obj)
         return rc
 
     def remove(self, Key key, Object obj):
+        """Remove a key from the index
+
+        Removes a Key from the Index. An Object is specified to allow
+        the code to discriminate between duplicate keys.
+
+        Positional Parameters:
+
+        - The Key to remove
+        - The Object associated with the Key
+
+        Returns:
+        0  - Success
+        !0 - An errno indicating the reason for failure, e.g. ENOENT.
+
+        """
         cdef int rc
         rc = sos_index_remove(self.c_index, key.c_key, obj.c_obj)
         return rc
@@ -3421,6 +3594,7 @@ cdef class Index(object):
         return self.c_stats
 
     def show(self):
+        """Print the contents of the index to stdout"""
         sos_index_print(self.c_index, NULL);
 
 ################################
@@ -4207,7 +4381,7 @@ cdef class Object(object):
     To support python-like usage, it implements an internal
     dictionary of values indexed by the attribute name, and an
     internal list of values indexed by attribute id. From Python,
-    O.<name> will return the value of that attribute as a native
+    O['<name>'] will return the value of that attribute as a native
     Python object. Similarly, O[<id>] will return the same Python
     object where the id == sos_attr_id() of the attribute with
     the name <name>.
@@ -4308,6 +4482,7 @@ cdef class Object(object):
         return res
 
     def __setitem__(self, idx, val):
+        cdef int iidx
         cdef sos_attr_t c_attr
         if self.c_obj == NULL:
             raise ValueError("No SOS object assigned to Object")
@@ -4328,12 +4503,14 @@ cdef class Object(object):
             return
 
         # single index assignment
-        if type(idx) == int:
-            c_attr = sos_schema_attr_by_id(self.c_schema, idx)
         elif type(idx) == str:
             c_attr = sos_schema_attr_by_name(self.c_schema, idx.encode())
+        # assume it's a number
         else:
-            raise ValueError("Object has no attribute with id '{0}'".format(idx))
+            iidx = int(idx)
+            c_attr = sos_schema_attr_by_id(self.c_schema, iidx)
+            if c_attr == NULL:
+                raise ValueError("Object has no attribute with id '{0}'".format(idx))
         if 0 == sos_attr_is_array(c_attr):
             self.set_py_value(c_attr, val)
         else:
@@ -4858,9 +5035,15 @@ cdef class QueryInputer:
         for filt_no in range(start, filt_count):
             f = query.filters[filt_no]
             if reset_:
-                c_obj = sos_filter_begin(f.c_filt)
+                if not query.desc:
+                    c_obj = sos_filter_begin(f.c_filt)
+                else:
+                    c_obj = sos_filter_end(f.c_filt)
             else:
-                c_obj = sos_filter_next(f.c_filt)
+                if not query.desc:
+                    c_obj = sos_filter_next(f.c_filt)
+                else:
+                    c_obj = sos_filter_prev(f.c_filt)
             if c_obj == NULL:
                 return False
             else:
@@ -5130,7 +5313,8 @@ cdef class QueryInputer:
         free(res_acc)
         return res
 
-    def to_dataframe(self, Query query, max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
+    def to_dataframe(self, Query query, index=None,
+                     max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
         """Return the Query data as a DataFrame"""
         import pandas as pd
         cdef sos_obj_t c_o
@@ -5212,7 +5396,19 @@ cdef class QueryInputer:
             res_idx += 1
         self.row_count = 0
 
-        res = pd.DataFrame(result)
+        pdres = {}
+        df_idx = None
+        for attr_idx in range(0, nattr):
+            col_name = sos_attr_name(res_acc[attr_idx].attr)
+            pdres[col_name] = result[attr_idx]
+            if index == col_name:
+                df_idx = pd.DatetimeIndex(result[attr_idx])
+        if index and df_idx is None:
+            raise ValueError("The index column {0} is not present in the result".format(index))
+        if df_idx is not None:
+            res = pd.DataFrame(pdres, index=df_idx)
+        else:
+            res = pd.DataFrame(pdres)
         free(res_acc)
         return res
 
@@ -5226,8 +5422,8 @@ cdef class Query:
     cdef int col_width          # default width of an output column
     cdef primary                # primary attribute
     cdef group_fn               # function that decides how objects are grouped
-    cdef last_row               # indeed...
     cdef unique                 # Boolean indicating if queries are unique
+    cdef desc	                # Boolean defining results order
     cdef inputer                # Maintains query results
 
     def __init__(self, container):
@@ -5252,6 +5448,7 @@ cdef class Query:
         self.columns = []
         self.schema = []
         self.col_width = 15
+        self.desc = False
 
     cdef __find_schema_with_attr(self, name):
         if len(self.schema) > 0:
@@ -5284,6 +5481,10 @@ cdef class Query:
     @property
     def index_name(self):
         return self.primary
+
+    @property
+    def descending(self):
+        return self.desc
 
     def set_col_width(self, width):
         self.col_width = width
@@ -5474,7 +5675,8 @@ cdef class Query:
         colspec.update(self, idx, attr)
         self.columns.append(colspec)
 
-    def select(self, columns, order_by=None, where=None, from_=None, unique=False):
+    def select(self, columns, order_by=None, desc=False,
+               where=None, from_=None, unique=False):
         """Set the attribute list returned in the result
 
         Positional Parmeters:
@@ -5514,6 +5716,7 @@ cdef class Query:
         from_     -- A list of schema names
         where     -- A list of conditions to filter the data
         order_by  -- The attribute to use as the primary index
+        desc      -- Boolean to indicate if results should be in reverse order
         unique    -- Return only a single result for each matching key
 
         FROM_
@@ -5551,6 +5754,15 @@ cdef class Query:
 
             order_by = 'job_comp_time'
 
+        DESC
+
+          Specifies if results should be returned in reverse order.
+          The default is False.
+
+          Example:
+
+            desc = True
+
         UNIQUE
 
           Set the unique keyword to True to return only the 1st result
@@ -5566,6 +5778,7 @@ cdef class Query:
         self.primary = None
         self.schema = []
         self.unique = unique
+        self.desc = desc
 
         if order_by:
             # Must be before the Filter(s) are created
@@ -5651,10 +5864,11 @@ cdef class Query:
             return self.inputer.to_dataset(self, max_array, max_string)
         return None
 
-    def to_dataframe(self, max_array=QueryInputer.DEFAULT_ARRAY_LIMIT,
+    def to_dataframe(self, index=None,
+                     max_array=QueryInputer.DEFAULT_ARRAY_LIMIT,
                      max_string=QueryInputer.DEFAULT_ARRAY_LIMIT):
         if self.inputer:
-            return self.inputer.to_dataframe(self, max_array, max_string)
+            return self.inputer.to_dataframe(self, index, max_array, max_string)
         return None
 
     def __dealloc__(self):
