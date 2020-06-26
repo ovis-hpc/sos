@@ -222,7 +222,7 @@ static inline size_t bkt_to_size(int bkt)
 
 static int init_pgtbl(int pg_fd)
 {
-	static struct ods_pgt_s pgt;
+	struct ods_pgt_s pgt;
 	size_t min_sz;
 	int rc, i;
 	struct ods_pg_s pge;
@@ -314,7 +314,7 @@ struct ods_version_s ods_version(ods_t ods)
 
 static int init_obj(int obj_fd)
 {
-	static struct obj_hdr {
+	struct obj_hdr {
 		struct ods_obj_data_s obj;
 		unsigned char pad[ODS_PAGE_SIZE - sizeof(struct ods_obj_data_s)];
 	} hdr;
