@@ -301,7 +301,7 @@ struct idx_ent_s {
 	char name[SOS_INDEX_NAME_LEN];
 	sos_index_t idx;
 	sos_iter_t iter;
-	struct rbn rbn;
+	struct ods_rbn rbn;
 };
 
 static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
@@ -603,7 +603,7 @@ int sos_index_verify(sos_index_t index, FILE *fp)
 	return ods_idx_verify(index->idx, fp);
 }
 
-int print_schema(struct rbn *n, void *fp_, int level)
+int print_schema(struct ods_rbn *n, void *fp_, int level)
 {
 	FILE *fp = fp_;
 	sos_attr_t attr;
@@ -630,7 +630,7 @@ void sos_container_info(sos_t sos, FILE *fp)
 {
 	if (!fp)
 		fp = stdout;
-	rbt_traverse(&sos->schema_name_rbt, print_schema, fp);
+	ods_rbt_traverse(&sos->schema_name_rbt, print_schema, fp);
 	ods_idx_info(sos->schema_idx, fp);
 	ods_info(ods_idx_ods(sos->schema_idx), fp, ODS_ALL_INFO);
 	ods_info(sos->schema_ods, fp, ODS_ALL_INFO);
@@ -741,7 +741,7 @@ void sos_free_obj_info(sos_t sos, FILE *outp)
 
 static void free_sos(sos_t sos, sos_commit_t flags)
 {
-	struct rbn *rbn;
+	struct ods_rbn *rbn;
 	sos_obj_t obj;
 
 	/* There should be no objects on the active list */
@@ -761,8 +761,8 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 	}
 
 	/* Iterate through all the schema and free each one */
-	while (NULL != (rbn = rbt_min(&sos->schema_name_rbt))) {
-		rbt_del(&sos->schema_name_rbt, rbn);
+	while (NULL != (rbn = ods_rbt_min(&sos->schema_name_rbt))) {
+		ods_rbt_del(&sos->schema_name_rbt, rbn);
 		__sos_schema_free(container_of(rbn, struct sos_schema_s, name_rbn));
 	}
 	if (sos->path)
@@ -797,12 +797,12 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 	free(sos);
 }
 
-int __sos_schema_name_cmp(void *a, void *b)
+int64_t __sos_schema_name_cmp(void *a, const void *b)
 {
 	return strcmp((char *)a, (char *)b);
 }
 
-static int schema_id_cmp(void *a, void *b)
+static int64_t schema_id_cmp(void *a, const void *b)
 {
 	return *(uint32_t *)a - *(uint32_t *)b;
 }
@@ -813,8 +813,8 @@ static int schema_id_cmp(void *a, void *b)
 static void __pos_cleanup(sos_t sos)
 {
 	int rc;
-	struct rbt index_rbt;
-	struct rbn *rbn;
+	struct ods_rbt index_rbt;
+	struct ods_rbn *rbn;
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	struct pos_ent_s *pos_ent;
@@ -856,12 +856,12 @@ static void __pos_cleanup(sos_t sos)
 			ods_obj_put(pos_obj);
 		}
 	}
-	rbt_init(&index_rbt, __sos_schema_name_cmp);
+	ods_rbt_init(&index_rbt, __sos_schema_name_cmp);
 	while (!LIST_EMPTY(&pos_list)) {
 		pos_ent = LIST_FIRST(&pos_list);
 		LIST_REMOVE(pos_ent, entry);
 		/* See if we have the index open already */
-		rbn = rbt_find(&index_rbt, pos_ent->name);
+		rbn = ods_rbt_find(&index_rbt, pos_ent->name);
 		if (!rbn) {
 			idx_ent = malloc(sizeof *idx_ent);
 			if (!idx_ent) {
@@ -888,8 +888,8 @@ static void __pos_cleanup(sos_t sos)
 			strcpy(idx_ent->name, pos_ent->name);
 			idx_ent->idx = idx;
 			idx_ent->iter = iter;
-			rbn_init(&idx_ent->rbn, idx_ent->name);
-			rbt_ins(&index_rbt, &idx_ent->rbn);
+			ods_rbn_init(&idx_ent->rbn, idx_ent->name);
+			ods_rbt_ins(&index_rbt, &idx_ent->rbn);
 			rbn = &idx_ent->rbn;
 		}
 		idx_ent = container_of(rbn, struct idx_ent_s, rbn);
@@ -897,14 +897,14 @@ static void __pos_cleanup(sos_t sos)
 		sos_iter_pos_put_no_lock(idx_ent->iter, pos_ent->pos);
 		free(pos_ent);
 	}
-	rbn = rbt_min(&index_rbt);
+	rbn = ods_rbt_min(&index_rbt);
 	while (rbn) {
 		idx_ent = container_of(rbn, struct idx_ent_s, rbn);
 		sos_iter_free(idx_ent->iter);
 		sos_index_close(idx_ent->idx, SOS_COMMIT_ASYNC);
-		rbt_del(&index_rbt, rbn);
+		ods_rbt_del(&index_rbt, rbn);
 		free(idx_ent);
-		rbn = rbt_min(&index_rbt);
+		rbn = ods_rbt_min(&index_rbt);
 	}
 	ods_iter_delete(it);
 	ods_unlock(sos->pos_ods, 0);
@@ -986,8 +986,8 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 		goto err;
 	sos->o_mode = sb.st_mode;
 	sos->o_perm = (ods_perm_t)o_perm;
-	rbt_init(&sos->schema_name_rbt, __sos_schema_name_cmp);
-	rbt_init(&sos->schema_id_rbt, schema_id_cmp);
+	ods_rbt_init(&sos->schema_name_rbt, __sos_schema_name_cmp);
+	ods_rbt_init(&sos->schema_id_rbt, schema_id_cmp);
 	sos->schema_count = 0;
 
 	rc = __sos_config_init(sos);

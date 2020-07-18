@@ -47,7 +47,7 @@
 #define _ODS_IDX_PRIV_H_
 #include <stdarg.h>
 #include <stdlib.h>
-#include <ods/rbt.h>
+#include <ods/ods_rbt.h>
 #include <ods/ods.h>
 #include "ods_priv.h"
 
@@ -122,7 +122,7 @@ struct ods_idx_meta_data {
 struct ods_idx_class {
 	struct ods_idx_provider *prv;
 	struct ods_idx_comparator *cmp;
-	struct rbn rb_node;
+	struct ods_rbn rb_node;
 };
 
 struct ods_idx {

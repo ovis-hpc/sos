@@ -51,7 +51,7 @@
 #include <time.h>
 #include <limits.h>
 #include <fcntl.h>
-#include <ods/rbt.h>
+#include <ods/ods_rbt.h>
 #include <ods/ods_idx.h>
 #include <ods/ods_atomic.h>
 #include "ods_idx_priv.h"
@@ -61,15 +61,15 @@ static pthread_spinlock_t __ods_idx_lock;
 struct ods_idx_type {
 	struct ods_idx_provider *provider;
 	struct ods_idx_key_provider *key;
-	struct rbn rb_node;
+	struct ods_rbn rb_node;
 };
 
-int dylib_comparator(void *a, void *b)
+int64_t dylib_comparator(void *a, const void *b)
 {
 	return strcmp(a, b);
 }
 
-static struct rbt dylib_tree = { 0, dylib_comparator };
+static struct ods_rbt dylib_tree = { 0, dylib_comparator };
 
 void *load_library(const char *library, const char *pfx, const char *sym)
 {
@@ -78,7 +78,7 @@ void *load_library(const char *library, const char *pfx, const char *sym)
 	void *p = NULL;
 
 	sprintf(libpath, "lib%s_%s.so", pfx, library);
-	void *d = dlopen(libpath, RTLD_LAZY);
+	void *d = dlopen(libpath, RTLD_LAZY | RTLD_DEEPBIND);
 	if (!d) {
 		/* The library doesn't exist */
 		printf("dlopen: %s\n", dlerror());
@@ -99,7 +99,7 @@ void *load_library(const char *library, const char *pfx, const char *sym)
 
 struct ods_idx_class *get_idx_class(const char *type, const char *key)
 {
-	struct rbn *rbn;
+	struct ods_rbn *ods_rbn;
 	struct ods_idx_class *idx_class = NULL;
 	struct ods_idx_provider *prv;
 	struct ods_idx_comparator *cmp;
@@ -111,9 +111,9 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 	sprintf(idx_classname, "%s:%s", type, key);
 
 	pthread_spin_lock(&__ods_idx_lock);
-	rbn = rbt_find(&dylib_tree, (void *)idx_classname);
-	if (rbn) {
-		idx_class = container_of(rbn, struct ods_idx_class, rb_node);
+	ods_rbn = ods_rbt_find(&dylib_tree, (void *)idx_classname);
+	if (ods_rbn) {
+		idx_class = container_of(ods_rbn, struct ods_idx_class, rb_node);
 		goto out;
 	}
 
@@ -142,8 +142,8 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 
 	idx_class->prv = prv;
 	idx_class->cmp = cmp;
-	rbn_init(&idx_class->rb_node, strdup(idx_classname));
-	rbt_ins(&dylib_tree, &idx_class->rb_node);
+	ods_rbn_init(&idx_class->rb_node, strdup(idx_classname));
+	ods_rbt_ins(&dylib_tree, &idx_class->rb_node);
  out:
 	free(idx_classname);
 	pthread_spin_unlock(&__ods_idx_lock);
@@ -584,10 +584,10 @@ static void __attribute__ ((constructor)) ods_idx_init(void)
  */
 static void __attribute__ ((destructor)) ods_idx_term(void)
 {
-	struct rbn *rbn;
-	while ((rbn = rbt_min(&dylib_tree))) {
-		rbt_del(&dylib_tree, rbn);
-		free(rbn->key);
+	struct ods_rbn *ods_rbn;
+	while ((ods_rbn = ods_rbt_min(&dylib_tree))) {
+		ods_rbt_del(&dylib_tree, ods_rbn);
+		free(ods_rbn->key);
 	}
 }
 

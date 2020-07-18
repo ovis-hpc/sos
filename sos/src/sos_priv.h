@@ -65,7 +65,7 @@
 #include <sos/sos.h>
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
-#include <ods/rbt.h>
+#include <ods/ods_rbt.h>
 
 typedef enum sos_internal_schema_e {
 	SOS_ISCHEMA_BYTE_ARRAY = SOS_TYPE_BYTE_ARRAY,
@@ -276,8 +276,8 @@ struct sos_schema_s {
 	sos_t sos;
 	enum sos_schema_state state;
 	ods_obj_t schema_obj;
-	struct rbn name_rbn;
-	struct rbn id_rbn;
+	struct ods_rbn name_rbn;
+	struct ods_rbn id_rbn;
 	sos_attr_t *dict;
 	LIST_ENTRY(sos_schema_s) entry;
 	TAILQ_HEAD(sos_index_list, sos_attr_s) idx_attr_list;
@@ -333,8 +333,8 @@ struct sos_container_s {
 	 */
 	ods_idx_t schema_idx;	/* Index schema by name */
 	ods_t schema_ods;	/* Contains the schema definitions */
-	struct rbt schema_name_rbt;	/* In memory schema tree by name */
-	struct rbt schema_id_rbt;	/* In memory schema tree by id */
+	struct ods_rbt schema_name_rbt;	/* In memory schema tree by name */
+	struct ods_rbt schema_id_rbt;	/* In memory schema tree by id */
 	size_t schema_count;
 
 	/*
@@ -450,7 +450,7 @@ ods_obj_t __sos_part_data_next(sos_t sos, ods_obj_t part_obj);
 void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj);
 ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj);
 int __sos_schema_open(sos_t sos, sos_schema_t schema);
-int __sos_schema_name_cmp(void *a, void *b);
+int64_t __sos_schema_name_cmp(void *a, const void *b);
 int __sos_open_partitions(sos_t sos, char *tmp_path);
 int __sos_make_all_dir(const char *inp_path, mode_t omode);
 sos_part_t __sos_container_part_find(sos_t sos, const char *name);

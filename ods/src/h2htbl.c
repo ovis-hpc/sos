@@ -450,23 +450,23 @@ typedef struct iter_entry_s {
 	ods_key_t key;
 	ods_idx_data_t data;
 	int bkt;
-	struct rbn rbn;
+	struct ods_rbn rbn;
 } *iter_entry_t;
 
-static int entry_cmp(void *tree_key, void *key)
+static int64_t entry_cmp(void *tree_key, const void *key)
 {
 	iter_entry_t a = tree_key;
-	iter_entry_t b = key;
+	iter_entry_t b = (iter_entry_t)key;
 	ods_iter_t oi = (ods_iter_t)a->iter;
 	return ods_key_cmp(oi->idx, a->key, b->key);
 }
 
 static void iter_cleanup(h2htbl_t t, h2htbl_iter_t iter)
 {
-	struct rbn *rbn;
-	while ((rbn = rbt_min(&iter->next_tree))) {
+	struct ods_rbn *rbn;
+	while ((rbn = ods_rbt_min(&iter->next_tree))) {
 		iter_entry_t ent = container_of(rbn, struct iter_entry_s, rbn);
-		rbt_del(&iter->next_tree, rbn);
+		ods_rbt_del(&iter->next_tree, rbn);
 		ods_obj_put(ent->key);
 		free(ent);
 	}
@@ -499,7 +499,7 @@ static ods_iter_t h2htbl_iter_new(ods_idx_t idx)
 	iter = calloc(1, iter_size);
 	if (!iter)
 		return NULL;
-	rbt_init(&iter->next_tree, entry_cmp);
+	ods_rbt_init(&iter->next_tree, entry_cmp);
 	ods_atomic_inc(&idx->ref_count);
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
 		iter->iter_table[bkt] = ods_iter_new(t->idx_table[bkt].idx);
@@ -521,7 +521,7 @@ static iter_entry_t alloc_ent(h2htbl_iter_t iter, int bkt)
 	ent->data = ods_iter_data(iter->iter_table[bkt]);
 	ent->bkt = bkt;
 	assert(ent->key);
-	rbn_init(&ent->rbn, ent);
+	ods_rbn_init(&ent->rbn, ent);
  out:
 	return ent;
 }
@@ -548,7 +548,7 @@ static int h2htbl_iter_begin(ods_iter_t oi)
 		ent = alloc_ent(iter, bkt);
 		if (!ent)
 			return ENOMEM;
-		rbt_ins(&iter->next_tree, &ent->rbn);
+		ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	}
 	return rv;
 }
@@ -575,7 +575,7 @@ static int h2htbl_iter_end(ods_iter_t oi)
 		ent = alloc_ent(iter, bkt);
 		if (!ent)
 			return ENOMEM;
-		rbt_ins(&iter->next_tree, &ent->rbn);
+		ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	}
 	return rv;
 }
@@ -585,7 +585,7 @@ static ods_idx_data_t NULL_DATA;
 static iter_entry_t h2htbl_iter_entry_fwd(ods_iter_t oi)
 {
 	h2htbl_iter_t iter = (typeof(iter))oi;
-	struct rbn *rbn = rbt_min(&iter->next_tree);
+	struct ods_rbn *rbn = ods_rbt_min(&iter->next_tree);
 	if (!rbn)
 		return NULL;
 	return container_of(rbn, struct iter_entry_s, rbn);
@@ -594,7 +594,7 @@ static iter_entry_t h2htbl_iter_entry_fwd(ods_iter_t oi)
 static iter_entry_t h2htbl_iter_entry_rev(ods_iter_t oi)
 {
 	h2htbl_iter_t iter = (typeof(iter))oi;
-	struct rbn *rbn = rbt_max(&iter->next_tree);
+	struct ods_rbn *rbn = ods_rbt_max(&iter->next_tree);
 	if (!rbn)
 		return NULL;
 	return container_of(rbn, struct iter_entry_s, rbn);
@@ -607,8 +607,8 @@ static ods_key_t h2htbl_iter_key_fwd(ods_iter_t oi)
 {
 	iter_entry_t ent;
 	h2htbl_iter_t iter = (typeof(iter))oi;
-	struct rbn *rbn;
-	rbn = rbt_min(&iter->next_tree);
+	struct ods_rbn *rbn;
+	rbn = ods_rbt_min(&iter->next_tree);
 	if (!rbn)
 		return NULL;
 	ent = container_of(rbn, struct iter_entry_s, rbn);
@@ -619,8 +619,8 @@ static ods_key_t h2htbl_iter_key_rev(ods_iter_t oi)
 {
 	iter_entry_t ent;
 	h2htbl_iter_t iter = (typeof(iter))oi;
-	struct rbn *rbn;
-	rbn = rbt_max(&iter->next_tree);
+	struct ods_rbn *rbn;
+	rbn = ods_rbt_max(&iter->next_tree);
 	if (!rbn)
 		return NULL;
 	ent = container_of(rbn, struct iter_entry_s, rbn);
@@ -645,7 +645,7 @@ static ods_idx_data_t h2htbl_iter_data_fwd(ods_iter_t oi)
 {
 	iter_entry_t ent;
 	h2htbl_iter_t iter = (typeof(iter))oi;
-	struct rbn *rbn = rbt_min(&iter->next_tree);
+	struct ods_rbn *rbn = ods_rbt_min(&iter->next_tree);
 	if (!rbn)
 		return NULL_DATA;
 	ent = container_of(rbn, struct iter_entry_s, rbn);
@@ -656,7 +656,7 @@ static ods_idx_data_t h2htbl_iter_data_rev(ods_iter_t oi)
 {
 	iter_entry_t ent;
 	h2htbl_iter_t iter = (typeof(iter))oi;
-	struct rbn *rbn = rbt_max(&iter->next_tree);
+	struct ods_rbn *rbn = ods_rbt_max(&iter->next_tree);
 	if (!rbn)
 		return NULL_DATA;
 	ent = container_of(rbn, struct iter_entry_s, rbn);
@@ -694,7 +694,7 @@ static int h2htbl_iter_find_first(ods_iter_t oi, ods_key_t key)
 	ent = alloc_ent(iter, bkt);
 	if (!ent)
 		return ENOMEM;
-	rbt_ins(&iter->next_tree, &ent->rbn);
+	ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	return rv;
 }
 
@@ -715,7 +715,7 @@ static int h2htbl_iter_find_last(ods_iter_t oi, ods_key_t key)
 	ent = alloc_ent(iter, bkt);
 	if (!ent)
 		return ENOMEM;
-	rbt_ins(&iter->next_tree, &ent->rbn);
+	ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	return 0;
 }
 
@@ -736,7 +736,7 @@ static int h2htbl_iter_find(ods_iter_t oi, ods_key_t key)
 	ent = alloc_ent(iter, bkt);
 	if (!ent)
 		return ENOMEM;
-	rbt_ins(&iter->next_tree, &ent->rbn);
+	ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	return 0;
 }
 
@@ -772,7 +772,7 @@ static int h2htbl_iter_find_lub(ods_iter_t oi, ods_key_t key)
 		ent = alloc_ent(iter, bkt);
 		if (!ent)
 			return ENOMEM;
-		rbt_ins(&iter->next_tree, &ent->rbn);
+		ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	}
 	return rv;
 }
@@ -796,7 +796,7 @@ static int h2htbl_iter_find_glb(ods_iter_t oi, ods_key_t key)
 		ent = alloc_ent(iter, bkt);
 		if (!ent)
 			return ENOMEM;
-		rbt_ins(&iter->next_tree, &ent->rbn);
+		ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	}
 	return rv;
 }
@@ -804,7 +804,7 @@ static int h2htbl_iter_find_glb(ods_iter_t oi, ods_key_t key)
 static int h2htbl_iter_next(ods_iter_t oi)
 {
 	h2htbl_iter_t iter = (typeof(iter))oi;
-	struct rbn *rbn;
+	struct ods_rbn *rbn;
 	iter_entry_t ent;
 	ods_key_t key;
 	int bkt, rc;
@@ -830,7 +830,7 @@ static int h2htbl_iter_next(ods_iter_t oi)
 			ent = alloc_ent(iter, bkt);
 			if (!ent)
 				return ENOMEM;
-			rbt_ins(&iter->next_tree, &ent->rbn);
+			ods_rbt_ins(&iter->next_tree, &ent->rbn);
 		}
 		goto out;
 	}
@@ -838,11 +838,11 @@ static int h2htbl_iter_next(ods_iter_t oi)
 	assert(iter->dir == H2HTBL_ITER_FWD); /* direction must be forward here */
 
 	/* Delete the min from the tree. */
-	rbn = rbt_min(&iter->next_tree);
+	rbn = ods_rbt_min(&iter->next_tree);
 	if (!rbn)
 		return ENOENT;
 	ent = container_of(rbn, struct iter_entry_s, rbn);
-	rbt_del(&iter->next_tree, rbn);
+	ods_rbt_del(&iter->next_tree, rbn);
 	ods_obj_put(ent->key);
 	bkt = ent->bkt;
 	free(ent);
@@ -852,11 +852,11 @@ static int h2htbl_iter_next(ods_iter_t oi)
 		ent = alloc_ent(iter, bkt);
 		if (!ent)
 			return ENOMEM;
-		rbt_ins(&iter->next_tree, &ent->rbn);
+		ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	}
 
  out:
-	if (rbt_empty(&iter->next_tree))
+	if (ods_rbt_empty(&iter->next_tree))
 		return ENOENT;
 	return 0;
 }
@@ -864,7 +864,7 @@ static int h2htbl_iter_next(ods_iter_t oi)
 static int h2htbl_iter_prev(ods_iter_t oi)
 {
 	h2htbl_iter_t iter = (typeof(iter))oi;
-	struct rbn *rbn;
+	struct ods_rbn *rbn;
 	iter_entry_t ent;
 	ods_key_t key;
 	int bkt, rc;
@@ -890,7 +890,7 @@ static int h2htbl_iter_prev(ods_iter_t oi)
 			ent = alloc_ent(iter, bkt);
 			if (!ent)
 				return ENOMEM;
-			rbt_ins(&iter->next_tree, &ent->rbn);
+			ods_rbt_ins(&iter->next_tree, &ent->rbn);
 		}
 		goto out;
 	}
@@ -898,11 +898,11 @@ static int h2htbl_iter_prev(ods_iter_t oi)
 	assert(iter->dir == H2HTBL_ITER_REV);
 
 	/* Delete the max from the tree. */
-	rbn = rbt_max(&iter->next_tree);
+	rbn = ods_rbt_max(&iter->next_tree);
 	if (!rbn)
 		return ENOENT;
 	ent = container_of(rbn, struct iter_entry_s, rbn);
-	rbt_del(&iter->next_tree, rbn);
+	ods_rbt_del(&iter->next_tree, rbn);
 	ods_obj_put(ent->key);
 	bkt = ent->bkt;
 	free(ent);
@@ -912,11 +912,11 @@ static int h2htbl_iter_prev(ods_iter_t oi)
 		ent = alloc_ent(iter, bkt);
 		if (!ent)
 			return ENOMEM;
-		rbt_ins(&iter->next_tree, &ent->rbn);
+		ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	}
 
  out:
-	if (rbt_empty(&iter->next_tree))
+	if (ods_rbt_empty(&iter->next_tree))
 		return ENOENT;
 	return 0;
 }
@@ -983,7 +983,7 @@ static int h2htbl_iter_pos_set(ods_iter_t oi, const ods_pos_t pos)
 		rc = ENOMEM;
 		goto err_1;
 	}
-	rbt_ins(&iter->next_tree, &ent->rbn);
+	ods_rbt_ins(&iter->next_tree, &ent->rbn);
 
 	key = ods_iter_key(iter->iter_table[ht_idx]);
 	if (!key) {
@@ -1005,7 +1005,7 @@ static int h2htbl_iter_pos_set(ods_iter_t oi, const ods_pos_t pos)
 			rc = ENOMEM;
 			goto err_2;
 		}
-		rbt_ins(&iter->next_tree, &ent->rbn);
+		ods_rbt_ins(&iter->next_tree, &ent->rbn);
 	}
 	iter->dir = POS(pos_obj)->dir;
 	ods_obj_put(key);
