@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2008-2015 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -43,10 +43,11 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef _RBT_T
-#define _RBT_T
+#ifndef _ODS_RBT_T
+#define _ODS_RBT_T
 
 #include <stddef.h>
+#include <ods/ods_rbt.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,53 +59,62 @@ extern "C" {
  * this algorithm.
  */
 
-#define RBN_RED      0
-#define RBN_BLACK    1
+#define ODS_RBN_RED	0
+#define ODS_RBN_BLACK	1
 
 /* Red/Black Node */
-struct rbn {
-	struct rbn       *left;
-	struct rbn       *right;
-	struct rbn       *parent;
+struct ods_rbn {
+	struct ods_rbn    *left;
+	struct ods_rbn    *right;
+	struct ods_rbn    *parent;
 	int               color;
-	void             *key;
+	void              *key;
 };
 
 /* Sets key on n.  */
-void rbn_init(struct rbn *n, void *key);
+void ods_rbn_init(struct ods_rbn *n, void *key);
 
 /* Comparator callback provided for insert and search operations */
-typedef int (*rbn_comparator_t)(void *tree_key, void *key);
+typedef int64_t (*ods_rbn_comparator_t)(void *tree_key, const void *key);
 
 /* Processor for each node during traversal. */
-typedef int (*rbn_node_fn)(struct rbn *, void *, int);
+typedef int (*ods_rbn_node_fn)(struct ods_rbn *, void *, int);
 
-struct rbt {
-	struct rbn       *root;
-	rbn_comparator_t comparator;
+struct ods_rbt {
+	struct ods_rbn   *root;
+	ods_rbn_comparator_t comparator;
+	long		 card;
 };
 
-void rbt_init(struct rbt *t, rbn_comparator_t c);
-int rbt_empty(struct rbt *t);
-struct rbn *rbt_least_gt_or_eq(struct rbn *n);
-struct rbn *rbt_greatest_lt_or_eq(struct rbn *n);
-struct rbn *rbt_find_lub(struct rbt *rbt, void *key);
-struct rbn *rbt_find_glb(struct rbt *rbt, void *key);
-struct rbn *rbt_find(struct rbt *t, void *k);
-struct rbn *rbt_min(struct rbt *t);
-struct rbn *rbt_max(struct rbt *t);
-void rbt_ins(struct rbt *t, struct rbn *n);
-void rbt_del(struct rbt *t, struct rbn *n);
-int rbt_traverse(struct rbt *t, rbn_node_fn f, void *fn_data);
-int rbt_is_leaf(struct rbn *n);
+void ods_rbt_init(struct ods_rbt *t, ods_rbn_comparator_t c);
+#define ODS_RBT_INITIALIZER(_c_) { .comparator = _c_ }
+void ods_rbt_verify(struct ods_rbt *t);
+int ods_rbt_empty(struct ods_rbt *t);
+struct ods_rbn *ods_rbt_least_gt_or_eq(struct ods_rbn *n);
+struct ods_rbn *ods_rbt_greatest_lt_or_eq(struct ods_rbn *n);
+struct ods_rbn *ods_rbt_find_lub(struct ods_rbt *ods_rbt, const void *key);
+struct ods_rbn *ods_rbt_find_glb(struct ods_rbt *ods_rbt, const void *key);
+struct ods_rbn *ods_rbt_find(struct ods_rbt *t, const void *k);
+struct ods_rbn *ods_rbt_min(struct ods_rbt *t);
+struct ods_rbn *ods_rbt_max(struct ods_rbt *t);
+struct ods_rbn *rbn_succ(struct ods_rbn *n);
+struct ods_rbn *rbn_pred(struct ods_rbn *n);
+void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *n);
+void ods_rbt_del(struct ods_rbt *t, struct ods_rbn *n);
+int ods_rbt_traverse(struct ods_rbt *t, ods_rbn_node_fn f, void *fn_data);
+int ods_rbt_is_leaf(struct ods_rbn *n);
 #ifndef offsetof
 /* C standard since c89 */
 #define offsetof(type,member) ((size_t) &((type *)0)->member)
 #endif
 /* from linux kernel */
+#ifndef container_of
 #define container_of(ptr, type, member) ({ \
 	const __typeof__(((type *)0)->member ) *__mptr = (ptr); \
 	(type *)((char *)__mptr - offsetof(type,member));})
+#endif
+#define ODS_RBT_FOREACH(rbn, ods_rbt) \
+	for ((rbn) = ods_rbt_min((ods_rbt)); (rbn); (rbn) = rbn_succ((rbn)))
 
 #ifdef __cplusplus
 }

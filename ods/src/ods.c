@@ -71,7 +71,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <ods/ods.h>
-#include <ods/rbt.h>
+#include <ods/ods_rbt.h>
 #include "config.h"
 #include "ods_priv.h"
 #define ODS_OBJ_SUFFIX		".OBJ"
@@ -485,7 +485,7 @@ static inline size_t new_obj_map_sz(ods_t ods)
 static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 {
 	void *obj_map;
-	struct rbn *rbn;
+	struct ods_rbn *rbn;
 	struct map_key_s key;
 	ods_map_t map;
 	uint64_t map_off;
@@ -518,7 +518,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 	/* Find the largest map that will support loff */
 	key.off = loff;
 	key.len = 0xffffffff;
-	rbn = rbt_find_glb(&ods->map_tree, &key);
+	rbn = ods_rbt_find_glb(&ods->map_tree, &key);
 	if (rbn) {
 		map = container_of(rbn, struct ods_map_s, rbn);
 		if (map->map.len > ods->obj_sz && map->map.len < ods->obj_map_sz)
@@ -576,9 +576,9 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 	map->data = obj_map;
 	map->last_used = time(NULL);
 
-	rbn_init(&map->rbn, &map->map);
-	assert(NULL == rbt_find(&ods->map_tree, &map->map));
-	rbt_ins(&ods->map_tree, &map->rbn);
+	ods_rbn_init(&map->rbn, &map->map);
+	assert(NULL == ods_rbt_find(&ods->map_tree, &map->map));
+	ods_rbt_ins(&ods->map_tree, &map->rbn);
 	__ods_unlock(ods);
 	return map_get(map);	/* The map_tree consumes a reference */
 
@@ -718,7 +718,7 @@ static inline void map_put(ods_map_t map)
 	}
 }
 
-static int print_map(struct rbn *rbn, void *arg, int l)
+static int print_map(struct ods_rbn *rbn, void *arg, int l)
 {
 	FILE *fp = arg;
 	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
@@ -865,7 +865,7 @@ static void __active_map_info(ods_t ods, FILE *fp)
 	fprintf(fp, "               Ref   Obj     Map            Map            Obj\n");
 	fprintf(fp, "Map            Count GN      Offset         Len            Data\n");
 	fprintf(fp, "-------------- ----- ------- -------------- -------------- --------------\n");
-	rbt_traverse(&ods->map_tree, print_map, fp);
+	ods_rbt_traverse(&ods->map_tree, print_map, fp);
 	fprintf(fp, "\n");
 }
 
@@ -1012,13 +1012,13 @@ static void update_dirty(ods_t ods, ods_ref_t ref, size_t size)
 #else /* This actually slowed things down */
 	ods_ref_t start;
 	ods_ref_t end;
-	struct rbn *n;
+	struct ods_rbn *n;
 	ods_dirty_t dirty;
 
 	start = ref & ODS_PAGE_MASK;
 	end = (ref + size + ODS_PAGE_SIZE - 1) & ODS_PAGE_MASK;
 
-	n = rbt_find_glb(&ods->dirty_tree, &start);
+	n = ods_rbt_find_glb(&ods->dirty_tree, &start);
 	if (n) {
 		dirty = container_of(n, struct ods_dirty_s, rbn);
 		/*
@@ -1036,7 +1036,7 @@ static void update_dirty(ods_t ods, ods_ref_t ref, size_t size)
 			return;
 		}
 	}
-	n = rbt_find_lub(&ods->dirty_tree, &end);
+	n = ods_rbt_find_lub(&ods->dirty_tree, &end);
 	if (n) {
 		/*
 		 * If our end touches the LUB start, extend it down to
@@ -1048,7 +1048,7 @@ static void update_dirty(ods_t ods, ods_ref_t ref, size_t size)
 			 * Remove it from the tree, change its start
 			 * and add it back to the tree.
 			*/
-			rbt_del(&ods->dirty_tree, n);
+			ods_rbt_del(&ods->dirty_tree, n);
 			dirty->start = start;
 			rbt_ins(&ods->dirty_tree, n);
 			return;
@@ -1115,12 +1115,12 @@ static void empty_del_list(struct map_list_head *del_q)
 		LIST_REMOVE(map, entry);
 		ods_ldebug("Unmapping %p len %ld MB\n", map->data, map->map.len/1024/1024);
 		/* Drop the tree reference and remove it from the tree */
-		rbt_del(&map->ods->map_tree, &map->rbn);
+		ods_rbt_del(&map->ods->map_tree, &map->rbn);
 		map_put(map);
 	}
 }
 
-static int del_map_fn(struct rbn *rbn, void *arg, int l)
+static int del_map_fn(struct ods_rbn *rbn, void *arg, int l)
 {
 	struct del_fn_arg *darg = arg;
 	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
@@ -1208,7 +1208,7 @@ int ods_extend(ods_t ods, size_t sz)
 	/* Opportunistically discard maps in the rbt that are unused */
 	LIST_INIT(&del_list);
 	fn_arg.del_q = &del_list;
-	rbt_traverse(&ods->map_tree, del_map_fn, &fn_arg);
+	ods_rbt_traverse(&ods->map_tree, del_map_fn, &fn_arg);
 	empty_del_list(&del_list);
 	rc = 0;
  out:
@@ -1358,10 +1358,10 @@ int ods_destroy(const char *path)
 	return 0;
 }
 
-static int map_cmp(void *akey, void *bkey)
+static int64_t map_cmp(void *akey, const void *bkey)
 {
 	struct map_key_s *amap = akey;
-	struct map_key_s *bmap = bkey;
+	struct map_key_s const *bmap = bkey;
 
 	if (amap->off < bmap->off)
 		return -1;
@@ -1374,7 +1374,7 @@ static int map_cmp(void *akey, void *bkey)
 	return 0;
 }
 
-static int ref_cmp(void *akey, void *bkey)
+static int64_t ref_cmp(void *akey, const void *bkey)
 {
 	return (*(ods_ref_t*)akey - *(ods_ref_t*)bkey);
 }
@@ -1454,8 +1454,8 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	pthread_mutex_init(&ods->lock, NULL);
 	LIST_INIT(&ods->obj_list);
 	ods->obj_map_sz = __ods_def_map_sz;
-	rbt_init(&ods->map_tree, map_cmp);
-	rbt_init(&ods->dirty_tree, ref_cmp);
+	ods_rbt_init(&ods->map_tree, map_cmp);
+	ods_rbt_init(&ods->dirty_tree, ref_cmp);
 
 	pthread_mutex_lock(&ods_list_lock);
 	cleanup_dead_locks(ods);
@@ -1968,7 +1968,7 @@ static void free_pages(ods_t ods, uint64_t pg_no)
 	}
 }
 
-static int commit_map_fn(struct rbn *rbn, void *arg, int l)
+static int commit_map_fn(struct ods_rbn *rbn, void *arg, int l)
 {
 	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
 	msync(map->data, map->map.len, (int)(unsigned long)arg);
@@ -1982,7 +1982,7 @@ void ods_commit(ods_t ods, int flags)
 {
 	int mflag = (flags ? MS_SYNC : MS_ASYNC);
 	__ods_lock(ods);
-	rbt_traverse(&ods->map_tree, commit_map_fn, (void *)(unsigned long)mflag);
+	ods_rbt_traverse(&ods->map_tree, commit_map_fn, (void *)(unsigned long)mflag);
 	__ods_unlock(ods);
 }
 
@@ -2002,6 +2002,7 @@ void ods_close(ods_t ods, int flags)
 	/* Remove the ODS from the open list */
 	pthread_mutex_lock(&ods_list_lock);
 	LIST_REMOVE(ods, entry);
+	pthread_mutex_unlock(&ods_list_lock);
 
 	ods_commit(ods, flags);
 	pgt_unmap(ods);
@@ -2024,15 +2025,14 @@ void ods_close(ods_t ods, int flags)
 	}
 
 	/* Clean up any maps */
-	struct rbn *rbn;
-	while ((rbn = rbt_min(&ods->map_tree))) {
+	struct ods_rbn *rbn;
+	while ((rbn = ods_rbt_min(&ods->map_tree))) {
 		map = container_of(rbn, struct ods_map_s, rbn);
-		rbt_del(&ods->map_tree, rbn);
+		ods_rbt_del(&ods->map_tree, rbn);
 		int rc = munmap(map->data, map->map.len);
 		assert(0 == rc);
 		free(map);
 	}
-	pthread_mutex_unlock(&ods_list_lock);
 
 	free(ods);
 }
@@ -2268,7 +2268,7 @@ int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
 	return rc;
 }
 
-static int q4_del_fn(struct rbn *rbn, void *arg, int l)
+static int q4_del_fn(struct ods_rbn *rbn, void *arg, int l)
 {
 	struct del_fn_arg *darg = arg;
 
@@ -2308,7 +2308,7 @@ static void *gc_thread_fn(void *arg)
 		fn_arg.timeout = __ods_gc_timeout;
 		fn_arg.del_q = &del_list;
 		fn_arg.mapped = 0;
-		rbt_traverse(&ods->map_tree, q4_del_fn, &fn_arg);
+		ods_rbt_traverse(&ods->map_tree, q4_del_fn, &fn_arg);
 		mapped += fn_arg.mapped;
 		empty_del_list(&del_list);
 		__ods_unlock(ods);

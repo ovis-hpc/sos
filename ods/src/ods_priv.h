@@ -56,7 +56,7 @@
 #ifndef __ODS_PRIV_H
 #define __ODS_PRIV_H
 #include <ods/ods_atomic.h>
-#include <ods/rbt.h>
+#include <ods/ods_rbt.h>
 #include <stdarg.h>
 #include <stdint.h>
 
@@ -110,7 +110,7 @@ struct ods_map_s {
 		loff_t off;		/* Map offset */
 		size_t len;		/* This length of this map in Bytes */
 	} map;
-	struct rbn rbn;		/* Active map tree */
+	struct ods_rbn rbn;		/* Active map tree */
 	LIST_ENTRY(ods_map_s) entry; /* Queued for deletion */
 };
 
@@ -118,7 +118,7 @@ typedef struct ods_dirty_s {
 	ods_ref_t start;
 	ods_ref_t end;
 	ods_t ods;
-	struct rbn rbn;
+	struct ods_rbn rbn;
 } *ods_dirty_t;
 
 struct ods_s {
@@ -151,7 +151,7 @@ struct ods_s {
 
 	/* Tree of object maps. Key is file offset and map length. */
 	ods_map_t last_map;
-	struct rbt map_tree;
+	struct ods_rbt map_tree;
 
 	/* Local lock for this ODS instance */
 	pthread_mutex_t lock;
@@ -161,7 +161,7 @@ struct ods_s {
 	LIST_HEAD(obj_list_head, ods_obj_s) obj_list;
 
 	/* The dirty tree */
-	struct rbt dirty_tree;
+	struct ods_rbt dirty_tree;
 
 	LIST_ENTRY(ods_s) entry;
 };

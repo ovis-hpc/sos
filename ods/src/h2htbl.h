@@ -48,7 +48,7 @@
 
 #include <ods/ods_idx.h>
 #include <ods/ods.h>
-#include <ods/rbt.h>
+#include <ods/ods_rbt.h>
 #include "ods_priv.h"
 #include "ods_idx_priv.h"
 #include "fnv_hash.h"
@@ -92,7 +92,7 @@ typedef struct h2htbl_iter {
 		H2HTBL_ITER_FWD,
 		H2HTBL_ITER_REV
 	} dir;
-	struct rbt next_tree;
+	struct ods_rbt next_tree;
 	ods_iter_t iter_table[0];
 } *h2htbl_iter_t;
 

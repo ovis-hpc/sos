@@ -68,7 +68,7 @@
 #include "sos_priv.h"
 
 static struct sos_schema_s *ischema_dir[SOS_TYPE_LAST+1];
-static struct rbt ischema_rbt;
+static struct ods_rbt ischema_rbt;
 
 static uint32_t type_sizes[] = {
 	[SOS_TYPE_INT16] = 2,
@@ -1124,8 +1124,8 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 		}
 		TAILQ_INSERT_TAIL(&dup->attr_list, attr, entry);
 	}
-	rbn_init(&dup->name_rbn, dup->data->name);
-	rbn_init(&dup->id_rbn, &dup->data->id);
+	ods_rbn_init(&dup->name_rbn, dup->data->name);
+	ods_rbn_init(&dup->id_rbn, &dup->data->id);
 	return dup;
  err_1:
 	free(schema->dict);
@@ -1195,10 +1195,10 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 		}
 		TAILQ_INSERT_TAIL(&schema->attr_list, attr, entry);
 	}
-	rbn_init(&schema->name_rbn, schema->data->name);
-	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
-	rbn_init(&schema->id_rbn, &schema->data->id);
-	rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
+	ods_rbn_init(&schema->name_rbn, schema->data->name);
+	ods_rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
+	ods_rbn_init(&schema->id_rbn, &schema->data->id);
+	ods_rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
 	sos->schema_count++;
 	LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
 	return schema;
@@ -1285,15 +1285,15 @@ static sos_schema_t __schema_by_name(sos_t sos, const char *name)
 static sos_schema_t __sos_schema_by_name(sos_t sos, const char *name)
 {
 	sos_schema_t schema = NULL;
-	struct rbt *tree;
-	struct rbn *rbn;
+	struct ods_rbt *tree;
+	struct ods_rbn *rbn;
 
 	if (name[0] == '_' && name[1] == '_')
 		tree = &ischema_rbt;
 	else
 		tree = &sos->schema_name_rbt;
 
-	rbn = rbt_find(tree, (void *)name);
+	rbn = ods_rbt_find(tree, (void *)name);
 	if (!rbn) {
 		/* Schema not in cache. Check persistent storage. */
 		schema = __schema_by_name(sos, name);
@@ -1343,7 +1343,7 @@ sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id)
 	sos_schema_t schema;
 	if (id < SOS_SCHEMA_FIRST_USER)
 		return ischema_dir[id];
-	struct rbn *rbn = rbt_find(&sos->schema_id_rbt, (void *)&id);
+	struct ods_rbn *rbn = ods_rbt_find(&sos->schema_id_rbt, (void *)&id);
 	if (!rbn)
 		return NULL;
 	schema = container_of(rbn, struct sos_schema_s, id_rbn);
@@ -1472,11 +1472,11 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	if (rc)
 		goto err_3;
 
-	rbn_init(&schema->name_rbn, schema->data->name);
-	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
+	ods_rbn_init(&schema->name_rbn, schema->data->name);
+	ods_rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
 
-	rbn_init(&schema->id_rbn, &schema->data->id);
-	rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
+	ods_rbn_init(&schema->id_rbn, &schema->data->id);
+	ods_rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
 
 	sos->schema_count++;
 	LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
@@ -1627,9 +1627,9 @@ sos_schema_t __sos_internal_schema_new(const char *name, uint32_t id,
 	schema->data->el_sz = el_size;
 	sos_schema_attr_add(schema, "count", SOS_TYPE_UINT32);
 	sos_schema_attr_add(schema, "data", el_type);
-	rbn_init(&schema->name_rbn, schema->data->name);
-	rbt_ins(&ischema_rbt, &schema->name_rbn);
-	rbn_init(&schema->id_rbn, &schema->data->id);
+	ods_rbn_init(&schema->name_rbn, schema->data->name);
+	ods_rbt_ins(&ischema_rbt, &schema->name_rbn);
+	ods_rbn_init(&schema->id_rbn, &schema->data->id);
 	ischema_dir[schema->data->id] = schema;
 	return schema;
 }
@@ -1682,7 +1682,7 @@ struct ischema_data {
 static void __attribute__ ((constructor)) sos_lib_init(void)
 {
 	struct ischema_data *id;
-	rbt_init(&ischema_rbt, __sos_schema_name_cmp);
+	ods_rbt_init(&ischema_rbt, __sos_schema_name_cmp);
 	for (id = &ischema_data_[0]; id->name; id++) {
 		sos_schema_t schema =
 			__sos_internal_schema_new(id->name, id->id,
