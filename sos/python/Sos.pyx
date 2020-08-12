@@ -52,9 +52,8 @@ import struct
 import sys
 import copy
 import binascii
-from DataSet import DataSet
+from sosdb import DataSet
 cimport numpy as np
-cimport Sos
 
 #
 # Initialize the numpy array support. Numpy arrays are used
@@ -1022,7 +1021,7 @@ cdef class Key(object):
         cdef sos_comp_key_spec_t specs
         cdef sos_key_t c_key
 
-        count = len(args) / 2
+        count = len(args) // 2
         if count * 2 != len(args):
             raise ValueError("The argument list must consist of a pairs of type, value")
 
@@ -4620,7 +4619,7 @@ cdef class Object(object):
 
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
         # convert size in bytes to array count
-        size = size / np.dtype(eltype).itemsize
+        size = size // np.dtype(eltype).itemsize
         shape[0] = size
         res = np.PyArray_SimpleNewFromData(1, shape, np.dtype(eltype).num,
                                            c_data.array.data.byte_)
