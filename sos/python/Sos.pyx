@@ -52,7 +52,7 @@ import struct
 import sys
 import copy
 import binascii
-from sosdb import DataSet
+from sosdb.DataSet import DataSet
 cimport numpy as np
 
 #
