@@ -4684,7 +4684,7 @@ cdef void uint8_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
         ndb[i] = v.data.array.data.byte_[i]
 
 cdef void int8_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
-    nda[idx] = v.data.array.data.char_[:v.data.array.count].decode()
+    nda[idx] = v.data.array.data.char_[:v.data.array.count]
 
 cdef void int16_array_nda_setter(np.ndarray nda, int idx, sos_value_t v):
     cdef int i
@@ -5147,7 +5147,7 @@ cdef class QueryInputer:
                 if atyp >= TYPE_IS_ARRAY:
                     if atyp == SOS_TYPE_STRING:
                         data = np.zeros([ self.row_limit ],
-                                        dtype=np.dtype('|S{0}'.format(max_string)))
+                                        dtype=np.dtype('U{0}'.format(max_string)))
                     else:
                         data = np.zeros([ self.row_limit, int(max_array) ],
                                         dtype=np.dtype(typ_str))
@@ -5282,7 +5282,7 @@ cdef class QueryInputer:
             if atyp >= TYPE_IS_ARRAY:
                 if atyp == SOS_TYPE_STRING:
                     data = np.zeros([ self.row_count ],
-                                    dtype=np.dtype('|S{0}'.format(max_string)))
+                                    dtype=np.dtype('U{0}'.format(max_string)))
                 else:
                     data = np.zeros([ self.row_count, max_array ],
                                     dtype=np.dtype(typ_str))
@@ -5374,7 +5374,7 @@ cdef class QueryInputer:
             if atyp >= TYPE_IS_ARRAY:
                 if atyp == SOS_TYPE_STRING:
                     data = np.zeros([ self.row_count ],
-                                    dtype=np.dtype('|S{0}'.format(max_string)))
+                                    dtype=np.dtype('U{0}'.format(max_string)))
                 else:
                     data = np.zeros([ self.row_count, max_array ],
                                     dtype=np.dtype(typ_str))

@@ -15,6 +15,7 @@ fi
 AC_DEFINE_UNQUOTED([ODS_COMMIT_ID],["$COMMIT_ID"], [Git commit id])
 AC_SUBST([ODS_COMMIT_ID],["$COMMIT_ID"])
 
+
 dnl Checks for programs
 AC_PROG_CC
 
@@ -23,17 +24,18 @@ OPTION_DOC
 
 OPTION_DEFAULT_DISABLE([debug], [ENABLE_DEBUG])
 OPTION_DEFAULT_ENABLE([python], [ENABLE_PYTHON])
-
-if test -z "$ENABLE_PYTHON_TRUE"
-then
-  AM_PATH_PYTHON(,,[:])
-  NUMPY_INCLUDE_PATH=$($PYTHON -c "import numpy; print(numpy.get_include())")
-  which cython >/dev/null 2>&1 || AC_MSG_ERROR("cython not found")
-  test -n "$NUMPY_INCLUDE_PATH" || AC_MSG_ERROR("numpy not found.")
-  AX_PYTHON_DEVEL()
-  AC_MSG_RESULT([${NUMPY_INCLUDE_PATH}])
-  AC_SUBST([NUMPY_INCLUDE_PATH])
+if test -z "$ENABLE_PYTHON_TRUE"; then
+	dnl check for python interpreter
+	test -n "$PYTHON" || export PYTHON=/usr/bin/python3
+ 	AM_PATH_PYTHON(,,[:])
+ 	AX_PYTHON_DEVEL([>='3'])
+ 	NUMPY_INCLUDE_PATH=$($PYTHON -c "import numpy; print(numpy.get_include())")
+ 	which cython >/dev/null 2>&1 || AC_MSG_ERROR("cython not found")
+ 	test -n "$NUMPY_INCLUDE_PATH" || AC_MSG_ERROR("numpy not found.")
+ 	AC_MSG_RESULT([${NUMPY_INCLUDE_PATH}])
+ 	AC_SUBST([NUMPY_INCLUDE_PATH])
 fi
+AM_CONDITIONAL([HAVE_PYTHON], [test "$PYTHON" != :])
 
 distdir=${PACKAGE_NAME}-${PACKAGE_VERSION}
 AC_SUBST(ac_configure_args)
