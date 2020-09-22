@@ -356,7 +356,7 @@ class DataSet(object):
                     v = int(v)
                 elif typ == np.datetime64:
                     # convert to milliseconds from microseconds
-                    v = v.astype(np.int64) // int(1e6)
+                    v = v.astype(np.int64) // 1000
                 else:
                     raise ValueError("Unrecognized numpy type {0}".format(typ))
                 aRow.append(v)
