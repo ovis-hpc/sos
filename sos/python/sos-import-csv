@@ -140,6 +140,8 @@ if __name__ == "__main__":
                         help="Specifies how CSV columns are mapped to attributes")
     parser.add_argument("--csv",
                         help="The path to the CSV file to import")
+    parser.add_argument("--sep", default=",",
+                        help="The separator character in the CSV file")
     parser.add_argument("--status", action="store_true",
                         help="Show detail import status")
     parser.add_argument("--sep", required=False, default=",",
