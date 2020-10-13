@@ -28,8 +28,8 @@ Compile Dependencies
 --------------------
 
 * For SOS python interface:
-  * Cython
-  * Python >= 2.7
+  * Cython >= .29 (Cython 3.0)
+  * Python >= 3.6
 
 Installation
 ------------
@@ -39,6 +39,7 @@ Installation
 mkdir build
 cd build
 ../configure --prefix=/SOS/INSTALL/PATH [--disable-python] [--enable-debug]
+# add 'PYTHON=/PYTHON/EXECUTABLE/PATH' if PYTHON environment variable not set
 # add `--enable-debug` to turn on debugging logic inside the SOS libraries
 # add `--disable-python` to disable the Python commands and interface libraries
 make && make install
