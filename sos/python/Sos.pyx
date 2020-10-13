@@ -1424,6 +1424,9 @@ cdef class AttrIter(SosObject):
             return True
         return False
 
+    def next(self):
+        return next(self)
+
     def __next__(self):
         """Move the iterator position to the next object in the index
         Returns:
