@@ -3842,13 +3842,17 @@ cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
             secs = <int>val[0]
             usecs = <int>val[1]
         except:
-            raise ValueError("A timestamp is a tuple of ( int(secs), int(usecs) )")
+            raise ValueError("Error assigning {0} to timestamp. \
+                              A timestamp must be a tuple of \
+                              ( int(secs), int(usecs) )".format(val))
     elif typ == float or typ == np.float64 or typ == np.float32:
         try:
             secs = int(val)
-            usecs = int((val * 1.e6) - (secs * 1.e6))
+            usecs = int(val - float(secs) * 1.e6)
         except:
-            raise ValueError("The time value is a floating point secs.usecs number")
+            raise ValueError("Error assigning {0} to timestamp. \
+                              The time value of a floating point \
+                              number must be non-negative".format(val))
     elif typ == np.datetime64:
         ts = val.astype('int')
         secs = ts / 1000000L
@@ -3861,7 +3865,7 @@ cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
         secs = val
         usecs = 0
     else:
-        raise ValueError("timestamp of type {0}, must be float, tuple or int".format(type(val)))
+        raise ValueError("Timestamp of type {0}, must be float, tuple or int".format(type(val)))
     c_data.prim.timestamp_.tv.tv_sec = secs
     c_data.prim.timestamp_.tv.tv_usec = usecs
 
