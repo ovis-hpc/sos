@@ -41,38 +41,17 @@
  */
 
 /**
- *
- * \page sos_part_create sos_part_create command
- *
- * \b NAME
- *
- * sos_part_create - Create a partition
- *
- * \b SYNOPSIS
+ * \page sos_part_create sos_part_create - Create a Partition
  *
  * sos_part_create -C <container> [-s <state>] [-p <path>] part_name
  *
- * \b DESCRIPTION
- *
- * Create a new partition.
- *
- * \b -C=PATH
- *
- * Specify the PATH to the Container. This option is required.
- *
- * \b -s=STATE
- *
- * Specify the state of the new partition. This paramter is optional.
- * The default initial state is OFFLINE.
- *
- * \b -p=PATH
- *
- * Specify the path to the parition. This parameter is optional. The
+ * @param "-C PATH" The *PATH* to the Container. This option is required.
+ * @param "-s STATE" The *STATE* of the new partition. This paramter is optional.
+ * The default initial state is *offline*. The STATE is one of *primary*, *active*,
+ * or *offline*.
+ * @param "-p PATH" The *PATH* to the parition. This parameter is optional. The
  * default path is the container path.
- *
- * \b part_name
- *
- * Specifies the name of the partition.
+ * @param part_name The name of the partition.
  *
  */
 #include <sys/time.h>

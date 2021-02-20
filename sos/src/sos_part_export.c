@@ -41,35 +41,20 @@
  */
 
 /**
- * \section sos_part_export sos_part_export command
- *
- * \b NAME
- *
- * sos_part_export - Export the objects in a partition to another container
- *
- * \b SYNOPSIS
+ * \page sos_part_export Export a Partition's Contents to Another Container
  *
  * sos_part_export -C <SRC-PATH> -E <DST-PATH> <PART-NAME>
  *
- * \b DESCRIPTION
- *
- * Exports the objects from a partition in one container to the
+ * Export the objects from a partition in one container to the
  * primary partition of another container.
  *
- * The source partition must not be in the 'primary' state.
+ * The source partition must not be in the *primary* state.
  *
- * \b -C SRC-PATH
- *
- * Specify the PATH to the source Container. This option is required.
- *
- * \b -E DST-PATH
- *
- * Specify the PATH to the destination Container. This option is required.
- *
- * \b PART-NAME
- *
- * The name of the partition in the source container to be exported to
- * the destination container.
+ * @param "-C PATH" The *PATH* to the source container.
+ * @param "-E PATH" The *PATH* to the destination container.
+ * @param -I Add the exported objects to their respective indices
+ *           in the destination container.
+ * @param part_name The name of the partition in the source container.
  */
 #include <sys/time.h>
 #include <time.h>
@@ -94,11 +79,11 @@ void usage(int argc, char *argv[])
 const char *short_options = "C:E:I";
 
 struct option long_options[] = {
-	{"help",        no_argument,        0,  '?'},
-	{"path",        required_argument,  0,  'C'},
-	{"export",      required_argument,  0,  'E'},
+	{"help",    no_argument,        0,  '?'},
+	{"path",    required_argument,  0,  'C'},
+	{"export",  required_argument,  0,  'E'},
 	{"index",	no_argument,	    0,  'I'},
-	{0,             0,                  0,  0}
+	{0,         0,                  0,  0}
 };
 
 int main(int argc, char **argv)

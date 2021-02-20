@@ -41,31 +41,17 @@
  */
 
 /**
- * \section sos_part_move sos_part_move command
- *
- * \b NAME
- *
- * sos_part_move - Move a partition to another storage location
- *
- * \b SYNOPSIS
+ * \page sos_part_move - Move a Partition
  *
  * sos_part_move -C <container> -p <new_path> <name>
  *
- * \b DESCRIPTION
+ * Move a parition to another storage location. The specified partition
+ * must be in the *offline* state.
  *
- *  Move a parition to another storage location
- *
- * \b -C=CONT_PATH
- *
- * Specify the PATH to the Container. This option is required.
- *
- * \b -p=PART_PATH
- *
- * The new path for the paritition data.
- *
- * \b <name>
- *
- * Specify the name of the Partition. This paramter is required.
+ * @param "-C PATH" The *PATH* to the container containing the
+ *                  partition \c part_name.
+ * @param "-p naPATH" The *PATH* to which the new partition will be moved.
+ * @param part_name The name of the partition to be moved.
  *
  */
 #include <sys/time.h>

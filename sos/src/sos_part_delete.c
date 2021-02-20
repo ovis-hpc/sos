@@ -41,28 +41,15 @@
  */
 
 /**
- * \section sos_part_delete sos_part_delete command
- *
- * \b NAME
- *
- * sos_part_delete - Delete a partition in a Container
- *
- * \b SYNOPSIS
+ * \page sos_part_delete sos_part_delete - Delete a Partition
  *
  * sos_part_delete -C <container> <name>
  *
- * \b DESCRIPTION
+ * Delete a parition in a Container. The partition must be in the
+ * *offline* state to be deleted.
  *
- *  Delete a parition in a Container. The partition must be in the
- *  OFFLINE state to be deleted.
- *
- * \b -C=PATH
- *
- * Specify the PATH to the Container. This option is required.
- *
- * \b <name>
- *
- * Specify the name of the Partition. This paramter is required.
+ * @param "-C PATH" The PATH to the Container. This option is required.
+ * @param part_name The name of the Partition.
  *
  */
 #include <sys/time.h>
@@ -72,7 +59,7 @@
 #include <errno.h>
 #include <sos/sos.h>
 
-const char *short_options = "C:s:";
+const char *short_options = "C:";
 
 struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},

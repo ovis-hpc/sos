@@ -41,34 +41,18 @@
  */
 
 /**
- * \section sos_part_index sos_part_index command
+ * \page sos_part_index - Reindex Objects in a Partition
  *
- * \b NAME
- *
- * sos_part_index - Add objects in a partition to their schema indices
- *
- * \b SYNOPSIS
- *
- * sos_part_index -C <SRC-PATH> <PART-NAME>
- *
- * \b DESCRIPTION
- *
+ * sos_part_index -C <PATH> <NAME>
  *
  * Objects that have been exported to a partition may not be indexed
  * by the export process. This command can be used to ensure that all
  * objects in a partition have been added to their schema indices.
  *
- * The partition may not be in the OFFLINE state.
+ * See the \ref sos_part_export command's -I option.
  *
- * See the \c sos_part_export command's -I option.
- *
- * \b -C SRC-PATH
- *
- * Specify the PATH to the source Container. This option is required.
- *
- * \b PART-NAME
- *
- * The name of the partition.
+ * @param "-C PATH" The *PATH* to the container.
+ * @param part_name The name of the partition.
  */
 #include <sys/time.h>
 #include <time.h>

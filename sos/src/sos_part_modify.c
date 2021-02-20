@@ -41,44 +41,31 @@
  */
 
 /**
- * \section sos_part_modify sos_part_modify command
- *
- * \b NAME
- *
- * sos_part_modify - Modify a partition in a Container
- *
- * \b SYNOPSIS
+ * \page sos_part_modify sos_part_modify - Modify the State of a Partition
  *
  * sos_part_modify -C <container> -s <state> <name>
  *
- * \b DESCRIPTION
- *
- *  Modify a parition in a Container
- *
- * \b -C=PATH
- *
- * Specify the PATH to the Container. This option is required.
- *
- * \b -s=STATE
- *
- * Modify the state of a partition. Valid values for the STATE parameter
+ * Modify the state of a partition. Valid values for the \c -s parameter
  * are: "primary", "active", and "offline".
  *
- * If the "primary" STATE is requested, the current primary Partition
+ * If the "primary" state is requested, the current primary Partition
  * is made "active" and the specified partition is made primary.
  *
- * If the "active" STATE is requested and the named Partition is
- * Primary, an error is returned indicating the Partition is busy.
+ * If the "active" state is requested and the named Partition is
+ * "primary", an error is returned indicating the Partition is busy.
  *
- * If the "offline" STATE is requested, and the Partition is Primary,
+ * If the "offline" state is requested, and the Partition is "primary",
  * an error is returned indicating the Partition is busy. Otherwise,
  * all keys referring to an Object in the named Partition are removed
  * from all Indices in the Container and the Paritition is moved to
  * the "offline" state.
- *
- * \b <name>
- *
- * Specify the name of the Partition. This paramter is required.
+
+ * @param "-C PATH" The *PATH* to the Container.
+ * @param "-s STATE" The *STATE* of the new partition. If not specified
+ *                  The state is *offline*. Valid values are:
+ *                    - *primary*
+ *                    - *active*
+ *                    - *offline*
  *
  */
 #include <sys/time.h>

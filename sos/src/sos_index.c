@@ -97,7 +97,7 @@
  * - sos_container_index_iter_first() Return the first index in the container
  * - sos_container_index_iter_next() Return the next index on the iterator
  */
-
+#define _GNU_SOURCE
 #include <sys/types.h>
 #include <stdlib.h>
 #include <limits.h>
