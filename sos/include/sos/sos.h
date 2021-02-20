@@ -71,8 +71,11 @@
  */
 typedef struct sos_container_s *sos_t;
 typedef enum sos_perm_e {
-	SOS_PERM_RO = 0,
-	SOS_PERM_RW,
+	SOS_PERM_RO = ODS_PERM_RO,
+	SOS_PERM_RD = ODS_PERM_RD,
+	SOS_PERM_WR = ODS_PERM_WR,
+	SOS_PERM_RW = ODS_PERM_RW,
+	SOS_PERM_CREAT = ODS_PERM_CREAT
 } sos_perm_t;
 
 #define SOS_POS_KEEP_TIME			"POS_KEEP_TIME"
@@ -109,9 +112,10 @@ struct sos_version_s {
 	const char *git_commit_id;	/* git commit id */
 };
 #pragma pack()
+int sos_container_file_version(const char *path, struct sos_version_s *ver);
 struct sos_version_s sos_container_version(sos_t sos);
-int sos_container_new(const char *path, int o_mode);
-sos_t sos_container_open(const char *path, sos_perm_t o_perm);
+int sos_container_new(const char *path, int o_mode); /* deprecated */
+sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...);
 int sos_container_verify(sos_t sos);
 int sos_container_move(const char *path_arg, const char *new_path);
 int sos_container_delete(sos_t c);
@@ -420,6 +424,8 @@ int64_t sos_part_index(sos_part_t src_part);
  * Called by the sos_part_obj_iter() function for each object in the partition. If
  * the function wishes to cancel iteration, return !0, otherwise,
  * return 0.
+ *
+ * This callback function owns a reference on the provided object.
  *
  * \param sos	The container handle
  * \param obj	The object handle

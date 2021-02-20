@@ -299,11 +299,13 @@ cdef class Container(SosObject):
             return sos_container_version(self.c_cont)
         return None
 
-    def open(self, path, o_perm=SOS_PERM_RW):
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660):
         """Open the container
 
-        If the container cannot be opened an Exception is thrown with
-        an error string based on the errno.
+        If the container cannot be opened (or created) an Exception
+        is thrown with an error string based on the errno. Note that if
+        the container does not exist and PERM_CREAT is not specified, the
+        exception will indicate File Not Found.
 
         Positional Parameters:
 
@@ -312,20 +314,20 @@ cdef class Container(SosObject):
         Keyword Parameters:
 
         o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RO
-
+        o_mode - The file creation mode if o_perm includes SOS_PERM_CREAT
         """
         if self.c_cont != NULL:
             self.abort(EBUSY)
-        self.c_cont = sos_container_open(path.encode(), o_perm)
+        self.c_cont = sos_container_open(path.encode(), o_perm, o_mode)
         if self.c_cont == NULL:
             raise self.abort(errno)
 
     def create(self, path, o_mode=0660):
-        """Create an empty container
+        """Create the container
 
-        Create a new empty container. If the container cannot be
-        created an Exception is thrown. The exception message is based
-        on the errno.
+        This is a convenience method that calls open with
+        o_perm |= SOS_PERM_CREAT. See the open() method for
+        more information.
 
         Positional Parameters:
 
@@ -333,16 +335,16 @@ cdef class Container(SosObject):
 
         Keyword Parameters:
 
-        o_mode - An octal number indicating rwx permissions for the
-                 container. These default is 0o664, ie. -rw-rw-r--
-
+        o_mode - The file creation mode, default is 0660
         """
-        cdef int rc
         if self.c_cont != NULL:
             self.abort(EBUSY)
-        rc = sos_container_new(path.encode(), o_mode)
-        if rc != 0:
-            self.abort(rc)
+        c_cont = sos_container_open(path.encode(),
+                        o_perm=<sos_perm_t>(SOS_PERM_CREAT|SOS_PERM_RW),
+                        o_mode=o_mode)
+        if c_cont == NULL:
+            raise self.abort(errno)
+        sos_container_close(c_cont, SOS_COMMIT_SYNC)
 
     def delete(self):
         """Delete a container
@@ -1579,6 +1581,7 @@ TYPE_OBJ_ARRAY = SOS_TYPE_OBJ_ARRAY
 
 PERM_RW = SOS_PERM_RW
 PERM_RO = SOS_PERM_RO
+PERM_CREAT = SOS_PERM_CREAT
 
 VERS_MAJOR = ODS_VER_MAJOR
 VERS_MINOR = ODS_VER_MINOR

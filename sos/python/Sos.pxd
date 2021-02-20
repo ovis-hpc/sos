@@ -392,7 +392,11 @@ cdef extern from "sos/sos.h":
 
     cdef enum sos_perm_e:
         SOS_PERM_RO,
-        SOS_PERM_RW
+        SOS_PERM_RD,
+        SOS_PERM_WR,
+        SOS_PERM_RW,
+        SOS_PERM_CREAT
+
     ctypedef sos_perm_e sos_perm_t
 
     cdef enum sos_commit_e:
@@ -422,7 +426,7 @@ cdef extern from "sos/sos.h":
 
     sos_version_s sos_container_version(sos_t c)
     int sos_container_new(const char *path, int o_mode)
-    sos_t sos_container_open(const char *path, sos_perm_t o_perm)
+    sos_t sos_container_open(const char *path, sos_perm_t o_perm, int o_mode)
     int sos_container_delete(sos_t c)
     int sos_container_stat(sos_t sos, stat *sb)
     void sos_container_close(sos_t c, sos_commit_t flags)

@@ -78,17 +78,6 @@ typedef struct ods_map_s *ods_map_t;
 typedef struct ods_obj_s *ods_obj_t;
 
 /**
- * \brief Create an object store
- *
- * \param path The path to the ODS to be opened.
- * \param o_mode The file mode. See the creat() system call.
- * \retval 0		The object store was created
- * \retval EINVAL	A incorrect parameter was specified
- * \retval EPERM	Permission denied.
- */
-extern int ods_create(const char *path, int o_mode);
-
-/**
  * \brief Destroy an object store
  *
  * \param path The path to the ODS to be destroyed.
@@ -100,7 +89,10 @@ extern int ods_destroy(const char *path);
 
 typedef enum ods_perm_e {
 	ODS_PERM_RO = 0,
-	ODS_PERM_RW
+	ODS_PERM_RD = 1,
+	ODS_PERM_WR = 2,
+	ODS_PERM_RW = ODS_PERM_RD | ODS_PERM_WR,
+	ODS_PERM_CREAT = 4
 } ods_perm_t;
 
 /**
@@ -113,15 +105,16 @@ extern const char *ods_path(ods_t ods);
  * \brief Open and optionally create an ODS object store
  *
  * \param path	The path to the ODS to be opened.
- * \param o_perm The requested read/write permissions.
+ * \param o_perm The requested read/write/create permissions.
+ * \param o_mode Optional file mode if ODS_PERM_CREAT is specified. See the creat() system call.
  * \retval !0	The ODS handle
  * \retval 0	An error occured opening/creating the ODS
  */
-extern ods_t ods_open(const char *path, ods_perm_t o_perm);
+extern ods_t ods_open(const char *path, ods_perm_t o_perm, ...);
 
 #define ODS_VER_MAJOR	4
 #define ODS_VER_MINOR	3
-#define ODS_VER_FIX	3
+#define ODS_VER_FIX		5
 
 #pragma pack(1)
 struct ods_version_s {
@@ -473,6 +466,8 @@ extern void ods_dump(ods_t ods, FILE *fp);
  * Called by the ods_obj_iter() function for each object in the ODS. If
  * the function wishes to cancel iteration, return !0, otherwise,
  * return 0.
+ *
+ * The callback function owns the reference to the provided object.
  *
  * \param ods	The ODS handle
  * \param obj	The object handle

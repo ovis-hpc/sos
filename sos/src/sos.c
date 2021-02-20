@@ -106,9 +106,9 @@
  *
  * The user-defined types are Objects.
  *
- * \section index Index
+ * \section index_intro Indices
  *
- * An Index is a named, ordered collection of Keyy/Value references to
+ * An Index is a named, ordered collection of Key/Value references to
  * Objects. Their purpose is to quickly find an Object in a container
  * based on a Key. Indexes can be associated with a Schema or be
  * independent of a Schema, for example, allowing a single Index to
@@ -126,6 +126,7 @@
 #define _GNU_SOURCE
 #include <sys/queue.h>
 #include <sys/types.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -149,6 +150,7 @@
 LIST_HEAD(cont_list_head, sos_container_s) cont_list;
 #endif
 pthread_mutex_t cont_list_lock;
+pthread_mutex_t _sos_log_lock;
 
 /**
  * \page container_overview Containers
@@ -156,14 +158,12 @@ pthread_mutex_t cont_list_lock;
  * A SOS Container groups Partitions, Schema, Objects, and Indices
  * together into a single namespace. The root of the namespace is the
  * Container's name. Containers are created with the
- * sos_container_new() function. SOS implements the POSIX security
+ * sos_container_open() function. SOS implements the POSIX security
  * model. When a Container is created, it inherits the owner and group
- * of the process that created the container. The sos_container_new()
+ * of the process that created the container. The sos_container_open()
  * function takes an <tt>o_mode</tt> parameter that identifies the
  * standard POSIX umask to specify RO/RW access for owner/group/other.
- *
- * The sos_container_open() function opens a previously created
- * container. The user/group of the process opening the container must
+ * The user/group of the process opening the container must
  * have adequate permission to provide the requested R/W access. The
  * sos_container_open() function returns a <tt>sos_t</tt> container handle that
  * is used in subsequent SOS API.
@@ -174,11 +174,9 @@ pthread_mutex_t cont_list_lock;
  *
  * The SOS Container API include the following:
  *
- * - sos_container_new() Create a new Container
- * - sos_container_open() Open a previously created Container
+ * - sos_container_open() Open/create a Container
  * - sos_container_close() Close a container
  * - sos_container_commit() Commit a Container's contents to stable storage
- * - sos_container_delete() Destroy a Container and all of its contents
  * - sos_container_move() Reset a Container's path after it has been copied to a new location
  * - sos_container_info() - Print Container information to a FILE pointer
  * - sos_container_lock_info() - Print Container lock information to a FILE pointer
@@ -254,20 +252,15 @@ static int __create_pos_info(char *tmp_path, const char *path, int o_mode)
 	ods_t pos_ods;
 
 	/* Create the ODS to contain the position objects */
-	sprintf(tmp_path, "%s/.__pos", path);
- 	rc = ods_create(tmp_path, o_mode);
- 	if (rc)
-		goto err_0;
-
-	pos_ods = ods_open(tmp_path, O_RDWR);
+	pos_ods = ods_open(tmp_path, ODS_PERM_RW|ODS_PERM_CREAT, o_mode);
 	if (!pos_ods)
-		goto err_1;
+		goto err_0;
 
 	/* Initialize the index dictionary */
 	udata = ods_get_user_data(pos_ods);
 	if (!udata) {
 		rc = errno;
-		goto err_2;
+		goto err_1;
 	}
 
 	SOS_POS_UDATA(udata)->signature = SOS_POS_SIGNATURE;
@@ -279,12 +272,11 @@ static int __create_pos_info(char *tmp_path, const char *path, int o_mode)
 	sprintf(tmp_path, "%s/.__pos_idx", path);
  	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "UINT32", NULL);
  	if (rc)
- 		goto err_2;
+ 		goto err_1;
 	return 0;
 
- err_2:
-	ods_close(pos_ods, ODS_COMMIT_ASYNC);
  err_1:
+	ods_close(pos_ods, ODS_COMMIT_ASYNC);
 	sprintf(tmp_path, "%s/.__pos", path);
 	ods_destroy(tmp_path);
  err_0:
@@ -344,6 +336,10 @@ static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
  * @{
  */
 
+/** \defgroup container SOS Storage Containers
+ * @{
+ */
+
 /**
  * \brief Create a Container
  *
@@ -351,10 +347,9 @@ static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
  * the same values and have the same meaning as the corresponding
  * parameters to the open() system call.
  *
- * Containers are logically maintained in a Unix filesystem
- * namespace. The specified path must be unique for the Container and
- * all sub-directories in the path up to, but not including the
- * basename() must exist.
+ * Like the POSIX \c creat() system call, shis function is racy and
+ * should not be deprecated in favor of the \c sos_container_open()
+ * function.
  *
  * \param path		Pathname for the Container.
  * \param o_mode	The file mode for the Container.
@@ -365,16 +360,21 @@ static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
  */
 int sos_container_new(const char *path, int o_mode)
 {
+	sos_t sos = sos_container_open(path, SOS_PERM_CREAT, o_mode);
+	if (!sos)
+		return errno;
+	sos_container_close(sos, SOS_COMMIT_SYNC);
+	return 0;
+}
+
+/* Must be called holding the SOS container file lock */
+static int __sos_container_new(const char *path, int o_mode)
+{
 	char tmp_path[PATH_MAX];
 	char real_path[PATH_MAX];
 	int rc;
 	int x_mode;
-	struct stat sb;
-
-	/* Check to see if the container already exists */
-	rc = stat(path, &sb);
-	if (rc != 0 && errno != ENOENT)
-		return rc;
+	ods_t ods;
 
 	x_mode = o_mode;
 	if (x_mode & (S_IWGRP | S_IRGRP))
@@ -397,8 +397,9 @@ int sos_container_new(const char *path, int o_mode)
 
 	/* Create the ODS to contain configuration objects */
 	sprintf(tmp_path, "%s/.__config", path);
-	rc = ods_create(tmp_path, o_mode);
-	if (rc)
+	ods = ods_open(tmp_path, ODS_PERM_CREAT | ODS_PERM_RW, o_mode);
+	ods_close(ods, ODS_COMMIT_SYNC);
+	if (!ods)
 		goto err_1;
 
 	/* Create the configuration object index */
@@ -409,11 +410,7 @@ int sos_container_new(const char *path, int o_mode)
 
 	/* Create the ODS to contain partition objects */
 	sprintf(tmp_path, "%s/.__part", path);
-	rc = ods_create(tmp_path, o_mode);
-	if (rc)
-		goto err_3;
-
-	ods_t part_ods = ods_open(tmp_path, O_RDWR);
+	ods_t part_ods = ods_open(tmp_path, ODS_PERM_CREAT | ODS_PERM_RW, o_mode);
 	if (!part_ods)
 		goto err_3;
 
@@ -442,13 +439,9 @@ int sos_container_new(const char *path, int o_mode)
 
  	/* Create the ODS to contain the schema objects */
 	sprintf(tmp_path, "%s/.__schemas", path);
- 	rc = ods_create(tmp_path, o_mode);
- 	if (rc)
- 		goto err_4;
-
-	ods_t schema_ods = ods_open(tmp_path, O_RDWR);
+	ods_t schema_ods = ods_open(tmp_path, ODS_PERM_CREAT | O_RDWR, o_mode);
 	if (!schema_ods)
-		goto err_5;
+		goto err_4;
 	/* Initialize the schema dictionary */
 	udata = ods_get_user_data(schema_ods);
 	if (!udata) {
@@ -470,13 +463,9 @@ int sos_container_new(const char *path, int o_mode)
 
  	/* Create the ODS to contain the index objects */
 	sprintf(tmp_path, "%s/.__index", path);
- 	rc = ods_create(tmp_path, o_mode);
- 	if (rc)
- 		goto err_6;
-
-	ods_t idx_ods = ods_open(tmp_path, O_RDWR);
+	ods_t idx_ods = ods_open(tmp_path, SOS_PERM_RW | SOS_PERM_CREAT, o_mode);
 	if (!idx_ods)
-		goto err_7;
+		goto err_6;
 
 	/* Initialize the index dictionary */
 	udata = ods_get_user_data(idx_ods);
@@ -497,9 +486,11 @@ int sos_container_new(const char *path, int o_mode)
  		goto err_7;
 
 	/* Create the ODS to contain the position objects */
+	sprintf(tmp_path, "%s/.__pos", path);
 	rc = __create_pos_info(tmp_path, path, o_mode);
 	if (rc)
 		goto err_8;
+
 	return 0;
  err_8:
 	sprintf(tmp_path, "%s/.__index_idx", path);
@@ -934,12 +925,23 @@ static int is_supported_version(uint64_t v1, uint64_t v2)
  * Open a SOS container. If successfull, the <tt>c</tt> parameter will
  * contain a valid sos_t handle on exit.
  *
- * \param path		Pathname for the Container. See sos_container_new()
+ * if \c o_perm includes SOS_PERM_CREAT, the Container will be created.
+ * The \c o_flags and \c o_mode parameters accept the same values and
+ * have the same meaning as the corresponding parameters to the \c open()
+ * system call.
+
+ * Containers are logically maintained in a Unix filesystem
+ * namespace. The specified \c path_arg must be unique for the Container and
+ * all sub-directories in the path up to, but not including the
+ * basename() must exist.
+ *
+ * \param path_arg	Pathname for the Container
  * \param o_perm	The requested read/write permissions
+ * \param o_mode	Optional file mode argument if SOS_PERM_CREAT is used. See open().
  * \retval !NULL	The sos_t handle for the container.
  * \retval NULL		An error occured, consult errno for the reason.
  */
-sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
+sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 {
 	char tmp_path[PATH_MAX];
 	char *path = NULL;
@@ -947,6 +949,14 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	struct stat sb;
 	ods_iter_t iter = NULL;
 	int rc;
+	int lock_fd;
+	int o_mode;
+	int need_part = 0;
+	va_list ap;
+
+	va_start(ap, o_perm);
+	o_mode = va_arg(ap, int);
+	va_end(ap);
 
 	if (strlen(path_arg) >= SOS_PART_PATH_LEN) {
 		errno = E2BIG;
@@ -979,11 +989,36 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	LIST_INIT(&sos->obj_free_list);
 	TAILQ_INIT(&sos->part_list);
 
+	/* Take the SOS file lock */
+	sprintf(tmp_path, "%s.lock", path);
+	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
+	if (lock_fd < 0)
+		return NULL;
+	rc = flock(lock_fd, LOCK_EX);
+	if (rc) {
+		close(lock_fd);
+		errno = rc;
+		return NULL;
+	}
+
 	/* Stat the container path to get the file mode bits */
 	sos->path = path;
 	rc = stat(sos->path, &sb);
-	if (rc)
-		goto err;
+	if (rc) {
+		/* Check if this container exists */
+		if (errno != ENOENT)
+			goto err;
+		if (0 == (o_perm & SOS_PERM_CREAT))
+			goto err;
+		rc = __sos_container_new(path_arg, o_mode);
+		if (rc)
+			goto err;
+		need_part = 1;
+		rc = stat(sos->path, &sb);
+		if (rc)
+			goto err;
+	}
+
 	sos->o_mode = sb.st_mode;
 	sos->o_perm = (ods_perm_t)o_perm;
 	ods_rbt_init(&sos->schema_name_rbt, __sos_schema_name_cmp);
@@ -1097,11 +1132,25 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm)
 	pthread_mutex_lock(&cont_list_lock);
 	LIST_INSERT_HEAD(&cont_list, sos, entry);
 	pthread_mutex_unlock(&cont_list_lock);
+
+	if (need_part) {
+		rc = sos_part_create(sos, "default", NULL);
+		if (rc)
+			goto err;
+		sos_part_t part = sos_part_find(sos, "default");
+		if (!part)
+			goto err;
+		rc = sos_part_state_set(part, SOS_PART_STATE_PRIMARY);
+		if (rc)
+			goto err;
+	}
+	close(lock_fd);
 	return sos;
  err:
 	if (iter)
 		ods_iter_delete(iter);
 	free_sos(sos, SOS_COMMIT_ASYNC);
+	close(lock_fd);
 	return NULL;
 }
 
@@ -1145,7 +1194,7 @@ int sos_container_verify(sos_t sos)
  *
  * Changes the path data that the container keeps internally for partitions.
  *
- * \param path		Pathname to the Container. See sos_container_new()
+ * \param path		Pathname to the Container. See sos_container_open()
  * \param new_path	Pathname where the containter was copied.
  */
 int sos_container_move(const char *path_arg, const char *new_path)
@@ -1325,8 +1374,10 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 	sos_part_t part;
 	sos_obj_ref_t obj_ref;
 
-	if (!schema || !schema->sos)
+	if (!schema || !schema->sos) {
+		errno = EINVAL;
 		return NULL;
+	}
 	part = __sos_primary_obj_part(schema->sos);
 	if (!part) {
 		errno = ENOSPC;

@@ -41,11 +41,182 @@
  */
 
 /**
- * \page commands Commands
+ * \page sos_commands SOS Container Management Commands
+ * \subpage sos_cmd
+ * \subpage sos_part_create
+ * \subpage sos_part_query
+ * \subpage sos_part_modify
+ * \subpage sos_part_export
+ * \subpage sos_part_move
+ * \subpage sos_part_delete
+ * \subpage sos_part_index
+ *
+ * @page sos_cmd Create, Query and Update a SOS Container
  *
  * The \c sos_cmd command is used to create containers, add schema,
- * import objects and query containers. See \ref partition_overview
- * for more information on partitions.
+ * import objects and query containers.
+ *
+ * \section sos_cmd_usage Syntax
+ *
+ * sos_cmd -C <path> [ options ]
+ *
+ *      sos_cmd -C <path> [...OPTIONS...]\n");
+ *          -C <path>      The path to the container. Required for all options.
+ *          -v             Print the container version information and exit.
+ *          -m <new_path>  Use to modify the path saved internally after the container is copied.
+ *
+ *          -K <key>=<value> Set a container configuration option.
+ *
+ *          -l         Print a directory of the schemas.
+ *          -i		   Show config information for the container.
+ *          -d		   Show debug data for the container.
+ *
+ *          -c         Create the container.
+ *              -O <mode>  The file mode bits for the container files
+ *                         see the open() system call.
+ *
+ *          -I <csv_file>  Import a CSV file into the container.
+ *              -S <schema> The schema for objects.
+ *              -M <map>    String that maps CSV columns to object attributes.\
+ *
+ *          -t             Test indices in the database for consistency.
+ *          -L             Show database lock information.
+ *          -R             Clean up locks held by dead processes.
+ *
+ *          -q             Query the container.
+ *              -S <schema> Schema of objects to query.
+ *              -X <index>  Attribute's index or name to query.\n");
+ *              [-f <fmt>]  Specifies the format of the output data. Valid formats are:
+ *                  table  - Tabular format, one row per object. [default]
+ *                  csv    - Comma separated file with a single header row defining columns
+ *                  json   - JSON Objects.
+ *              [-F <rule>] Add a filter rule to the index.\n");
+ *              [-V <col>]  Add an object attribute (i.e. column) to the output.
+ *                          If not specified, all attributes in the object are output.
+ *                          Use '<col>[width]' to specify the desired column width
+ *
+ * \section sos_cmd_create_container Create a new Container
+ * @param "-C PATH" The *PATH* to the root of the Container. This is a required
+ *                  argument for all commands.
+ * @param -c Create a new container
+ * @param "-O MODE" The Unix *MODE* bits for the Container's files.
+ *
+ * \b Example
+ *
+ *      sos_cmd -C /storage/my-container -c -O 0660
+ *
+ * \section sos_cmd_list_schema Display the Container Schema
+ * Print a detailed list of all Schema defined in the Container.
+ *
+ * @param -l List the schema that are present in the Container
+ *
+ * \b Example
+ *
+ *      sos_cmd -C /storage/my-container -l
+ *      schema :
+ *         name      : vmstat
+ *         schema_sz : 41480
+ *         obj_sz    : 1104
+ *         id        : 134
+ *         -attribute : timestamp
+ *             type          : TIMESTAMP
+ *             idx           : 0
+ *             indexed       : 0
+ *             offset        : 8
+ *         -attribute : component_id
+ *             type          : UINT64
+ *             idx           : 1
+ *             indexed       : 0
+ *             offset        : 16
+ *         . . .
+ *
+ * \section sos_cmd_query Query the Contents of a Container
+ *
+ * The \c -q option is used to query the objects present in the *index*
+ * specified with the \c -X option. If the \c -F option is used, only the
+ * objects specified by the filter condition will be returned in the result.
+ * If the \c -V option is used, only the attributes specified will be
+ * included in the result. The \c -V option may be specified multiple times
+ * to specify multiple attributes. The \c -f option may be specifed to
+ * control the format of the result, i.e. Tabular, JSON, or CSV.
+ *
+ * @param -q        Query the contents of a container
+ * @param "-S NAME" The *NAME* of the schema
+ * @param "-X NAME" The *NAME* of the index to query
+ * @param "-F COND" An optional filter argument to return objects matching
+ *              a set of query conditions. The *COND* string has the format:
+ *              *attr-name*:*cmp*:*value*. The *attr-name* must be present in
+ *              the schema specified with the \c -X option. Valid *cmp* strings
+ *              are:
+ *                  - *lt* - less than
+ *                  - *le* - lesser or equal
+ *                  - *eq* - equal
+ *                  - *ge* - greater or equal
+ *                  - *gt* - greater than
+ *                  - *ne* - not equal
+ *
+ * @param "-V COL"  Add an object attribute (i.e. column) to the output. If not specified,
+ *              all attributes in the object are output. Use '<col>[width]' to specify
+ *              the desired column width.
+ * @param "-f FMT" Specifies the format of the output data. Valid *FMT* strings are:
+ *                  - *table*  - Tabular format [default], one row per object.
+ *                  - *csv*    - Comma separated file with a single header row defining columns.
+ *                  - *json*   - JSON Objects.
+ *
+ * **Tabular Example**
+ *
+ *      sos_cmd -C /storage/orion -qS meminfo -X job_comp_time -F job_id:eq:1234 -V timestamp -V MemFree -V MemTotal
+ *
+ * **CSV Example**
+ *
+ *      sos_cmd -C /storage/orion -qS meminfo -X job_comp_time -F job_id:eq:1234 -V timestmap -V MemFree -V MemTotal -f CSV
+ *
+ * \section sos_cmd_move Move a container
+ * A SOS Container embeds file system paths in the data. If a container is moved
+ * these internal paths must be updated to reflect the root of the new container.
+ * @param "-m PATH" Used to specify the root of the container when it is copied or moved.
+ *
+ * Example
+ *
+ *      $ cp -r /storage/old-location /storage/new-location
+ *      $ sos_cmd -C /storage/new-location -m /storage/new-location
+ *
+ * \section sos_cmd_version Display the Container Version
+ * This option displays the SOS software version used to create the container.
+ * @param -v  Print the container version information and exit
+ *
+ * **Example**
+ *
+ *       $ sos_cmd -v -C /DATA15/orion/ldms_data
+ *       Library Version   : 4.3.5
+ *       Git Commit ID     : 5e0e7d42a7f75fe5efe9791f82af13d28f3c5f65
+ *       Container Version : 4.3.3
+ *       Git Commit ID     : 5e0e7d42a7f75fe5efe9791f82af13d28f3c5f65
+ *
+ * In this example the current installed version is 4.3.5, and the container
+ * was created with an earlier version of the software, specifically, 4.3.3.
+ *
+ * \section sos_cmd_config Set and display Container configuration
+ *
+ * There are various keys that can be used to affect the behavior of the
+ * Container.
+ *
+ * @param "-K KEY=VALUE" Set a container configuration option.
+ * @param -i Show config information for the container.
+ *
+ * \section sos_cmd_debug Show debug data information for the container
+ * @param -d   Show debug data for the container.
+ * @param -t   Test indices in the database for consistency.
+ * @param -L   Show database lock information.
+ * @param -R   Clean up locks held by dead processes.
+ *
+ * \section sos_cmd_import Import CSV formatted data into the container
+ * @param "-I PATH"  Import a CSV file into the container
+ * @param "-S NAME" The *NAME* of the schema for the created objects. The schema must
+ *                have been previously created. See the
+ * @param "-M MAP" A string that maps CSV columns to object attributes. *MAP* is
+ *        a comma separated list of attribute names, one for each column in the CSV file.
+ *
  */
 #include <pthread.h>
 #include <sys/time.h>
@@ -96,8 +267,7 @@ struct option long_options[] = {
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_cmd { -l | -i | -c | -K | -q } -C <path> -m <new_path>"
-	       "[-O <mode_mask>]\n");
+	printf("sos_cmd -C <path> [...OPTIONS...]\n");
 	printf("    -C <path>      The path to the container. Required for all options.\n");
 	printf("    -v             Print the container version information and exit.\n");
 	printf("    -m <new_path>  Use to modify the path saved internally after the container is copied.\n");
@@ -165,10 +335,13 @@ int value_from_str(sos_attr_t attr, sos_value_t cond_value, char *value_str, cha
 
 int create(const char *path, int o_mode)
 {
-	int rc = sos_container_new(path, o_mode);
-	if (rc) {
-		errno = rc;
+	int rc = 0;
+	sos_t sos = sos_container_open(path, SOS_PERM_CREAT|SOS_PERM_RW, o_mode);
+	if (!sos) {
+		rc = errno;
 		perror("The container could not be created");
+	} else {
+		sos_container_close(sos, SOS_COMMIT_ASYNC);
 	}
 	return rc;
 }

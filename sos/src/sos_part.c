@@ -147,6 +147,7 @@
  * - sos_part_name() Return the name of a partition
  * - sos_part_path() Return a partitions storage path
  */
+#define _GNU_SOURCE
 #include <sys/queue.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -282,14 +283,10 @@ static int __sos_open_partition(sos_t sos, sos_part_t part)
 		goto err_0;
 	}
 	sprintf(tmp_path, "%s/%s/objects", sos_part_path(part), sos_part_name(part));
- retry:
-	ods = ods_open(tmp_path, sos->o_perm);
+	ods = ods_open(tmp_path, ODS_PERM_RW|ODS_PERM_CREAT, sos->o_mode);
 	if (!ods) {
-		/* Create the ODS to contain the objects */
-		rc = ods_create(tmp_path, sos->o_mode & ~(S_IXGRP|S_IXUSR|S_IXOTH));
-		if (rc)
-			goto err_0;
-		goto retry;
+		rc = errno;
+		goto err_0;
 	}
 	part->obj_ods = ods;
 	return 0;
@@ -916,11 +913,10 @@ static int __export_callback_fn(ods_t ods, ods_obj_t src_ods_obj, void *arg)
 /**
  * \brief Export the objects in a partition to another container
  *
- * Export all of the objects in the specified partition to another
- * container. The destination partition in the destination container
- * will be the primary partition in the destination container.
+ * Export all of the objects in the specified source partition to
+ * the *primary* partition of another container.
  *
- * The source partition must not be the primary partition in order to
+ * The source partition must not be the *primary* partition in order to
  * ensure that every object will be exported.
  *
  * The source container (the container in which src_part is located)
@@ -929,9 +925,8 @@ static int __export_callback_fn(ods_t ods, ods_obj_t src_ods_obj, void *arg)
  * \param src_part	The source partition handle
  * \param dst_cont	The destination container
  * \param reindex	Set to 1 to add exported objects to their schema indices
- * \retval		>= 0 The number of objects exported to the
- *			     destination container
- * \retval		<0   An error occured, see errno for more information
+ * \retval >= 0 The number of objects exported to the destination container
+ * \retval <0   An error occured, see *errno* for more information
  */
 int64_t sos_part_export(sos_part_t src_part, sos_t dst_sos, int reindex)
 {
@@ -1459,9 +1454,7 @@ int sos_part_delete(sos_part_t part)
 /**
  * \brief Move a partition
  *
- * Move a partition from its current storage location to another. Any
- * references to objects in the partition by indices or other objects
- * are preserved by the move.
+ * Move an *offline* partition from its current storage location to another.
  *
  * \param part The partition handle
  * \param path The new path for the partition.

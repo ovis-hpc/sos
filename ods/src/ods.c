@@ -57,6 +57,7 @@
 #endif
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/queue.h>
 #include <fcntl.h>
@@ -1289,7 +1290,7 @@ int ods_stat(ods_t ods, struct stat *sb)
 	return fstat(ods->obj_fd, sb);
 }
 
-int ods_create(const char *path, int o_mode)
+static int __ods_create(const char *path, int o_mode)
 {
 	char tmp_path[PATH_MAX];
 	struct stat sb;
@@ -1311,13 +1312,13 @@ int ods_create(const char *path, int o_mode)
 
 	/* Create the object file */
 	sprintf(tmp_path, "%s%s", path, ODS_OBJ_SUFFIX);
-	obj_fd = creat(tmp_path, o_mode);
+	obj_fd = open(tmp_path, O_CREAT | O_WRONLY, o_mode);
 	if (obj_fd < 0)
 		return errno;
 
 	/* Create the page file */
 	sprintf(tmp_path, "%s%s", path, ODS_PGTBL_SUFFIX);
-	pg_fd = creat(tmp_path, o_mode);
+	pg_fd = open(tmp_path, O_CREAT | O_WRONLY, o_mode);
 	if (pg_fd < 0)
 		goto out;
 
@@ -1393,14 +1394,21 @@ void cleanup_dead_locks(ods_t ods)
 {
 }
 
-ods_t ods_open(const char *path, ods_perm_t o_perm)
+ods_t ods_open(const char *path, ods_perm_t o_perm, ...)
 {
+	int o_mode;
 	char tmp_path[PATH_MAX];
 	struct stat sb;
 	ods_t ods;
 	int obj_fd = -1;
 	int pg_fd = -1;
+	int lock_fd = -1;
 	int rc;
+	va_list ap;
+
+	va_start(ap, o_perm);
+	o_mode = va_arg(ap, int);
+	va_end(ap);
 
 	ods = calloc(1, sizeof *ods);
 	if (!ods) {
@@ -1409,11 +1417,33 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	}
 	ods->o_perm = o_perm;
 
+	/* Take the ods file lock */
+	sprintf(tmp_path, "%s.lock", path);
+	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
+	if (lock_fd < 0)
+		return NULL;
+	rc = flock(lock_fd, LOCK_EX);
+	if (rc) {
+		close(lock_fd);
+		errno = rc;
+		return NULL;
+	}
+
 	/* Open the obj file */
 	sprintf(tmp_path, "%s%s", path, ODS_OBJ_SUFFIX);
 	obj_fd = open(tmp_path, O_RDWR);
-	if (obj_fd < 0)
-		goto err;
+	if (obj_fd < 0) {
+		if (o_perm & ODS_PERM_CREAT) {
+			rc = __ods_create(path, o_mode);
+			if (rc)
+				goto err;
+			obj_fd = open(tmp_path, O_RDWR);
+			if (obj_fd < 0)
+				goto err;
+		} else
+			goto err;
+	}
+	close(lock_fd);
 	ods->obj_fd = obj_fd;
 
 	/* Open the page table file */
@@ -1464,6 +1494,7 @@ ods_t ods_open(const char *path, ods_perm_t o_perm)
 	return ods;
 
  err:
+	close(lock_fd);
 	rc = errno;
 	if (ods->path)
 		free(ods->path);

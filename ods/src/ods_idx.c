@@ -165,12 +165,8 @@ int ods_idx_create(const char *path, int mode,
 	if (!idx_class)
 		return ENOENT;
 
-	int rc = ods_create(path, mode);
-	if (rc)
-		return rc;
-
 	/* Open the object store containing the index  */
-	ods = ods_open(path, O_RDWR);
+	ods = ods_open(path, ODS_PERM_RW|ODS_PERM_CREAT, mode);
 	if (!ods) {
 		errno = ENOENT;
 		goto out;
