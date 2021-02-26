@@ -66,7 +66,7 @@
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
-const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:tidcqlLRv";
+const char *short_options = "f:I:M:m:C:K:O:S:X:V:E:F:T:tidcqlLRv";
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
@@ -90,6 +90,7 @@ struct option long_options[] = {
 	{"threads",	required_argument,  0,  'T'},
 	{"option",      optional_argument,  0,  'K'},
 	{"column",      optional_argument,  0,  'V'},
+	{"column",	optional_argument,  0,  'E'},
 	{"version",     optional_argument,  0,  'v'},
 	{0,             0,                  0,  0}
 };
@@ -132,6 +133,7 @@ void usage(int argc, char *argv[])
 	printf("       [-V <col>]  Add an object attribute (i.e. column) to the output.\n");
 	printf("                   If not specified, all attributes in the object are output.\n");
 	printf("                   Use '<col>[width]' to specify the desired column width\n");
+	printf("       [-E <col>]  Withold an object attribute (i.e. column) from the output.\n");
 	exit(1);
 }
 
@@ -213,17 +215,19 @@ int schema_dir(sos_t sos)
 
 struct col_s {
 	const char *name;
+	uint8_t include;
 	int id;
 	int width;
 	TAILQ_ENTRY(col_s) entry;
 };
 TAILQ_HEAD(col_list_s, col_s) col_list = TAILQ_HEAD_INITIALIZER(col_list);
+TAILQ_HEAD(exclude_list_s, col_s) exclude_list = TAILQ_HEAD_INITIALIZER(exclude_list);
 
 /*
  * Add a column. The format is:
  * <name>[col_width]
  */
-int add_column(const char *str)
+int flag_column(const char *str, uint8_t include)
 {
 	char *width;
 	char *s = NULL;
@@ -240,9 +244,13 @@ int add_column(const char *str)
 		col->width = strtoul(width, NULL, 0);
 	}
 	col->name = s;
+	col->include = include;
 	if (!col->name)
 		goto err;
-	TAILQ_INSERT_TAIL(&col_list, col, entry);
+	if (col->include > 0)
+		TAILQ_INSERT_TAIL(&col_list, col, entry);
+	else
+		TAILQ_INSERT_TAIL(&exclude_list, col, entry);
 	return 0;
  err:
 	if (col)
@@ -513,9 +521,20 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 	if (TAILQ_EMPTY(&col_list)) {
 		attr_count = sos_schema_attr_count(schema);
 		for (attr_id = 0; attr_id < attr_count; attr_id++) {
+			int include=0;
 			attr = sos_schema_attr_by_id(schema, attr_id);
-			if (add_column(sos_attr_name(attr)))
-				return ENOMEM;
+			TAILQ_FOREACH(col, &exclude_list, entry) {
+				if (col == NULL || strcmp(col->name, sos_attr_name(attr)) != 0) {
+					include = 1;
+				} else {
+					include = 0;
+					break;
+				}
+			}
+			if (include == 1) {
+				if (flag_column(sos_attr_name(attr), 1))
+					return ENOMEM;
+			}
 		}
 	}
 	/* Query the schema for each attribute's id, and compute width */
@@ -1001,11 +1020,15 @@ int main(int argc, char **argv)
 			o_mode = strtol(optarg, NULL, 0);
 			break;
 		case 'V':
-			if (add_column(optarg))
+			if (flag_column(optarg, 1))
 				exit(11);
 			break;
 		case 'S':
 			schema_name = strdup(optarg);
+			break;
+		case 'E':
+			if (flag_column(optarg, 0))
+				exit(11);
 			break;
 		case 'X':
 			index_name = strdup(optarg);
