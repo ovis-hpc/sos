@@ -27,7 +27,7 @@ class SosTestCase(unittest.TestCase):
         global _sos_test_debug
         cls.db = Sos.Container()
         cls.db_name = db_name
-        db_path = os.getenv("TEST_DATA_DIR")
+        db_path = os.getenv("SOS_TEST_DATA_DIR")
         if db_path:
             cls.path = db_path + "/" + cls.db_name
         else:
@@ -35,9 +35,6 @@ class SosTestCase(unittest.TestCase):
         shutil.rmtree(cls.path, ignore_errors=True)
         cls.db.create(cls.path)
         cls.db.open(cls.path)
-        cls.db.part_create("ROOT")
-        root = cls.db.part_by_name("ROOT")
-        root.state_set("PRIMARY")
         if os.environ.get("SOS_TEST_DEBUG"):
             _sos_test_debug = True
 
@@ -47,5 +44,6 @@ class SosTestCase(unittest.TestCase):
             cls.db.close()
             del cls.db
             cls.db = None
-        shutil.rmtree(cls.path, ignore_errors=True)
+        if os.environ.get("SOS_TEST_KEEP_DB") is None:
+            shutil.rmtree(cls.path, ignore_errors=True)
 

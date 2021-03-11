@@ -71,29 +71,29 @@ static struct sos_schema_s *ischema_dir[SOS_TYPE_LAST+1];
 static struct ods_rbt ischema_rbt;
 
 static uint32_t type_sizes[] = {
-	[SOS_TYPE_INT16] = 2,
-	[SOS_TYPE_INT32] = 4,
-	[SOS_TYPE_INT64] = 8,
-	[SOS_TYPE_UINT16] = 2,
-	[SOS_TYPE_UINT32] = 4,
-	[SOS_TYPE_UINT64] = 8,
-	[SOS_TYPE_FLOAT] = 4,
-	[SOS_TYPE_DOUBLE] = 8,
-	[SOS_TYPE_LONG_DOUBLE] = 16,
-	[SOS_TYPE_TIMESTAMP] = 8,
-	[SOS_TYPE_OBJ] = 16,
-	[SOS_TYPE_BYTE_ARRAY] = 16,
-	[SOS_TYPE_CHAR_ARRAY] = 16,
-	[SOS_TYPE_INT16_ARRAY] = 16,
-	[SOS_TYPE_INT32_ARRAY] = 16,
-	[SOS_TYPE_INT64_ARRAY] = 16,
-	[SOS_TYPE_UINT16_ARRAY] = 16,
-	[SOS_TYPE_UINT32_ARRAY] = 16,
-	[SOS_TYPE_UINT64_ARRAY] = 16,
-	[SOS_TYPE_FLOAT_ARRAY] = 16,
-	[SOS_TYPE_DOUBLE_ARRAY] = 16,
-	[SOS_TYPE_LONG_DOUBLE_ARRAY] = 16,
-	[SOS_TYPE_OBJ_ARRAY] = 16,
+	[SOS_TYPE_INT16] = sizeof(int16_t),
+	[SOS_TYPE_INT32] = sizeof(int32_t),
+	[SOS_TYPE_INT64] = sizeof(int64_t),
+	[SOS_TYPE_UINT16] = sizeof(uint16_t),
+	[SOS_TYPE_UINT32] = sizeof(uint32_t),
+	[SOS_TYPE_UINT64] = sizeof(uint64_t),
+	[SOS_TYPE_FLOAT] = sizeof(float),
+	[SOS_TYPE_DOUBLE] = sizeof(double),
+	[SOS_TYPE_LONG_DOUBLE] = sizeof(long double),
+	[SOS_TYPE_TIMESTAMP] = sizeof(uint64_t),
+	[SOS_TYPE_OBJ] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_BYTE_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_CHAR_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_INT16_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_INT32_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_INT64_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_UINT16_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_UINT32_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_UINT64_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_FLOAT_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_DOUBLE_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = sizeof(union sos_obj_ref_s),
+	[SOS_TYPE_OBJ_ARRAY] = sizeof(union sos_obj_ref_s),
 };
 
 /**
@@ -840,7 +840,8 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 		val->obj = NULL;
 		return val;
 	}
-	array_obj = __sos_obj_new(ods_obj_ods(obj->obj), size, &obj->sos->lock);
+	ods_t ods = ods_obj_ods(obj->obj);
+	array_obj = __sos_obj_new(ods, size, &obj->sos->lock);
 	if (!array_obj)
 		goto err;
 
@@ -851,12 +852,11 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 	array->count = count;
 
 	/* Free the old array contents if present */
-	if (val->data->prim.ref_.ref.obj) {
-		ods_t ods = __sos_ods_from_ref(obj->sos, val->data->prim.ref_.ref.ods);
+	if (val->data->prim.ref_.ref.obj)
 		ods_ref_delete(ods, val->data->prim.ref_.ref.obj);
-	}
+
 	/* Update the array reference in the containing object */
-	val->data->prim.ref_.ref.ods = obj->obj_ref.ref.ods;
+	uuid_copy(val->data->prim.ref_.ref.part_uuid, obj->obj_ref.ref.part_uuid);
 	val->data->prim.ref_.ref.obj = ods_obj_ref(array_obj);
 
 	/* Point the value at the new array */
@@ -891,12 +891,9 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
 
 	struct sos_array_s *array = (struct sos_array_s *)&SOS_OBJ(array_obj)->data[0];
 	array->count = count;
-	union sos_obj_ref_s obj_ref = {
-		.ref = {
-			SOS_PART(part->part_obj)->part_id,
-			ods_obj_ref(array_obj)
-		}
-	};
+	union sos_obj_ref_s obj_ref;
+	obj_ref.ref.obj = ods_obj_ref(array_obj);
+	uuid_copy(obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 	return __sos_init_obj(sos, schema, array_obj, obj_ref);
 }
 
@@ -1228,6 +1225,8 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 	pthread_mutex_lock(&sos->lock);
 	if (schema->state == SOS_SCHEMA_OPEN)
 		goto out;
+	schema->state = SOS_SCHEMA_OPEN;
+	pthread_mutex_unlock(&sos->lock);
 
 	TAILQ_FOREACH(attr, &schema->idx_attr_list, idx_entry) {
 		assert(attr->data->indexed);
@@ -1248,8 +1247,25 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 		}
 	}
  out:
-	schema->state = SOS_SCHEMA_OPEN;
+	pthread_mutex_unlock(&sos->lock);
+	return rc;
  err:
+	pthread_mutex_lock(&sos->lock);
+	if (schema->state != SOS_SCHEMA_OPEN)
+		goto out;
+	/*
+	 * Schema is partially opened. Close any indices we succeeded
+	 * in opening
+	 */
+	TAILQ_FOREACH(attr, &schema->idx_attr_list, idx_entry) {
+		assert(attr->data->indexed);
+		sprintf(idx_name, "%s_%s", schema->data->name, attr->data->name);
+		if (attr->index) {
+			sos_index_close(attr->index, SOS_COMMIT_ASYNC);
+			attr->index = NULL;
+		}
+	}
+	schema->state = SOS_SCHEMA_CLOSED;
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
 }
@@ -1408,11 +1424,10 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	}
 	sos_obj_ref_t sos_obj_ref = {
 		.ref = {
-			0,
+			{ 0 },
 			ods_obj_ref(schema_obj)
 		}
 	};
-
 	key_len = strlen(schema->data->name) + 1;
  retry:
 	schema_key = ods_key_alloc(sos->schema_idx, key_len);
@@ -1483,10 +1498,11 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 
 	ods_obj_put(schema_key);
 	ods_obj_put(udata);
+
 	ods_unlock(sos->schema_ods, 0);
 	ods_commit(sos->schema_ods, ODS_COMMIT_SYNC);
 	ods_idx_commit(sos->schema_idx, ODS_COMMIT_SYNC);
-	return 0; // __sos_schema_open(sos, schema);
+	return __sos_schema_open(sos, schema);	/* Force creation of index objects */
  err_3:
 	ods_obj_delete(schema_key);
 	ods_obj_put(schema_key);
@@ -1528,6 +1544,19 @@ sos_schema_t sos_schema_next(sos_schema_t schema)
 	if (next)
 		return next;
 	return NULL;
+}
+
+void __sos_schema_reset(sos_t sos)
+{
+	sos_schema_t schema;
+	sos_attr_t attr;
+	LIST_FOREACH(schema, &sos->schema_list, entry) {
+		TAILQ_FOREACH(attr, &schema->idx_attr_list, idx_entry) {
+			(void)sos_index_close(attr->index, SOS_COMMIT_ASYNC);
+			attr->index = NULL;
+		}
+		schema->state = SOS_SCHEMA_CLOSED;
+	}
 }
 
 /**
@@ -1682,7 +1711,7 @@ struct ischema_data {
 static void __attribute__ ((constructor)) sos_lib_init(void)
 {
 	struct ischema_data *id;
-	ods_rbt_init(&ischema_rbt, __sos_schema_name_cmp);
+	ods_rbt_init(&ischema_rbt, __sos_schema_name_cmp, NULL);
 	for (id = &ischema_data_[0]; id->name; id++) {
 		sos_schema_t schema =
 			__sos_internal_schema_new(id->name, id->id,

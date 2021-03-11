@@ -64,7 +64,7 @@ struct ods_idx_type {
 	struct ods_rbn rb_node;
 };
 
-int64_t dylib_comparator(void *a, const void *b)
+int64_t dylib_comparator(void *a, const void *b, void *arg)
 {
 	return strcmp(a, b);
 }

@@ -2532,7 +2532,7 @@ static int _iter_prev_unique(bxt_iter_t i)
 	bxt_t t = i->iter.idx->priv;
 	ods_obj_t left;
 
-	assert(0 == (i->iter.flags & ODS_ITER_F_UNIQUE));
+	assert(0 != (i->iter.flags & ODS_ITER_F_UNIQUE));
 
 	if (!i->rec)
 		return ENOENT;

@@ -719,7 +719,7 @@ size_t sos_value_data_set_va(sos_value_data_t vd, sos_type_t type, va_list ap)
 		size = sizeof(vd->prim.timestamp_);
 		break;
 	case SOS_TYPE_OBJ:
-		vd->prim.ref_.ref.ods = va_arg(ap, uint64_t);
+		uuid_copy(vd->prim.ref_.ref.part_uuid, va_arg(ap, uint8_t *));
 		vd->prim.ref_.ref.obj = va_arg(ap, uint64_t);
 		size = sizeof(vd->prim.ref_);
 		break;

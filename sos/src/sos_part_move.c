@@ -41,7 +41,7 @@
  */
 
 /**
- * \page sos_part_move - Move a Partition
+ * \page sos_part_move Move a Partition
  *
  * sos_part_move -C <container> -p <new_path> <name>
  *
@@ -113,9 +113,13 @@ int main(int argc, char **argv)
 		       errno, cont_path);
 		exit(1);
 	}
-	part = sos_part_find(sos, name);
+	part = sos_part_by_name(sos, name);
 	if (!part) {
 		printf("The specified partition does not exist.\n");
+		exit(1);
+	}
+	if (sos_part_state(part) != SOS_PART_STATE_OFFLINE) {
+		printf("A partition must be OFFLINE to be moved.\n");
 		exit(1);
 	}
 	rc = sos_part_move(part, part_path);

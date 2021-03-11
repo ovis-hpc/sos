@@ -84,6 +84,21 @@ static sos_filter_cond_t __sos_find_filter_condition(sos_filter_t filt,
 static sos_obj_t next_match(sos_filter_t filt);
 static sos_obj_t prev_match(sos_filter_t filt);
 
+#if 0
+static int __iter_rbn_printer(struct ods_rbn *rbn, void *arg, int level)
+{
+	ods_key_t key = rbn->key;
+	printf("%p %*c%-2d: %d\n", rbn, 80 - (level * 6), (rbn->color?'B':'R'),
+	       level, key->as.key->uint32_[0]);
+	return 0;
+}
+#endif
+
+static int64_t __iter_key_cmp(void *a, const void *b, void *arg)
+{
+	return sos_index_key_cmp((sos_index_t)arg, a, (void *)b);
+}
+
 /**
  * \brief Create a SOS iterator from an index
  *
@@ -97,19 +112,35 @@ static sos_obj_t prev_match(sos_filter_t filt);
 sos_iter_t sos_index_iter_new(sos_index_t index)
 {
 	sos_iter_t i;
+	ods_iter_ref_t iter_ref;
+	ods_idx_ref_t ods_idx_ref;
 
 	i = malloc(sizeof *i);
 	if (!i)
 		return NULL;
 	i->attr = NULL;
 	i->index = index;
-	i->iter = ods_iter_new(index->idx);
-	if (!i->iter)
-		goto err;
+	ods_rbt_init(&i->rbt, __iter_key_cmp, index);
+	LIST_INIT(&i->iter_list);
+	LIST_FOREACH(ods_idx_ref, &index->active_idx_list, entry) {
+		iter_ref = malloc(sizeof *iter_ref);
+		if (!iter_ref)
+			goto err;
+		iter_ref->iter = ods_iter_new(ods_idx_ref->idx);
+		if (!iter_ref->iter)
+			goto err;
+		LIST_INSERT_HEAD(&i->iter_list, iter_ref, entry);
+	}
 	return i;
  err:
-	if (i)
-		free(i);
+	while (!LIST_EMPTY(&i->iter_list)) {
+		iter_ref = LIST_FIRST(&i->iter_list);
+		LIST_REMOVE(iter_ref, entry);
+		if (iter_ref->iter)
+			ods_iter_delete(iter_ref->iter);
+		free(iter_ref);
+	}
+	free(i);
 	return NULL;
 }
 
@@ -163,7 +194,12 @@ sos_attr_t sos_iter_attr(sos_iter_t iter)
  */
 int sos_iter_flags_set(sos_iter_t iter, sos_iter_flags_t flags)
 {
-	return ods_iter_flags_set(iter->iter, flags);
+	int rc;
+	ods_iter_ref_t iter_ref;
+	LIST_FOREACH(iter_ref, &iter->iter_list, entry) {
+		rc = ods_iter_flags_set(iter_ref->iter, flags);
+	}
+	return rc;
 }
 
 /**
@@ -174,7 +210,8 @@ int sos_iter_flags_set(sos_iter_t iter, sos_iter_flags_t flags)
  */
 sos_iter_flags_t sos_iter_flags_get(sos_iter_t iter)
 {
-	return (sos_iter_flags_t)ods_iter_flags_get(iter->iter);
+	ods_iter_ref_t iter_ref = LIST_FIRST(&iter->iter_list);
+	return (sos_iter_flags_t)ods_iter_flags_get(iter_ref->iter);
 }
 
 /**
@@ -184,11 +221,17 @@ sos_iter_flags_t sos_iter_flags_get(sos_iter_t iter)
  */
 uint64_t sos_iter_card(sos_iter_t iter)
 {
+	int rc;
+	uint64_t cardinality = 0;
+	ods_iter_ref_t iter_ref;
 	struct ods_idx_stat_s sb;
-	int rc = ods_idx_stat(ods_iter_idx(iter->iter), &sb);
-	if (rc)
-		return 0;
-	return sb.cardinality;
+
+	LIST_FOREACH(iter_ref, &iter->iter_list, entry) {
+		rc = ods_idx_stat(ods_iter_idx(iter_ref->iter), &sb);
+		if (!rc)
+			cardinality += sb.cardinality;
+	}
+	return cardinality;
 }
 
 /**
@@ -198,251 +241,30 @@ uint64_t sos_iter_card(sos_iter_t iter)
 uint64_t sos_iter_dups(sos_iter_t iter)
 {
 	struct ods_idx_stat_s sb;
-	int rc = ods_idx_stat(ods_iter_idx(iter->iter), &sb);
-	if (rc)
-		return 0;
-	return sb.duplicates;
+	uint64_t dups = 0;
+	ods_iter_ref_t iter_ref;
+
+	LIST_FOREACH(iter_ref, &iter->iter_list, entry) {
+		int rc = ods_idx_stat(ods_iter_idx(iter_ref->iter), &sb);
+		if (!rc)
+			dups = sb.duplicates;
+	}
+	return dups;
 }
 
-#define FNV_32_PRIME 0x01000193
-static uint32_t fnv_hash_a1_32(const void *str, int len, uint32_t seed)
+static void __sos_reset_iter(sos_iter_t i)
 {
-	uint32_t h = seed;
-	const unsigned char *end = (unsigned char *)str + len;
-	const unsigned char *s;
-	for (s = str; s < end; s++) {
-		h ^= *s;
-		h *= FNV_32_PRIME;
+	/* Remove all entries from the tree */
+	while (!ods_rbt_empty(&i->rbt)) {
+		struct ods_rbn *rbn = ods_rbt_min(&i->rbt);
+		ods_iter_obj_ref_t ref =
+			container_of(rbn, struct ods_iter_obj_ref_s, rbn);
+		if (ref->key)
+			sos_key_put(ref->key);
+		ods_rbt_del(&i->rbt, rbn);
+		free(ref);
 	}
-
-	return (uint32_t)h;
-}
-
-/**
- * \brief Returns the current iterator position
- *
- * \param i The iterator handle
- * \param pos The sos_pos_t that will receive the position value.
- * \returns The current iterator position or 0 if position is invalid
- */
-int sos_iter_pos_get(sos_iter_t iter, sos_pos_t *pos)
-{
-	struct timeval tv;
-	ods_obj_t pos_obj;
-	sos_t sos = iter->index->sos;
-	int rc;
-	uint32_t key;
-	ods_idx_data_t pos_data;
-	SOS_KEY(pos_key);
-
-	rc = gettimeofday(&tv, NULL);
-	if (rc)
-		return rc;
-
-	/* Create a SOS pos object to track this */
-	ods_lock(sos->pos_ods, 0, NULL);
-	rc = ENOMEM;
-	pos_obj = ods_obj_alloc_extend(sos->pos_ods, sizeof(struct sos_pos_data_s), 64 * 1024);
-	if (!pos_obj)
-		goto err_0;
-
-	rc = ods_iter_pos_get(iter->iter, &SOS_POS(pos_obj)->ods_pos);
-	if (rc)
-		goto err_1;
-
-	strncpy(SOS_POS(pos_obj)->name, iter->index->name, SOS_INDEX_NAME_LEN);
-	SOS_POS(pos_obj)->create_secs = tv.tv_sec;
-	SOS_POS(pos_obj)->create_usecs = tv.tv_usec;
-
-	/* Create the key */
-	while (1) {
-		key = fnv_hash_a1_32(SOS_POS(pos_obj)->name, SOS_INDEX_NAME_LEN, 0);
-		key = fnv_hash_a1_32(&SOS_POS(pos_obj)->create_secs, sizeof(uint32_t), key);
-		key = fnv_hash_a1_32(&SOS_POS(pos_obj)->create_usecs, sizeof(uint32_t), key);
-		key = fnv_hash_a1_32(&SOS_POS(pos_obj)->ods_pos, sizeof(uint64_t), key);
-		SOS_POS(pos_obj)->key = key;
-
-		/* See if this key is already used */
-		ods_key_set(pos_key, &key, sizeof(uint32_t));
-		rc = ods_idx_find(sos->pos_idx, pos_key, &pos_data);
-		if (!rc) {
-			/* bump the create_usecs and regenerate the hash */
-			SOS_POS(pos_obj)->create_usecs ++;
-			continue;
-		}
-		/* Save the pos object */
-		pos_data.uint64_[0] = ods_obj_ref(pos_obj);
-		pos_data.uint64_[1] = 0;
-		rc = ods_idx_insert(sos->pos_idx, pos_key, pos_data);
-		if (rc)
-			goto err_2;
-		break;
-	}
-	ods_obj_put(pos_obj);
-	ods_unlock(sos->pos_ods, 0);
-	*pos = key;
-	return 0;
-
- err_2:
-	ods_iter_pos_put(iter->iter, &SOS_POS(pos_obj)->ods_pos);
- err_1:
-	ods_obj_delete(pos_obj);
-	ods_obj_put(pos_obj);
- err_0:
-	ods_unlock(sos->pos_ods, 0);
-	return rc;
-}
-
-int sos_pos_from_str(sos_pos_t *pos, const char *str)
-{
-	const char *src = str;
-	unsigned char *dst = (unsigned char *)pos;
-	int i;
-	for (i = 0; i < sizeof(*pos); i++) {
-		int rc = sscanf(src, "%02hhX", dst);
-		if (rc != 1)
-			return EINVAL;
-		src += 2; dst++;
-	}
-	return 0;
-}
-
-const char *sos_pos_to_str(sos_pos_t pos)
-{
-	int i;
-	char *pos_str;
-	unsigned char *src = (unsigned char *)&pos;
-	char *dst = malloc((2 * sizeof(pos)) + 1);
-	if (!dst)
-		return NULL;
-	pos_str = dst;
-	for (i = 0; i < sizeof(pos); i++) {
-		sprintf(dst, "%02hhX", *src);
-		src += 1;
-		dst += 2;
-	}
-	*dst = '\0';
-	return pos_str;
-}
-
-void sos_pos_str_free(char *str)
-{
-	free(str);
-}
-
-/**
- * \brief Sets the current iterator position
- *
- * Set the iterator position at the location specified by the \c pos
- * parameter. Pos objects are single use, which means that after they
- * are used, the pos is deleted and cannot be reused.
- *
- * \param i The iterator handle
- * \param pos The iterator cursor position
- * \retval 0 Success
- * \retval ENOENT The position was not found, or has already been used
- * \retval EINVAL The position object is for a different index
- */
-int sos_iter_pos_set(sos_iter_t iter, const sos_pos_t pos)
-{
-	ods_obj_t pos_obj;
-	sos_t sos = iter->index->sos;
-	int rc;
-	ods_idx_data_t pos_data;
-	SOS_KEY(pos_key);
-
-	ods_lock(sos->pos_ods, 0, NULL);
-
-	/* Look up the position */
-	ods_key_set(pos_key, &pos, sizeof(sos_pos_t));
-	rc = ods_idx_find(sos->pos_idx, pos_key, &pos_data);
-	if (rc)
-		/* This position does not exist */
-		goto out_0;
-
-	/* Instantiate the pos object */
-	pos_obj = ods_ref_as_obj(sos->pos_ods, pos_data.uint64_[0]);
-	if (!pos_obj) {
-		rc = ENOENT;
-		goto out_1;
-	}
-
-	/* Check that the iterator index matches the position index */
-	if (strncmp(SOS_POS(pos_obj)->name, iter->index->name, SOS_INDEX_NAME_LEN)) {
-		/* Position is for a different index */
-		rc = EINVAL;
-		goto out_2;
-	}
-
-	/* Set the iterator position */
-	rc = ods_iter_pos_set(iter->iter, &SOS_POS(pos_obj)->ods_pos);
-
- out_2:
-	ods_obj_delete(pos_obj);
-	ods_obj_put(pos_obj);
- out_1:
-	ods_idx_delete(sos->pos_idx, pos_key, &pos_data);
- out_0:
-	ods_unlock(sos->pos_ods, 0);
-	return rc;
-}
-
-int sos_iter_pos_put_no_lock(sos_iter_t iter, const sos_pos_t pos)
-{
-	ods_obj_t pos_obj;
-	sos_t sos = iter->index->sos;
-	int rc;
-	ods_idx_data_t pos_data;
-	SOS_KEY(pos_key);
-
-	/* Look up the position */
-	ods_key_set(pos_key, &pos, sizeof(sos_pos_t));
-	rc = ods_idx_find(sos->pos_idx, pos_key, &pos_data);
-	if (rc)
-		/* This position does not exist */
-		goto out_0;
-
-	/* Instantiate the pos object */
-	pos_obj = ods_ref_as_obj(sos->pos_ods, pos_data.uint64_[0]);
-	if (!pos_obj) {
-		rc = ENOENT;
-		goto out_1;
-	}
-
-	/* Check that the iterator index matches the position index */
-	if (strncmp(SOS_POS(pos_obj)->name, iter->index->name, SOS_INDEX_NAME_LEN)) {
-		/* Position is for a different index */
-		rc = EINVAL;
-		goto out_2;
-	}
-
-	/* Put the iterator position */
-	rc = ods_iter_pos_put(iter->iter, &SOS_POS(pos_obj)->ods_pos);
-
- out_2:
-	ods_obj_delete(pos_obj);
-	ods_obj_put(pos_obj);
- out_1:
-	ods_idx_delete(sos->pos_idx, pos_key, &pos_data);
- out_0:
-	return rc;
-}
-
-/**
- * \brief Indicates to the iterator that this position is no longer in-use
- *
- * \param i The iterator handle
- * \param pos The iterator cursor position
- * \retval 0 Success
- * \retval ENOENT The iterator position is invalid
- */
-int sos_iter_pos_put(sos_iter_t iter, const sos_pos_t pos)
-{
-	int rc;
-	ods_lock(iter->index->sos->pos_ods, 0, NULL);
-	rc = sos_iter_pos_put_no_lock(iter, pos);
-	ods_unlock(iter->index->sos->pos_ods, 0);
-	return rc;
+	i->pos = NULL;
 }
 
 /**
@@ -452,7 +274,14 @@ int sos_iter_pos_put(sos_iter_t iter, const sos_pos_t pos)
  */
 void sos_iter_free(sos_iter_t iter)
 {
-	ods_iter_delete(iter->iter);
+	ods_iter_ref_t iter_ref;
+	__sos_reset_iter(iter);
+	while (!LIST_EMPTY(&iter->iter_list)) {
+		iter_ref = LIST_FIRST(&iter->iter_list);
+		LIST_REMOVE(iter_ref, entry);
+		ods_iter_delete(iter_ref->iter);
+		free(iter_ref);
+	}
 	free(iter);
 }
 
@@ -464,12 +293,12 @@ void sos_iter_free(sos_iter_t iter)
  */
 sos_obj_t sos_iter_obj(sos_iter_t i)
 {
-	sos_obj_ref_t idx_ref;
 	sos_obj_t obj;
-	idx_ref.idx_data = ods_iter_data(i->iter);
-	if (!idx_ref.ref.obj)
+	if (!i->pos) {
+		errno = ENOENT;
 		return NULL;
-	obj = sos_ref_as_obj(i->index->sos, idx_ref);
+	}
+	obj = sos_ref_as_obj(i->index->sos, i->pos->ref);
 	if (!obj)
 		errno = EINVAL;
 	return obj;
@@ -483,9 +312,7 @@ sos_obj_t sos_iter_obj(sos_iter_t i)
  */
 sos_obj_ref_t sos_iter_ref(sos_iter_t i)
 {
-	sos_obj_ref_t idx_ref;
-	idx_ref.idx_data = ods_iter_data(i->iter);
-	return idx_ref;
+	return i->pos->ref;
 }
 
 /**
@@ -501,8 +328,106 @@ sos_obj_ref_t sos_iter_ref(sos_iter_t i)
  */
 int sos_iter_entry_remove(sos_iter_t iter)
 {
-	ods_idx_data_t data;
-	return ods_iter_entry_delete(iter->iter, &data);
+	ods_idx_data_t data = iter->pos->ref.idx_data;
+	int rc = ods_iter_entry_delete(iter->pos->iter, &data);
+	ods_rbt_del(&iter->rbt, &iter->pos->rbn);
+	memset(&iter->pos, 0, sizeof iter->pos);
+	return rc;
+}
+
+static int __sos_iter_obj_ref_new(sos_iter_t sos_iter, ods_iter_t ods_iter,
+									struct ods_rbn **rbn)
+{
+	ods_key_t key = ods_iter_key(ods_iter);
+	/*
+	 * If the iterator has the unique flag set, check if the object
+	 * is already in the tree.
+	 */
+	if (ods_iter_flags_get(ods_iter) & ODS_ITER_F_UNIQUE) {
+		struct ods_rbn *rbn = ods_rbt_find(&sos_iter->rbt, key);
+		if (rbn) {
+			sos_key_put(key);
+			return EEXIST;
+		}
+	}
+
+	ods_iter_obj_ref_t new_ref = malloc(sizeof *new_ref);
+	if (!new_ref)
+		return ENOMEM;
+
+	new_ref->iter = ods_iter;
+	new_ref->ref.idx_data = ods_iter_data(ods_iter);
+	new_ref->key = ods_iter_key(ods_iter);
+	ods_rbn_init(&new_ref->rbn, new_ref->key);
+	ods_rbt_ins(&sos_iter->rbt, &new_ref->rbn);
+	if (rbn)
+		*rbn = &new_ref->rbn;
+#if 0
+	ods_rbt_verify(&sos_iter->rbt);
+	printf("----------\n");
+	ods_rbt_print(&sos_iter->rbt, __iter_rbn_printer, NULL);
+#endif
+	return 0;
+}
+
+static int __sos_iter_pos_iter(sos_iter_t sos_iter, ods_iter_t ods_iter)
+{
+	ods_iter_obj_ref_t iter_obj_ref;
+
+	/* Make the current position that of an ods_iter */
+	iter_obj_ref = malloc(sizeof *iter_obj_ref);
+	if (!iter_obj_ref)
+		return errno;
+	iter_obj_ref->iter = ods_iter;
+	iter_obj_ref->ref.idx_data = ods_iter_data(ods_iter);
+	iter_obj_ref->key = ods_iter_key(ods_iter);
+	sos_iter->pos = iter_obj_ref;
+	ods_rbn_init(&iter_obj_ref->rbn, iter_obj_ref->key);
+	ods_rbt_ins(&sos_iter->rbt, &iter_obj_ref->rbn);
+#if 0
+	ods_rbt_verify(&sos_iter->rbt);
+	printf("----------\n");
+	ods_rbt_print(&sos_iter->rbt, __iter_rbn_printer, NULL);
+#endif
+	return 0;
+}
+
+static int __sos_iter_pos_max(sos_iter_t sos_iter)
+{
+	ods_iter_obj_ref_t iter_obj_ref;
+	struct ods_rbn *rbn;
+	int rc;
+
+	/* Make the current position the max in the RBT */
+	rbn = ods_rbt_max(&sos_iter->rbt);
+	if (rbn) {
+		iter_obj_ref = container_of(rbn, struct ods_iter_obj_ref_s, rbn);
+		sos_iter->pos = iter_obj_ref;
+		rc = 0;
+	} else {
+		sos_iter->pos = NULL;
+		rc = ENOENT;
+	}
+	return rc;
+}
+
+static int __sos_iter_pos_min(sos_iter_t sos_iter)
+{
+	ods_iter_obj_ref_t iter_obj_ref;
+	struct ods_rbn *rbn;
+	int rc;
+
+	/* Make the current position the min in the RBT */
+	rbn = ods_rbt_min(&sos_iter->rbt);
+	if (rbn) {
+		iter_obj_ref = container_of(rbn, struct ods_iter_obj_ref_s, rbn);
+		sos_iter->pos = iter_obj_ref;
+		rc = 0;
+	} else {
+		sos_iter->pos = NULL;
+		rc = ENOENT;
+	}
+	return rc;
 }
 
 /**
@@ -517,7 +442,75 @@ int sos_iter_entry_remove(sos_iter_t iter)
  */
 int sos_iter_next(sos_iter_t i)
 {
-	return ods_iter_next(i->iter);
+	/* Make the current position the min in the RBT */
+	if (NULL == i->pos)
+		return __sos_iter_pos_min(i);
+
+	struct ods_rbn *new_rbn;
+	ods_iter_obj_ref_t new_ref;
+	struct ods_rbn *next_rbn = ods_rbn_succ(&i->pos->rbn);
+	ods_iter_t ods_iter = i->pos->iter;
+	int rc;
+
+	/*
+	 * Remove the current position from the tree
+	 */
+	ods_rbt_del(&i->rbt, &i->pos->rbn);
+	sos_key_put(i->pos->key);
+	free(i->pos);
+	i->pos = NULL;
+#if 0
+	printf("----------\n");
+	ods_rbt_print(&i->rbt, __iter_rbn_printer, NULL);
+#endif
+skip:
+	rc = ods_iter_next(ods_iter);
+	if (rc) {
+		if (!next_rbn)
+			return ENOENT;
+		i->pos = container_of(next_rbn, struct ods_iter_obj_ref_s, rbn);
+		return 0;
+	}
+
+	/* Add the new ref to the tree */
+	rc = __sos_iter_obj_ref_new(i, ods_iter, &new_rbn);
+	if (rc == EEXIST)
+		goto skip;
+	if (rc)
+		return rc;
+	assert(new_rbn);
+
+	if (!next_rbn) {
+		i->pos = container_of(new_rbn, struct ods_iter_obj_ref_s, rbn);
+		return 0;
+	}
+
+	/*
+	 * There is a successor in the tree, and the iterator has another
+	 * entry. Make the new position the lesser of the next_rbn and the
+	 * new rbn
+	 */
+	rc = ods_rbn_cmp(&i->rbt, next_rbn, new_rbn);
+	if (rc < 0) {
+		new_ref = container_of(next_rbn,
+					struct ods_iter_obj_ref_s, rbn);
+	} else if (rc < 0) {
+		new_ref = container_of(new_rbn,
+					struct ods_iter_obj_ref_s, rbn);
+	} else {
+		/*
+		 * The pos needs to be set to the predecessor which could be new_rbn
+		 * or the next_rbn
+		 */
+		if (new_rbn == ods_rbn_pred(next_rbn))
+			new_ref = container_of(new_rbn,
+						struct ods_iter_obj_ref_s, rbn);
+		else
+			new_ref = container_of(next_rbn,
+						struct ods_iter_obj_ref_s, rbn);
+	}
+	i->pos = new_ref;
+	return 0;
 }
 
 /**
@@ -532,7 +525,75 @@ int sos_iter_next(sos_iter_t i)
  */
 int sos_iter_prev(sos_iter_t i)
 {
-	return ods_iter_prev(i->iter);
+		/* Make the current position the min in the RBT */
+	if (NULL == i->pos)
+		return __sos_iter_pos_max(i);
+
+	struct ods_rbn *new_rbn;
+	ods_iter_obj_ref_t new_ref;
+	struct ods_rbn *prev_rbn = ods_rbn_pred(&i->pos->rbn);
+	ods_iter_t ods_iter = i->pos->iter;
+	int rc;
+
+	/*
+	 * Remove the current position from the tree
+	 */
+	ods_rbt_del(&i->rbt, &i->pos->rbn);
+	sos_key_put(i->pos->key);
+	free(i->pos);
+	i->pos = NULL;
+#if 0
+	printf("----------\n");
+	ods_rbt_print(&i->rbt, __iter_rbn_printer, NULL);
+#endif
+skip:
+	rc = ods_iter_prev(ods_iter);
+	if (rc) {
+		if (!prev_rbn)
+			return ENOENT;
+		i->pos = container_of(prev_rbn, struct ods_iter_obj_ref_s, rbn);
+		return 0;
+	}
+
+	/* Add the new ref to the tree */
+	rc = __sos_iter_obj_ref_new(i, ods_iter, &new_rbn);
+	if (rc == EEXIST)
+		goto skip;
+	if (rc)
+		return rc;
+	assert(new_rbn);
+
+	if (!prev_rbn) {
+		i->pos = container_of(new_rbn, struct ods_iter_obj_ref_s, rbn);
+		return 0;
+	}
+
+	/*
+	 * There is a predecessor in the tree, and the iterator has another
+	 * entry. Make the new position the greater of the prev_rbn and the
+	 * new rbn
+	 */
+	rc = ods_rbn_cmp(&i->rbt, prev_rbn, new_rbn);
+	if (rc > 0) {
+		new_ref = container_of(prev_rbn,
+					struct ods_iter_obj_ref_s, rbn);
+	} else if (rc < 0) {
+		new_ref = container_of(new_rbn,
+					struct ods_iter_obj_ref_s, rbn);
+	} else {
+		/*
+		 * The pos needs to be set to the successor which could be new_rbn
+		 * or prev_rbn
+		 */
+		if (new_rbn == ods_rbn_succ(prev_rbn))
+			new_ref = container_of(new_rbn,
+						struct ods_iter_obj_ref_s, rbn);
+		else
+			new_ref = container_of(prev_rbn,
+						struct ods_iter_obj_ref_s, rbn);
+	}
+	i->pos = new_ref;
+	return 0;
 }
 
 /**
@@ -545,10 +606,29 @@ int sos_iter_prev(sos_iter_t i)
  */
 int sos_iter_begin(sos_iter_t i)
 {
-	/* TODO clean if restarting */
+	ods_iter_ref_t iter_ref;
+	int rc;
 
-	/* Get first partition */
-	return ods_iter_begin(i->iter);
+	__sos_reset_iter(i);
+	LIST_FOREACH(iter_ref, &i->iter_list, entry) {
+		rc = ods_iter_begin(iter_ref->iter);
+		if (rc)
+			continue;
+	skip:
+		rc = __sos_iter_obj_ref_new(i, iter_ref->iter, NULL);
+		if (rc == EEXIST) {
+			rc = ods_iter_next(iter_ref->iter);
+			if (!rc)
+				goto skip;
+			else
+				continue;
+		}
+		if (rc)
+			return rc;
+	}
+
+	/* Make the current position the min in the RBT */
+	return __sos_iter_pos_min(i);
 }
 
 /**
@@ -560,7 +640,28 @@ int sos_iter_begin(sos_iter_t i)
  */
 int sos_iter_end(sos_iter_t i)
 {
-	return ods_iter_end(i->iter);
+	ods_iter_ref_t iter_ref;
+	int rc;
+
+	__sos_reset_iter(i);
+	LIST_FOREACH(iter_ref, &i->iter_list, entry) {
+		rc = ods_iter_end(iter_ref->iter);
+		if (rc)
+			continue;
+	skip:
+		rc = __sos_iter_obj_ref_new(i, iter_ref->iter, NULL);
+		if (rc == EEXIST) {
+			rc = ods_iter_prev(iter_ref->iter);
+			if (!rc)
+				goto skip;
+			else
+				continue;
+		}
+		if (rc)
+			return rc;
+	}
+	/* Make the current position the max in the RBT */
+	return __sos_iter_pos_max(i);
 }
 
 /**
@@ -586,7 +687,29 @@ int sos_iter_end(sos_iter_t i)
  */
 int sos_iter_sup(sos_iter_t i, sos_key_t key)
 {
-	return ods_iter_find_lub(i->iter, key);
+	ods_iter_ref_t iter_ref;
+	int rc;
+
+	__sos_reset_iter(i);
+	LIST_FOREACH(iter_ref, &i->iter_list, entry) {
+		rc = ods_iter_find_lub(iter_ref->iter, key);
+		if (rc)
+			continue;
+	skip:
+		rc = __sos_iter_obj_ref_new(i, iter_ref->iter, NULL);
+		if (rc == EEXIST) {
+			rc = ods_iter_next(iter_ref->iter);
+			if (!rc)
+				goto skip;
+			else
+				continue;
+		}
+		if (rc)
+			return rc;
+	}
+	/* Return the least of the lower bounds */
+	rc = __sos_iter_pos_min(i);
+	return rc;
 }
 
 /**
@@ -612,7 +735,37 @@ int sos_iter_sup(sos_iter_t i, sos_key_t key)
  */
 int sos_iter_inf(sos_iter_t i, sos_key_t key)
 {
-	return ods_iter_find_glb(i->iter, key);
+	ods_iter_ref_t iter_ref;
+	int rc;
+
+	__sos_reset_iter(i);
+	LIST_FOREACH(iter_ref, &i->iter_list, entry) {
+		rc = ods_iter_find_glb(iter_ref->iter, key);
+		if (rc)
+			continue;
+	skip:
+		rc = __sos_iter_obj_ref_new(i, iter_ref->iter, NULL);
+		if (rc == EEXIST) {
+			/*
+			 * If the iterator is marked UNIQUE, then we don't allow
+			 * duplicates in the tree. Back the iterator up to the
+			 * previous entry. If we are iterating backwards (i.e. prev)
+			 * the iter_key < inf_key will be present as expected. If we
+			 * are iterate forward, then these entries need to be
+			 * discarded.
+			 */
+			rc = ods_iter_prev(iter_ref->iter);
+			if (!rc)
+				goto skip;
+			else
+				continue;
+		}
+		if (rc)
+			return rc;
+	}
+
+	/* Return the greatest of the lower bounds */
+	return __sos_iter_pos_max(i);
 }
 
 /**
@@ -635,8 +788,8 @@ int sos_iter_inf(sos_iter_t i, sos_key_t key)
 int64_t sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
 {
 	int64_t rc;
-	ods_key_t iter_key = ods_iter_key(iter->iter);
-	rc = ods_key_cmp(iter->index->idx, iter_key, key);
+	ods_key_t iter_key = ods_iter_key(iter->pos->iter);
+	rc = ods_key_cmp(iter->index->primary_idx, iter_key, key);
 	ods_obj_put(iter_key);
 	return rc;
 }
@@ -656,7 +809,22 @@ int64_t sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
  */
 int sos_iter_find(sos_iter_t iter, sos_key_t key)
 {
-	return ods_iter_find(iter->iter, key);
+	int rc = ENOENT;
+	ods_iter_ref_t iter_ref;
+
+	__sos_reset_iter(iter);
+	LIST_FOREACH(iter_ref, &iter->iter_list, entry) {
+		rc = ods_iter_find(iter_ref->iter, key);
+		if (!rc) {
+			/* Set the current iterator position */
+			rc = __sos_iter_pos_iter(iter, iter_ref->iter);
+			if (rc)
+				continue;
+			break;
+		}
+	}
+
+	return rc;
 }
 
 /**
@@ -671,7 +839,22 @@ int sos_iter_find(sos_iter_t iter, sos_key_t key)
  */
 int sos_iter_find_first(sos_iter_t iter, sos_key_t key)
 {
-	return ods_iter_find_first(iter->iter, key);
+	int rc;
+	ods_iter_ref_t iter_ref;
+
+	__sos_reset_iter(iter);
+	LIST_FOREACH(iter_ref, &iter->iter_list, entry) {
+		rc = ods_iter_find_first(iter_ref->iter, key);
+		if (!rc) {
+			/* Set the current iterator position */
+			rc = __sos_iter_pos_iter(iter, iter_ref->iter);
+			if (rc)
+				continue;
+			break;
+		}
+	}
+
+	return rc;
 }
 
 /**
@@ -686,7 +869,22 @@ int sos_iter_find_first(sos_iter_t iter, sos_key_t key)
  */
 int sos_iter_find_last(sos_iter_t iter, sos_key_t key)
 {
-	return ods_iter_find_last(iter->iter, key);
+	int rc;
+	ods_iter_ref_t iter_ref;
+
+	__sos_reset_iter(iter);
+	LIST_FOREACH(iter_ref, &iter->iter_list, entry) {
+		rc = ods_iter_find_last(iter_ref->iter, key);
+		if (!rc) {
+			/* Set the current iterator position */
+			rc = __sos_iter_pos_iter(iter, iter_ref->iter);
+			if (rc)
+				continue;
+			break;
+		}
+	}
+
+	return rc;
 }
 
 /**
@@ -702,8 +900,11 @@ int sos_iter_find_last(sos_iter_t iter, sos_key_t key)
  */
 sos_key_t sos_iter_key(sos_iter_t iter)
 {
-	return ods_iter_key(iter->iter);
+	if (iter->pos)
+		return ods_iter_key(iter->pos->iter);
+	return NULL;
 }
+
 static int lt_fn(sos_value_t obj_value, sos_value_t cond_value, int *ret)
 {
 	int rc = *ret = sos_value_cmp(obj_value, cond_value);
@@ -1084,8 +1285,10 @@ static sos_filter_cond_t sos_filter_eval(sos_obj_t obj, sos_filter_t filt)
 			return cond;
 	}
 	sos_key_t key = sos_iter_key(filt->iter);
-	sos_key_copy(filt->last_match, key);
-	sos_key_put(key);
+	if (key) {
+		sos_key_copy(filt->last_match, key);
+		sos_key_put(key);
+	}
 	return NULL;
 }
 
@@ -1643,21 +1846,6 @@ sos_obj_t sos_filter_next(sos_filter_t filt)
 	 */
 	sos_iter_end(filt->iter);
 	return NULL;
-}
-
-int sos_filter_pos_set(sos_filter_t filt, const sos_pos_t pos)
-{
-	return sos_iter_pos_set(filt->iter, pos);
-}
-
-int sos_filter_pos_get(sos_filter_t filt, sos_pos_t *pos)
-{
-	return sos_iter_pos_get(filt->iter, pos);
-}
-
-int sos_filter_pos_put(sos_filter_t filt, sos_pos_t pos)
-{
-	return sos_iter_pos_put(filt->iter, pos);
 }
 
 sos_obj_t sos_filter_prev(sos_filter_t filt)

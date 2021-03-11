@@ -57,7 +57,7 @@
  *               accessible and its objects may be
  *               referred to by one or more Indices.
  * - \b Offline  The contents of the Partition are not accessible.
- * - \b Busy     The Parition is being updated and cannot be changed.
+ * - \b Busy     The Partition is being updated and cannot be changed.
  *
  * There are several commands available to manipulate
  * partitions.
@@ -69,8 +69,9 @@
  * - \ref sos_part_delete Destroy a partition
  *
  * There must be at least one partition in the container in the
- * 'primary' state in order for objects to be allocated and stored in
- * the container. For example:
+ * 'primary' state in order for objects to be allocated and stored. A
+ * partition is created with the sos_part_create command.
+ * For example:
  *
  *      sos_part_create -C theContainer -s primary "today"
  *
@@ -91,10 +92,10 @@
  *      tomorrow                    3 OFFLINE                                                     /btrfs/test_data/theContainer
  *
  * A typical use case for partitions is to group objects together by
- * date and then migrate objects from an older partitions to another
- * container on secondary storage.
+ * date and then migrate older partitions to another container on
+ * secondary storage.
  *
- * At midnight the administrator starts storing data in tomorrow's partition as follows:
+ * At midnight the administrator starts storing data in tomorrow's partition as follows:readdir
  *
  *      sos_part_modify -C theContainer -s primary "tomorrow"
  *      sos_part_query -C theContainer -v
@@ -140,7 +141,9 @@
  * - sos_part_iter_free() Free a partition iterator
  * - sos_part_first() Return the first partition in the Container
  * - sos_part_next() Return the next partition in the Container
- * - sos_part_find() Find a partition by name
+ * - sos_part_by_name() Find a partition by name
+ * - sos_part_by_path() Find a partition by path
+ * - sos_part_by_uuid() Find a partition by uuid
  * - sos_part_put() Drop a reference on the partition
  * - sos_part_stat() Return size and access information about a partition
  * - sos_part_state_set() Set the state of a parittion
@@ -157,141 +160,193 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <dirent.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdarg.h>
+#include <libgen.h>
 #include <limits.h>
 #include <errno.h>
 #include <assert.h>
+#include <uuid/uuid.h>
 
 #include <sos/sos.h>
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
+static sos_part_t __sos_part_by_name(sos_t sos, const char *name);
+static sos_part_t __sos_part_by_path(sos_t sos, const char *path);
 static sos_part_t __sos_part_first(sos_part_iter_t iter);
 static sos_part_t __sos_part_next(sos_part_iter_t iter);
 static int __refresh_part_list(sos_t sos);
-
-/*
- * New partition objects show up in the address space through:
- * __sos_part_create(), __sos_part_data_first(), and
- * __sos_part_data_next(). Each of these functions takes a reference
- * on the object on behalf of the caller.
- */
-static ods_obj_t __sos_part_create(sos_t sos, char *tmp_path,
-				   const char *part_name, const char *part_path)
+static int __sos_remove_directory(const char *dir);
+static void __sos_part_free(void *free_arg)
 {
-	char real_path[PATH_MAX];
-	int rc;
-	struct stat sb;
-	ods_ref_t head_ref, tail_ref;
-	ods_obj_t part, new_part;
-
-	/* Take the partition lock */
-	ods_lock(sos->part_ods, 0, NULL);
-
-	/* See if the specified name already exists in the filesystem */
-	if (part_path == NULL)
-		part_path = sos->path;
-	else
-		part_path = realpath(part_path, real_path);
-
-	if (strlen(part_path) >= SOS_PART_PATH_LEN) {
-		errno = E2BIG;
-		goto err_1;
-	}
-	sprintf(tmp_path, "%s/%s", part_path, part_name);
-	rc = stat(tmp_path, &sb);
-	if (rc == 0 || (rc && errno != ENOENT)) {
-		errno = EEXIST;
-		goto err_1;
-	}
-
-	head_ref = SOS_PART_UDATA(sos->part_udata)->head;
-	tail_ref = SOS_PART_UDATA(sos->part_udata)->tail;
-
-	part = ods_ref_as_obj(sos->part_ods, head_ref);
-	while (part) {
-		ods_ref_t next_part;
-		rc = strcmp(SOS_PART(part)->name, part_name);
-		next_part = SOS_PART(part)->next;
-		ods_obj_put(part);
-		if (!rc) {
-			errno = EEXIST;
-			goto err_1;
-		}
-		if (next_part)
-			part = ods_ref_as_obj(sos->part_ods, next_part);
-		else
-			part = NULL;
-	}
-	new_part = ods_obj_alloc(sos->part_ods, sizeof(struct sos_part_data_s));
-	if (!new_part)
-		goto err_1;
-
-	/* Set up the new partition */
-	strcpy(SOS_PART(new_part)->name, part_name);
-	strcpy(SOS_PART(new_part)->path, part_path);
-	SOS_PART(new_part)->part_id =
-		ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->next_part_id);
-	SOS_PART(new_part)->prev = tail_ref;
-	SOS_PART(new_part)->next = 0;
-	SOS_PART(new_part)->ref_count = 1 + 1; /* create reference + caller ref */
-	SOS_PART(new_part)->state = SOS_PART_STATE_OFFLINE;
-
-	/* Insert it into the partition list */
-	if (tail_ref) {
-		ods_obj_t prev = ods_ref_as_obj(sos->part_ods, tail_ref);
-		if (!prev)
-			goto err_2;
-		SOS_PART(prev)->next = ods_obj_ref(new_part);
-		SOS_PART_UDATA(sos->part_udata)->tail = ods_obj_ref(new_part);
-		if (!head_ref)
-			SOS_PART_UDATA(sos->part_udata)->head = ods_obj_ref(new_part);
-		ods_obj_put(prev);
-	} else {
-		SOS_PART_UDATA(sos->part_udata)->head = ods_obj_ref(new_part);
-		SOS_PART_UDATA(sos->part_udata)->tail = ods_obj_ref(new_part);
-	}
-	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
-	ods_unlock(sos->part_ods, 0);
-	return new_part;
- err_2:
-	ods_obj_delete(new_part);
-	ods_obj_put(new_part);
- err_1:
-	ods_unlock(sos->part_ods, 0);
-	return NULL;
+	sos_part_t part = free_arg;
+	ods_obj_put(part->udata_obj);
+	ods_close(part->obj_ods, ODS_COMMIT_ASYNC);
+	free(part);
 }
 
-/*
- * This function uses the part reference. If the caller wants to
- * continue using it, it must take its own reference.
+/**
+ * \brief Create a new partition
+ *
+ * Creates a new, unattached partition in the OFFLINE state.
+ *
+ * \param part_path The path to the partition.
+ * \param part_desc A description for the partition.
+ * \param o_mode The partition access bits, see open()
+ * \retval 0 The partition was successfully created
+ * \retval EEXIST The partition already exists
+ * \retval EPERM Insufficient permission
+ * \retval ENOSPACE The filesystem is full
  */
-static int __sos_open_partition(sos_t sos, sos_part_t part)
+int sos_part_create(const char *part_path,
+		    const char *part_desc,
+		    int o_mode)
 {
+	uuid_t uuid;
 	char tmp_path[PATH_MAX];
 	int rc;
 	ods_t ods;
+	struct stat sb;
 
-	sprintf(tmp_path, "%s/%s", sos_part_path(part), sos_part_name(part));
-	assert(tmp_path[0] == '/');
-	rc = __sos_make_all_dir(tmp_path, sos->o_mode);
-	if (rc) {
-		rc = errno;
-		goto err_0;
-	}
-	sprintf(tmp_path, "%s/%s/objects", sos_part_path(part), sos_part_name(part));
-	ods = ods_open(tmp_path, ODS_PERM_RW|ODS_PERM_CREAT, sos->o_mode);
+	rc = stat(part_path, &sb);
+	if (rc == 0)
+		return EEXIST;
+	rc = __sos_make_all_dir(part_path, o_mode
+				| (o_mode & S_IRUSR ? S_IXUSR : 0)
+				| (o_mode & S_IRGRP ? S_IXGRP : 0));
+	if (rc)
+		return errno;
+	sprintf(tmp_path, "%s/objects", part_path);
+	ods = ods_open(tmp_path, ODS_PERM_RW | ODS_PERM_CREAT, o_mode);
 	if (!ods) {
 		rc = errno;
 		goto err_0;
 	}
-	part->obj_ods = ods;
+	ods_obj_t udata = ods_get_user_data(ods);
+	uuid_generate(SOS_PART_UDATA(udata)->uuid);
+	SOS_PART_UDATA(udata)->signature = SOS_PART_SIGNATURE;
+	strncpy(SOS_PART_UDATA(udata)->desc, part_desc, SOS_PART_DESC_LEN);
+	uuid_generate(uuid);
+	uuid_copy(SOS_PART_UDATA(udata)->uuid, uuid);
+	ods_obj_put(udata);
+	ods_close(ods, ODS_COMMIT_SYNC);
 	return 0;
  err_0:
+	if (errno != EEXIST && errno != EBUSY)
+		(void)__sos_remove_directory(part_path);
 	return rc;
+}
+
+static int __part_open(sos_part_t part, const char *path, sos_perm_t o_perm)
+{
+	char tmp_path[PATH_MAX];
+	ods_t ods;
+	int rc;
+
+	assert(0 == (o_perm & SOS_PERM_CREAT));
+	snprintf(tmp_path, sizeof(tmp_path), "%s/objects", path);
+	ods = ods_open(tmp_path, o_perm);
+	if (!ods)
+		return errno;
+
+	ods_obj_t part_obj = ods_get_user_data(ods);
+	if (!part_obj) {
+		rc = errno;
+		goto err_0;
+	}
+
+	if (SOS_PART_UDATA(part_obj)->signature != SOS_PART_SIGNATURE) {
+		rc = EINVAL;
+		goto err_1;
+	}
+
+	part->udata_obj = part_obj;
+	part->obj_ods = ods;
+	return 0;
+err_1:
+	ods_obj_put(part_obj);
+	ods_close(ods, ODS_COMMIT_ASYNC);
+err_0:
+	return rc;
+}
+
+static void __part_close(sos_part_t part)
+{
+	ods_obj_put(part->udata_obj);
+	part->udata_obj = NULL;
+	ods_close(part->obj_ods, ODS_COMMIT_ASYNC);
+	part->obj_ods = NULL;
+}
+
+static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj)
+{
+	int rc;
+	sos_part_t part = calloc(1, sizeof *part);
+	if (!part)
+		return NULL;
+	sos_ref_init(&part->ref_count, "part_list", __sos_part_free, part);
+	rc = __part_open(part, SOS_PART_REF(ref_obj)->path,
+			sos->o_perm & ~SOS_PERM_CREAT);
+	if (rc) {
+		errno = rc;
+		return NULL;
+	}
+	part->ref_obj = ref_obj;
+	part->sos = sos;
+	TAILQ_INSERT_TAIL(&sos->part_list, part, entry);
+	return part;
+}
+
+/**
+ * @brief Open a partition
+ *
+ * Open a partition and return the partition handle. The partition is not
+ * associated with a container.
+ *
+ * @param path
+ * @param o_perm The SOS access permissions. If SOS_PERM_CREAT is included,
+ *               the parameters o_mode and desc are expected
+ * @param o_mode The file creation mode, see open(3)
+ * @param desc A pointer to a character string description for the partition.
+ * @return sos_part_t
+ */
+sos_part_t sos_part_open(const char *path, int o_perm, ...)
+{
+	int rc;
+	int o_mode;
+	char *desc;
+	sos_part_t part;
+	va_list ap;
+	va_start(ap, o_perm);
+	o_mode = 0660;
+
+	if (o_perm & SOS_PERM_CREAT) {
+		o_mode = va_arg(ap, int);
+		desc = va_arg(ap, char *);
+		rc = sos_part_create(path, desc, o_mode);
+		if (rc) {
+			errno = rc;
+			return NULL;
+		}
+		o_perm &= ~SOS_PERM_CREAT;
+	}
+
+	part = calloc(1, sizeof *part);
+	if (!part)
+		return NULL;
+	sos_ref_init(&part->ref_count, "application", __sos_part_free, part);
+	rc = __part_open(part, path, o_perm);
+	if (rc) {
+		errno = rc;
+		free(part);
+		return NULL;
+	}
+	return part;
 }
 
 struct iter_args {
@@ -300,171 +355,52 @@ struct iter_args {
 	sos_part_t part;
 	uint64_t count;
 };
-#define DUTY_CYCLE 250000
-
-static int __unindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
-{
-	sos_obj_ref_t ref;
-	sos_obj_t sos_obj;
-	struct iter_args *uarg = arg;
-	sos_part_t part = uarg->part;
-	sos_obj_data_t sos_obj_data = obj->as.ptr;
-	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
-	if (!schema) {
-		sos_warn("Object at %p is missing a valid schema id.\n", ods_obj_ref(obj));
-		/* This is a garbage object that should not be here */
-		return 0;
-	}
-	struct timeval tv;
-	(void)gettimeofday(&tv, NULL);
-	double now = ((double)tv.tv_sec * 1.0e6) + (double)tv.tv_usec;
-	double dur = now - uarg->start;
-	uarg->count++;
-	if (now - uarg->start > uarg->timeout) {
-		sos_info("Processed %ld objects in %f microseconds\n", uarg->count, dur);
-		return 1;
-	}
-	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
-	ref.ref.obj = ods_obj_ref(obj);
-	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
-	sos_obj_remove(sos_obj);
-	sos_obj_put(sos_obj);
-	return 0;
-}
-
-void __unindex_part_objects(sos_t sos, sos_part_t part)
-{
-	int rc;
-	struct iter_args uargs;
-	struct ods_obj_iter_pos_s pos;
-
-	/*
-	 * Remove all objects in this partition from the indices
-	 */
-	ods_obj_iter_pos_init(&pos);
-	do {
-		struct timeval tv;
-		(void)gettimeofday(&tv, NULL);
-		uargs.start = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
-		uargs.timeout = DUTY_CYCLE;
-		uargs.part = part;
-		uargs.count = 0;
-		rc = ods_obj_iter(part->obj_ods, &pos, __unindex_callback_fn, &uargs);
-		if (rc) {
-			usleep(1000000 - DUTY_CYCLE);
-		}
-	} while (rc);
-}
 
 void __make_part_offline(sos_t sos, sos_part_t part)
 {
-	SOS_PART(part->part_obj)->state = SOS_PART_STATE_OFFLINE;
-	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
-}
-
-void __make_part_busy(sos_t sos, sos_part_t part)
-{
-	SOS_PART(part->part_obj)->state = SOS_PART_STATE_BUSY;
-	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
-}
-
-/*
- * Iterate through all objects in the partition and call sos_obj_index
- * for each one. This function is used when partitions are moving from
- * OFFLINE --> ACTIVE or OFFLINE --> PRIMARY
- */
-static int __reindex_callback_fn(ods_t ods, ods_obj_t obj, void *arg)
-{
-	struct timeval tv;
-	int rc;
-	sos_obj_ref_t ref;
-	sos_obj_t sos_obj;
-	struct iter_args *rarg = arg;
-	sos_part_t part = rarg->part;
-	sos_obj_data_t sos_obj_data = obj->as.ptr;
-	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
-	if (!schema) {
-		sos_warn("Object at %p is missing a valid schema id.\n", ods_obj_ref(obj));
-		/* This is a garbage object that should not be here */
-		return 0;
-	}
-	rc = gettimeofday(&tv, NULL);
-	double now = ((double)tv.tv_sec * 1.0e6) + (double)tv.tv_usec;
-	double dur = now - rarg->start;
-	rarg->count++;
-	if (now - rarg->start > rarg->timeout) {
-		sos_info("Processed %ld objects in %f microseconds\n", rarg->count, dur);
-		return 1;
-	}
-	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
-	ref.ref.obj = ods_obj_ref(obj);
-	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
-	rc = sos_obj_index(sos_obj);
-	if (rc) {
-		/* The object couldn't be indexed for some reason */
-		sos_warn("The object of type '%s' at %p could not be indexed.\n",
-			 sos_schema_name(schema), ref.ref.obj);
-	}
-	sos_obj_put(sos_obj);
-	return 0;
-}
-
-static int __reindex_part_objects(sos_t sos, sos_part_t part)
-{
-	struct ods_obj_iter_pos_s pos;
-	struct timeval tv;
-	struct iter_args rargs;
-	int rc;
-	ods_obj_iter_pos_init(&pos);
-	do {
-		rc = gettimeofday(&tv, NULL);
-		rargs.start = (double)tv.tv_sec * 1.0e6 + (double)tv.tv_usec;
-		rargs.timeout = DUTY_CYCLE;
-		rargs.part = part;
-		rargs.count = 0;
-		rc = ods_obj_iter(part->obj_ods, &pos, __reindex_callback_fn, &rargs);
-		if (rc) {
-			usleep(1000000 - DUTY_CYCLE);
-		}
-	} while (rc);
-	return 0;
+	SOS_PART_REF(part->ref_obj)->state = SOS_PART_STATE_OFFLINE;
+	__sos_schema_reset(part->sos);
 }
 
 static void __make_part_active(sos_t sos, sos_part_t part)
 {
-	SOS_PART(part->part_obj)->state = SOS_PART_STATE_ACTIVE;
-	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
-
-	/* Open the partition and add it to the container */
-	(void)__sos_open_partition(part->sos, part);
+	SOS_PART_REF(part->ref_obj)->state = SOS_PART_STATE_ACTIVE;
+	__sos_schema_reset(part->sos);
 }
 
-static void __make_part_primary(sos_t sos, sos_part_t part)
+static int __make_part_primary(sos_t sos, sos_part_t part)
 {
-	ods_ref_t cur_ref;
-	ods_obj_t cur_primary;
+	/* Check if the requested partition is primary in any other container */
+	if (SOS_PART_UDATA(part->udata_obj)->is_primary)
+		return EBUSY;
 
 	/* Fix-up the current primary */
-	cur_ref = SOS_PART_UDATA(sos->part_udata)->primary;
-	if (cur_ref) {
-		cur_primary = ods_ref_as_obj(sos->part_ods, cur_ref);
-		if (!cur_primary) {
-			sos_fatal("Could not get object for primary "
-				  "partition reference %p at %s:%d",
-				  cur_ref, __func__, __LINE__);
-			return;
-		}
-		SOS_PART(cur_primary)->state = SOS_PART_STATE_ACTIVE;
-		ods_obj_put(cur_primary);
+	if (sos->primary_part) {
+		SOS_PART_REF(sos->primary_part->ref_obj)->state = SOS_PART_STATE_ACTIVE;
+		SOS_PART_UDATA(sos->primary_part->udata_obj)->is_primary = 0;
 	}
 	/* Make part_obj primary */
-	SOS_PART(part->part_obj)->state = SOS_PART_STATE_PRIMARY;
-	ods_atomic_inc(&SOS_PART_UDATA(sos->part_udata)->gen);
-	SOS_PART_UDATA(sos->part_udata)->primary = ods_obj_ref(part->part_obj);
+	SOS_PART_REF(part->ref_obj)->state = SOS_PART_STATE_PRIMARY;
+	SOS_PART_REF_UDATA(sos->part_ref_udata)->primary = ods_obj_ref(part->udata_obj);
+	SOS_PART_UDATA(part->udata_obj)->is_primary = 1;
 	sos->primary_part = part;
+	__sos_schema_reset(part->sos);
+	return 0;
 }
 
-sos_part_t __sos_part_find_by_ref(sos_t sos, ods_ref_t ref)
+sos_part_t __sos_part_find_by_ods(sos_t sos, ods_t ods)
+{
+	sos_part_t part;
+	TAILQ_FOREACH(part, &sos->part_list, entry) {
+		if (ods == part->obj_ods)
+			goto out;
+	}
+	part = NULL;
+ out:
+	return part;
+}
+
+sos_part_t __sos_part_find_by_uuid(sos_t sos, uuid_t uuid)
 {
 	sos_part_t part;
 	sos_part_iter_t iter = sos_part_iter_new(sos);
@@ -472,7 +408,7 @@ sos_part_t __sos_part_find_by_ref(sos_t sos, ods_ref_t ref)
 		return NULL;
 
 	for (part = __sos_part_first(iter); part; part = __sos_part_next(iter)) {
-		if (ref == ods_obj_ref(part->part_obj))
+		if (0 == uuid_compare(uuid, SOS_PART_UDATA(part->udata_obj)->uuid))
 			goto out;
 		sos_part_put(part);
 	}
@@ -480,6 +416,7 @@ sos_part_t __sos_part_find_by_ref(sos_t sos, ods_ref_t ref)
 	sos_part_iter_free(iter);
 	return part;
 }
+
 /**
  * \brief Set the state of a partition
  *
@@ -492,14 +429,16 @@ sos_part_t __sos_part_find_by_ref(sos_t sos, ods_ref_t ref)
  * Any partition in the ACTIVE state can be made PRIMARY. Any
  * partition in the ACTIVE state can be made OFFLINE and an OFFLINE
  * partition can be made ACTIVE. Note that when a parition is made
- * OFFLINE, all Keys that refer to objects in that partition are
- * removed from all indices in the container.
+ * OFFLINE, all data in that partition is no longer visible
+ * in the container.
  *
  * \param part The partition handle
  * \param new_state The desired state of the partition
  * \retval 0 The state was successfully changed
+ * \retval EBUSY The partition is being modified in another container
+ * \retval EEXIST The partition is PRIMARY in another container
  * \retval EINVAL The specified state is invalid given the current
- * state of the partition.
+ *    state of the partition.
  */
 int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 {
@@ -507,141 +446,127 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 	int rc = 0;
 	sos_part_state_t cur_state;
 
+	switch(new_state) {
+	case SOS_PART_STATE_PRIMARY:
+	case SOS_PART_STATE_OFFLINE:
+	case SOS_PART_STATE_ACTIVE:
+		break;
+	default:
+		return EINVAL;
+	}
 	pthread_mutex_lock(&sos->lock);
-	ods_lock(sos->part_ods, 0, NULL);
-	cur_state = SOS_PART(part->part_obj)->state;
-	if (cur_state == SOS_PART_STATE_BUSY
-	    || cur_state == SOS_PART_STATE_PRIMARY) {
+	ods_lock(sos->part_ref_ods, 0, NULL);
+
+	/*
+	 * Check if another container is currently fiddling
+	 * with this partition.
+	 */
+	if (SOS_PART_UDATA(part->udata_obj)->is_busy) {
+		/* TODO: Add retry logic? */
 		rc = EBUSY;
 		goto out;
 	}
-	__make_part_busy(sos, part);
-	ods_unlock(sos->part_ods, 0);
-	pthread_mutex_unlock(&sos->lock);
-
-	switch (cur_state) {
-	case SOS_PART_STATE_OFFLINE:
-		switch (new_state) {
-		case SOS_PART_STATE_ACTIVE:
-		case SOS_PART_STATE_PRIMARY:
-			rc = __sos_open_partition(sos, part);
-			if (rc) {
-				pthread_mutex_lock(&sos->lock);
-				ods_lock(sos->part_ods, 0, NULL);
-				__make_part_offline(sos, part);
-				ods_unlock(sos->part_ods, 0);
-				pthread_mutex_unlock(&sos->lock);
-				return EINVAL;
-			}
-			__reindex_part_objects(sos, part);
-			break;
-		default:
-			break;
-		}
-		break;
-	case SOS_PART_STATE_ACTIVE:
-		switch (new_state) {
-		case SOS_PART_STATE_OFFLINE:
-			__unindex_part_objects(sos, part);
-			break;
-		default:
-			break;
-		}
-		break;
-	default:
-		break;
+	cur_state = SOS_PART_REF(part->ref_obj)->state;
+	/*
+	 * If the new state is PRIMARY, the partition in question cannot
+	 * be primary in any other container
+	 */
+	if (new_state == SOS_PART_STATE_PRIMARY
+		&& SOS_PART_UDATA(part->udata_obj)->is_primary) {
+		rc = EEXIST;
+		goto out;
 	}
+	/*
+	 * The PRIMARY partition cannot have it's state changed. It is only
+	 * changed by making another parition PRIMARY
+	 */
+	if (cur_state == SOS_PART_STATE_PRIMARY) {
+		rc = EINVAL;
+		goto out;
+	}
+	/*
+	 * Current state is new state
+	 */
+	if (cur_state == new_state)
+		goto out;
 
-	pthread_mutex_lock(&sos->lock);
-	ods_lock(sos->part_ods, 0, NULL);
-	assert(SOS_PART_STATE_BUSY == SOS_PART(part->part_obj)->state);
-
-	switch (cur_state) {
-	case SOS_PART_STATE_OFFLINE:
-		switch (new_state) {
-		case SOS_PART_STATE_BUSY:
-			rc = EINVAL;
-			break;
-		case SOS_PART_STATE_OFFLINE:
-			break;
-		case SOS_PART_STATE_ACTIVE:
-			__make_part_active(sos, part);
-			__refresh_part_list(sos);
-			break;
-		case SOS_PART_STATE_PRIMARY:
-			__make_part_primary(sos, part);
-			__refresh_part_list(sos);
-			break;
-		default:
-			rc = EINVAL;
-			break;
-		}
+	rc = 0;
+	switch (new_state) {
+	case SOS_PART_STATE_PRIMARY:
+		rc = __make_part_primary(sos, part);
 		break;
 	case SOS_PART_STATE_ACTIVE:
-		switch (new_state) {
-		case SOS_PART_STATE_BUSY:
-			rc = EINVAL;
-			break;
-		case SOS_PART_STATE_OFFLINE:
-			__make_part_offline(sos, part);
-			__refresh_part_list(sos);
-			break;
-		case SOS_PART_STATE_ACTIVE:
-			break;
-		case SOS_PART_STATE_PRIMARY:
-			__make_part_primary(sos, part);
-			break;
-		default:
-			rc = EINVAL;
-			break;
-		}
+		__make_part_active(sos, part);
+		break;
+	case SOS_PART_STATE_OFFLINE:
+		__make_part_offline(sos, part);
 		break;
 	default:
 		assert(0);
+		break;
 	}
  out:
-	ods_unlock(sos->part_ods, 0);
+	SOS_PART_UDATA(part->udata_obj)->is_busy = 0;
+ 	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
 }
 
-static sos_part_t __sos_part_new(sos_t sos, ods_obj_t part_obj)
+ods_obj_t __sos_part_ref_first(sos_t sos)
 {
-	sos_part_t part = calloc(1, sizeof(*part));
-	if (!part)
-		return NULL;
-	part->ref_count = 1;
-	part->sos = sos;
-	part->part_obj = part_obj;
-	return part;
+	ods_obj_t part_obj =
+		ods_ref_as_obj(sos->part_ref_ods,
+			SOS_PART_REF_UDATA(sos->part_ref_udata)->head);
+	return part_obj;
 }
 
+ods_obj_t __sos_part_ref_next(sos_t sos, ods_obj_t part_obj)
+{
+	ods_obj_t next_obj;
+	ods_ref_t next_ref = 0;
+
+	if (!part_obj)
+		return NULL;
+
+	next_ref = SOS_PART_REF(part_obj)->next;
+	if (!next_ref)
+		return NULL;
+
+	next_obj = ods_ref_as_obj(sos->part_ref_ods, next_ref);
+	return next_obj;
+}
 
 static int __refresh_part_list(sos_t sos)
 {
 	int rc = 0;
 	sos_part_t part;
 	ods_obj_t part_obj;
+	int new;
 
-	sos->primary_part = NULL;
-	while (!TAILQ_EMPTY(&sos->part_list)) {
-		part = TAILQ_FIRST(&sos->part_list);
-		sos_part_put(part);
-		TAILQ_REMOVE(&sos->part_list, part, entry);
+	if (sos->primary_part) {
+		sos_ref_put(&sos->primary_part->ref_count, "primary_part");
+		sos->primary_part = NULL;
 	}
-	sos->part_gn = SOS_PART_UDATA(sos->part_udata)->gen;
-	for (part_obj = __sos_part_data_first(sos);
-	     part_obj; part_obj = __sos_part_data_next(sos, part_obj)) {
-		part = __sos_part_new(sos, part_obj);
+	for (part_obj = __sos_part_ref_first(sos);
+	     part_obj; part_obj = __sos_part_ref_next(sos, part_obj)) {
+		new = 1;
+		/* Check if we already have this partition */
+		TAILQ_FOREACH(part, &sos->part_list, entry) {
+			if (strcmp(ods_path(part->obj_ods), SOS_PART_REF(part_obj)->path))
+				continue;
+			new = 0;
+		}
+		if (!new)
+			continue;
+		/* This is a partition we have not seen before */
+		part = __sos_part_open(sos, part_obj);
 		if (!part) {
 			rc = ENOMEM;
 			goto out;
 		}
-		TAILQ_INSERT_TAIL(&sos->part_list, part, entry);
-		if (SOS_PART(part_obj)->state != SOS_PART_STATE_OFFLINE) {
-			rc = __sos_open_partition(sos, part);
-			if (rc)
-				goto out;
+		if (SOS_PART_REF(part_obj)->state == SOS_PART_STATE_PRIMARY) {
+			sos->primary_part = part;
+			sos_ref_get(&part->ref_count, "primary_part");
 		}
 	}
  out:
@@ -651,9 +576,9 @@ static int __refresh_part_list(sos_t sos)
 static int refresh_part_list(sos_t sos)
 {
 	int rc;
-	ods_lock(sos->part_ods, 0, NULL);
+	ods_lock(sos->part_ref_ods, 0, NULL);
 	rc = __refresh_part_list(sos);
-	ods_unlock(sos->part_ods, 0);
+	ods_unlock(sos->part_ref_ods, 0);
 	return rc;
 }
 
@@ -663,17 +588,17 @@ int __sos_open_partitions(sos_t sos, char *tmp_path)
 
 	/* Open the partition ODS */
 	sprintf(tmp_path, "%s/.__part", sos->path);
-	sos->part_ods = ods_open(tmp_path, ODS_PERM_RW);
-	if (!sos->part_ods)
+	sos->part_ref_ods = ods_open(tmp_path, ODS_PERM_RW);
+	if (!sos->part_ref_ods)
 		goto err_0;
-	sos->part_udata = ods_get_user_data(sos->part_ods);
-	if (!sos->part_udata)
+	sos->part_ref_udata = ods_get_user_data(sos->part_ref_ods);
+	if (!sos->part_ref_udata)
 		goto err_1;
 	rc = refresh_part_list(sos);
 	return rc;
  err_1:
-	ods_close(sos->part_ods, ODS_COMMIT_ASYNC);
-	sos->part_ods = NULL;
+	ods_close(sos->part_ref_ods, ODS_COMMIT_ASYNC);
+	sos->part_ref_ods = NULL;
  err_0:
 	return errno;
 }
@@ -683,24 +608,24 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 	sos_part_t part = NULL;
 
 	if ((NULL != sos->primary_part) &&
-	    (SOS_PART(sos->primary_part->part_obj)->state == SOS_PART_STATE_PRIMARY))
+	    (SOS_PART_REF(sos->primary_part->ref_obj)->state == SOS_PART_STATE_PRIMARY))
 		return sos->primary_part;
 
 	pthread_mutex_lock(&sos->lock);
-	ods_lock(sos->part_ods, 0, NULL);
-	if (sos->part_gn != SOS_PART_UDATA(sos->part_udata)->gen) {
+	ods_lock(sos->part_ref_ods, 0, NULL);
+	if (sos->part_gn != SOS_PART_REF_UDATA(sos->part_ref_udata)->gen) {
 		int rc = __refresh_part_list(sos);
 		if (rc)
 			goto out;
 	}
 	TAILQ_FOREACH(part, &sos->part_list, entry) {
-		if (SOS_PART(part->part_obj)->state == SOS_PART_STATE_PRIMARY) {
+		if (SOS_PART_REF(part->ref_obj)->state == SOS_PART_STATE_PRIMARY) {
 			sos->primary_part = part;
 			goto out;
 		}
 	}
  out:
-	ods_unlock(sos->part_ods, 0);
+	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return part;
 }
@@ -710,7 +635,6 @@ struct export_obj_iter_args_s {
 	sos_t dst_sos;
 	sos_part_t src_part;
 	ods_idx_t exp_idx;
-	int reindex;
 	int64_t export_count;
 };
 
@@ -724,378 +648,10 @@ union exp_obj_u {
 };
 #pragma pack()
 
-static sos_schema_t __export_schema(sos_t sos, sos_schema_t src, const char *name)
+sos_part_t sos_part_get(sos_part_t part)
 {
-	sos_schema_t schema = sos_schema_by_name(sos, name);
-	if (!schema) {
-		/* Duplicate and add the src_schema */
-		schema = sos_schema_dup(src);
-		if (!schema)
-			return NULL;
-
-		/* Add the schema to the destination container */
-		int rc = sos_schema_add(sos, schema);
-		if (rc) {
-			errno = rc;
-			return NULL;
-		}
-	}
-	return schema;
-}
-
-static int __shallow_export(sos_t dst_sos, sos_t src_sos,
-			    ods_obj_t src_ods_obj, ods_idx_t exp_idx,
-			    sos_schema_t *dst_schema, sos_schema_t *src_schema,
-			    sos_obj_ref_t *dst_ref, ods_obj_t *dst_ods_obj)
-{
-	ods_obj_t dobj;
-	sos_obj_data_t sos_obj_data = src_ods_obj->as.ptr;
-	const char *schema_name;
-	sos_schema_t dschema, sschema;
-	sos_part_t part;
-	int rc;
-	ODS_KEY(exp_key);
-	union exp_obj_u exp;
-
-	sschema = sos_schema_by_id(src_sos, sos_obj_data->schema);
-	if (!sschema) {
-		sos_error("ODS object with ref %p has the invalid schema id %ld\n",
-			  (void *)ods_obj_ref(src_ods_obj), sos_obj_data->schema);
-		return EINVAL;
-	}
-
-	schema_name = sos_schema_name(sschema);
-	dschema = __export_schema(dst_sos, sschema, schema_name);
-	if (!dschema) {
-		printf("Error %d adding schema %s to the destination "
-		       "container.\n", errno, schema_name);
-		return errno;
-	}
-
-	part = __sos_primary_obj_part(dst_sos);
-	if (!part)
-		return ENOSPC;
-
-	/* Check to see if this object already exists in the
-	 * destination container. If it does, it was processed by
-	 * virtue of being referred to by a previously exported
-	 * object
-	 */
-	exp.exp_data.from_ref = ods_obj_ref(src_ods_obj);
-	ods_key_set(&exp_key, &exp.exp_data.from_ref, sizeof(exp.exp_data.from_ref));
-	rc = ods_idx_find(exp_idx, &exp_key, &exp.idx_data);
-	if (rc == 0) {
-		dobj = ods_ref_as_obj(part->obj_ods, exp.exp_data.to_ref);
-		if (!dobj)
-			return ENOSPC;
-	} else {
-		dobj = __sos_obj_new(part->obj_ods, src_ods_obj->size, &dst_sos->lock);
-		if (!dobj)
-			return ENOSPC;
-
-		memcpy(dobj->as.ptr, src_ods_obj->as.ptr, src_ods_obj->size);
-		SOS_OBJ(dobj)->schema = dschema->data->id;
-
-		/* Add this object to the index of objects that we've created */
-		exp.exp_data.from_ref = ods_obj_ref(src_ods_obj);
-		exp.exp_data.to_ref = ods_obj_ref(dobj);
-		sos_key_set(&exp_key, &exp.exp_data.from_ref, sizeof(exp.exp_data.from_ref));
-		rc = ods_idx_insert(exp_idx, &exp_key, exp.idx_data);
-		if (rc) {
-			printf("Error indexing exported object.\n");
-			return rc;
-		}
-	}
-
-	if (dst_ref) {
-		dst_ref->ref.ods = SOS_PART(part->part_obj)->part_id;
-		dst_ref->ref.obj = ods_obj_ref(dobj);
-	}
-	if (dst_ods_obj)
-		*dst_ods_obj = dobj;
-	if (dst_schema)
-		*dst_schema = dschema;
-	if (src_schema)
-		*src_schema = sschema;
-
-	return 0;
-}
-
-/**
- * For each object in the source container/partition:
- *     1. look up the source object reference to see if it has
- *        been exported it to the new partition.
- *
- *     2. if found, continue
- *
- *     3. create a new object in the dest container
- *
- *     4. Add a tracking object to the obj_idx so we can find
- *        this new object later in 1. above, or 5. below
- *
- *     5. Run through each attribute in the object and if it
- *        is a reference, look it up and/or create it.
- */
-static int __export_callback_fn(ods_t ods, ods_obj_t src_ods_obj, void *arg)
-{
-	struct export_obj_iter_args_s *uarg = arg;
-	sos_t src_sos = uarg->src_sos;
-	sos_t dst_sos = uarg->dst_sos;
-	sos_obj_t dst_sos_obj;
-	ods_obj_t dst_ods_obj;
-	sos_schema_t src_schema, dst_schema;
-	sos_obj_ref_t dst_ref;
-	int rc;
-
-	rc = __shallow_export(dst_sos, src_sos, src_ods_obj, uarg->exp_idx,
-			      &dst_schema, &src_schema, &dst_ref, &dst_ods_obj);
-	if (rc)
-		return rc;
-
-	/* If this is an internal schema object, no more processing is required */
-	if (dst_schema->flags & SOS_SCHEMA_F_INTERNAL) {
-		ods_obj_put(dst_ods_obj);
-		return 0;
-	}
-
-	/* Instantiate a SOS version of the destination ODS object */
-	dst_sos_obj = __sos_init_obj(dst_sos, dst_schema, dst_ods_obj, dst_ref);
-	if (!dst_sos_obj)
-		return ENOMEM;
-
-	/* Run through the attributes of the object, instantiate any
-	 * reference objects, and fix-up the reference values in the
-	 * destination object.
-	 */
-	int attr_id;
-	for  (attr_id = 0; attr_id < sos_schema_attr_count(src_schema); attr_id++) {
-		sos_value_data_t ref_val;
-		sos_attr_t src_attr = sos_schema_attr_by_id(src_schema, attr_id);
-		if (!src_attr) {
-			printf("Error instantiating attribute id %d in schema %s\n",
-			       attr_id, sos_schema_name(src_schema));
-			return EINVAL;
-		}
-		sos_type_t type = sos_attr_type(src_attr);
-		if (type < SOS_TYPE_ARRAY && type != SOS_TYPE_OBJ)
-			continue;
-
-		ref_val = (sos_value_data_t)&src_ods_obj->as.bytes[src_attr->data->offset];
-
-		/* The reference might point to an object in another partition :-\ */
-		ods_t ods = __sos_ods_from_ref(src_sos, ref_val->prim.ref_.ref.ods);
-		if (!ods)
-			continue;
-
-		ods_obj_t src_attr_obj = ods_ref_as_obj(ods, ref_val->prim.ref_.ref.obj);
-		if (!src_attr_obj)
-			continue;
-
-		ods_obj_t dst_attr_obj;
-		rc = __shallow_export(dst_sos, src_sos, src_attr_obj, uarg->exp_idx,
-				      NULL, NULL, &dst_ref, &dst_attr_obj);
-		ods_obj_put(src_attr_obj);
-		if (0 == rc) {
-			ref_val = (sos_value_data_t)&dst_ods_obj->as.bytes[src_attr->data->offset];
-			ref_val->prim.ref_ = dst_ref;
-			ods_obj_put(dst_attr_obj);
-		} else {
-			printf("Error exporting internal reference attribute %s\n", sos_attr_name(src_attr));
-		}
-	}
-	if (uarg->reindex)
-		sos_obj_index(dst_sos_obj);
-	sos_obj_put(dst_sos_obj);
-	uarg->export_count ++;
-	return 0;
-}
-
-/**
- * \brief Export the objects in a partition to another container
- *
- * Export all of the objects in the specified source partition to
- * the *primary* partition of another container.
- *
- * The source partition must not be the *primary* partition in order to
- * ensure that every object will be exported.
- *
- * The source container (the container in which src_part is located)
- * cannot be the same as the destination container.
- *
- * \param src_part	The source partition handle
- * \param dst_cont	The destination container
- * \param reindex	Set to 1 to add exported objects to their schema indices
- * \retval >= 0 The number of objects exported to the destination container
- * \retval <0   An error occured, see *errno* for more information
- */
-int64_t sos_part_export(sos_part_t src_part, sos_t dst_sos, int reindex)
-{
-	sos_t src_sos = src_part->sos;
-	uint64_t rc = 0;
-	sos_part_state_t cur_state;
-	struct export_obj_iter_args_s uargs;
-	struct ods_obj_iter_pos_s pos;
-
-	/* The source container cannot be the same as the destination
-	 * container */
-	if (src_sos == dst_sos) {
-		return -EINVAL;
-		errno = EINVAL;
-	}
-
-	/* If the state is PRIMARY or BUSY, return EBUSY */
-	pthread_mutex_lock(&src_sos->lock);
-	ods_lock(src_sos->part_ods, 0, NULL);
-	cur_state = SOS_PART(src_part->part_obj)->state;
-	if (cur_state == SOS_PART_STATE_BUSY
-	    || cur_state == SOS_PART_STATE_PRIMARY) {
-		errno = EBUSY;
-		rc = -errno;
-		ods_unlock(src_sos->part_ods, 0);
-		goto err;
-	}
-
-	/* Create an index to track objects that are created so that
-	 * we handle objects that are referenced by other objects,
-	 * e.g. arrays. The index name is 'partition_name' && '_export'
-	 */
-	char idx_path[PATH_MAX];
-	snprintf(idx_path, sizeof(idx_path), "%s/%s_export",
-		 dst_sos->path, sos_part_name(src_part));
-	rc = ods_idx_create(idx_path, 0600, "BXTREE", "UINT64", NULL);
-	if (rc) {
-		errno = rc;
-		rc = -rc;
-		ods_unlock(src_sos->part_ods, 0);
-		goto err;
-	}
-	uargs.exp_idx = ods_idx_open(idx_path, ODS_PERM_RW);
-	if (!uargs.exp_idx) {
-		rc = -errno;
-		ods_unlock(src_sos->part_ods, 0);
-		goto err_1;
-	}
-	/* Make the source partition busy to prevent changes while the
-	 * data is being copied
-	 */
-	__make_part_busy(src_sos, src_part);
-	ods_unlock(src_sos->part_ods, 0);
-	pthread_mutex_unlock(&src_sos->lock);
-
-	uargs.src_sos = src_sos;
-	uargs.src_part = src_part;
-	uargs.dst_sos = dst_sos;
-	uargs.export_count = 0;
-	uargs.reindex = reindex;
-
-	/* Export all objects in src_part to the destination container */
-	ods_obj_iter_pos_init(&pos);
-	rc = ods_obj_iter(src_part->obj_ods, &pos, __export_callback_fn, &uargs);
-
-	/* Restore the source partition state */
-	pthread_mutex_lock(&src_sos->lock);
-	ods_lock(src_sos->part_ods, 0, NULL);
-	SOS_PART(src_part->part_obj)->state = cur_state;
-	ods_unlock(src_sos->part_ods, 0);
-	pthread_mutex_unlock(&src_sos->lock);
-
-	ods_destroy(idx_path);
-	if (rc) {
-		errno = rc;
-		return -rc;
-	}
-	return uargs.export_count;
- err_1:
-	ods_destroy(idx_path);
- err:
-	pthread_mutex_unlock(&src_sos->lock);
-	return rc;
-}
-
-static int __index_callback_fn(ods_t ods, ods_obj_t ods_obj, void *arg)
-{
-	struct export_obj_iter_args_s *uarg = arg;
-	sos_t sos = uarg->src_sos;
-	sos_part_t part = uarg->src_part;
-	sos_obj_data_t sos_obj_data = ods_obj->as.ptr;
-	sos_obj_t sos_obj;
-	sos_schema_t schema;
-	sos_obj_ref_t ref;
-
-	schema = sos_schema_by_id(sos, sos_obj_data->schema);
-	if (!schema) {
-		sos_warn("An object with the invalid schema id %d was "
-			 "encountered at %p.\n", sos_obj_data->schema,
-			 ods_obj_ref(ods_obj));
-		return EINVAL;
-	}
-
-	/* Internal schema objects are not indexed. */
-	if (schema->flags & SOS_SCHEMA_F_INTERNAL)
-		return 0;
-
-	/* Instantiate a SOS version of the ODS object */
-	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
-	ref.ref.obj = ods_obj_ref(ods_obj);
-	sos_obj = __sos_init_obj(sos, schema, ods_obj, ref);
-	if (!sos_obj)
-		return ENOMEM;
-
-	if (sos_obj_index(sos_obj))
-		sos_warn("The object at %p could not be indexed: errno %d\n",
-			 ref.ref.ods, ref.ref.obj, errno);
-	sos_obj_put(sos_obj);
-	uarg->export_count ++;
-	return 0;
-}
-
-int64_t sos_part_index(sos_part_t part)
-{
-	sos_t sos = part->sos;
-	uint64_t rc = 0;
-	sos_part_state_t cur_state;
-	struct export_obj_iter_args_s uargs;
-	struct ods_obj_iter_pos_s pos;
-
-	/* If the state is BUSY, return EBUSY */
-	pthread_mutex_lock(&sos->lock);
-	ods_lock(sos->part_ods, 0, NULL);
-	cur_state = SOS_PART(part->part_obj)->state;
-	if (cur_state == SOS_PART_STATE_BUSY
-	    || cur_state == SOS_PART_STATE_PRIMARY) {
-		sos_info("Cannot index a partition in the BUSY or PRIMARY states.\n");
-		errno = EBUSY;
-		rc = -errno;
-		ods_unlock(sos->part_ods, 0);
-		goto err;
-	}
-
-	/* Make the source partition busy to prevent changes while the
-	 * data is being copied
-	 */
-	__make_part_busy(sos, part);
-	ods_unlock(sos->part_ods, 0);
-	pthread_mutex_unlock(&sos->lock);
-
-	memset(&uargs, 0, sizeof(uargs));
-	uargs.src_sos = sos;
-	uargs.src_part = part;
-
-	/* Index all objects in part */
-	ods_obj_iter_pos_init(&pos);
-	rc = ods_obj_iter(part->obj_ods, &pos, __index_callback_fn, &uargs);
-
-	/* Restore the source partition state */
-	pthread_mutex_lock(&sos->lock);
-	ods_lock(sos->part_ods, 0, NULL);
-	SOS_PART(part->part_obj)->state = cur_state;
-	ods_unlock(sos->part_ods, 0);
-	pthread_mutex_unlock(&sos->lock);
-
-	return uargs.export_count;
- err:
-	pthread_mutex_unlock(&sos->lock);
-	return rc;
+	sos_ref_get(&part->ref_count, "application");
+	return part;
 }
 
 /**
@@ -1103,93 +659,16 @@ int64_t sos_part_index(sos_part_t part)
  *
  * Partitions are reference counted. When the reference count goes to
  * zero, it is destroyed and all of its storage is released. The
- * sos_part_first(), sos_part_next(), and sos_part_find() functions
- * take a reference on behalf of the application. This reference
- * should be dropped by the application when the application is
+ * sos_part_first(), sos_part_next(), sos_part_by_name(), and
+ * sos_part_by_path() functions ake a reference on behalf of the application.
+ * This reference should be dropped by the application when the application is
  * finished with the partition.
  *
  * \param part The partition handle.
  */
 void sos_part_put(sos_part_t part)
 {
-	if (0 == ods_atomic_dec(&part->ref_count)) {
-		__sos_part_obj_put(part->sos, part->part_obj);
-		ods_obj_put(part->part_obj);
-		ods_close(part->obj_ods, ODS_COMMIT_ASYNC);
-		free(part);
-	}
-}
-
-static void __sos_part_obj_delete(sos_t sos, ods_obj_t part_obj)
-{
-	ods_ref_t prev_ref, next_ref;
-
-	prev_ref = SOS_PART(part_obj)->prev;
-	next_ref = SOS_PART(part_obj)->next;
-
-	if (prev_ref) {
-		ods_obj_t prev = ods_ref_as_obj(sos->part_ods, prev_ref);
-		SOS_PART(prev)->next = next_ref;
-	} else {
-		SOS_PART_UDATA(sos->part_udata)->head = next_ref;
-	}
-	if (next_ref) {
-		ods_obj_t next = ods_ref_as_obj(sos->part_ods, next_ref);
-		SOS_PART(next)->prev = prev_ref;
-	} else {
-		SOS_PART_UDATA(sos->part_udata)->tail = prev_ref;
-	}
-	ods_obj_delete(part_obj);
-}
-
-ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj)
-{
-	ods_atomic_inc(&SOS_PART(part_obj)->ref_count);
-	return part_obj;
-}
-
-void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj)
-{
-	if (0 == ods_atomic_dec(&SOS_PART(part_obj)->ref_count)) {
-		if (SOS_PART(part_obj)->state == SOS_PART_STATE_OFFLINE) {
-			sos_error("Reference count has gone to zero on "
-				  "parition %s with state %d\n",
-				  SOS_PART(part_obj)->name,
-				  SOS_PART(part_obj)->state);
-		} else {
-			__sos_part_obj_delete(sos, part_obj);
-		}
-	}
-}
-
-ods_obj_t __sos_part_data_first(sos_t sos)
-{
-	ods_obj_t part_obj;
-
-	/* Take the partition lock */
-	part_obj = ods_ref_as_obj(sos->part_ods, SOS_PART_UDATA(sos->part_udata)->head);
-	if (part_obj)
-		__sos_part_obj_get(sos, part_obj);
-	return part_obj;
-}
-
-ods_obj_t __sos_part_data_next(sos_t sos, ods_obj_t part_obj)
-{
-	ods_obj_t next_obj;
-	ods_ref_t next_ref = 0;
-
-	if (!part_obj)
-		return NULL;
-
-	next_ref = SOS_PART(part_obj)->next;
-	if (!next_ref)
-		return NULL;
-
-	/* Take the partition lock */
-	next_obj = ods_ref_as_obj(sos->part_ods, next_ref);
-	if (next_obj)
-		__sos_part_obj_get(sos, next_obj);
-	return next_obj;
+	sos_ref_put(&part->ref_count, "application");
 }
 
 /**
@@ -1200,43 +679,143 @@ ods_obj_t __sos_part_data_next(sos_t sos, ods_obj_t part_obj)
 void sos_part_iter_free(sos_part_iter_t iter)
 {
 	if (iter->part)
-		sos_part_put(iter->part);
+		sos_ref_put(&iter->part->ref_count, "iterator");
 	free(iter);
 }
 
 /**
- * \brief Create a new partition
+ * @brief Attach a partition to a container
  *
- * \param sos The sos_t container handle
- * \param part_name The name of the new partition.
- * \param part_path An optional path to the partition. If null,
- *                  the container path will be used.
- * \retval 0 Success
- * \retval EEXIST The specified partition already exists
- * \retval EBADF Invalid container handle or other storage error
- * \retval ENOMEM Insufficient resources
+ * @param sos The sos_t container handle
+ * @param name A name for this partition in this container
+ * @param path The path to the partition.
+ * @retval 0 success
+ * @retval EEXIST The partition is already attached
+ * @retval ENOENT The partition was not found
  */
-int sos_part_create(sos_t sos, const char *part_name, const char *part_path)
+int sos_part_attach(sos_t sos, const char *name, const char *path)
 {
-	char tmp_path[PATH_MAX];
-	ods_obj_t part_obj;
 	sos_part_t part;
+	ods_ref_t head_ref, tail_ref;
+	ods_obj_t new_part_ref;
+	int rc;
 
-	part = sos_part_find(sos, part_name);
+	pthread_mutex_lock(&sos->lock);
+	ods_lock(sos->part_ref_ods, 0, NULL);
+
+	part = __sos_part_by_name(sos, name);
+	if (!part)
+		part = __sos_part_by_path(sos, path);
 	if (part) {
-		sos_part_put(part);
-		return EEXIST;
+		rc = EEXIST;
+		goto err_0;
 	}
 
-	part_obj = __sos_part_create(sos, tmp_path, part_name, part_path);
-	if (!part_obj)
-		return errno;
+	head_ref = SOS_PART_REF_UDATA(sos->part_ref_udata)->head;
+	tail_ref = SOS_PART_REF_UDATA(sos->part_ref_udata)->tail;
 
-	part = __sos_part_new(sos, part_obj);
-	pthread_mutex_lock(&sos->lock);
-	TAILQ_INSERT_HEAD(&sos->part_list, part, entry);
+	new_part_ref = ods_obj_alloc(sos->part_ref_ods, sizeof(struct sos_part_ref_data_s));
+	if (!new_part_ref)
+		goto err_0;
+
+	/* Make sure we can open it */
+	strncpy(SOS_PART_REF(new_part_ref)->path, path, SOS_PART_PATH_LEN);
+	strncpy(SOS_PART_REF(new_part_ref)->name, name, SOS_PART_NAME_LEN);
+	SOS_PART_REF(new_part_ref)->state = SOS_PART_STATE_OFFLINE;
+	part = __sos_part_open(sos, new_part_ref);
+	if (!part)
+		goto err_1;
+
+	/* Add the partition to our list */
+	SOS_PART_REF(new_part_ref)->prev = tail_ref;
+	SOS_PART_REF(new_part_ref)->next = 0;
+
+	/* Insert it into the partition list */
+	if (tail_ref) {
+		ods_obj_t prev = ods_ref_as_obj(sos->part_ref_ods, tail_ref);
+		if (!prev)
+			goto err_1;
+		SOS_PART_REF(prev)->next = ods_obj_ref(new_part_ref);
+		SOS_PART_REF_UDATA(sos->part_ref_udata)->tail = ods_obj_ref(new_part_ref);
+		if (!head_ref)
+			SOS_PART_REF_UDATA(sos->part_ref_udata)->head = ods_obj_ref(new_part_ref);
+		ods_obj_put(prev);
+	} else {
+		SOS_PART_REF_UDATA(sos->part_ref_udata)->head = ods_obj_ref(new_part_ref);
+		SOS_PART_REF_UDATA(sos->part_ref_udata)->tail = ods_obj_ref(new_part_ref);
+	}
+	ods_atomic_inc(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
+	ods_atomic_inc(&SOS_PART_UDATA(part->udata_obj)->ref_count);
+	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return 0;
+err_1:
+	ods_obj_delete(new_part_ref);
+	ods_obj_put(new_part_ref);
+err_0:
+	ods_unlock(sos->part_ref_ods, 0);
+	pthread_mutex_unlock(&sos->lock);
+	return rc;
+}
+
+/**
+ * @brief Detach a partition from a container
+ *
+ * Detaches the partition from the container. The application
+ * MUST NOT use the partion handle \c part after calling this
+ * function.
+ *
+ * @param sos The container handle
+ * @param path The path to the partition
+ * @retval 0 The partition was successfully detached
+ * @retval ENOENT The partition is not attached
+ */
+int sos_part_detach(sos_part_t part)
+{
+	sos_t sos = part->sos;
+	ods_ref_t prev_ref, next_ref;
+	int rc = 0;
+
+	if (!part->sos || !part->udata_obj || !part->ref_obj)
+		return ENOENT;
+
+	pthread_mutex_lock(&part->sos->lock);
+	ods_lock(sos->part_ref_ods, 0, NULL);
+
+	if (sos_part_state(part) == SOS_PART_STATE_PRIMARY) {
+		rc = EINVAL;
+		goto out;
+	}
+
+	/* Remove the partition reference */
+	prev_ref = SOS_PART_REF(part->ref_obj)->prev;
+	next_ref = SOS_PART_REF(part->ref_obj)->next;
+
+	if (prev_ref) {
+		ods_obj_t prev = ods_ref_as_obj(sos->part_ref_ods, prev_ref);
+		SOS_PART_REF(prev)->next = next_ref;
+	} else {
+		SOS_PART_REF_UDATA(sos->part_ref_udata)->head = next_ref;
+	}
+	if (next_ref) {
+		ods_obj_t next = ods_ref_as_obj(sos->part_ref_ods, next_ref);
+		SOS_PART_REF(next)->prev = prev_ref;
+	} else {
+		SOS_PART_REF_UDATA(sos->part_ref_udata)->tail = prev_ref;
+	}
+
+	/* Remove the sos_part_t from the part_list */
+	TAILQ_REMOVE(&sos->part_list, part, entry);
+	ods_obj_delete(part->ref_obj);
+	ods_atomic_dec(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
+	ods_atomic_dec(&SOS_PART_UDATA(part->udata_obj)->ref_count);
+	__part_close(part);
+	sos_ref_put(&part->ref_count, "application");	/* obtained by ...find */
+	sos_ref_put(&part->ref_count, "part_list");
+out:
+	ods_unlock(sos->part_ref_ods, 0);
+	pthread_mutex_unlock(&part->sos->lock);
+	return rc;
 }
 
 /**
@@ -1255,37 +834,77 @@ sos_part_iter_t sos_part_iter_new(sos_t sos)
 	return iter;
 }
 
+static sos_part_t __sos_part_by_name(sos_t sos, const char *name)
+{
+	sos_part_t part;
+	TAILQ_FOREACH(part, &sos->part_list, entry) {
+		if (0 == strcmp(sos_part_name(part), name))
+			goto out;
+	}
+	part = NULL;
+ out:
+	return part;
+}
+
 /**
- * \brief Find a partition
+ * \brief Find a partition by name
  *
  * Returns the partition handle for the partition with the name
  * specified by the \c name parameter.
  *
  * The application should call sos_part_put() when finished with the
- * partition object. Note that calling sos_part_put() too many times
- * can result in destroying the partition.
+ * partition object.
  *
  * \param sos The container handle
  * \param name The name of the partition
  * \retval Partition handle
  * \retval NULL if the partition was not found
  */
-
-sos_part_t sos_part_find(sos_t sos, const char *name)
+sos_part_t sos_part_by_name(sos_t sos, const char *name)
 {
 	sos_part_t part;
-	sos_part_iter_t iter = sos_part_iter_new(sos);
-	if (!iter)
-		return NULL;
+	pthread_mutex_lock(&sos->lock);
+	part = __sos_part_by_name(sos, name);
+	if (part)
+		sos_part_get(part);
+	pthread_mutex_unlock(&sos->lock);
+	return part;
+}
 
-	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
-		if (0 == strcmp(sos_part_name(part), name))
+static sos_part_t __sos_part_by_path(sos_t sos, const char *path)
+{
+	sos_part_t part;
+	TAILQ_FOREACH(part, &sos->part_list, entry) {
+		if (0 == strcmp(sos_part_path(part), path))
 			goto out;
-		sos_part_put(part);
 	}
 	part = NULL;
  out:
-	sos_part_iter_free(iter);
+	return part;
+}
+
+/**
+ * \brief Find a partition by path
+ *
+ * Returns the partition handle for the partition with the name
+ * specified by the \c path parameter.
+ *
+ * The application should call sos_part_put() when finished with the
+ * partition object.
+ *
+ * \param sos The container handle
+ * \param path The name of the partition
+ * \retval Partition handle
+ * \retval NULL if the partition was not found
+ */
+sos_part_t sos_part_by_path(sos_t sos, const char *path)
+{
+	sos_part_t part;
+	pthread_mutex_lock(&sos->lock);
+	part = __sos_part_by_path(sos, path);
+	if (part)
+		sos_part_get(part);
+	pthread_mutex_unlock(&sos->lock);
 	return part;
 }
 
@@ -1293,12 +912,13 @@ static sos_part_t __sos_part_first(sos_part_iter_t iter)
 {
 	sos_part_t part = NULL;
 	part = TAILQ_FIRST(&iter->sos->part_list);
-	if (iter->part)
-		sos_part_put(iter->part); /* drop iterator ref */
+	if (iter->part) {
+		sos_ref_put(&iter->part->ref_count, "iterator");
+	}
 	iter->part = part;
 	if (part) {
-		ods_atomic_inc(&part->ref_count); /* iterator reference */
-		ods_atomic_inc(&part->ref_count); /* application reference */
+		sos_ref_get(&iter->part->ref_count, "iterator");
+		sos_ref_get(&iter->part->ref_count, "application");
 	}
 	return part;
 }
@@ -1329,11 +949,12 @@ static sos_part_t __sos_part_next(sos_part_iter_t iter)
 	if (!iter->part)
 		return NULL;
 	part = TAILQ_NEXT(iter->part, entry);
-	sos_part_put(iter->part);	  /* drop iterator reference */
+	if (iter->part)
+		sos_ref_put(&iter->part->ref_count, "iterator");	  /* drop iterator reference */
 	iter->part = part;
 	if (part) {
-		ods_atomic_inc(&part->ref_count); /* iterator reference */
-		ods_atomic_inc(&part->ref_count); /* application reference */
+		sos_ref_get(&part->ref_count, "iterator"); /* iterator reference */
+		sos_ref_get(&part->ref_count, "application"); /* application reference */
 	}
 	return part;
 }
@@ -1364,9 +985,33 @@ sos_part_t sos_part_next(sos_part_iter_t iter)
  */
 const char *sos_part_name(sos_part_t part)
 {
-	return SOS_PART(part->part_obj)->name;
+	if (part->ref_obj)
+		return SOS_PART_REF(part->ref_obj)->name;
+	return "";
 }
-
+/**
+ * @brief Return the number of containers attached to this partition
+ *
+ * @param part
+ * @return The count of containers attached to this partition
+ */
+uint32_t sos_part_refcount(sos_part_t part)
+{
+	return SOS_PART_UDATA(part->udata_obj)->ref_count;
+}
+/**
+ * @brief Return the UUID for the partition
+ *
+ * Returns the universal unique identifer (UUID) in the \c uuid
+ * parameter
+ *
+ * @param part The partition handle
+ * @param uuid The uuid_t to receive the value
+ */
+void sos_part_uuid(sos_part_t part, uuid_t uuid)
+{
+	uuid_copy(uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
+}
 /**
  * \brief Return the partition's path
  * \param part The partition handle
@@ -1374,9 +1019,32 @@ const char *sos_part_name(sos_part_t part)
  */
 const char *sos_part_path(sos_part_t part)
 {
-	return SOS_PART(part->part_obj)->path;
+	if (part->ref_obj)
+		return SOS_PART_REF(part->ref_obj)->path;
+	return "";
 }
-
+/**
+ * \brief Return the partition's description data
+ * \param part The partition handle
+ * \returns Pointer to a string containing the description
+ */
+const char *sos_part_desc(sos_part_t part)
+{
+	return SOS_PART_UDATA(part->udata_obj)->desc;
+}
+/**
+ * @brief Return the partition reference count
+ *
+ * Returns the number of containers that are attached to this
+ * partition
+ *
+ * @param path The path to the partition
+ * @retval The partition reference count
+ */
+int sos_part_ref_count(sos_part_t part)
+{
+	return SOS_PART_UDATA(part->udata_obj)->ref_count;
+}
 /**
  * \brief Return the partition's state
  * \param part The partition handle
@@ -1384,220 +1052,203 @@ const char *sos_part_path(sos_part_t part)
  */
 sos_part_state_t sos_part_state(sos_part_t part)
 {
-	return SOS_PART(part->part_obj)->state;
+	return SOS_PART_REF(part->ref_obj)->state;
 }
 
 /**
- * \brief Return the partition's id
+ * @brief Delete a partition
  *
- * Returns the parititions unique 32b id. This id is part of an
- * object's sos_obj_ref_t and identifies the partition in which the
- * object is allocated.
- *
- * \param part The partition handle
- * \returns An integer representing the partition's id
- */
-uint32_t sos_part_id(sos_part_t part)
-{
-	return SOS_PART(part->part_obj)->part_id;
-}
-
-/**
- * \brief Return the number of references on the partition
- *
- * \param part The partition handle
- * \retval An 32b integer representing the partition's reference count
- */
-uint32_t sos_part_refcount(sos_part_t part)
-{
-	return SOS_PART(part->part_obj)->ref_count;
-}
-
-/**
- * \brief Delete a partition
- *
- * Deletes the paritition specified by the handle. All object storage
+ * Deletes the paritition at the specified path. All object storage
  * associated with the parition will be freed. The parition must be in
- * the OFFLINE state to be deleted.
+ * the OFFLINE state with only a single container reference to be deleted.
  *
- * \param part The partition handle
- * \retval 0 The parition was deleted
- * \retval EBUSY The partition is not offline
+ * @param path The path to the partition
+ * @retval 0 The parition was deleted
+ * @retval EBUSY The partition is not offline or there are outstanding
+ *  	container references
  */
-int sos_part_delete(sos_part_t part)
+int sos_part_destroy(char *path)
 {
-	int rc = EBUSY;
-	sos_t sos = part->sos;
-	sos_part_state_t cur_state;
-
-	pthread_mutex_unlock(&sos->lock);
-	ods_lock(sos->part_ods, 0, NULL);
-	cur_state = SOS_PART(part->part_obj)->state;
-	if (cur_state != SOS_PART_STATE_OFFLINE)
-		goto out;
-
-	rc = 0;
-	/* Remove the partition from the container */
-	TAILQ_REMOVE(&sos->part_list, part, entry);
-	/* Put the create reference, we still hold the part reference */
-	__sos_part_obj_put(sos, part->part_obj);
-	/* Put the container reference */
-	sos_part_put(part);
-	/* Put the app reference reference */
-	sos_part_put(part);
- out:
-	ods_unlock(sos->part_ods, 0);
-	pthread_mutex_unlock(&sos->lock);
+	int rc;
+	sos_part_t part = calloc(1, sizeof *part);
+	if (!part)
+		return errno;
+	rc = __part_open(part, path, SOS_PERM_RW);
+	if (rc) {
+		goto err_0;
+		return rc;
+	}
+	if (SOS_PART_UDATA(part->udata_obj)->ref_count > 0) {
+		rc = EBUSY;
+		goto err_1;
+	}
+	__part_close(part);
+	free(part);
+	rc =__sos_remove_directory(path);
 	return rc;
+err_1:
+	__part_close(part);
+err_0:
+	free(part);
+	return rc;
+}
+
+/* Shallow copy a directory and its contents */
+static int __sos_copy_directory(const char *src_dir, const char *dst_dir)
+{
+	char path[PATH_MAX];
+	struct dirent **namelist;
+	int n, cnt, rc, in_fd, out_fd;
+	struct stat sb;
+	loff_t offset;
+
+	rc = stat(src_dir, &sb);
+	if (rc) {
+		sos_error("Error %d stating the source directory '%s'\n",
+				errno, src_dir);
+		return errno;
+	}
+	rc = __sos_make_all_dir(dst_dir, sb.st_mode);
+	if (rc) {
+		sos_error("Error %d creating the destinatio path '%s'\n",
+				errno, dst_dir);
+		return errno;
+	}
+	n = scandir(src_dir, &namelist, NULL, alphasort);
+	if (n == 0) {
+		sos_info("The source directory '%s' is empty.\n", src_dir);
+		return 0;
+	}
+	for (cnt = 0; cnt < n; ++cnt) {
+		/* Ignore . and .. */
+		if (0 == strcmp(namelist[cnt]->d_name, "."))
+			continue;
+		if (0 == strcmp(namelist[cnt]->d_name, ".."))
+			continue;
+		snprintf(path, sizeof(path), "%s/%s", src_dir, namelist[cnt]->d_name);
+		in_fd = open(path, O_RDONLY);
+		if (in_fd < 0) {
+			rc = errno;
+			sos_error("Error %d opening the source file '%s'\n", errno,
+					path);
+			continue;
+		}
+		rc = fstat(in_fd, &sb);
+		if (rc) {
+			sos_error("Error %d stat-int the source file '%s'\n", path);
+			close(in_fd);
+			continue;
+		}
+		snprintf(path, sizeof(path), "%s/%s", dst_dir, namelist[cnt]->d_name);
+		out_fd = open(path, O_RDWR | O_CREAT, sb.st_mode);
+		if (out_fd < 0) {
+			sos_error("Error %d creating the destination file '%s'\n",
+					errno, path);
+			close(in_fd);
+			continue;
+		}
+		offset = 0;
+		size_t sz = sendfile(out_fd, in_fd, &offset, sb.st_size);
+		if (sz < 0) {
+			sos_error("Error %d copying the file '%s'\n",
+					errno, namelist[cnt]->d_name);
+		}
+		close(in_fd);
+		close(out_fd);
+	}
+	return 0;
+}
+
+/* Shallow delete a directory and its contents */
+static int __sos_remove_directory(const char *dir)
+{
+	struct dirent **namelist;
+	char path[PATH_MAX];
+	int n, rc;
+
+	n = scandir (dir, &namelist, NULL, alphasort);
+	if (n >= 0) {
+		int cnt;
+		for (cnt = 0; cnt < n; ++cnt) {
+			/* Ignore . and .. */
+			if (0 == strcmp(namelist[cnt]->d_name, "."))
+				continue;
+			if (0 == strcmp(namelist[cnt]->d_name, ".."))
+				continue;
+			snprintf(path, sizeof(path), "%s/%s", dir, namelist[cnt]->d_name);
+			rc = unlink(path);
+			if (rc) {
+				sos_error("Error %d removing the file '%s'\n",
+						errno, namelist[cnt]->d_name);
+			}
+		}
+	} else {
+		return errno;
+	}
+	rc = rmdir(dir);
+	if (rc) {
+		sos_error("Error %d removing the directory '%s'\n",
+				errno, dir);
+		return rc;
+	}
+	return 0;
 }
 
 /**
  * \brief Move a partition
  *
- * Move an *offline* partition from its current storage location to another.
+ * Move an *offline* partition from its current storage location to
+ * another location.
  *
  * \param part The partition handle
- * \param path The new path for the partition.
- * \retval 0 The parition was deleted
- * \retval EBUSY The partition is not offline
+ * \param path The new path for the partition
+ * \retval 0 The partition was successfully moved
+ * \retval EBUSY The partition is not offline or another container is modifying it
  * \retval EINVAL The destination path is the same as the source path
  * \retval EEXIST The destination path already exists
  * \retval EPERM The user has insufficient privilege to write to the destination path
  */
-int sos_part_move(sos_part_t part, const char *new_part_path)
+int sos_part_move(sos_part_t part, const char *dest_path)
 {
-	char *old_part_path;
-	char tmp_path[PATH_MAX];
-	off_t offset;
-	ssize_t sz;
-	int in_fd, out_fd;
+	sos_t sos = part->sos;
 	struct stat sb;
 	int rc;
-	sos_t sos = part->sos;
-	sos_part_state_t cur_state;
 
-	old_part_path = strdup(sos_part_path(part));
-	if (!old_part_path)
-		return ENOMEM;
-	if (0 == strcmp(new_part_path, old_part_path)) {
-		free(old_part_path);
-		return EINVAL;
-	}
+	pthread_mutex_lock(&sos->lock);
+	ods_lock(sos->part_ref_ods, 0, NULL);
 
-	sprintf(tmp_path, "%s/%s", new_part_path, sos_part_name(part));
-	pthread_mutex_unlock(&sos->lock);
-	ods_lock(sos->part_ods, 0, NULL);
-
-	if (part->obj_ods)
-		ods_commit(part->obj_ods, SOS_COMMIT_SYNC);
-
-	/* Check to see if this location is already in use. */
-	rc = stat(tmp_path, &sb);
-	if (rc == 0 || (rc && errno != ENOENT)) {
-		rc = EEXIST;
-		goto out;
-	}
-
-	cur_state = SOS_PART(part->part_obj)->state;
-	if (cur_state == SOS_PART_STATE_PRIMARY) {
+	if (sos_part_state(part) != SOS_PART_STATE_OFFLINE) {
 		rc = EBUSY;
 		goto out;
 	}
-	/* Create the new partition path */
-	rc = __sos_make_all_dir(tmp_path, part->sos->o_mode);
+
+	if (SOS_PART_UDATA(part->udata_obj)->is_busy) {
+		rc = EBUSY;
+		goto out;
+	}
+
+	rc = stat(dest_path, &sb);
+	if (rc == 0 || (rc && errno != ENOENT)) {
+		sos_error("The destination directory '%s' already exists.\n",
+			dest_path);
+		goto out;
+	}
+	rc = __sos_copy_directory(sos_part_path(part), dest_path);
 	if (rc)
 		goto out;
 
-	/* Copy the PG file */
-	sprintf(tmp_path, "%s/%s/objects.PG", old_part_path, sos_part_name(part));
-	in_fd = open(tmp_path, O_RDONLY);
-	if (in_fd < 0) {
-		rc = errno;
-		goto out_1;
+	rc = __sos_remove_directory(sos_part_path(part));
+	if (rc) {
+		sos_error("Error %d removing source directory '%s'\n",
+			rc, sos_part_path(part));
 	}
-	rc = fstat(in_fd, &sb);
-	if (rc)
-		goto out_1;
-	sprintf(tmp_path, "%s/%s/objects.PG", new_part_path, sos_part_name(part));
-	out_fd = open(tmp_path, O_RDWR | O_CREAT, sos->o_mode);
-	if (out_fd < 0) {
-		rc = errno;
-		goto out_1;
-	}
-	offset = 0;
-	sz = sendfile(out_fd, in_fd, &offset, sb.st_size);
-	if (sz < 0) {
-		rc = errno;
-		goto out_2;
-	}
-	close(in_fd);
-	close(out_fd);
-	out_fd = -1;
-
-	/* Copy the OBJ file */
-	sprintf(tmp_path, "%s/%s/objects.OBJ", old_part_path, sos_part_name(part));
-	in_fd = open(tmp_path, O_RDONLY);
-	if (in_fd < 0) {
-		rc = errno;
-		goto out_2;
-	}
-	rc = fstat(in_fd, &sb);
-	if (rc)
-		goto out_2;
-	sprintf(tmp_path, "%s/%s/objects.OBJ", new_part_path, sos_part_name(part));
-	out_fd = open(tmp_path, O_RDWR | O_CREAT, sos->o_mode);
-	if (out_fd < 0) {
-		rc = errno;
-		goto out_2;
-	}
-	offset = 0;
-	sz = sendfile(out_fd, in_fd, &offset, sb.st_size);
-	if (sz < 0) {
-		rc = errno;
-		goto out_3;
-	}
-	close(in_fd);
-	close(out_fd);
-	strcpy(SOS_PART(part->part_obj)->path, new_part_path);
-	if (part->obj_ods)
-		ods_close(part->obj_ods, SOS_COMMIT_ASYNC);
-	rc = __sos_open_partition(part->sos, part);
-
-	goto out;
-
- out_3:
-	close(out_fd);
-	out_fd = -1;
-	sprintf(tmp_path, "%s/%s/objects.OBJ", new_part_path, sos_part_name(part));
-	unlink(tmp_path);
- out_2:
-	close(out_fd);
-	sprintf(tmp_path, "%s/%s/objects.PG", new_part_path, sos_part_name(part));
-	unlink(tmp_path);
- out_1:
-	sprintf(tmp_path, "%s/%s", new_part_path, sos_part_name(part));
-	rmdir(tmp_path);
-	close(in_fd);
- out:
-	if (!rc) {
-		/* Remove the original files */
-		sprintf(tmp_path, "%s/%s/objects.PG", old_part_path, sos_part_name(part));
-		rc = remove(tmp_path);
-		if (rc)
-			perror("Removing objects.PG file");
-		sprintf(tmp_path, "%s/%s/objects.OBJ", old_part_path, sos_part_name(part));
-		rc = remove(tmp_path);
-		if (rc)
-			perror("Removing objects.OBJ file");
-		sprintf(tmp_path, "%s/%s", old_part_path, sos_part_name(part));
-		rc = remove(tmp_path);
-		if (rc)
-			perror("Removing partition directory");
-	}
-	free(old_part_path);
-	ods_unlock(sos->part_ods, 0);
+	__part_close(part);
+	rc = __part_open(part, dest_path, sos->o_perm);
+	if (!rc)
+		strcpy(SOS_PART_REF(part->ref_obj)->path, dest_path);
+out:
+	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
-	sos_part_put(part);
 	return rc;
 }
 
@@ -1648,7 +1299,7 @@ static int __part_obj_iter_cb(ods_t ods, ods_obj_t obj, void *arg)
 		/* This is a garbage object that should not be here */
 		return 0;
 	}
-	ref.ref.ods = SOS_PART(part->part_obj)->part_id;
+	uuid_copy(ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 	ref.ref.obj = ods_obj_ref(obj);
 	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
 	return oi_args->fn(oi_args->part, sos_obj, oi_args->arg);

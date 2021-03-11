@@ -59,13 +59,10 @@
 #include <sos/sos.h>
 #include "sos_priv.h"
 
-int handle_pos_keep_time(sos_t sos, sos_config_t config);
-
 static struct config_opt {
 	const char *opt_name;
 	int (*opt_handler)(sos_t sos, sos_config_t config);
 } config_opts[] = {
-	{ SOS_POS_KEEP_TIME, handle_pos_keep_time },
 };
 
 static int compare_opt(const void *a, const void *b)
@@ -184,7 +181,7 @@ int sos_container_config_set(const char *path, const char *opt_name, const char 
 	config = SOS_CONFIG(obj);
 	strcpy(config->name, option_name);
 	strcpy(config->value, opt_value);
-	obj_ref.ref.ods = 0;
+	uuid_clear(obj_ref.ref.part_uuid);
 	obj_ref.ref.obj = ods_obj_ref(obj);
 	rc = ods_idx_insert(config_idx, config_key, obj_ref.idx_data);
 	if (rc)
@@ -321,15 +318,6 @@ long convert_size_units(const char *str)
 		return value * 1024 * 1024 * 1024;
 	}
 	return value;
-}
-
-int handle_pos_keep_time(sos_t sos, sos_config_t config)
-{
-	int keep_time = atoi(config->value);
-	if (keep_time <= 0)
-		keep_time = SOS_POS_KEEP_TIME_DEFAULT;
-	sos->config.pos_keep_time = keep_time;
-	return 0;
 }
 
 sos_config_iter_t sos_config_iter_new(const char *path)

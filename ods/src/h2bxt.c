@@ -567,7 +567,7 @@ typedef struct iter_entry_s {
 	struct ods_rbn rbn;
 } *iter_entry_t;
 
-static int64_t entry_cmp(void *tree_key, const void *key)
+static int64_t entry_cmp(void *tree_key, const void *key, void *arg)
 {
 	iter_entry_t a = tree_key;
 	iter_entry_t b = (iter_entry_t)key;
@@ -613,7 +613,7 @@ static ods_iter_t h2bxt_iter_new(ods_idx_t idx)
 	iter = calloc(1, iter_size);
 	if (!iter)
 		return NULL;
-	ods_rbt_init(&iter->next_tree, entry_cmp);
+	ods_rbt_init(&iter->next_tree, entry_cmp, NULL);
 	ods_atomic_inc(&idx->ref_count);
 	for (bkt = 0; bkt < t->udata->table_size; bkt++) {
 		iter->iter_table[bkt] = ods_iter_new(t->idx_table[bkt].idx);

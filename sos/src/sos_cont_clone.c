@@ -41,45 +41,49 @@
  */
 
 /**
- * \page sos_part_delete sos_part_delete - Delete a Partition
+ * \page sos_part_create Create a Partition
  *
- * sos_part_delete -C <container> <name>
+ * sos_part_create -C <container> [-s <state>] [-p <path>] part_name
  *
- * Delete a parition in a Container. The partition must be in the
- * *offline* state to be deleted.
- *
- * @param "-C PATH" The PATH to the Container. This option is required.
- * @param part_name The name of the Partition.
- *
+ * @param "-C PATH" The *PATH* to the Container. This option is required.
+ * @param "-s STATE" The *STATE* of the new partition. This paramter is optional.
+ * The default initial state is *offline*. The STATE is one of *primary*, *active*,
+ * or *offline*.
+ * @param "-p PATH" The *PATH* to the parition. This parameter is optional. The
+ * default path is the container path.
+ * @param part_name The name of the partition.
  */
 #include <sys/time.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <getopt.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <sos/sos.h>
 
-const char *short_options = "C:";
+const char *short_options = "C:p:s:d:";
 
 struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},
 	{"container",   required_argument,  0,  'C'},
+	{"path",		required_argument,  0,  'p'},
+
 	{0,             0,                  0,  0}
 };
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_part_delete -C <path> <name>\n");
-	printf("    -C <path>   The path to the container.\n");
-	printf("    <name>	The partition name.\n");
+	printf("sos_cont_clone -C <path> -p <path>\n");
+	printf("    -C <path>   The path to the container to clone.\n");
+	printf("    -p <path>	The path to the cloned container.\n");
 	exit(1);
 }
 
 int main(int argc, char **argv)
 {
 	char *cont_path = NULL;
-	char *name = NULL;
-	sos_part_t part;
+	char *clone_path = NULL;
 	int o, rc;
 	sos_t sos;
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
@@ -87,30 +91,26 @@ int main(int argc, char **argv)
 		case 'C':
 			cont_path = strdup(optarg);
 			break;
+		case 'p':
+			clone_path = strdup(optarg);
+			break;
 		case '?':
 		default:
 			usage(argc, argv);
 		}
 	}
-	if (!cont_path)
+	if (!cont_path || !clone_path)
 		usage(argc, argv);
 
-	if (optind == argc)
-		usage(argc, argv);
-	name = strdup(argv[optind]);
-	sos = sos_container_open(cont_path, SOS_PERM_RW);
+	sos = sos_container_open(cont_path, SOS_PERM_RO);
 	if (!sos) {
-		printf("Error %d opening the container %s.\n",
-		       errno, cont_path);
+		printf("The container at %s could not be opened, error %m\n", cont_path);
 		exit(1);
 	}
-	part = sos_part_find(sos, name);
-	if (!part) {
-		printf("The specified partition does not exist.\n");
+	rc = sos_container_clone(sos, clone_path);
+	if (rc) {
+		printf("The clone at %s could not be created, error %s\n", clone_path, strerror(rc));
 		exit(1);
 	}
-	rc = sos_part_delete(part);
-	if (rc)
-		perror("sos_part_delete");
 	return 0;
 }

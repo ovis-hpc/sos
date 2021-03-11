@@ -41,7 +41,7 @@
  */
 
 /**
- * \page sos_part_create sos_part_create - Create a Partition
+ * \page sos_part_create Create a Partition
  *
  * sos_part_create -C <container> [-s <state>] [-p <path>] part_name
  *
@@ -52,7 +52,6 @@
  * @param "-p PATH" The *PATH* to the parition. This parameter is optional. The
  * default path is the container path.
  * @param part_name The name of the partition.
- *
  */
 #include <sys/time.h>
 #include <string.h>
@@ -63,129 +62,50 @@
 #include <errno.h>
 #include <sos/sos.h>
 
-const char *short_options = "C:p:s:";
+const char *short_options = "p:d:o:";
 
 struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},
-	{"container",   required_argument,  0,  'C'},
-	{"state",       no_argument,        0,  's'},
 	{"path",        required_argument,  0,  'p'},
+	{"desc",        required_argument,  0,  'd'},
+	{"mode",		required_argument,  0,  'o'},
 	{0,             0,                  0,  0}
 };
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_part_create -C <path> [-p <path>] [-s <state>] <name>\n");
-	printf("    -C <path>   The path to the container. Required for all options.\n");
+	printf("sos_part_create -p <path> -d <desc>\n");
 	printf("    -p <path>	Optional partition path. The container path is used by default.\n");
-	printf("    -s <state>  The initial state of a partition. Valid states are:\n"
-	       "                primary  - All new allocations go in this partition.\n"
-	       "                active   - Objects are accessible, the partition does not grow\n"
-	       "                offline  - Object references are invalid; the partition\n"
-	       "                           may be moved or deleted.\n"
-	       "    <name>      The partition name.\n"
-	       "     The default initial state is OFFLINE.\n");
+	printf("    -d <desc>   A description of the partition's contents.\n");
+	printf("    -o <mode>   File creation mode bits in octal. See open(2)\n");
 	exit(1);
-}
-
-int create_part(sos_t sos, const char *name, const char *path)
-{
-	int rc = sos_part_create(sos, name, path);
-	if (rc)
-		perror("sos_part_create: ");
-	return rc;
-}
-
-void modify_part(sos_t sos, const char *name, const char *state)
-{
-	sos_part_t part;
-	sos_part_iter_t iter;
-	int rc = ENOENT;
-
-	if (!state) {
-		printf("A state string must be specified.\n");
-		return;
-	}
-
-	iter = sos_part_iter_new(sos);
-	if (!iter) {
-		perror("sos_part_iter_new: ");
-		return;
-	}
-	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
-		if (strcmp(sos_part_name(part), name)) {
-			sos_part_put(part);
-			continue;
-		}
-		rc = 0;
-		if (0 == strcasecmp(state, "active")) {
-			rc = sos_part_state_set(part, SOS_PART_STATE_ACTIVE);
-			if (rc) {
-				errno = rc;
-				perror("Error enabling the partition");
-			}
-		} else if (0 == strcasecmp(state, "offline")) {
-			rc = sos_part_state_set(part, SOS_PART_STATE_OFFLINE);
-			if (rc) {
-				errno = rc;
-				perror("Error disabling the partition");
-			}
-		} else if (0 == strcasecmp(state, "primary")) {
-			sos_part_state_set(part, SOS_PART_STATE_PRIMARY);
-		}
-		else
-			printf("The state string specified is not recognized.\n");
-		sos_part_put(part);
-		break;
-	}
-	sos_part_iter_free(iter);
-	if (rc == ENOENT)
-		printf("The partition was not found, did you forget to create it?\n");
 }
 
 int main(int argc, char **argv)
 {
-	char *cont_path = NULL;
-	char *part_path = NULL;
-	char *name = NULL;
-	char *state = NULL;
+	char *path = NULL;
+	char *desc = "";
+	int o_mode = 0660;
 	int o, rc;
-	sos_t sos;
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (o) {
-		case 'C':
-			cont_path = strdup(optarg);
-			break;
-		case 's':
-			state = strdup(optarg);
-			break;
 		case 'p':
-			part_path = strdup(optarg);
+			path = strdup(optarg);
+			break;
+		case 'd':
+			desc = strdup(optarg);
+			break;
+		case 'o':
+			o_mode = strtol(optarg, NULL, 8);
 			break;
 		case '?':
 		default:
 			usage(argc, argv);
 		}
 	}
-	if (!cont_path || argc == optind)
-		usage(argc, argv);
-	name = strdup(argv[optind]);
-
-	sos = sos_container_open(cont_path, SOS_PERM_RW);
-	if (!sos) {
-		printf("Error %d opening the container %s.\n",
-		       errno, cont_path);
-		exit(1);
-	}
-
-	rc = create_part(sos, name, part_path);
+	rc = sos_part_create(path, desc, o_mode);
 	if (rc)
-		exit(1);
-	if (state) {
-		modify_part(sos, name, state);
-		free(state);
-	}
-	free(cont_path);
-	free(name);
-	return 0;
+		fprintf(stderr, "sos_part_create: The partition could not be created, error %s\n", strerror(rc));
+
+	return rc;
 }

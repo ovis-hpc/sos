@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from __future__ import print_function
 from past.builtins import execfile
 from builtins import next
@@ -12,6 +12,8 @@ import os
 from sosdb import Sos
 from sosunittest import SosTestCase, Dprint
 import datetime as dt
+
+part_num = 1
 
 class Debug(object): pass
 
@@ -62,9 +64,17 @@ class QueryTest(SosTestCase):
     @classmethod
     def tearDownClass(cls):
         cls.tearDownDb()
+        pass
 
     def __generate_data(self, schema, min_v, max_v):
+        global part_num
+        split = (max_v + min_v) / 2
         for i in range(min_v, max_v):
+            if i == split:
+                self.db.part_create(str(part_num))
+                part = self.db.part_by_name(str(part_num))
+                part.state_set("PRIMARY")
+                part_num += 1
             t = dt.datetime.now()
             obj = schema.alloc()
             obj[:] = (

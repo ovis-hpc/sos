@@ -28,7 +28,6 @@ from join_test_getter import JoinTestGet
 from filter_test import FilterTest
 from test_filt_join_cond import FilterJoinCond
 from test_gui_filt import GuiFilter
-from pos_test import FilterPosTest
 from filt_count_test import FilterCountTest
 from delete_test import DeleteTest
 from pattern_test import PatternTest
@@ -39,6 +38,7 @@ from array_test import ArrayTest
 from version_test import VersionTest
 from append_data_test import AppendDataTest
 from update_test import UpdateTest
+from partition_test import PartitionTest
 
 tests = [ SchemaTest,
           ObjTestSetGet,
@@ -55,7 +55,6 @@ tests = [ SchemaTest,
           JoinTestKey,
           JoinTestGet,
           FilterTest,
-          FilterPosTest,
           FilterCountTest,
           FilterJoinCond,
           GuiFilter,
@@ -70,12 +69,13 @@ tests = [ SchemaTest,
           QueryTest2,
           AppendDataTest,
           UpdateTest,
+          PartitionTest,
           ]
 
 if __name__ == "__main__":
-    chkpath = os.getenv("TEST_DATA_DIR")
+    chkpath = os.getenv("SOS_TEST_DATA_DIR")
     if chkpath is None:
-        print("Please set the TEST_DATA_DIR environment variable" \
+        print("Please set the SOS_TEST_DATA_DIR environment variable" \
               " to a valid path where test data can created.")
         sys.exit(1)
 

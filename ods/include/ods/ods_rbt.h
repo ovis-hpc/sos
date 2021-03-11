@@ -75,18 +75,22 @@ struct ods_rbn {
 void ods_rbn_init(struct ods_rbn *n, void *key);
 
 /* Comparator callback provided for insert and search operations */
-typedef int64_t (*ods_rbn_comparator_t)(void *tree_key, const void *key);
+typedef int64_t (*ods_rbn_comparator_t)(void *tree_key, const void *key, void *arg);
 
 /* Processor for each node during traversal. */
 typedef int (*ods_rbn_node_fn)(struct ods_rbn *, void *, int);
 
 struct ods_rbt {
-	struct ods_rbn   *root;
+	struct ods_rbn *root;
 	ods_rbn_comparator_t comparator;
-	long		 card;
+	void *comparator_arg;
+	long card;
 };
 
-void ods_rbt_init(struct ods_rbt *t, ods_rbn_comparator_t c);
+int64_t ods_rbn_cmp(struct ods_rbt *t, struct ods_rbn *a, struct ods_rbn *b);
+typedef int (*ods_rbn_printer_t)(struct ods_rbn *rbn, void *printer_arg, int level);
+void ods_rbt_print(struct ods_rbt *t, ods_rbn_printer_t printer, void *printer_arg);
+void ods_rbt_init(struct ods_rbt *t, ods_rbn_comparator_t cmp, void *cmp_arg);
 #define ODS_RBT_INITIALIZER(_c_) { .comparator = _c_ }
 void ods_rbt_verify(struct ods_rbt *t);
 int ods_rbt_empty(struct ods_rbt *t);
@@ -97,8 +101,8 @@ struct ods_rbn *ods_rbt_find_glb(struct ods_rbt *ods_rbt, const void *key);
 struct ods_rbn *ods_rbt_find(struct ods_rbt *t, const void *k);
 struct ods_rbn *ods_rbt_min(struct ods_rbt *t);
 struct ods_rbn *ods_rbt_max(struct ods_rbt *t);
-struct ods_rbn *rbn_succ(struct ods_rbn *n);
-struct ods_rbn *rbn_pred(struct ods_rbn *n);
+struct ods_rbn *ods_rbn_succ(struct ods_rbn *n);
+struct ods_rbn *ods_rbn_pred(struct ods_rbn *n);
 void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *n);
 void ods_rbt_del(struct ods_rbt *t, struct ods_rbn *n);
 int ods_rbt_traverse(struct ods_rbt *t, ods_rbn_node_fn f, void *fn_data);

@@ -41,7 +41,7 @@
  */
 
 /**
- * \page sos_part_query sos_part_query - Query a Container's Partitions
+ * \page sos_part_query Query a Container's Partitions
  *
  * sos_part_query -C <container> [-v]
  *
@@ -100,8 +100,10 @@ const char *pretty_file_size(off_t size)
 static int print_obj_cb(sos_part_t part, sos_obj_t obj, void *arg)
 {
 	sos_schema_t schema = sos_obj_schema(obj);
+	sos_obj_ref_str_t ref_str;
 	sos_obj_ref_t ref = sos_obj_ref(obj);
-	printf("%lu@%lx %-16s\n", ref.ref.ods, ref.ref.obj, sos_schema_name(schema));
+	sos_obj_ref_to_str(ref, ref_str);
+	printf("%s %-16s\n", ref_str, sos_schema_name(schema));
 	sos_obj_put(obj);
 	return 0;
 }
@@ -124,10 +126,12 @@ void print_partitions(sos_t sos, FILE *fp, char *part_name, int show_objects)
 	if (!iter)
 		return;
 
-	fprintf(fp, "%-20s %-8s %-16s %-8s %-16s %-16s %s\n", "Partition Name", "RefCount",
-		"Status", "Size", "Modified", "Accessed", "Path");
-	fprintf(fp, "-------------------- -------- ---------------- "
-		"-------- ---------------- ---------------- ----------------\n");
+	fprintf(fp, "%-20s %-6s\n", "", "Use");
+	fprintf(fp, "%-20s %-6s %-8s %-8s %s\n",
+		"Partition Name", "Count",
+		"State", "Size", "Path");
+	fprintf(fp, "-------------------- ------ -------- "
+		"-------- ----------------\n");
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
 		if (part_name) {
 			if (0 != strcmp(sos_part_name(part), part_name))
@@ -137,7 +141,11 @@ void print_partitions(sos_t sos, FILE *fp, char *part_name, int show_objects)
 		sos_part_state_t state = sos_part_state(part);
 		if (state == SOS_PART_STATE_OFFLINE && !verbose)
 			continue;
-		fprintf(fp, "%-20s %8d ", sos_part_name(part), sos_part_refcount(part));
+		char uuid_str[37];
+		uuid_t uuid;
+		sos_part_uuid(part, uuid);
+		uuid_unparse_lower(uuid, uuid_str);
+		fprintf(fp, "%-20s %6d ", sos_part_name(part), sos_part_refcount(part));
 		switch (state) {
 		case SOS_PART_STATE_OFFLINE:
 			statestr = "OFFLINE";
@@ -154,7 +162,7 @@ void print_partitions(sos_t sos, FILE *fp, char *part_name, int show_objects)
 		default:
 			statestr = "!UNKNOWN!";
 		}
-		fprintf(fp, "%-16s ", statestr);
+		fprintf(fp, "%-8s ", statestr);
 
 		int rc = sos_part_stat(part, &sb);
 		char datestr[80];
@@ -162,17 +170,20 @@ void print_partitions(sos_t sos, FILE *fp, char *part_name, int show_objects)
 
 		if (!rc) {
 			fprintf(fp, "%8s ", pretty_file_size(sb.size));
-
+		} else
+			fprintf(fp, "%8s ", "");
+		fprintf(fp, "%s\n", sos_part_path(part));
+		if (verbose) {
+			fprintf(fp, "\tDescription : %s\n", sos_part_desc(part));
+			fprintf(fp, "\tUUID        : %s\n", uuid_str);
 			tm = localtime((const time_t *)&sb.modified);
 			strftime(datestr, sizeof(datestr), "%Y/%m/%d %H:%M", tm);
-			fprintf(fp, "%-16s ", datestr);
+			fprintf(fp, "\tModified    : %-16s\n", datestr);
 
 			tm = localtime((const time_t *)&sb.accessed);
 			strftime(datestr, sizeof(datestr), "%Y/%m/%d %H:%M", tm);
-			fprintf(fp, "%-16s ", datestr);
-		} else
-			fprintf(fp, "%42s ", "");
-		fprintf(fp, "%s\n", sos_part_path(part));
+			fprintf(fp, "\tAccessed    : %-16s\n", datestr);
+		}
 		if (show_objects) {
 			print_objects(part);
 		}

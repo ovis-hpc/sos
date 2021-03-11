@@ -698,7 +698,10 @@ static inline void map_put(ods_map_t map)
 
 	if (!ods_atomic_dec(&map->refcount)) {
 		int rc = munmap(map->data, map->map.len);
-		assert(0 == rc);
+		if (rc) {
+			ods_lerror("Error %d unmapping %p:%ld]\n",
+						errno, map->data, map->map.len);
+		}
 		if (__ods_debug) {
 			/*
 			 * DEBUG: run through the object list and ensure no
@@ -993,10 +996,10 @@ static ods_obj_t obj_new(ods_t ods, ods_ref_t ref)
 	if (!ptr)
 		return NULL;
 	obj = calloc(1, sizeof *obj);
-	if (obj) {
-		obj->ods = ods;
-		ods_atomic_inc(&ods->obj_count);
-	}
+	if (!obj)
+		return NULL;
+	obj->ods = ods;
+	ods_atomic_inc(&ods->obj_count);
 	obj->as.ptr = ptr;
 	obj->ods = ods;
 	obj->ref = ref;
@@ -1359,7 +1362,7 @@ int ods_destroy(const char *path)
 	return 0;
 }
 
-static int64_t map_cmp(void *akey, const void *bkey)
+static int64_t map_cmp(void *akey, const void *bkey, void *arg)
 {
 	struct map_key_s *amap = akey;
 	struct map_key_s const *bmap = bkey;
@@ -1375,7 +1378,7 @@ static int64_t map_cmp(void *akey, const void *bkey)
 	return 0;
 }
 
-static int64_t ref_cmp(void *akey, const void *bkey)
+static int64_t ref_cmp(void *akey, const void *bkey, void *arg)
 {
 	return (*(ods_ref_t*)akey - *(ods_ref_t*)bkey);
 }
@@ -1484,8 +1487,8 @@ ods_t ods_open(const char *path, ods_perm_t o_perm, ...)
 	pthread_mutex_init(&ods->lock, NULL);
 	LIST_INIT(&ods->obj_list);
 	ods->obj_map_sz = __ods_def_map_sz;
-	ods_rbt_init(&ods->map_tree, map_cmp);
-	ods_rbt_init(&ods->dirty_tree, ref_cmp);
+	ods_rbt_init(&ods->map_tree, map_cmp, NULL);
+	ods_rbt_init(&ods->dirty_tree, ref_cmp, NULL);
 
 	pthread_mutex_lock(&ods_list_lock);
 	cleanup_dead_locks(ods);

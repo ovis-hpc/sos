@@ -100,7 +100,7 @@ static size_t timestamp_size_fn(sos_value_t value)
 
 static size_t obj_size_fn(sos_value_t value)
 {
-	return sizeof(ods_ref_t);
+	return sizeof(union sos_obj_ref_s);
 }
 
 static size_t struct_size_fn(sos_value_t value)
@@ -224,9 +224,8 @@ static size_t timestamp_strlen_fn(sos_value_t v)
 
 static size_t obj_strlen_fn(sos_value_t v)
 {
-	return snprintf(NULL, 0, "%lu@%lx",
-			v->data->prim.ref_.ref.ods,
-			v->data->prim.ref_.ref.obj) + 1;
+	sos_obj_ref_str_t str;
+	return snprintf(NULL, 0, "%s", sos_obj_ref_to_str(v->data->prim.ref_, str)) + 1;
 }
 
 /* Value is formatted as %02X:%02X:...%02X\0 */
@@ -287,9 +286,8 @@ static size_t obj_array_strlen_fn(sos_value_t v)
 	for (i = 0; i < v->data->array.count; i++) {
 		if (i)
 			count += snprintf(NULL, 0, ",");
-		count += snprintf(NULL, 0, "%lu@%lx",
-				  v->data->array.data.ref_[i].ref.ods,
-				  v->data->array.data.ref_[i].ref.obj);
+		sos_obj_ref_str_t str;
+		count += snprintf(NULL, 0, "%s", sos_obj_ref_to_str(v->data->array.data.ref_[i], str));
 	}
  out:
 	return count;
@@ -359,9 +357,10 @@ static char *timestamp_to_str_fn(sos_value_t v, char *str, size_t len)
 
 static char *obj_to_str_fn(sos_value_t v, char *str, size_t len)
 {
+	sos_obj_ref_str_t ref_str;
 	str[0] = '\0';
-	snprintf(str, len, "%lu@%lx",
-		 v->data->prim.ref_.ref.ods, v->data->prim.ref_.ref.obj);
+	sos_obj_ref_to_str(v->data->prim.ref_, ref_str);
+	snprintf(str, len, "%s", ref_str);
 	return str;
 }
 
@@ -472,9 +471,8 @@ static char *obj_array_to_str_fn(sos_value_t v, char *str, size_t len)
 			if (!len)
 				break;
 		}
-		count = snprintf(p, len, "%lu@%lx",
-				 v->data->array.data.ref_[i].ref.ods,
-				 v->data->array.data.ref_[i].ref.obj);
+		sos_obj_ref_str_t ref_str;
+		count = snprintf(p, len, sos_obj_ref_to_str(v->data->array.data.ref_[i], ref_str));
 		if (count > len)
 			break;
 		p += count; len -= count;
@@ -607,14 +605,14 @@ int timestamp_from_str_fn(sos_value_t v, const char *value, char **endptr)
 static int obj_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
 	ods_ref_t obj_ref;
-	ods_ref_t part_ref;
+	sos_obj_ref_str_t part_ref;
 	int cnt;
-	int match = sscanf(value, "%ld@%lx%n", &part_ref, &obj_ref, &cnt);
+	int match = sscanf(value, "%s@%lx%n", part_ref, &obj_ref, &cnt);
 	if (match < 2)
 		return EINVAL;
 	if (endptr)
 		*endptr = (char *)(value + cnt);
-	v->data->prim.ref_.ref.ods = part_ref;
+	uuid_parse(part_ref, v->data->prim.ref_.ref.part_uuid);
 	v->data->prim.ref_.ref.obj = obj_ref;
 	return 0;
 }
@@ -743,23 +741,22 @@ PRIMITIVE_ARRAY_FROM_STR_FN(long_double, "%Lf", long_double_)
 
 static int obj_array_from_str_fn(sos_value_t v, const char *value, char **endptr)
 {
-	int i, cnt, match;
+	int i;
 	const char *str;
-	ods_ref_t obj_ref;
-	ods_ref_t part_ref;
+	sos_obj_ref_t ref;
+	char *end;
 
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';
-	     i++, str += cnt) {
-		match = sscanf(str, "%lu@%lx%n", &part_ref, &obj_ref, &cnt);
-		if (match < 2)
-			return EINVAL;
-		v->data->array.data.ref_[i].ref.obj = obj_ref;
-		v->data->array.data.ref_[i].ref.ods = part_ref;
-		if (str[cnt] != '\0')
-			cnt ++;	/* skip delimiter */
+	     i++, str = end) {
+		int rc = sos_obj_ref_from_str(ref, str, &end);
+		if (rc)
+			return rc;
+		v->data->array.data.ref_[i] = ref;
+		if (*end != '\0')
+			end ++;	/* skip delimiter */
 	}
 	if (endptr)
-		*endptr = (char *)str;
+		*endptr = end;
 	return 0;
 }
 

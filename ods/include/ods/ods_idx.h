@@ -71,7 +71,7 @@ typedef struct ods_pos_s {
 
 #define ODS_IDX_SIGNATURE	"ODSIDX00"
 
-#define ODS_IDX_DATA_LEN 16
+#define ODS_IDX_DATA_LEN 32
 typedef struct ods_idx_data_s {
 	union {
 		unsigned char bytes[ODS_IDX_DATA_LEN];

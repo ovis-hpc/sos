@@ -41,60 +41,61 @@
  */
 
 /**
- * \page sos_part_modify Modify the State of a Partition
+ * \page sos_part_create Create a Partition
  *
- * sos_part_modify -C <container> -s <state> <name>
+ * sos_part_create -C <container> [-s <state>] [-p <path>] part_name
  *
- * Modify the state of a partition. Valid values for the \c -s parameter
- * are: "primary", "active", and "offline".
- *
- * If the "primary" state is requested, the current primary Partition
- * is made "active" and the specified partition is made primary.
- *
- * If the "active" state is requested and the named Partition is
- * "primary", an error is returned indicating the Partition is busy.
- *
- * If the "offline" state is requested, and the Partition is "primary",
- * an error is returned indicating the Partition is busy. Otherwise,
- * all keys referring to an Object in the named Partition are removed
- * from all Indices in the Container and the Paritition is moved to
- * the "offline" state.
-
- * @param "-C PATH" The *PATH* to the Container.
- * @param "-s STATE" The *STATE* of the new partition. If not specified
- *                  The state is *offline*. Valid values are:
- *                    - *primary*
- *                    - *active*
- *                    - *offline*
- *
+ * @param "-C PATH" The *PATH* to the Container. This option is required.
+ * @param "-s STATE" The *STATE* of the new partition. This paramter is optional.
+ * The default initial state is *offline*. The STATE is one of *primary*, *active*,
+ * or *offline*.
+ * @param "-p PATH" The *PATH* to the parition. This parameter is optional. The
+ * default path is the container path.
+ * @param part_name The name of the partition.
  */
 #include <sys/time.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <getopt.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <sos/sos.h>
 
-const char *short_options = "C:s:";
+const char *short_options = "C:p:s:d:";
 
 struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},
 	{"container",   required_argument,  0,  'C'},
-	{"state",       required_argument,  0,  's'},
+	{"path",		required_argument,  0,  'p'},
+	{"state",		required_argument,  0,  's'},
+
 	{0,             0,                  0,  0}
 };
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_part_modify -C <path> -s <state> <name>\n");
-	printf("    -C <path>   The path to the container.\n");
-	printf("    -s <state>  Modify the state of a partition. Valid states are:\n"
+	printf("sos_part_attach -C <path> -p <path> [-s state] <name>\n");
+	printf("    -C <path>   The path to the container. Required for all options.\n");
+	printf("    -p <path>	Optional partition path. The container path is used by default.\n");
+	printf("    -s <state>  The initial state of a partition. Valid states are:\n"
 	       "                primary  - All new allocations go in this partition.\n"
 	       "                active   - Objects are accessible, the partition does not grow\n"
 	       "                offline  - Object references are invalid; the partition\n"
-	       "                           may be moved or deleted.\n");
-	printf("    <name>	The partition name.\n");
+	       "                           may be moved or deleted.\n"
+	       "    <name>      The partition name.\n"
+	       "     The default initial state is OFFLINE.\n");
 	exit(1);
+}
+
+int attach_part(sos_t sos, const char *name, const char *path, const char *desc)
+{
+	int rc = sos_part_attach(sos, name, path);
+	if (rc) {
+		fprintf(stderr, "sos_part_attach: The partition could not be created, error %s\n", strerror(rc));
+		exit(1);
+	}
+	return rc;
 }
 
 void modify_part(sos_t sos, const char *name, const char *state)
@@ -102,38 +103,45 @@ void modify_part(sos_t sos, const char *name, const char *state)
 	sos_part_t part;
 	int rc = ENOENT;
 
+	if (!state) {
+		printf("A state string must be specified.\n");
+		return;
+	}
+
 	part = sos_part_by_name(sos, name);
 	if (!part) {
-		printf("The partition '%s' was not found.", name);
+		printf("The partition '%s' was not found\n", name);
 		return;
 	}
 	rc = 0;
+	sos_part_state_t new_state;
 	if (0 == strcasecmp(state, "active")) {
-		rc = sos_part_state_set(part, SOS_PART_STATE_ACTIVE);
-		if (rc) {
-			errno = rc;
-			perror("Error enabling the partition");
-		}
+		new_state = SOS_PART_STATE_ACTIVE;
 	} else if (0 == strcasecmp(state, "offline")) {
-		rc = sos_part_state_set(part, SOS_PART_STATE_OFFLINE);
-		if (rc) {
-			errno = rc;
-			perror("Error disabling the partition");
-		}
+		new_state = SOS_PART_STATE_OFFLINE;
 	} else if (0 == strcasecmp(state, "primary")) {
-		sos_part_state_set(part, SOS_PART_STATE_PRIMARY);
+		new_state = SOS_PART_STATE_PRIMARY;
 	} else {
-		printf("The state string '%s is invalid.\n", state);
+		printf("The state string '%s' is not recognized.\n", state);
+		goto out;
 	}
+	rc = sos_part_state_set(part, new_state);
+	if (rc) {
+		fprintf(stderr, "Error %s changing partition %s to state %s\n",
+			strerror(rc), name, state);
+	}
+out:
 	sos_part_put(part);
 }
 
 int main(int argc, char **argv)
 {
 	char *cont_path = NULL;
+	char *part_path = NULL;
 	char *name = NULL;
 	char *state = NULL;
-	int o;
+	char *desc = "";
+	int o, rc;
 	sos_t sos;
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (o) {
@@ -143,23 +151,33 @@ int main(int argc, char **argv)
 		case 's':
 			state = strdup(optarg);
 			break;
+		case 'p':
+			part_path = strdup(optarg);
+			break;
 		case '?':
 		default:
 			usage(argc, argv);
 		}
 	}
-	if (!cont_path || !state)
-		usage(argc, argv);
-
-	if (optind == argc)
+	if (!cont_path || argc == optind)
 		usage(argc, argv);
 	name = strdup(argv[optind]);
+
 	sos = sos_container_open(cont_path, SOS_PERM_RW);
 	if (!sos) {
 		printf("Error %d opening the container %s.\n",
 		       errno, cont_path);
 		exit(1);
 	}
-	modify_part(sos, name, state);
+
+	rc = attach_part(sos, name, part_path, desc);
+	if (rc)
+		exit(1);
+	if (state) {
+		modify_part(sos, name, state);
+		free(state);
+	}
+	free(cont_path);
+	free(name);
 	return 0;
 }

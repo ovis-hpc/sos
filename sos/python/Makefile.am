@@ -20,7 +20,7 @@ dist_bin_SCRIPTS = sos-db sos-part sos-schema sos-import-csv sos-monitor
 
 Sos.c: Sos.pyx Sos.pxd
 	echo PYTHON_LDFLAGS are "$(PYTHON_LDFLAGS)"
-	cython -3 --directive language_level=3 $< -o $@
+	cython -3 --gdb --directive language_level=3 $< -o $@
 
 clean-local:
 	rm -f Sos.c

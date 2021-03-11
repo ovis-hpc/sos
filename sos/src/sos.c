@@ -152,6 +152,29 @@ LIST_HEAD(cont_list_head, sos_container_s) cont_list;
 pthread_mutex_t cont_list_lock;
 pthread_mutex_t _sos_log_lock;
 
+char *sos_obj_ref_to_str(sos_obj_ref_t ref, sos_obj_ref_str_t str)
+{
+	char uuid_str[37];
+	uuid_unparse_lower(ref.ref.part_uuid, uuid_str);
+	(void)snprintf(str, sizeof(sos_obj_ref_str_t), "%s@%p", uuid_str, (void *)ref.ref.obj);
+	return str;
+}
+
+int sos_obj_ref_from_str(sos_obj_ref_t ref, const char *value, char **endptr)
+{
+	ods_ref_t obj_ref;
+	sos_obj_ref_str_t part_ref;
+	int cnt;
+	int match = sscanf(value, "%s@%lx%n", part_ref, &obj_ref, &cnt);
+	if (match < 2)
+		return EINVAL;
+	if (endptr)
+		*endptr = (char *)(value + cnt);
+	uuid_parse(part_ref, ref.ref.part_uuid);
+	ref.ref.obj = obj_ref;
+	return 0;
+}
+
 /**
  * \page container_overview Containers
  *
@@ -245,92 +268,12 @@ int __sos_make_all_dir(const char *inp_path, mode_t omode)
 	return retval;
 }
 
-static int __create_pos_info(char *tmp_path, const char *path, int o_mode)
-{
-	int rc;
-	ods_obj_t udata;
-	ods_t pos_ods;
-
-	/* Create the ODS to contain the position objects */
-	pos_ods = ods_open(tmp_path, ODS_PERM_RW|ODS_PERM_CREAT, o_mode);
-	if (!pos_ods)
-		goto err_0;
-
-	/* Initialize the index dictionary */
-	udata = ods_get_user_data(pos_ods);
-	if (!udata) {
-		rc = errno;
-		goto err_1;
-	}
-
-	SOS_POS_UDATA(udata)->signature = SOS_POS_SIGNATURE;
-	SOS_POS_UDATA(udata)->lock = 0;
-	ods_obj_put(udata);
-	ods_close(pos_ods, ODS_COMMIT_ASYNC);
-
-	/* Create the index to look up positions */
-	sprintf(tmp_path, "%s/.__pos_idx", path);
- 	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "UINT32", NULL);
- 	if (rc)
- 		goto err_1;
-	return 0;
-
- err_1:
-	ods_close(pos_ods, ODS_COMMIT_ASYNC);
-	sprintf(tmp_path, "%s/.__pos", path);
-	ods_destroy(tmp_path);
- err_0:
-	return rc;
-}
-
-struct pos_ent_s {
-	char name[SOS_INDEX_NAME_LEN];
-	sos_pos_t pos;
-	LIST_ENTRY(pos_ent_s) entry;
-};
-
 struct idx_ent_s {
 	char name[SOS_INDEX_NAME_LEN];
 	sos_index_t idx;
 	sos_iter_t iter;
 	struct ods_rbn rbn;
 };
-
-static int __open_pos_info(sos_t sos, char *tmp_path, char *path)
-{
-	int rc = 0;
-	sprintf(tmp_path, "%s/.__pos", path);
-	sos->pos_ods = ods_open(tmp_path, ODS_PERM_RW);
-	if (!sos->pos_ods) {
-		int rc = __create_pos_info(tmp_path, path, sos->o_mode);
-		if (rc)
-			goto err;
-		sprintf(tmp_path, "%s/.__pos", path);
-		sos->pos_ods = ods_open(tmp_path, sos->o_perm);
-		if (!sos->pos_ods) {
-			rc = errno;
-			goto err;
-		}
-	}
-
-	/* Get the position object user data */
-	sos->pos_udata = ods_get_user_data(sos->pos_ods);
-	if (SOS_POS_UDATA(sos->pos_udata)->signature != SOS_POS_SIGNATURE) {
-		rc = EINVAL;
-		goto err;
-	}
-
-	/* Open the index on the position objects */
-	sprintf(tmp_path, "%s/.__pos_idx", path);
-	sos->pos_idx = ods_idx_open(tmp_path, ODS_PERM_RW);
-	if (!sos->pos_idx) {
-		rc = errno;
-		goto err;
-	}
-	rc = 0;
- err:
-	return rc;
-}
 
 /** \defgroup container SOS Storage Containers
  * @{
@@ -420,22 +363,14 @@ static int __sos_container_new(const char *path, int o_mode)
 		ods_close(part_ods, ODS_COMMIT_ASYNC);
 		goto err_4;
 	}
-	SOS_PART_UDATA(udata)->signature = SOS_PART_SIGNATURE;
-	SOS_PART_UDATA(udata)->primary = 0;
-	SOS_PART_UDATA(udata)->head = 0;
-	SOS_PART_UDATA(udata)->tail = 0;
-	SOS_PART_UDATA(udata)->lock = 0;
-	SOS_PART_UDATA(udata)->next_part_id = 1;
-	SOS_PART_UDATA(udata)->gen = 1;
+	SOS_PART_REF_UDATA(udata)->signature = SOS_PART_REF_SIGNATURE;
+	SOS_PART_REF_UDATA(udata)->primary = 0;
+	SOS_PART_REF_UDATA(udata)->head = 0;
+	SOS_PART_REF_UDATA(udata)->tail = 0;
+	SOS_PART_REF_UDATA(udata)->lock = 0;
 
 	ods_obj_put(udata);
 	ods_close(part_ods, ODS_COMMIT_SYNC);
-
-	/* Default configuration is to disable partition rotation */
-	rc = sos_container_config_set(path, "POS_KEEP_TIME",
-				      stringify(SOS_POS_KEEP_TIME_DEFAULT));
-	if (rc)
-		goto err_4;
 
  	/* Create the ODS to contain the schema objects */
 	sprintf(tmp_path, "%s/.__schemas", path);
@@ -485,16 +420,7 @@ static int __sos_container_new(const char *path, int o_mode)
  	if (rc)
  		goto err_7;
 
-	/* Create the ODS to contain the position objects */
-	sprintf(tmp_path, "%s/.__pos", path);
-	rc = __create_pos_info(tmp_path, path, o_mode);
-	if (rc)
-		goto err_8;
-
 	return 0;
- err_8:
-	sprintf(tmp_path, "%s/.__index_idx", path);
-	ods_destroy(tmp_path);
  err_7:
 	sprintf(tmp_path, "%s/.__index", path);
 	ods_destroy(tmp_path);
@@ -568,7 +494,7 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 	/* Commit the object ods */
 	sos_part_t part;
 	TAILQ_FOREACH(part, &sos->part_list, entry)
-		if (SOS_PART(part->part_obj)->state & SOS_PART_STATE_ACTIVE)
+		if (part->obj_ods)
 			ods_commit(part->obj_ods, commit);
 
 	/* Commit all the attribute indices */
@@ -583,15 +509,29 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 	return 0;
 }
 
+/**
+ * @brief Return storage utilization information about an index
+ *
+ * @param index The index handle
+ * @param fp Pointer to a FILE into which data will be dumped
+ */
 void sos_index_info(sos_index_t index, FILE *fp)
 {
-	ods_idx_info(index->idx, fp);
-	ods_info(ods_idx_ods(index->idx), fp, ODS_ALL_INFO);
+	ods_idx_info(index->primary_idx, fp);
+	ods_info(ods_idx_ods(index->primary_idx), fp, ODS_ALL_INFO);
 }
 
+/**
+ * @brief Verify the internal consistency of an index
+ *
+ * @param index The index handle
+ * @param fp A FILE pointer into which error information is reported
+ * @returns 0 The index is consistent
+ * @returns Consult \c fp for error message(s)
+ */
 int sos_index_verify(sos_index_t index, FILE *fp)
 {
-	return ods_idx_verify(index->idx, fp);
+	return ods_idx_verify(index->primary_idx, fp);
 }
 
 int print_schema(struct ods_rbn *n, void *fp_, int level)
@@ -705,10 +645,9 @@ void sos_inuse_obj_info(sos_t sos, FILE *outp)
 	fprintf(outp, "%-10s %-12s %s\n", "Ref Count", "Obj Ref", "Schema");
 	fprintf(outp, "---------- ------------ ------------\n");
 	LIST_FOREACH(obj, &sos->obj_list, entry) {
-		char ref_str[32];
-		sprintf(ref_str, "%p@%p", (void*)obj->obj_ref.ref.ods, (void*)obj->obj_ref.ref.obj);
+		sos_obj_ref_str_t ref_str;
 		fprintf(outp, "%10d %-12s %s\n",
-			obj->ref_count, ref_str, obj->schema->data->name);
+			obj->ref_count, sos_obj_ref_to_str(obj->obj_ref, ref_str), obj->schema->data->name);
 	}
 	fprintf(outp, "---------- ------------ ------------\n");
 }
@@ -722,10 +661,9 @@ void sos_free_obj_info(sos_t sos, FILE *outp)
 	fprintf(outp, "%-10s %-12s %s\n", "Ref Count", "Obj Ref", "Schema");
 	fprintf(outp, "---------- ------------ ------------\n");
 	LIST_FOREACH(obj, &sos->obj_free_list, entry) {
-		char ref_str[32];
-		sprintf(ref_str, "%p@%p", (void*)obj->obj_ref.ref.ods, (void*)obj->obj_ref.ref.obj);
+		sos_obj_ref_str_t ref_str;
 		fprintf(outp, "%10d %-12s %s\n",
-			obj->ref_count, ref_str, obj->schema->data->name);
+			obj->ref_count, sos_obj_ref_to_str(obj->obj_ref, ref_str), obj->schema->data->name);
 	}
 	fprintf(outp, "---------- ------------ ------------\n");
 }
@@ -768,137 +706,34 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		ods_obj_put(sos->idx_udata);
 	if (sos->idx_ods)
 		ods_close(sos->idx_ods, flags);
-	if (sos->pos_udata)
-		ods_obj_put(sos->pos_udata);
-	if (sos->pos_idx)
-		ods_idx_close(sos->pos_idx, flags);
-	if (sos->pos_ods)
-		ods_close(sos->pos_ods, flags);
 	sos_part_t part;
 	while (!TAILQ_EMPTY(&sos->part_list)) {
 		part = TAILQ_FIRST(&sos->part_list);
 		TAILQ_REMOVE(&sos->part_list, part, entry);
-		sos_part_put(part); /* the list reference */
+		sos_ref_put(&part->ref_count, "part_list");
 	}
-	if (sos->part_udata)
-		ods_obj_put(sos->part_udata);
-	if (sos->part_ods)
-		ods_close(sos->part_ods, flags);
+	if (sos->part_ref_udata)
+		ods_obj_put(sos->part_ref_udata);
+	if (sos->part_ref_ods)
+		ods_close(sos->part_ref_ods, flags);
 	pthread_mutex_destroy(&sos->lock);
 	free(sos);
 }
 
-int64_t __sos_schema_name_cmp(void *a, const void *b)
+int64_t __sos_schema_name_cmp(void *a, const void *b, void *arg)
 {
 	return strcmp((char *)a, (char *)b);
 }
 
-static int64_t schema_id_cmp(void *a, const void *b)
+static int64_t schema_id_cmp(void *a, const void *b, void *arg)
 {
-	return *(uint32_t *)a - *(uint32_t *)b;
-}
-
-/* Iterates over pos objects in the container and deletes objects that
- * are older than the lifetime threshold
- */
-static void __pos_cleanup(sos_t sos)
-{
-	int rc;
-	struct ods_rbt index_rbt;
-	struct ods_rbn *rbn;
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	struct pos_ent_s *pos_ent;
-	struct idx_ent_s *idx_ent;
-
-	/* Best effort clean-up any position objects older than an hour */
-	ods_iter_t it = ods_iter_new(sos->pos_idx);
-	if (!it)
-		return;
-
-	LIST_HEAD(pos_ent_list, pos_ent_s) pos_list =
-		LIST_HEAD_INITIALIZER(pos_list);
-
-	ods_lock(sos->pos_ods, 0, NULL);
-	for (rc = ods_iter_begin(it); rc == 0; rc = ods_iter_next(it)) {
-		ods_idx_data_t data;
-		ods_obj_t pos_obj;
-		data = ods_iter_data(it);
-		pos_obj = ods_ref_as_obj(sos->pos_ods, data.uint64_[0]);
-		if (pos_obj) {
-			sos_debug("key %08x secs %d usecs %d\n",
-				  SOS_POS(pos_obj)->key,
-				  SOS_POS(pos_obj)->create_secs,
-				  SOS_POS(pos_obj)->create_usecs
-				  );
-			if ((tv.tv_sec - SOS_POS(pos_obj)->create_secs)
-			    > sos->config.pos_keep_time) {
-				sos_debug("key %08x will be deleted\n", SOS_POS(pos_obj)->key);
-				pos_ent = malloc(sizeof *pos_ent);
-				if (!pos_ent) {
-					sos_error("OOM @ %s:%d\n", __func__, __LINE__);
-				} else {
-					pos_ent->pos = SOS_POS(pos_obj)->key;
-					strncpy(pos_ent->name, SOS_POS(pos_obj)->name,
-						SOS_INDEX_NAME_LEN);
-					LIST_INSERT_HEAD(&pos_list, pos_ent, entry);
-				}
-			}
-			ods_obj_put(pos_obj);
-		}
-	}
-	ods_rbt_init(&index_rbt, __sos_schema_name_cmp);
-	while (!LIST_EMPTY(&pos_list)) {
-		pos_ent = LIST_FIRST(&pos_list);
-		LIST_REMOVE(pos_ent, entry);
-		/* See if we have the index open already */
-		rbn = ods_rbt_find(&index_rbt, pos_ent->name);
-		if (!rbn) {
-			idx_ent = malloc(sizeof *idx_ent);
-			if (!idx_ent) {
-				sos_error("OOM @ %s:%d\n", __func__, __LINE__);
-				continue;
-			}
-			/* Get the index this pos entry is for */
-			sos_index_t idx = sos_index_open(sos, pos_ent->name);
-			if (!idx) {
-				sos_error("The index %s for pos %08x could not be opened.\n",
-					  pos_ent->name, pos_ent->pos);
-				free(pos_ent);
-				continue;
-			}
-			sos_iter_t iter = sos_index_iter_new(idx);
-			if (!iter) {
-				sos_error("An iterator for index %s could not be created, errno %d.\n",
-					  pos_ent->name, errno);
-				sos_index_close(idx, SOS_COMMIT_ASYNC);
-				free(idx_ent);
-				free(pos_ent);
-				continue;
-			}
-			strcpy(idx_ent->name, pos_ent->name);
-			idx_ent->idx = idx;
-			idx_ent->iter = iter;
-			ods_rbn_init(&idx_ent->rbn, idx_ent->name);
-			ods_rbt_ins(&index_rbt, &idx_ent->rbn);
-			rbn = &idx_ent->rbn;
-		}
-		idx_ent = container_of(rbn, struct idx_ent_s, rbn);
-		/* Put the SOS position */
-		sos_iter_pos_put_no_lock(idx_ent->iter, pos_ent->pos);
-		free(pos_ent);
-	}
-	rbn = ods_rbt_min(&index_rbt);
-	while (rbn) {
-		idx_ent = container_of(rbn, struct idx_ent_s, rbn);
-		sos_iter_free(idx_ent->iter);
-		sos_index_close(idx_ent->idx, SOS_COMMIT_ASYNC);
-		ods_rbt_del(&index_rbt, rbn);
-		free(idx_ent);
-		rbn = ods_rbt_min(&index_rbt);
-	}
-	ods_iter_delete(it);
-	ods_unlock(sos->pos_ods, 0);
+	uint32_t _a = *(uint32_t *)a;
+	uint32_t _b = *(uint32_t *)b;
+	if (_a < _b)
+		return -1;
+	if (_a > _b)
+		return 1;
+	return 0;
 }
 
 struct sos_version_s sos_container_version(sos_t sos)
@@ -1021,8 +856,8 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 
 	sos->o_mode = sb.st_mode;
 	sos->o_perm = (ods_perm_t)o_perm;
-	ods_rbt_init(&sos->schema_name_rbt, __sos_schema_name_cmp);
-	ods_rbt_init(&sos->schema_id_rbt, schema_id_cmp);
+	ods_rbt_init(&sos->schema_name_rbt, __sos_schema_name_cmp, NULL);
+	ods_rbt_init(&sos->schema_id_rbt, schema_id_cmp, NULL);
 	sos->schema_count = 0;
 
 	rc = __sos_config_init(sos);
@@ -1056,13 +891,6 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	if (!sos->idx_idx) {
 		sos_error("Error %d opening index index in open of %s\n", errno, path_arg);
 		ods_obj_put(sos->idx_udata);
-		goto err;
-	}
-
-	/* Open the ODS containing the Position objects */
-	rc = __open_pos_info(sos, tmp_path, path);
-	if (rc) {
-		sos_error("Error %d opening the pos container %s\n", rc, path);
 		goto err;
 	}
 
@@ -1127,20 +955,24 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	}
 
 	ods_iter_delete(iter);
-	__pos_cleanup(sos);
 
 	pthread_mutex_lock(&cont_list_lock);
 	LIST_INSERT_HEAD(&cont_list, sos, entry);
 	pthread_mutex_unlock(&cont_list_lock);
 
 	if (need_part) {
-		rc = sos_part_create(sos, "default", NULL);
+		snprintf(tmp_path, sizeof(tmp_path), "%s/default", path_arg);
+		rc = sos_part_create(tmp_path, "default container partition", o_mode);
 		if (rc)
 			goto err;
-		sos_part_t part = sos_part_find(sos, "default");
+		rc = sos_part_attach(sos, "default", tmp_path);
+		if (rc)
+			goto err;
+		sos_part_t part = sos_part_by_name(sos, "default");
 		if (!part)
 			goto err;
 		rc = sos_part_state_set(part, SOS_PART_STATE_PRIMARY);
+		sos_part_put(part);
 		if (rc)
 			goto err;
 	}
@@ -1237,15 +1069,15 @@ int sos_container_move(const char *path_arg, const char *new_path)
 		goto out_1;
 
 	rc = 0;
-	part_obj = ods_ref_as_obj(part_ods, SOS_PART_UDATA(part_udata)->head);
+	part_obj = ods_ref_as_obj(part_ods, SOS_PART_REF_UDATA(part_udata)->head);
 	if (!part_obj)
 		goto out_2;
 
 	while (part_obj) {
-		strcpy(SOS_PART(part_obj)->path, new_path);
+		strcpy(SOS_PART_REF(part_obj)->path, new_path);
 		ods_obj_put(part_obj);
 
-		next_ref = SOS_PART(part_obj)->next;
+		next_ref = SOS_PART_REF(part_obj)->next;
 		part_obj = ods_ref_as_obj(part_ods, next_ref);
 	}
 
@@ -1288,13 +1120,44 @@ int sos_container_stat(sos_t sos, struct stat *sb)
  */
 void sos_container_close(sos_t sos, sos_commit_t flags)
 {
-	__pos_cleanup(sos);
-
 	pthread_mutex_lock(&cont_list_lock);
 	LIST_REMOVE(sos, entry);
 	pthread_mutex_unlock(&cont_list_lock);
 
 	free_sos(sos, SOS_COMMIT_ASYNC);
+}
+
+/**
+ * @brief Clone a thin copy of the container
+ *
+ * Create a new container with all of the schema from the container
+ *
+ * @param sos The container handle
+ * @param path The location of the clone
+ * @retval EINUSE The \c path is in use
+ * @retval ENOMEM The filesystem is full
+ */
+int sos_container_clone(sos_t sos, const char *path)
+{
+	int rc;
+	sos_t clone = sos_container_open(path, SOS_PERM_RW | SOS_PERM_CREAT, sos->o_mode);
+	if (!clone)
+		return errno;
+
+	sos_schema_t schema;
+	for (schema = sos_schema_first(sos); schema; schema = sos_schema_next(schema)) {
+		sos_schema_t copy = sos_schema_dup(schema);
+		if (!copy) {
+			rc = errno;
+			goto out;
+		}
+		rc = sos_schema_add(clone, copy);
+		if (rc)
+			goto out;
+	}
+out:
+	sos_container_close(clone, SOS_COMMIT_ASYNC);
+	return rc;
 }
 
 /*
@@ -1307,8 +1170,9 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 
 	/* Verify the reference provided */
 	if (!ods_ref_valid(ods_obj->ods, obj_ref.ref.obj)) {
-		sos_error("Invalid object reference %p:%p",
-			  obj_ref.ref.ods, obj_ref.ref.obj);
+		sos_obj_ref_str_t ref_str;
+		sos_error("Invalid object reference %s",
+			sos_obj_ref_to_str(obj_ref, ref_str));
 		return NULL;
 	}
 	if (!LIST_EMPTY(&sos->obj_free_list)) {
@@ -1338,18 +1202,6 @@ sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
 	sos_obj = __sos_init_obj_no_lock(sos, schema, ods_obj, obj_ref);
 	pthread_mutex_unlock(&sos->lock);
 	return sos_obj;
-}
-
-/* Must be called with sos->lock held */
-sos_part_t __sos_container_part_find(sos_t sos, const char *name)
-{
-	sos_part_t part = NULL;
-	TAILQ_FOREACH(part, &sos->part_list, entry) {
-		if (0 == strcmp(name, SOS_PART(part->part_obj)->name))
-			goto out;
-	}
- out:
-	return part;
 }
 
 /**
@@ -1388,7 +1240,7 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 	if (!ods_obj)
 		goto err_0;
 	memset(ods_obj->as.ptr, 0, schema->data->obj_sz);
-	obj_ref.ref.ods = SOS_PART(part->part_obj)->part_id;
+	uuid_copy(obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 	obj_ref.ref.obj = ods_obj_ref(ods_obj);
 	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj, obj_ref);
 	if (!sos_obj)
@@ -1464,7 +1316,7 @@ int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 }
 
 static sos_obj_ref_t NULL_REF = {
-	.ref = { 0, 0 }
+	.ref = { { 0 }, 0 }
 };
 
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj)
@@ -1474,21 +1326,9 @@ sos_obj_ref_t sos_obj_ref(sos_obj_t obj)
 	return obj->obj_ref;
 }
 
-ods_t __sos_ods_from_ref(sos_t sos, ods_ref_t ref)
-{
-	sos_part_t part;
-	TAILQ_FOREACH(part, &sos->part_list, entry) {
-		if (ref == SOS_PART(part->part_obj)->part_id)
-			goto found;
-	}
-	return NULL;
- found:
-	return part->obj_ods;
-}
-
 static int ref_is_null(sos_obj_ref_t ref)
 {
-	return ((ref.ref.ods == 0) && (ref.ref.obj == 0));
+	return (uuid_is_null(ref.ref.part_uuid) && (ref.ref.obj == 0));
 }
 
 /**
@@ -1510,13 +1350,16 @@ sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref)
 	if (ref_is_null(ref))
 		return NULL;
 
-	ods_t ods = __sos_ods_from_ref(sos, ref.ref.ods);
-	if (!ods)
+	sos_part_t part = __sos_part_find_by_uuid(sos, ref.ref.part_uuid);
+	if (!part) {
+		errno = ENOENT;
 		return NULL;
-
-	ods_obj = ods_ref_as_obj(ods, ref.ref.obj);
-	if (!ods_obj)
+	}
+	ods_obj = ods_ref_as_obj(part->obj_ods, ref.ref.obj);
+	if (!ods_obj) {
+		errno = ENOENT;
 		return NULL;
+	}
 
 	/* Get the schema id from the SOS object */
 	sos_obj_data_t sos_obj = ods_obj->as.ptr;
@@ -1527,6 +1370,7 @@ sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref)
 	return __sos_init_obj(sos, schema, ods_obj, ref);
 }
 
+#if 0
 /**
  * \brief  Return the object associated with the value
  *
@@ -1550,7 +1394,7 @@ sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val)
 
 	return sos_ref_as_obj(sos, ref_val->data->prim.ref_);
 }
-
+#endif
 /**
  * \brief Returns an Object's schema
  * \param obj The object handle
@@ -1686,7 +1530,7 @@ int sos_obj_remove(sos_obj_t obj)
 			return ENOMEM;
 		}
 		ods_key_set(key, sos_value_as_key(value), key_sz);
-		rc = ods_idx_delete(index->idx, key, &obj->obj_ref.idx_data);
+		rc = ods_idx_delete(index->primary_idx, key, &obj->obj_ref.idx_data);
 		sos_key_put(key);
 		sos_value_put(value);
 		if (rc)

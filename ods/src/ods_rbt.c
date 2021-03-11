@@ -118,13 +118,15 @@ static void rotate_right(struct ods_rbt *t, struct ods_rbn *x)
  * \brief Initialize an ODS_RBT.
  *
  * \param t	Pointer to the ODS_RBT.
- * \param c	Pointer to the function that compares nodes in the
+ * \param cmp	Pointer to the function that compares nodes in the
  *		ODS_RBT.
+ * \param cmp_arg Additional argument to pass to the comparator function
  */
-void ods_rbt_init(struct ods_rbt *t, ods_rbn_comparator_t c)
+void ods_rbt_init(struct ods_rbt *t, ods_rbn_comparator_t cmp, void *cmp_arg)
 {
 	t->root = NULL;
-	t->comparator = c;
+	t->comparator = cmp;
+	t->comparator_arg = cmp_arg;
 	t->card = 0;
 }
 
@@ -157,6 +159,24 @@ void ods_rbn_init(struct ods_rbn *n, void *key)
 }
 
 /**
+ * @brief Compare the keys of two RBN
+ *
+ * Use the tree's configured comparator to compare two
+ * RBN from the tree \c t.
+ *
+ * @param t The tree handle
+ * @param a The RBN pointer
+ * @param b An RBN pointer
+ * @return <0 if a->key < b->key
+ * @return =0 if a->key == b->key
+ * @return >0 if a->key > b->key
+ */
+int64_t ods_rbn_cmp(struct ods_rbt *t, struct ods_rbn *a, struct ods_rbn *b)
+{
+	return t->comparator(a->key, b->key, t->comparator_arg);
+}
+
+/**
  * \brief Insert a new node into the ODS_RBT.
  *
  * Insert a new node into a ODS_RBT. The node is allocated by the user and
@@ -171,7 +191,7 @@ void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *x)
 {
 	struct ods_rbn *parent = NULL;
 	struct ods_rbn *n;
-	int c = 0;
+	int64_t c = 0;
 
 	t->card += 1;
 
@@ -190,7 +210,7 @@ void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *x)
 	x->color = ODS_RBN_RED;
 	for (n = t->root; n; ) {
 		parent = n;
-		c = t->comparator(n->key, x->key);
+		c = t->comparator(n->key, x->key, t->comparator_arg);
 		if (c > 0)
 			n = n->left;
 		else
@@ -299,8 +319,8 @@ struct ods_rbn *ods_rbt_find_glb(struct ods_rbt *t, const void *key)
 	struct ods_rbn *glb = NULL;
 
 	for (x = t->root; x; ) {
-		int c;
-		c = t->comparator(x->key, key);
+		int64_t c;
+		c = t->comparator(x->key, key, t->comparator_arg);
 		if (!c)
 			return x;
 		if (c > 0) {
@@ -343,8 +363,8 @@ struct ods_rbn *ods_rbt_find_lub(struct ods_rbt *t, const void *key)
 	struct ods_rbn *lub = NULL;
 
 	for (x = t->root; x; ) {
-		int c;
-		c = t->comparator(x->key, key);
+		int64_t c;
+		c = t->comparator(x->key, key, t->comparator_arg);
 		if (!c)
 			return x;
 		if (c < 0) {
@@ -370,8 +390,8 @@ struct ods_rbn *ods_rbt_find(struct ods_rbt *t, const void *key)
 	struct ods_rbn *x;
 
 	for (x = t->root; x; ) {
-		int c;
-		c = t->comparator(x->key, key);
+		int64_t c;
+		c = t->comparator(x->key, key, t->comparator_arg);
 		if (!c)
 			return x;
 
@@ -619,9 +639,11 @@ static int __ods_rbn_print(struct ods_rbn *ods_rbn, void *fn_data, int level)
 	return 0;
 }
 
-void ods_rbt_print(struct ods_rbt *t)
+void ods_rbt_print(struct ods_rbt *t, ods_rbn_printer_t rbn_printer, void *arg)
 {
-	ods_rbt_traverse(t, __ods_rbn_print, NULL);
+	if (!rbn_printer)
+		rbn_printer = __ods_rbn_print;
+	ods_rbt_traverse(t, rbn_printer, arg);
 }
 
 static void delete_case1(struct ods_rbt *t, struct ods_rbn *n);
@@ -656,9 +678,9 @@ void ods_rbt_del(struct ods_rbt *t, struct ods_rbn * n)
 			/*
 			 *            R           R
 			 *             \           \
-			 *		N           Pr
+			 *              N           Pr
 			 *             / \         / \
-			 *	      L   R  ==>  L   R
+			 *            L   R  ==>  L   R
 			 *           / \         / \
 			 *          X   Pr      X   N
 			 *             /           /
@@ -700,9 +722,9 @@ void ods_rbt_del(struct ods_rbt *t, struct ods_rbn * n)
 			/*
 			 *            R           R
 			 *             \           \
-			 *		N           Pr
+			 *              N           Pr
 			 *             / \         / \
-			 *	      Pr  R  ==>  N   R
+			 *            Pr  R  ==>  N   R
 			 *           / \         /
 			 *          X   -       X
 			 */
@@ -1004,7 +1026,7 @@ struct test_key {
 	int ord;
 };
 
-int test_comparator(void *a, const void *b)
+int test_comparator(void *a, const void *b, void *arg)
 {
 	int64_t ai = *(int64_t *)a;
 	int64_t bi = *(int64_t *)b;
@@ -1044,7 +1066,7 @@ int main(int argc, char *argv[])
 	iter_count = atoi(argv[2]);
 	keys = calloc(key_count, sizeof(struct test_key*));
 
-	ods_rbt_init(&ods_rbtB, test_comparator);
+	ods_rbt_init(&ods_rbtB, test_comparator, NULL);
 
 	/*
 	 * Test Duplicates
@@ -1128,7 +1150,7 @@ int main(int argc, char *argv[])
 		TEST_ASSERT((ods_rbn != NULL), "%ld found.\n", kv);
 	}
 	srandom(t);
-	ods_rbt_init(&ods_rbt, test_comparator);
+	ods_rbt_init(&ods_rbt, test_comparator, NULL);
 	key_count = atoi(argv[1]);
 	while (key_count--) {
 		struct test_key *k = calloc(1, sizeof *k);
@@ -1167,7 +1189,7 @@ int main(int argc, char *argv[])
 		    "Delete %d and make certain it's not found.\n", max);
 	int test_iter = 0;
 	while (test_iter < iter_count) {
-		ods_rbt_init(&ods_rbt, test_comparator);
+		ods_rbt_init(&ods_rbt, test_comparator, NULL);
 		/* Generate batch of random keys */
 		srandom(time(NULL));
 		key_count = atoi(argv[1]);

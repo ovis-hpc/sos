@@ -236,6 +236,10 @@ cdef extern from "ods/ods.h":
     cdef struct ods_obj_s:
         ods_obj_type_u as
 
+cdef extern from "uuid/uuid.h":
+    ctypedef char uuid_t[16];
+    void uuid_unparse(uuid_t, char *)
+
 cdef extern from "sos/sos.h":
 
     cdef struct sos_attr_s
@@ -290,7 +294,7 @@ cdef extern from "sos/sos.h":
     ctypedef ods_idx_data_t sos_idx_data_t
 
     cdef struct sos_idx_ref_s:
-        ods_ref_t ods
+        uuid_t part_uuid
         ods_ref_t obj
 
     cdef union sos_obj_ref_s:
@@ -508,24 +512,27 @@ cdef extern from "sos/sos.h":
         pass
     ctypedef sos_part_s *sos_part_t
 
-    int sos_part_create(sos_t sos, const char *name, const char *path)
-    int sos_part_delete(sos_part_t part)
+    sos_part_t sos_part_open(const char *path, int o_perm, int o_mode, const char *desc)
+    int sos_part_attach(sos_t sos, const char *name, const char *path)
+    int sos_part_detach(sos_part_t part)
+    int sos_part_destroy(char *path)
     int sos_part_move(sos_part_t part, const char *part_path)
-    sos_part_t sos_part_find(sos_t sos, const char *name)
+    sos_part_t sos_part_by_name(sos_t sos, const char *name)
+    sos_part_t sos_part_by_path(sos_t sos, const char *path)
+
     sos_part_iter_t sos_part_iter_new(sos_t sos)
     void sos_part_iter_free(sos_part_iter_t iter)
     sos_part_t sos_part_first(sos_part_iter_t iter)
     sos_part_t sos_part_next(sos_part_iter_t iter)
     const char *sos_part_name(sos_part_t part)
     const char *sos_part_path(sos_part_t part)
-    uint32_t sos_part_id(sos_part_t part)
+    const char *sos_part_desc(sos_part_t part)
+    void sos_part_uuid(sos_part_t part, uuid_t uuid)
     sos_part_state_t sos_part_state(sos_part_t part)
     int sos_part_state_set(sos_part_t part, sos_part_state_t state)
     uint32_t sos_part_refcount(sos_part_t part)
     void sos_part_put(sos_part_t part)
     int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
-    uint64_t sos_part_export(sos_part_t src_part, sos_t dst_sos, int reindex)
-    uint64_t sos_part_index(sos_part_t part)
     ctypedef int (*sos_part_obj_iter_fn_t)(sos_part_t part, sos_obj_t obj, void *arg)
     cdef struct sos_part_obj_iter_pos_s:
         pass
@@ -621,8 +628,8 @@ cdef extern from "sos/sos.h":
     sos_obj_t sos_index_find(sos_index_t index, sos_key_t key)
     sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key)
     sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key)
-    sos_obj_t sos_index_find_max(sos_index_t index)
-    sos_obj_t sos_index_find_min(sos_index_t index)
+    sos_obj_t sos_index_find_max(sos_index_t index, sos_key_t *pkey)
+    sos_obj_t sos_index_find_min(sos_index_t index, sos_key_t *pkey)
     int sos_index_commit(sos_index_t index, sos_commit_t flags)
     int sos_index_close(sos_index_t index, sos_commit_t flags)
     size_t sos_index_key_size(sos_index_t index)
@@ -696,12 +703,6 @@ cdef extern from "sos/sos.h":
     sos_iter_flags_t sos_iter_flags_get(sos_iter_t i)
     uint64_t sos_iter_card(sos_iter_t i)
     uint64_t sos_iter_dups(sos_iter_t i)
-    int sos_iter_pos_set(sos_iter_t i, const sos_pos_t pos)
-    int sos_iter_pos_get(sos_iter_t i, sos_pos_t *pos)
-    int sos_iter_pos_put(sos_iter_t i, const sos_pos_t pos)
-    int sos_pos_from_str(sos_pos_t *pos, const char *str)
-    const char *sos_pos_to_str(sos_pos_t pos)
-    void sos_pos_str_free(char *pos_str)
     int sos_iter_next(sos_iter_t iter)
     int sos_iter_prev(sos_iter_t i)
     int sos_iter_begin(sos_iter_t i)
@@ -720,9 +721,6 @@ cdef extern from "sos/sos.h":
     sos_obj_t sos_filter_prev(sos_filter_t filt)
     sos_obj_t sos_filter_end(sos_filter_t filt)
     int sos_filter_miss_count(sos_filter_t filt)
-    int sos_filter_pos_set(sos_filter_t filt, const sos_pos_t pos)
-    int sos_filter_pos_put(sos_filter_t filt, const sos_pos_t pos)
-    int sos_filter_pos_get(sos_filter_t filt, sos_pos_t *pos)
     sos_obj_t sos_filter_obj(sos_filter_t filt)
     int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags)
     sos_iter_flags_t sos_filter_flags_get(sos_filter_t filt)

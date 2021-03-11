@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from past.builtins import execfile
 from builtins import object
 import unittest
@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 
 data = [
     ( 0, -100, 0, -1000, 0.0, "a this is a test" ),
-    ( 100, -1, 100, -1, 1.e6, "b this is a test" ),
+    ( 100, -3, 100, -3, 1.e6, "b this is a test" ),
+    ( 200, -2, 200, -2, 2.e6, "c this is a test" ),
+    ( 300, -1, 300, -1, 3.e6, "d this is a test" ),
 ]
 
 class IndexTestMinMax(SosTestCase):
@@ -38,10 +40,28 @@ class IndexTestMinMax(SosTestCase):
         cls.tearDownDb()
 
     def test_00_add_obj(self):
-        for seq in data:
-            obj = self.schema.alloc()
-            obj[:] = seq
-            obj.index_add()
+        # Twot objects go in the 'default' partition
+        obj = self.schema.alloc()
+        obj[:] = data[0]
+        obj.index_add()
+
+        obj = self.schema.alloc()
+        obj[:] = data[1]
+        obj.index_add()
+
+        # Create a new partition and make it primary
+        self.db.part_create("ROOT")
+        root = self.db.part_by_name("ROOT")
+        root.state_set("PRIMARY")
+
+        # These go in the new partition
+        obj = self.schema.alloc()
+        obj[:] = data[2]
+        obj.index_add()
+
+        obj = self.schema.alloc()
+        obj[:] = data[3]
+        obj.index_add()
 
     def test_01_min_uint32(self):
         a = self.schema.attr_by_name("uint32")
@@ -76,32 +96,32 @@ class IndexTestMinMax(SosTestCase):
     def test_07_max_uint32(self):
         a = self.schema.attr_by_name("uint32")
         v = a.max()
-        self.assertEqual(v, data[1][0])
+        self.assertEqual(v, data[3][0])
 
     def test_08_max_int32(self):
         a = self.schema.attr_by_name("int32")
         v = a.max()
-        self.assertEqual(v, data[1][1])
+        self.assertEqual(v, data[3][1])
 
     def test_09_max_uint64(self):
         a = self.schema.attr_by_name("uint64")
         v = a.max()
-        self.assertEqual(v, data[1][2])
+        self.assertEqual(v, data[3][2])
 
     def test_10_max_int64(self):
         a = self.schema.attr_by_name("int64")
         v = a.max()
-        self.assertEqual(v, data[1][3])
+        self.assertEqual(v, data[3][3])
 
     def test_11_max_double(self):
         a = self.schema.attr_by_name("double")
         v = a.max()
-        self.assertEqual(v, data[1][4])
+        self.assertEqual(v, data[3][4])
 
     def test_12_min_string(self):
         a = self.schema.attr_by_name("string")
         v = a.max()
-        self.assertEqual(v, data[1][5])
+        self.assertEqual(v, data[3][5])
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'

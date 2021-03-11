@@ -15,10 +15,12 @@ DOCINPUT = $(top_srcdir)/sos/include/sos/sos.h \
 		       $(top_srcdir)/sos/src/sos_value.c \
 		       $(top_srcdir)/sos/src/sos_key.c \
 		       $(top_srcdir)/sos/src/sos_cmd.c \
+		       $(top_srcdir)/sos/src/sos_cont_clone.c \
 		       $(top_srcdir)/sos/src/sos_part_create.c \
+		       $(top_srcdir)/sos/src/sos_part_attach.c \
+		       $(top_srcdir)/sos/src/sos_part_detach.c \
 		       $(top_srcdir)/sos/src/sos_part_query.c \
 		       $(top_srcdir)/sos/src/sos_part_modify.c \
-		       $(top_srcdir)/sos/src/sos_part_delete.c \
 		       $(top_srcdir)/sos/src/sos_part_move.c
 
 

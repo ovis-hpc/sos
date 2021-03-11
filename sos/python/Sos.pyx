@@ -286,12 +286,20 @@ cdef class IndexIter(SosObject):
 
 cdef class Container(SosObject):
     cdef sos_t c_cont
+    cdef object path_
+    cdef sos_perm_t o_perm
+    cdef int o_mode
 
-    def __init__(self, path=None, o_perm=SOS_PERM_RW):
+    def __init__(self, path=None, o_perm=SOS_PERM_RW, o_mode=0660):
         SosObject.__init__(self)
+        self.o_perm = o_perm
+        self.o_mode = o_mode
         self.c_cont = NULL
         if path:
-            self.open(path, o_perm=o_perm)
+            self.open(path, o_perm=o_perm, o_mode=o_mode)
+
+    def path(self):
+        return self.path_
 
     def version(self):
         """Return the container version information"""
@@ -318,7 +326,10 @@ cdef class Container(SosObject):
         """
         if self.c_cont != NULL:
             self.abort(EBUSY)
-        self.c_cont = sos_container_open(path.encode(), o_perm, o_mode)
+        self.path_ = path
+        self.o_perm = o_perm
+        self.o_mode = o_mode
+        self.c_cont = sos_container_open(path.encode('utf-8'), o_perm, o_mode)
         if self.c_cont == NULL:
             raise self.abort(errno)
 
@@ -339,12 +350,39 @@ cdef class Container(SosObject):
         """
         if self.c_cont != NULL:
             self.abort(EBUSY)
+        self.path_ = path
         c_cont = sos_container_open(path.encode(),
                         o_perm=<sos_perm_t>(SOS_PERM_CREAT|SOS_PERM_RW),
                         o_mode=o_mode)
         if c_cont == NULL:
             raise self.abort(errno)
         sos_container_close(c_cont, SOS_COMMIT_SYNC)
+
+    def clone(self, clone_path, part_list=None, o_mode=0660):
+        """Clone the schema and selected partitions into a new container
+
+        If an error occurs, an exception is thrown.
+
+        Positional Parameters:
+
+        - The path to the new container
+
+        Keyword Parameters:
+
+        part_list - A list of partition names to clone into the new
+            container. An empty list indicates that the new container
+            is to be left empty. The value None (default) indicates
+            that all partitions are to be cloned.
+        o_mode - The file creation mode, default is 0660
+        """
+        if self.c_cont == NULL:
+            self.abort(ENOENT)
+        clone = Container()
+        clone.open(clone_path, o_perm=SOS_PERM_CREAT|SOS_PERM_RW,o_mode=0660)
+        for schema in self.schema_iter():
+            dup = schema.dup()
+            dup.add(clone)
+        return clone
 
     def delete(self):
         """Delete a container
@@ -364,7 +402,7 @@ cdef class Container(SosObject):
         """Close a container
 
         Closes the container. If the container is not open, an
-        excception is thrown.
+        exception is thrown.
 
         if the 'commit' keyword parameter is set to SOS_COMMIT_ASYNC,
         the method will not return until all outstanding data has been
@@ -398,29 +436,48 @@ cdef class Container(SosObject):
         if rc != 0:
             self.abort(rc)
 
-    def part_create(self, name, path=None):
-        """Create a new empty partition
-
-        Creates a new empty partition. If the 'path' keyword parameter
-        specified, the partition data is stored at the location specified. By
-        default it is stored under the subdirectory 'name' in the
-        container directory.
+    def part_create(self, name, desc, path=None):
+        """Create a new partition and attach it to the container
 
         Positional Parameters:
+        - The name to give the new partition in the container
+        - A description to assign to the new partition
 
-        - The partition name
-        - A path to the partition (default is None)
-
+        Keyword Parameters:
+        path - The path to the new partition. By default it is
+               the container path '/' name
         """
-        cdef int rc
-        if self.c_cont == NULL:
-            raise ValueError("The container is not open.")
-        if path:
-            rc = sos_part_create(self.c_cont, name.encode(), path.encode())
-        else:
-            rc = sos_part_create(self.c_cont, name.encode(), NULL)
-        if rc != 0:
-            self.abort(rc)
+        cdef int c_rc
+        cdef sos_part_t c_part
+        if path is None:
+            path = self.path_ + '/' + name
+        c_part = sos_part_open(path.encode(),
+                            self.o_perm | SOS_PERM_CREAT,
+                            self.o_mode,
+                            desc.encode())
+        if c_part == NULL:
+            self.abort(errno)
+        sos_part_put(c_part)
+        c_rc = sos_part_attach(self.c_cont, name.encode(), path.encode())
+        if c_rc != 0:
+            self.abort(c_rc)
+
+    def part_attach(self, name, path=None):
+        """Attach an existing partitionto the container
+
+        Positional Parameters:
+        - The name to give the new partition in the container
+
+        Keyword Parameters:
+        path - The path to the container. If not specified, the path
+             is self.path + '/' + name
+        """
+        cdef int c_rc
+        if path is None:
+            path = self.path_ + '/' + name
+        c_rc = sos_part_attach(self.c_cont, name.encode(), path.encode())
+        if c_rc != 0:
+            self.abort(c_rc)
 
     def part_by_name(self, name):
         """Return the named partition
@@ -433,7 +490,25 @@ cdef class Container(SosObject):
 
         A Partition object, or None if the partition does not exist.
         """
-        cdef sos_part_t c_part = sos_part_find(self.c_cont, name.encode())
+        cdef sos_part_t c_part = sos_part_by_name(self.c_cont, name.encode())
+        if c_part != NULL:
+            p = Partition()
+            p.assign(c_part)
+            return p
+        return None
+
+    def part_by_path(self, path):
+        """Return the partition at the specified path
+
+        Positional Parameters:
+
+        - The path to the partition
+
+        Returns:
+
+        A Partition object, or None if the partition does not exist.
+        """
+        cdef sos_part_t c_part = sos_part_by_path(self.c_cont, path.encode())
         if c_part != NULL:
             p = Partition()
             p.assign(c_part)
@@ -470,7 +545,6 @@ cdef class Container(SosObject):
 
     def schema_by_id(self, id_):
         """Return the Schema with the specified 'id'
-
         Every schema has a unique 64b identifier that is stored with
         every Object with that Schema.
 
@@ -548,18 +622,17 @@ cdef class PartStat(object):
 
 cdef class Partition(SosObject):
     cdef sos_part_t c_part
-    # cdef sos_part_stat_s c_stat
+    cdef object path_
+    cdef object desc_
 
     def __init__(self):
         self.c_part = NULL
 
     cdef assign(self, sos_part_t c_part):
         self.c_part = c_part
+        self.path_ = sos_part_name(c_part)
+        self.desc_ = sos_part_desc(c_part)
         return self
-
-    def part_id(self):
-        """Returns the Partition id"""
-        return sos_part_id(self.c_part)
 
     def name(self):
         """Returns the partition name"""
@@ -567,7 +640,19 @@ cdef class Partition(SosObject):
 
     def path(self):
         """Returns the partition path"""
-        return sos_part_path(self.c_part)
+        return sos_part_path(self.c_part).decode('utf-8')
+
+    def desc(self):
+        """Returns the parition description"""
+        return sos_part_desc(self.c_part).decode('utf-8')
+
+    def uuid(self):
+        """Returns the parition UUID"""
+        cdef uuid_t uuid
+        cdef char uuid_str[37]
+        sos_part_uuid(self.c_part, uuid)
+        uuid_unparse(uuid, uuid_str)
+        return uuid_str.decode('utf-8')
 
     def state(self):
         """Returns the partition state"""
@@ -577,12 +662,63 @@ cdef class Partition(SosObject):
         """Returns the partition PartStat (size, access time, etc...) information"""
         return PartStat(self)
 
-    def delete(self):
-        """Delete the paritition"""
-        cdef int rc = sos_part_delete(self.c_part)
-        if rc != 0:
-            self.abort(rc)
-        self.c_part = NULL
+    def attach(self, Container cont, name):
+        """Attach partition to a container
+
+        Adds the partion as \c name to the container \c cont. The
+        partition state is OFFLINE once attached. The schema in the
+        container must define all objects stored in the partition.
+
+        Positional Parameters:
+        - The container handle
+        - The name for the partition in the container
+        """
+        cdef int c_rc
+        if self.c_part == NULL:
+            raise ValueError("The partition is not open")
+        c_rc = sos_part_attach(cont.c_cont, name.encode(), self.path_.encode())
+        if c_rc != 0:
+            self.abort(c_rc)
+        self.release()
+        self.c_part =  sos_part_by_name(cont.c_cont, name.encode())
+        if self.c_part == NULL:
+            self.abort(errno)
+
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, desc=""):
+        """Open the partition at path
+
+        Positional Arguments:
+        -- The path to the partition
+
+        Keyword Arguments:
+        o_perm - The SOS access mode, the default is SOS_PERM_RW
+        o_mode - The partition access rights, default is 0660. Only used
+                if o_perm includes SOS_PART_CREAT and the partition does
+                not already exist.
+        desc   - If o_perm contains SOS_PERM_CREAT, this is the description
+                given to the new partition
+        """
+        cdef sos_part_t c_part
+        self.path_ = path
+        self.desc_ = desc
+        c_part = sos_part_open(path.encode(), o_perm, o_mode, desc.encode())
+        if c_part == NULL:
+            self.abort(errno)
+        self.c_part = c_part;
+
+    def detach(self):
+        """Detach partition from the container"""
+        cdef int c_rc = sos_part_detach(self.c_part)
+        if c_rc != 0:
+            self.abort(c_rc)
+        self.release()
+
+    def destroy(self, path):
+        """Destroy a partition"""
+        cdef int c_rc
+        c_rc = sos_part_destroy(path.encode())
+        if c_rc != 0:
+            self.abort(c_rc)
 
     def move(self, new_path):
         """Move the paritition to a different location"""
@@ -594,6 +730,8 @@ cdef class Partition(SosObject):
         """Set the partition state"""
         cdef int rc
         cdef sos_part_state_t state
+        if self.c_part == NULL:
+            raise ValueError("The partition is not open")
         if new_state.upper() == "PRIMARY":
             state = SOS_PART_STATE_PRIMARY
         elif new_state.upper() == "ACTIVE":
@@ -606,21 +744,16 @@ cdef class Partition(SosObject):
         if rc != 0:
             self.abort(rc)
 
-    def export(self, Container dst_cont, reindex=False):
-        """Export the contents of this partition to another container"""
-        return sos_part_export(self.c_part, dst_cont.c_cont, reindex)
-
-    def index(self):
-        """Index the contents of this partition"""
-        return sos_part_index(self.c_part)
+    def release(self):
+        if self.c_part:
+            sos_part_put(self.c_part)
+            self.c_part = NULL
 
     def __del__(self):
         self.__dealloc__()
 
     def __dealloc__(self):
-        if self.c_part:
-            sos_part_put(self.c_part)
-            self.c_part = NULL
+        self.release()
 
 sos_type_strs = {
      SOS_TYPE_INT16 : "INT16",
@@ -901,6 +1034,12 @@ cdef class Schema(SosObject):
             self.abort()
         o = Object()
         return o.assign(c_obj)
+
+    def dup(self):
+        cdef sos_schema_t c_schema = sos_schema_dup(self.c_schema)
+        s = Schema()
+        s.assign(c_schema)
+        return s
 
     def __getitem__(self, attr_id):
         if type(attr_id) == int:
@@ -1366,17 +1505,22 @@ cdef class AttrIter(SosObject):
     cdef Attr attr
     cdef sos_iter_t c_iter
 
-    def __init__(self, Attr attr):
+    def __init__(self, Attr attr, unique=False):
         """Instantiate an AttrIter object
 
         Positional Arguments:
         attr    The Attr with the Index on which the iterator is being
                 created.
+
+        Keyword Arguments:
+        unique  If True, the iterator will skip duplicates in the index
         """
         self.c_iter = sos_attr_iter_new(attr.c_attr)
         self.attr = attr
         if self.c_iter == NULL:
             raise ValueError("The {0} attribute is not indexed".format(self.attr.name()))
+        if unique:
+            sos_iter_flags_set(self.c_iter, SOS_ITER_F_UNIQUE)
 
     def prop_set(self, prop_name, b):
         cdef sos_iter_flags_t f = sos_iter_flags_get(self.c_iter)
@@ -1503,53 +1647,18 @@ cdef class AttrIter(SosObject):
             return True
         return False
 
-    def get_pos(self):
-        """Returns the currrent iterator position as a string
+    def release(self):
+        """Release resources and references associated with the iterator
 
-        The returned string represents the current iterator
-        position. The string can be passed to the set_pos() method to
-        set an iterator on the same index to this position.
-
-        An intent of this string is that it can be exchanged over the
-        network to enable paging of objects at the browser
-
+        Although this is done automatically when the object is deleted, Python's
+        lazy deallocation can defer freeing these resources indefinitely
         """
-        cdef const char *c_str
-        cdef sos_pos_t c_pos
-        cdef int rc = sos_iter_pos_get(self.c_iter, &c_pos)
-        if rc != 0:
-            return None
-        c_str = sos_pos_to_str(c_pos)
-        return c_str
-
-    def set_pos(self, pos_str):
-        """Sets the currrent position from a string
-
-        Positional Parameters:
-        -- String representation of the iterator position
-        """
-        cdef sos_pos_t c_pos
-        cdef int rc = sos_pos_from_str(&c_pos, pos_str.encode())
-        if rc == 0:
-            return sos_iter_pos_set(self.c_iter, c_pos)
-        return rc
-
-    def put_pos(self, pos_str):
-        """Puts (deletes) the specified position
-
-        Positional Parameters:
-        -- String representation of the iterator position
-        """
-        cdef sos_pos_t c_pos
-        cdef int rc = sos_pos_from_str(&c_pos, pos_str.encode())
-        if rc == 0:
-            return sos_iter_pos_put(self.c_iter, c_pos)
-        return rc
-
-    def __dealloc__(self):
         if self.c_iter != NULL:
             sos_iter_free(self.c_iter)
             self.c_iter = NULL
+
+    def __dealloc__(self):
+        self.release()
 
 TYPE_INT16 = SOS_TYPE_INT16
 TYPE_INT32 = SOS_TYPE_INT32
@@ -1789,12 +1898,13 @@ cdef class Attr(SosObject):
         cdef sos_obj_t c_obj
         cdef sos_obj_t c_arr_obj
         cdef sos_value_data_t c_data
+        cdef sos_key_t key
         cdef int t
 
         if not self.is_indexed():
             return None
 
-        c_obj = sos_index_find_max(sos_attr_index(self.c_attr))
+        c_obj = sos_index_find_max(sos_attr_index(self.c_attr), &key)
         if c_obj == NULL:
             return None
         c_data = sos_obj_attr_data(c_obj, self.c_attr, &c_arr_obj)
@@ -1812,12 +1922,13 @@ cdef class Attr(SosObject):
         cdef sos_obj_t c_obj
         cdef sos_obj_t c_arr_obj
         cdef sos_value_data_t c_data
+        cdef sos_key_t key
         cdef int t
 
         if not self.is_indexed():
             return None
 
-        c_obj = sos_index_find_min(sos_attr_index(self.c_attr))
+        c_obj = sos_index_find_min(sos_attr_index(self.c_attr), &key)
         if c_obj == NULL:
             return None
         c_data = sos_obj_attr_data(c_obj, self.c_attr, &c_arr_obj)
@@ -2688,48 +2799,6 @@ cdef class Filter(object):
             o = Object()
             return o.assign(c_obj)
         return None
-
-    def get_pos(self):
-        """Returns the currrent filter position as a string
-
-        The intent is that this string can be exchanged over the network
-        to enable paging of filter records at the browser
-        """
-        cdef const char *c_str
-        cdef sos_pos_t c_pos
-        cdef int rc = sos_filter_pos_get(self.c_filt, &c_pos)
-        if rc != 0:
-            return None
-        c_str = sos_pos_to_str(c_pos)
-        return c_str
-
-    def set_pos(self, pos_str):
-        """Sets the currrent filter position from a string
-
-        The string parameter is converted to a sos_pos_t and used to set the
-        current filter position. The string was returned from a
-        previous call to self.pos()
-
-        Positional Parameters:
-        -- String representation of the iterator position
-        """
-        cdef sos_pos_t c_pos
-        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
-        if rc == 0:
-            return sos_filter_pos_set(self.c_filt, c_pos)
-        return rc
-
-    def put_pos(self, pos_str):
-        """Puts the specified position string
-
-        Positional Parameters:
-        -- String representation of the iterator position
-        """
-        cdef sos_pos_t c_pos
-        cdef int rc = sos_pos_from_str(&c_pos, pos_str)
-        if rc == 0:
-            return sos_filter_pos_put(self.c_filt, c_pos)
-        return rc
 
     def as_ndarray(self, size_t count, shape=None, order='attribute', cont=False):
         """Return filter data as a Numpy array
