@@ -329,7 +329,7 @@ size_t sos_schema_count(sos_t sos);
 int sos_schema_add(sos_t sos, sos_schema_t schema);
 sos_schema_t sos_schema_from_template(sos_schema_template_t pt);
 sos_schema_t sos_schema_by_name(sos_t sos, const char *name);
-sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id);
+sos_schema_t sos_schema_by_uuid(sos_t sos, uuid_t id);
 void sos_schema_print(sos_schema_t schema, FILE *fp);
 int sos_schema_delete(sos_t sos, const char *name);
 sos_schema_t sos_schema_first(sos_t sos);

@@ -68,7 +68,8 @@
 #include "sos_priv.h"
 
 static struct sos_schema_s *ischema_dir[SOS_TYPE_LAST+1];
-static struct ods_rbt ischema_rbt;
+static struct ods_rbt ischema_name_rbt;
+static struct ods_rbt ischema_id_rbt;
 
 static uint32_t type_sizes[] = {
 	[SOS_TYPE_INT16] = sizeof(int16_t),
@@ -122,7 +123,7 @@ static uint32_t type_sizes[] = {
  * - sos_schema_index_add()  Add an index to an attribute
  * - sos_schema_add()	     Add a schema to a container
  * - sos_schema_by_name()    Find the schema with the specified name
- * - sos_schema_by_id()      Find the schema with the specified integer id
+ * - sos_schema_by_uuid()      Find the schema with the specified integer id
  * - sos_schema_delete()     Remove a schema from the container
  * - sos_schema_count()	     Returns the number of schema in the container
  * - sos_schema_name()	     Get the schema's name
@@ -323,9 +324,9 @@ const char *sos_schema_name(sos_schema_t schema)
  * \param schema The schema handle.
  * \retval The schema Id
  */
-int sos_schema_id(sos_schema_t schema)
+void sos_schema_uuid(sos_schema_t schema, uuid_t uuid)
 {
-	return schema->data->id;
+	uuid_copy(uuid, schema->data->uuid);
 }
 
 /**
@@ -1122,7 +1123,7 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 		TAILQ_INSERT_TAIL(&dup->attr_list, attr, entry);
 	}
 	ods_rbn_init(&dup->name_rbn, dup->data->name);
-	ods_rbn_init(&dup->id_rbn, &dup->data->id);
+	ods_rbn_init(&dup->id_rbn, dup->data->uuid);
 	return dup;
  err_1:
 	free(schema->dict);
@@ -1194,7 +1195,7 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	}
 	ods_rbn_init(&schema->name_rbn, schema->data->name);
 	ods_rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
-	ods_rbn_init(&schema->id_rbn, &schema->data->id);
+	ods_rbn_init(&schema->id_rbn, schema->data->uuid);
 	ods_rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
 	sos->schema_count++;
 	LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
@@ -1305,7 +1306,7 @@ static sos_schema_t __sos_schema_by_name(sos_t sos, const char *name)
 	struct ods_rbn *rbn;
 
 	if (name[0] == '_' && name[1] == '_')
-		tree = &ischema_rbt;
+		tree = &ischema_name_rbt;
 	else
 		tree = &sos->schema_name_rbt;
 
@@ -1354,14 +1355,16 @@ sos_schema_t sos_schema_by_name(sos_t sos, const char *name)
  * \retval A pointer to the schema
  * \retval NULL pointer if a schema with that name does not exist in the container
  */
-sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id)
+sos_schema_t sos_schema_by_uuid(sos_t sos, uuid_t uuid)
 {
 	sos_schema_t schema;
-	if (id < SOS_SCHEMA_FIRST_USER)
-		return ischema_dir[id];
-	struct ods_rbn *rbn = ods_rbt_find(&sos->schema_id_rbt, (void *)&id);
-	if (!rbn)
-		return NULL;
+	struct ods_rbn *rbn = ods_rbt_find(&sos->schema_id_rbt, (void *)uuid);
+	if (!rbn) {
+		/* Check the internal schema */
+		rbn = ods_rbt_find(&ischema_id_rbt, uuid);
+		if (!rbn)
+			return NULL;
+	}
 	schema = container_of(rbn, struct sos_schema_s, id_rbn);
 	return schema;
 }
@@ -1450,8 +1453,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	SOS_SCHEMA(schema_obj)->obj_sz = schema->data->obj_sz;
 	SOS_SCHEMA(schema_obj)->el_sz = schema->data->el_sz;
 	SOS_SCHEMA(schema_obj)->attr_cnt = schema->data->attr_cnt;
-	SOS_SCHEMA(schema_obj)->id =
-		ods_atomic_inc(&SOS_SCHEMA_UDATA(udata)->last_schema_id);
+	uuid_generate(SOS_SCHEMA(schema_obj)->uuid);
 
 	idx = 0;
 	schema->dict = calloc(schema->data->attr_cnt, sizeof(sos_attr_t));
@@ -1490,7 +1492,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	ods_rbn_init(&schema->name_rbn, schema->data->name);
 	ods_rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
 
-	ods_rbn_init(&schema->id_rbn, &schema->data->id);
+	ods_rbn_init(&schema->id_rbn, schema->data->uuid);
 	ods_rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
 
 	sos->schema_count++;
@@ -1632,7 +1634,10 @@ void sos_schema_print(sos_schema_t schema, FILE *fp)
 	fprintf(fp, "    name      : %s\n", schema->data->name);
 	fprintf(fp, "    schema_sz : %ld\n", schema->data->schema_sz);
 	fprintf(fp, "    obj_sz    : %ld\n", schema->data->obj_sz);
-	fprintf(fp, "    id        : %d\n", schema->data->id);
+	char uuid_str[37];
+	uuid_unparse_lower(schema->data->uuid, uuid_str);
+
+	fprintf(fp, "    uuid      : %s\n", uuid_str);
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
 		fprintf(fp, "    -attribute : %s\n", attr->data->name);
 		fprintf(fp, "        type          : %s\n", type_name(attr->data->type));
@@ -1644,7 +1649,7 @@ void sos_schema_print(sos_schema_t schema, FILE *fp)
 
 /** @} */
 
-sos_schema_t __sos_internal_schema_new(const char *name, uint32_t id,
+sos_schema_t __sos_internal_schema_new(const char *name, uuid_t uuid,
 				       sos_type_t el_type, size_t el_size)
 {
 	struct sos_schema_s *schema;
@@ -1652,20 +1657,21 @@ sos_schema_t __sos_internal_schema_new(const char *name, uint32_t id,
 	assert(schema);
 	schema->flags = SOS_SCHEMA_F_INTERNAL;
 	schema->ref_count = 1;
-	schema->data->id = id;
+	uuid_copy(schema->data->uuid, uuid);
 	schema->data->el_sz = el_size;
 	sos_schema_attr_add(schema, "count", SOS_TYPE_UINT32);
 	sos_schema_attr_add(schema, "data", el_type);
 	ods_rbn_init(&schema->name_rbn, schema->data->name);
-	ods_rbt_ins(&ischema_rbt, &schema->name_rbn);
-	ods_rbn_init(&schema->id_rbn, &schema->data->id);
-	ischema_dir[schema->data->id] = schema;
+	ods_rbt_ins(&ischema_name_rbt, &schema->name_rbn);
+	ods_rbn_init(&schema->id_rbn, schema->data->uuid);
+	ods_rbt_ins(&ischema_id_rbt, &schema->id_rbn);
+	ischema_dir[el_type] = schema;
 	return schema;
 }
 
 struct ischema_data {
 	const char *name;
-	int id;
+	const char *uuid_str;
 	sos_type_t el_type;
 	size_t el_size;
 } ischema_data_[] = {
@@ -1711,11 +1717,13 @@ struct ischema_data {
 static void __attribute__ ((constructor)) sos_lib_init(void)
 {
 	struct ischema_data *id;
-	ods_rbt_init(&ischema_rbt, __sos_schema_name_cmp, NULL);
+	ods_rbt_init(&ischema_name_rbt, __sos_schema_name_cmp, NULL);
+	ods_rbt_init(&ischema_id_rbt, __sos_schema_id_cmp, NULL);
 	for (id = &ischema_data_[0]; id->name; id++) {
-		sos_schema_t schema =
-			__sos_internal_schema_new(id->name, id->id,
-						  id->el_type, id->el_size);
+		uuid_t uuid;
+		sos_schema_t schema;
+		assert(0 == uuid_parse(id->uuid_str, uuid));
+		schema = __sos_internal_schema_new(id->name, uuid, id->el_type, id->el_size);
 		assert(schema);
 	}
 }

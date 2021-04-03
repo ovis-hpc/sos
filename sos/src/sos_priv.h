@@ -70,29 +70,27 @@
 #include <ods/ods_rbt.h>
 #define _SOS_REF_TRACK_ 1
 #include "sos_ref.h"
-typedef enum sos_internal_schema_e {
-	SOS_ISCHEMA_BYTE_ARRAY = SOS_TYPE_BYTE_ARRAY,
-	SOS_ISCHEMA_CHAR_ARRAY = SOS_TYPE_CHAR_ARRAY,
-	SOS_ISCHEMA_INT16_ARRAY = SOS_TYPE_INT16_ARRAY,
-	SOS_ISCHEMA_INT32_ARRAY = SOS_TYPE_INT32_ARRAY,
-	SOS_ISCHEMA_INT64_ARRAY = SOS_TYPE_INT64_ARRAY,
-	SOS_ISCHEMA_UINT16_ARRAY = SOS_TYPE_UINT16_ARRAY,
-	SOS_ISCHEMA_UINT32_ARRAY = SOS_TYPE_UINT32_ARRAY,
-	SOS_ISCHEMA_UINT64_ARRAY = SOS_TYPE_UINT64_ARRAY,
-	SOS_ISCHEMA_FLOAT_ARRAY = SOS_TYPE_FLOAT_ARRAY,
-	SOS_ISCHEMA_DOUBLE_ARRAY = SOS_TYPE_DOUBLE_ARRAY,
-	SOS_ISCHEMA_LONG_DOUBLE_ARRAY = SOS_TYPE_LONG_DOUBLE_ARRAY,
-	SOS_ISCHEMA_OBJ_ARRAY = SOS_TYPE_OBJ_ARRAY,
-	SOS_SCHEMA_FIRST_USER = 128,
-} sos_ischema_t;
 
-#define SOS_LATEST_VERSION 0x04030400
+#define SOS_ISCHEMA_BYTE_ARRAY "35190552-9177-11eb-941e-0cc47a6e9146"
+#define SOS_ISCHEMA_CHAR_ARRAY "0ad74016-917b-11eb-9af8-0cc47a6e9146"
+#define SOS_ISCHEMA_INT16_ARRAY "54c4ea52-917b-11eb-a4c0-0cc47a6e9146"
+#define SOS_ISCHEMA_INT32_ARRAY "596f92be-917b-11eb-8e5b-0cc47a6e9146"
+#define SOS_ISCHEMA_INT64_ARRAY "5e70102c-917b-11eb-b2cd-0cc47a6e9146"
+#define SOS_ISCHEMA_UINT16_ARRAY "6366fb90-917b-11eb-babd-0cc47a6e9146"
+#define SOS_ISCHEMA_UINT32_ARRAY "677a7860-917b-11eb-8f87-0cc47a6e9146"
+#define SOS_ISCHEMA_UINT64_ARRAY "6cb66ce4-917b-11eb-9bee-0cc47a6e9146"
+#define SOS_ISCHEMA_FLOAT_ARRAY "72535022-917b-11eb-b586-0cc47a6e9146"
+#define SOS_ISCHEMA_DOUBLE_ARRAY "76cfdb48-917b-11eb-b643-0cc47a6e9146"
+#define SOS_ISCHEMA_LONG_DOUBLE_ARRAY "7c0cac1c-917b-11eb-b40a-0cc47a6e9146"
+#define SOS_ISCHEMA_OBJ_ARRAY "7fd250e0-917b-11eb-b53e-0cc47a6e9146"
+#define SOS_SCHEMA_FIRST_USER "83935940-917b-11eb-a0d3-0cc47a6e9146"
+
+#define SOS_LATEST_VERSION 0x05010100
 #define SOS_VERSION_MASK 0xffff0000
 #define SOS_SCHEMA_SIGNATURE 0x534f535348434D41 /* 'SOSSCHMA' */
 typedef struct sos_schema_udata_s {
 	uint64_t signature;
 	uint32_t version;
-	ods_atomic_t last_schema_id;
 } *sos_schema_udata_t;
 #define SOS_SCHEMA_UDATA(_o_) ODS_PTR(sos_schema_udata_t, _o_)
 
@@ -182,7 +180,7 @@ typedef struct sos_idxdir_udata_s {
  * +-----------+--~~~~~---+
  */
 typedef struct sos_obj_data_s {
-	uint64_t schema;	/* The unique schema identifier */
+	uuid_t schema_uuid;	/* The unique schema identifier */
 	uint8_t data[0];
 } *sos_obj_data_t;
 struct sos_obj_s {
@@ -269,7 +267,7 @@ struct sos_attr_s {
 typedef struct sos_schema_data_s {
 	char name[SOS_SCHEMA_NAME_LEN];
 	ods_atomic_t ref_count;
-	uint32_t id;		/* Index into the schema dictionary */
+	uuid_t uuid;		/* schema uuid */
 	uint32_t attr_cnt;	/* Count of attributes in object class */
 	uint32_t key_sz;	/* Size of largest indexed attribute */
 	uint64_t obj_sz;	/* Size of object */
@@ -475,6 +473,7 @@ void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj);
 ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj);
 int __sos_schema_open(sos_t sos, sos_schema_t schema);
 int64_t __sos_schema_name_cmp(void *a, const void *b, void *);
+int64_t __sos_schema_id_cmp(void *a, const void *b, void *);
 void __sos_schema_reset(sos_t sos);
 int __sos_open_partitions(sos_t sos, char *tmp_path);
 int __sos_make_all_dir(const char *inp_path, mode_t omode);

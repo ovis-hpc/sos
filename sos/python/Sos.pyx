@@ -52,6 +52,7 @@ import struct
 import sys
 import copy
 import binascii
+import uuid
 from sosdb.DataSet import DataSet
 cimport numpy as np
 
@@ -436,19 +437,22 @@ cdef class Container(SosObject):
         if rc != 0:
             self.abort(rc)
 
-    def part_create(self, name, desc, path=None):
+    def part_create(self, name, desc=None, path=None):
         """Create a new partition and attach it to the container
 
         Positional Parameters:
         - The name to give the new partition in the container
-        - A description to assign to the new partition
 
         Keyword Parameters:
+        desc - A description to assign to the new partition. This defaults to
+               the partition name if not specified
         path - The path to the new partition. By default it is
                the container path '/' name
         """
         cdef int c_rc
         cdef sos_part_t c_part
+        if desc is None:
+            desc = name
         if path is None:
             path = self.path_ + '/' + name
         c_part = sos_part_open(path.encode(),
@@ -543,10 +547,10 @@ cdef class Container(SosObject):
             return s
         return None
 
-    def schema_by_id(self, id_):
+    def schema_by_uuid(self, uuid_):
         """Return the Schema with the specified 'id'
-        Every schema has a unique 64b identifier that is stored with
-        every Object with that Schema.
+        Every schema has a unique 16B identifier that is stored with
+        every Object of that Schema. See uuid_generate(3).
 
         Positional Parameters:
 
@@ -558,7 +562,7 @@ cdef class Container(SosObject):
         that id exists.
 
         """
-        cdef sos_schema_t c_schema = sos_schema_by_id(self.c_cont, id_)
+        cdef sos_schema_t c_schema = sos_schema_by_uuid(self.c_cont, uuid_.bytes)
         if c_schema != NULL:
             s = Schema()
             s.assign(c_schema)
@@ -648,11 +652,9 @@ cdef class Partition(SosObject):
 
     def uuid(self):
         """Returns the parition UUID"""
-        cdef uuid_t uuid
-        cdef char uuid_str[37]
-        sos_part_uuid(self.c_part, uuid)
-        uuid_unparse(uuid, uuid_str)
-        return uuid_str.decode('utf-8')
+        cdef uuid_t c_uuid
+        sos_part_uuid(self.c_part, c_uuid)
+        return uuid.UUID(bytes=c_uuid)
 
     def state(self):
         """Returns the partition state"""
@@ -1019,9 +1021,11 @@ cdef class Schema(SosObject):
         """Returns the number of attributes in the schema"""
         return sos_schema_attr_count(self.c_schema)
 
-    def schema_id(self):
-        """Returns the unique schema id"""
-        return sos_schema_id(self.c_schema)
+    def uuid(self):
+        """Returns the unique schema id encoded as a byte array"""
+        cdef uuid_t c_uuid
+        sos_schema_uuid(self.c_schema, c_uuid)
+        return uuid.UUID(bytes=c_uuid)
 
     def name(self):
         """Returns the name of the schema"""

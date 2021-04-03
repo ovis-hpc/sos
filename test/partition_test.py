@@ -34,7 +34,7 @@ class PartitionTest(SosTestCase):
 
     @classmethod
     def tearDownClass(cls):
-        # cls.tearDownDb()
+        cls.tearDownDb()
         pass
 
     def __test_min(self):
@@ -233,6 +233,9 @@ class PartitionTest(SosTestCase):
             rc = ai.next()
             idx += 1
         ai.release()
+
+        c.close()
+        shutil.rmtree(c.path(), ignore_errors=True)
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'

@@ -386,7 +386,6 @@ static int __sos_container_new(const char *path, int o_mode)
 	}
 	SOS_SCHEMA_UDATA(udata)->signature = SOS_SCHEMA_SIGNATURE;
 	SOS_SCHEMA_UDATA(udata)->version = SOS_LATEST_VERSION;
-	SOS_SCHEMA_UDATA(udata)->last_schema_id = SOS_SCHEMA_FIRST_USER;
 	ods_obj_put(udata);
 	ods_close(schema_ods, ODS_COMMIT_ASYNC);
 
@@ -725,15 +724,9 @@ int64_t __sos_schema_name_cmp(void *a, const void *b, void *arg)
 	return strcmp((char *)a, (char *)b);
 }
 
-static int64_t schema_id_cmp(void *a, const void *b, void *arg)
+int64_t __sos_schema_id_cmp(void *a, const void *b, void *arg)
 {
-	uint32_t _a = *(uint32_t *)a;
-	uint32_t _b = *(uint32_t *)b;
-	if (_a < _b)
-		return -1;
-	if (_a > _b)
-		return 1;
-	return 0;
+	return uuid_compare(a, b);
 }
 
 struct sos_version_s sos_container_version(sos_t sos)
@@ -857,7 +850,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	sos->o_mode = sb.st_mode;
 	sos->o_perm = (ods_perm_t)o_perm;
 	ods_rbt_init(&sos->schema_name_rbt, __sos_schema_name_cmp, NULL);
-	ods_rbt_init(&sos->schema_id_rbt, schema_id_cmp, NULL);
+	ods_rbt_init(&sos->schema_id_rbt, __sos_schema_id_cmp, NULL);
 	sos->schema_count = 0;
 
 	rc = __sos_config_init(sos);
@@ -1183,7 +1176,7 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 	if (!sos_obj)
 		return NULL;
 	LIST_INSERT_HEAD(&sos->obj_list, sos_obj, entry);
-	SOS_OBJ(ods_obj)->schema = schema->data->id;
+	uuid_copy(SOS_OBJ(ods_obj)->schema_uuid, schema->data->uuid);
 	sos_obj->sos = sos;
 	sos_obj->obj = ods_obj;
 	sos_obj->obj_ref = obj_ref;
@@ -1363,7 +1356,7 @@ sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref)
 
 	/* Get the schema id from the SOS object */
 	sos_obj_data_t sos_obj = ods_obj->as.ptr;
-	sos_schema_t schema = sos_schema_by_id(sos, sos_obj->schema);
+	sos_schema_t schema = sos_schema_by_uuid(sos, sos_obj->schema_uuid);
 	if (!schema)
 		return NULL;
 

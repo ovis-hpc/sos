@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2021 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -1293,7 +1293,7 @@ static int __part_obj_iter_cb(ods_t ods, ods_obj_t obj, void *arg)
 	sos_obj_t sos_obj;
 	sos_part_t part = oi_args->part;
 	sos_obj_data_t sos_obj_data = obj->as.ptr;
-	sos_schema_t schema = sos_schema_by_id(part->sos, sos_obj_data->schema);
+	sos_schema_t schema = sos_schema_by_uuid(part->sos, sos_obj_data->schema_uuid);
 	if (!schema) {
 		sos_warn("Object at %p is missing a valid schema id.\n", ods_obj_ref(obj));
 		/* This is a garbage object that should not be here */

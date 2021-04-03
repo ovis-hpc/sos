@@ -57,9 +57,9 @@ def query_schema(cont, schema_name, verbose=False):
         if s.name() != schema_name and schema_name != "ALL":
             continue
         count += 1
-        print(s.name())
+        print(f"{s.name()} '{s.uuid()}'")
         if verbose:
-            print("{0:4} {1:16} {2:12} {3:32}".format("Id", "Type", "Indexed", "Name"))
+            print("{0:4} {1:18} {2:12} {3:32}".format("Id", "Type", "Indexed", "Name"))
             print("{0} {1} {2} {3}".\
                   format('-'.ljust(4, '-'), '-'.ljust(16,'-'),
                          '-'.ljust(12,'-'), '-'.ljust(32,'-')))
@@ -84,7 +84,7 @@ def query_schema(cont, schema_name, verbose=False):
                         comma = True
                         aname += jattr.name()
                     aname += ']'
-                print("{0:4} {1:16} {2} {3}".\
+                print("{0:4} {1:18} {2} {3}".\
                       format(a.attr_id(), type_name,
                              idx_s.ljust(12,' '), aname))
     if count == 0:

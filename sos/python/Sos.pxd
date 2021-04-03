@@ -169,7 +169,7 @@ cdef extern from "stdio.h":
 cdef extern from "ods/ods_idx.h":
 
     cdef struct ods_idx_data_s:
-        unsigned char bytes[16]
+        unsigned char bytes[32]
     ctypedef ods_idx_data_s ods_idx_data_t
 
     cdef struct ods_timeval_s:
@@ -453,13 +453,13 @@ cdef extern from "sos/sos.h":
     int sos_schema_add(sos_t sos, sos_schema_t schema)
     sos_schema_t sos_schema_from_template(sos_schema_template_t pt)
     sos_schema_t sos_schema_by_name(sos_t sos, const char *name)
-    sos_schema_t sos_schema_by_id(sos_t sos, uint32_t id)
+    sos_schema_t sos_schema_by_uuid(sos_t sos, uuid_t uuid)
     void sos_schema_print(sos_schema_t schema, FILE *fp)
     int sos_schema_delete(sos_t sos, const char *name)
     sos_schema_t sos_schema_first(sos_t sos)
     sos_schema_t sos_schema_next(sos_schema_t schema)
     const char *sos_schema_name(sos_schema_t schema)
-    int sos_schema_id(sos_schema_t schema)
+    void sos_schema_uuid(sos_schema_t schema, uuid_t uuid)
     int sos_schema_attr_count(sos_schema_t schema)
     int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, ...)
     int sos_schema_index_add(sos_schema_t schema, const char *name)
