@@ -9,7 +9,6 @@ License: GPLv2 or BSD
 URL: http://www.ogc.us
 Source0: %{name}-%{version}.tar.gz
 
-Requires: libyaml >= 0.1.4
 Prefix: @prefix@
 %define _prefix @prefix@
 
