@@ -68,7 +68,7 @@ struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},
 	{"path",        required_argument,  0,  'p'},
 	{"desc",        required_argument,  0,  'd'},
-	{"mode",		required_argument,  0,  'o'},
+	{"mode",	required_argument,  0,  'o'},
 	{0,             0,                  0,  0}
 };
 
@@ -102,6 +102,10 @@ int main(int argc, char **argv)
 		default:
 			usage(argc, argv);
 		}
+	}
+	if (!path) {
+		printf("The partition path is a required argument.\n");
+		usage(0, NULL);
 	}
 	rc = sos_part_create(path, desc, o_mode);
 	if (rc)
