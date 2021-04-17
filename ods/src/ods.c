@@ -585,7 +585,6 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 	map->last_used = time(NULL);
 
 	ods_rbn_init(&map->rbn, &map->map);
-	assert(NULL == rbt_find(&ods->map_tree, &map->map));
 	ods_rbt_ins(&ods->map_tree, &map->rbn);
 	__pgt_unlock(ods);
 	__ods_unlock(ods);
