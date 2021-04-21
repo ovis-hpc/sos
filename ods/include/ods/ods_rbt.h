@@ -47,6 +47,7 @@
 #define _ODS_RBT_T
 
 #include <stddef.h>
+#include <inttypes.h>
 #include <ods/ods_rbt.h>
 
 #ifdef __cplusplus
@@ -68,7 +69,10 @@ struct ods_rbn {
 	struct ods_rbn    *right;
 	struct ods_rbn    *parent;
 	int               color;
-	void              *key;
+	union {
+		void      *key;
+		uint64_t  key64;
+	};
 };
 
 /* Sets key on n.  */
