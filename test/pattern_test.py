@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from past.builtins import execfile
 from builtins import next
 from builtins import range
@@ -51,6 +51,7 @@ class PatternTest(SosTestCase):
         t = time.time()
         obj[:] = ( self.__time_to_tuple(t), next_ptn_id )
         obj.index_add()
+        obj.release()
         next_ptn_id += 1
 
     def __update_pattern(self, assert_found = True):

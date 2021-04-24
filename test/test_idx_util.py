@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from builtins import next
 from builtins import range
 from builtins import object

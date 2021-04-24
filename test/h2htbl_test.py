@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from past.builtins import execfile
 from builtins import object
 import unittest

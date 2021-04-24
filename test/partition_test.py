@@ -61,6 +61,7 @@ class PartitionTest(SosTestCase):
             self.assertEqual(int(k), valdata[idx])
             rc = ai.next()
             idx += 1
+            k.release()
         ai.release()
 
     def __test_iter_end(self):
@@ -77,6 +78,7 @@ class PartitionTest(SosTestCase):
             self.assertEqual(int(k), valdata[idx])
             rc = ai.prev()
             idx += 1
+            k.release()
         ai.release()
 
     def __test_iter_sup(self):
@@ -90,12 +92,14 @@ class PartitionTest(SosTestCase):
         key.set_value(valdata[512])
         ai = Sos.AttrIter(a, unique=True)
         rc = ai.find_sup(key)
+        key.release()
         idx = 512
         while rc:
             k = ai.key()
             self.assertEqual(int(k), valdata[idx])
             rc = ai.next()
             idx += 1
+            k.release()
         ai.release()
 
     def __test_iter_inf(self):
@@ -109,12 +113,14 @@ class PartitionTest(SosTestCase):
         key.set_value(valdata[512])
         ai = Sos.AttrIter(a, unique=True)
         rc = ai.find_inf(key)
+        key.release()
         idx = 512
         while rc:
             k = ai.key()
             self.assertEqual(int(k), valdata[idx])
             rc = ai.next()
             idx += 1
+            k.release()
         ai.release()
 
     def test_00_add_obj(self):
@@ -127,6 +133,7 @@ class PartitionTest(SosTestCase):
                 obj = self.schema.alloc()
                 obj[0] = o
                 obj.index_add()
+                obj.release()
             pnum += 1
             part.release()
 
@@ -171,6 +178,7 @@ class PartitionTest(SosTestCase):
             key.set_value(i)
             rc = ai.find(key)
             self.assertEqual(rc, False)
+        key.release()
         ai.release()
 
         # Move the partition back to ACTIVE and the keys in that partition
@@ -182,6 +190,7 @@ class PartitionTest(SosTestCase):
             key.set_value(i)
             rc = ai.find(key)
             self.assertEqual(rc, True)
+        key.release()
         ai.release()
         p1.release()    # release the partition reference
 
@@ -200,7 +209,8 @@ class PartitionTest(SosTestCase):
         c = self.db.clone(self.db.path() + "-cloned")
         p = Sos.Partition()
         p.open(self.db.path() + "/1-moved")
-        p.attach(c, "1-moved", )
+        p.attach(c, "1-moved")
+        p.release()
         p1 = c.part_by_name("1-moved")
         p1.state_set("PRIMARY")
         p1.release()
@@ -216,10 +226,11 @@ class PartitionTest(SosTestCase):
             self.assertEqual(int(k), idx)
             rc = ai.next()
             idx += 1
+            k.release()
         ai.release()
 
         # Import a 2nd partition that is now in both containers
-        c.part_attach("2-too", self.db.path() + "/2", )
+        c.part_attach("2-too", self.db.path() + "/2")
         p1 = c.part_by_name("2-too")
         self.assertNotEqual(p1, None)
         p1.release()
@@ -232,6 +243,7 @@ class PartitionTest(SosTestCase):
             # self.assertEqual(int(k), idx)
             rc = ai.next()
             idx += 1
+            k.release()
         ai.release()
 
         c.close()
