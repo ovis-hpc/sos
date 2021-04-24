@@ -2,7 +2,8 @@
  * Copyright (c) 2020 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2013 Sandia Corporation. All rights reserved.
  *
- * See file COPYING at the top of this source directory
+ * See the file COPYING at the top of this source tree for the terms
+ * of the Copyright.
  */
 /*
  * Author: Tom Tucker tom at ogc dot us
@@ -31,6 +32,7 @@
 #include <ods/ods_rbt.h>
 #include "config.h"
 #include "ods_priv.h"
+#include "ods_log.h"
 #define ODS_OBJ_SUFFIX		".OBJ"
 #define ODS_PGTBL_SUFFIX	".PG"
 

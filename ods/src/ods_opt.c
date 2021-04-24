@@ -51,6 +51,7 @@
 #include <errno.h>
 #include <ods/ods.h>
 #include "ods_priv.h"
+#include "ods_log.h"
 
 #define ODS_OPT_VAL_SIZE 64
 struct ods_opt {

@@ -75,6 +75,7 @@
 #include <ods/ods_rbt.h>
 #include "config.h"
 #include "ods_priv.h"
+#include "ods_log.h"
 
 static pthread_mutex_t ods_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static LIST_HEAD(ods_list_head, ods_s) ods_list = LIST_HEAD_INITIALIZER(ods_list);

@@ -1,54 +1,10 @@
 /*
- * Copyright (c) 2013-2018 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2020 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2013 Sandia Corporation. All rights reserved.
- * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
- * license for use of this work by or on behalf of the U.S. Government.
- * Export of this program may require a license from the United States
- * Government.
  *
- * This software is available to you under a choice of one of two
- * licenses.  You may choose to be licensed under the terms of the GNU
- * General Public License (GPL) Version 2, available from the file
- * COPYING in the main directory of this source tree, or the BSD-type
- * license below:
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- *      Redistributions of source code must retain the above copyright
- *      notice, this list of conditions and the following disclaimer.
- *
- *      Redistributions in binary form must reproduce the above
- *      copyright notice, this list of conditions and the following
- *      disclaimer in the documentation and/or other materials provided
- *      with the distribution.
- *
- *      Neither the name of Sandia nor the names of any contributors may
- *      be used to endorse or promote products derived from this software
- *      without specific prior written permission.
- *
- *      Neither the name of Open Grid Computing nor the names of any
- *      contributors may be used to endorse or promote products derived
- *      from this software without specific prior written permission.
- *
- *      Modified source versions must be plainly marked as such, and
- *      must not be misrepresented as being the original software.
- *
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * See the file COPYING at the top of this source tree for the terms
+ * of the Copyright.
  */
-
 /*
  * Author: Tom Tucker tom at ogc dot us
  */
@@ -113,13 +69,6 @@ struct ods_map_s {
 	struct ods_rbn rbn;		/* Active map tree */
 	LIST_ENTRY(ods_map_s) entry;	/* Queued for deletion */
 };
-
-typedef struct ods_dirty_s {
-	ods_ref_t start;
-	ods_ref_t end;
-	ods_t ods;
-	struct ods_rbn rbn;
-} *ods_dirty_t;
 
 struct ods_s {
 	/* The path to the file on disk */
@@ -331,35 +280,6 @@ struct ods_obj_data_s {
 
 extern uint64_t __ods_def_map_sz;
 extern time_t __ods_gc_timeout;
-
-/* ODS Debug True/False */
-extern int __ods_debug;
-
-/* Log file pointer and mask */
-extern FILE *__ods_log_fp;
-extern uint64_t __ods_log_mask;
-
-static inline void ods_log(int level, const char *func, int line, char *fmt, ...)
-{
-	va_list ap;
-
-	if (!__ods_log_fp)
-		return;
-
-	if (0 ==  (level & __ods_log_mask))
-		return;
-
-	va_start(ap, fmt);
-	fprintf(__ods_log_fp, "ods[%d] @ %s:%d | ", level, func, line);
-	vfprintf(__ods_log_fp, fmt, ap);
-	fflush(__ods_log_fp);
-}
-
-#define ods_lfatal(fmt, ...) ods_log(ODS_LOG_FATAL, __func__, __LINE__, fmt, ##__VA_ARGS__)
-#define ods_lerror(fmt, ...) ods_log(ODS_LOG_ERROR, __func__, __LINE__, fmt, ##__VA_ARGS__)
-#define ods_lwarn(fmt, ...) ods_log(ODS_LOG_WARN, __func__, __LINE__, fmt, ##__VA_ARGS__)
-#define ods_linfo(fmt, ...) ods_log(ODS_LOG_INFO, __func__, __LINE__, fmt, ##__VA_ARGS__)
-#define ods_ldebug(fmt, ...) ods_log(ODS_LOG_DEBUG, __func__, __LINE__, fmt, ##__VA_ARGS__)
 
 void __ods_obj_delete(ods_obj_t obj);
 #define ODS_ROUNDUP(_sz_, _align_) (((_sz_) + (_align_) - 1) & ~((_align_)-1))
