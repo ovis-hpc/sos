@@ -122,7 +122,7 @@ int ods_rbt_is_leaf(struct ods_rbn *n);
 	(type *)((char *)__mptr - offsetof(type,member));})
 #endif
 #define ODS_RBT_FOREACH(rbn, ods_rbt) \
-	for ((rbn) = ods_rbt_min((ods_rbt)); (rbn); (rbn) = rbn_succ((rbn)))
+	for ((rbn) = ods_rbt_min((ods_rbt)); (rbn); (rbn) = ods_rbn_succ((rbn)))
 
 #ifdef __cplusplus
 }

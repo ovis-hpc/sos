@@ -186,7 +186,9 @@ static void __sos_part_free(void *free_arg)
 {
 	sos_part_t part = free_arg;
 	ods_obj_put(part->udata_obj);
-	ods_close(part->obj_ods, ODS_COMMIT_ASYNC);
+	ods_obj_put(part->ref_obj);
+	if (part->obj_ods)
+		ods_close(part->obj_ods, ODS_COMMIT_ASYNC);
 	free(part);
 }
 
@@ -296,7 +298,7 @@ static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj)
 		errno = rc;
 		return NULL;
 	}
-	part->ref_obj = ref_obj;
+	part->ref_obj = ods_obj_get(ref_obj);
 	part->sos = sos;
 	TAILQ_INSERT_TAIL(&sos->part_list, part, entry);
 	return part;
@@ -378,12 +380,14 @@ static int __make_part_primary(sos_t sos, sos_part_t part)
 	if (sos->primary_part) {
 		SOS_PART_REF(sos->primary_part->ref_obj)->state = SOS_PART_STATE_ACTIVE;
 		SOS_PART_UDATA(sos->primary_part->udata_obj)->is_primary = 0;
+		sos_ref_put(&sos->primary_part->ref_count, "primary_part");
 	}
 	/* Make part_obj primary */
 	SOS_PART_REF(part->ref_obj)->state = SOS_PART_STATE_PRIMARY;
 	SOS_PART_REF_UDATA(sos->part_ref_udata)->primary = ods_obj_ref(part->udata_obj);
 	SOS_PART_UDATA(part->udata_obj)->is_primary = 1;
 	sos->primary_part = part;
+	sos_ref_get(&sos->primary_part->ref_count, "primary_part");
 	__sos_schema_reset(part->sos);
 	return 0;
 }
@@ -529,6 +533,7 @@ ods_obj_t __sos_part_ref_next(sos_t sos, ods_obj_t part_obj)
 		return NULL;
 
 	next_ref = SOS_PART_REF(part_obj)->next;
+	ods_obj_put(part_obj);
 	if (!next_ref)
 		return NULL;
 
@@ -544,8 +549,8 @@ static int __refresh_part_list(sos_t sos)
 	int new;
 
 	if (sos->primary_part) {
-		sos_ref_put(&sos->primary_part->ref_count, "primary_part");
 		sos->primary_part = NULL;
+		sos_ref_put(&sos->primary_part->ref_count, "primary_part");
 	}
 	for (part_obj = __sos_part_ref_first(sos);
 	     part_obj; part_obj = __sos_part_ref_next(sos, part_obj)) {
@@ -570,6 +575,8 @@ static int __refresh_part_list(sos_t sos)
 		}
 	}
  out:
+	if (part_obj)
+		ods_obj_put(part_obj);
 	return rc;
 }
 
@@ -621,6 +628,7 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 	TAILQ_FOREACH(part, &sos->part_list, entry) {
 		if (SOS_PART_REF(part->ref_obj)->state == SOS_PART_STATE_PRIMARY) {
 			sos->primary_part = part;
+			sos_ref_get(&part->ref_count, "primary_part");
 			goto out;
 		}
 	}
@@ -648,9 +656,9 @@ union exp_obj_u {
 };
 #pragma pack()
 
-sos_part_t sos_part_get(sos_part_t part)
+sos_part_t _sos_part_get(sos_part_t part, const char *func, int line)
 {
-	sos_ref_get(&part->ref_count, "application");
+	_sos_ref_get(&part->ref_count, "application", func, line);
 	return part;
 }
 
@@ -744,6 +752,7 @@ int sos_part_attach(sos_t sos, const char *name, const char *path)
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->head = ods_obj_ref(new_part_ref);
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->tail = ods_obj_ref(new_part_ref);
 	}
+	ods_obj_put(new_part_ref);
 	ods_atomic_inc(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
 	ods_atomic_inc(&SOS_PART_UDATA(part->udata_obj)->ref_count);
 	ods_unlock(sos->part_ref_ods, 0);
@@ -794,12 +803,14 @@ int sos_part_detach(sos_part_t part)
 	if (prev_ref) {
 		ods_obj_t prev = ods_ref_as_obj(sos->part_ref_ods, prev_ref);
 		SOS_PART_REF(prev)->next = next_ref;
+		ods_obj_put(prev);
 	} else {
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->head = next_ref;
 	}
 	if (next_ref) {
 		ods_obj_t next = ods_ref_as_obj(sos->part_ref_ods, next_ref);
 		SOS_PART_REF(next)->prev = prev_ref;
+		ods_obj_put(next);
 	} else {
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->tail = prev_ref;
 	}
@@ -807,14 +818,14 @@ int sos_part_detach(sos_part_t part)
 	/* Remove the sos_part_t from the part_list */
 	TAILQ_REMOVE(&sos->part_list, part, entry);
 	ods_obj_delete(part->ref_obj);
-	ods_atomic_dec(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
+	ods_atomic_inc(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
 	ods_atomic_dec(&SOS_PART_UDATA(part->udata_obj)->ref_count);
 	__part_close(part);
 	sos_ref_put(&part->ref_count, "application");	/* obtained by ...find */
 	sos_ref_put(&part->ref_count, "part_list");
 out:
 	ods_unlock(sos->part_ref_ods, 0);
-	pthread_mutex_unlock(&part->sos->lock);
+	pthread_mutex_unlock(&sos->lock);
 	return rc;
 }
 

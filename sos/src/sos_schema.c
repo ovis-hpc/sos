@@ -1400,6 +1400,7 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 		assert(attr->data->indexed);
 	retry:
 		sprintf(idx_name, "%s_%s", schema->data->name, attr->data->name);
+		assert(attr->index == NULL);
 		attr->index = sos_index_open(sos, idx_name);
 		if (!attr->index) {
 			if (errno != ENOENT) {

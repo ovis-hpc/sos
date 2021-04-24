@@ -256,7 +256,7 @@ void ods_idx_close(ods_idx_t idx, int flags)
 	if (!idx)
 		return;
 	if (0 == ods_atomic_dec(&idx->ref_count)) {
-		ods_lwarn("%s index is closing.\n", idx->ods->path);
+		ods_ldebug("%s index is closing.\n", idx->ods->path);
 		idx->idx_class->prv->close(idx);
 		ods_close(idx->ods, flags);
 		free(idx);

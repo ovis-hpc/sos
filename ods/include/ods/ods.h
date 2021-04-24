@@ -179,16 +179,6 @@ int ods_stat_get(ods_t ods, ods_stat_t osb);
 extern int ods_stat(ods_t ods, struct stat *sb);
 
 /**
- * \brief Show ODS object map information
- *
- * Goes through all open ODS and if 'name' appears anywhere in the
- * path, outputs the mmap information for that ODS.
- *
- * \param name The search string
- */
-extern void ods_dump_maps(const char *name);
-
-/**
  * \brief Truncate an ODS to its minimum size
  *
  * An ODS has both allocated and unallocated space. This function
@@ -283,12 +273,19 @@ extern void ods_commit(ods_t ods, int flags);
  * function waits until the changes are commited to stable storage
  * before returning.
  *
- * This function protects against releasing a NULL store.
+ * This function returns EINVAL on a NULL \c ods handle.
  *
- * \param ods	The ods handle.
- * \param flags	Set to ODS_COMMIT_SYNC for a synchronous close.
+ * If there are active objects held by the application EINUSE is
+ * returned. This is to prevent the application from crashing
+ * if the application subsequently attempts to use the object.
+ *
+ * \param ods	  The \c ods handle.
+ * \param flags	  Set to ODS_COMMIT_SYNC for a synchronous close.
+ * \retval 0	  The ODS was closed successfully
+ * \retval EBUSY  There are objects still held by the application
+ * \retval EINVAL The \c ods parameter is NULL
  */
-extern void ods_close(ods_t ods, int flags);
+extern int ods_close(ods_t ods, int flags);
 
 /**
  * \brief Allocate an object of the requested size
@@ -668,11 +665,11 @@ int ods_lock_cleanup(const char *path);
  *          If NULL, the output will be written to the
  *          ODS log file
  */
-#define ODS_MAP_INFO		1
-#define ODS_ACTIVE_OBJ_INFO	2
-#define ODS_FREE_OBJ_INFO	4
-#define ODS_LOCK_INFO		8
-#define ODS_ALL_INFO		0xff
+#define ODS_INFO_MAP		1
+#define ODS_INFO_ACTIVE_OBJ	2
+#define ODS_INFO_FREE_OBJ	4
+#define ODS_INFO_LOCK		8
+#define ODS_INFO_ALL		0xff
 void ods_info(ods_t ods, FILE *fp, int flags);
 
 EXTERN_C_END

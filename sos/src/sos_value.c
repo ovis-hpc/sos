@@ -539,32 +539,12 @@ sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
  */
 sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *arr_obj)
 {
-#if 0
-	sos_obj_t ref_obj;
-#endif
 	sos_value_data_t ref_val = NULL;
-
 	if (arr_obj)
 		*arr_obj = NULL;
-
 	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
 	if (sos_attr_is_array(attr))
 		ref_val = (sos_value_data_t)&(obj->obj->as.bytes[ref_val->array_info.offset]);
-
-#if 0
-	if (!sos_attr_is_array(attr))
-		return ref_val;
-
-	ref_obj = sos_ref_as_obj(obj->sos, ref_val->prim.ref_);
-	if (ref_obj) {
-		/* If this is an array object and the caller did not
-		 * provide the arr_obj parameter, the object will be
-		 * leaked */
-		assert(arr_obj);
-		*arr_obj = ref_obj; /* ref from sos_ref_as_obj */
-		ref_val = (sos_value_data_t)&SOS_OBJ(ref_obj->obj)->data[0];
-	}
-#endif
 	return ref_val;
 }
 

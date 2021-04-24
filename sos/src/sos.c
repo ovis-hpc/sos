@@ -518,7 +518,7 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 void sos_index_info(sos_index_t index, FILE *fp)
 {
 	ods_idx_info(index->primary_idx, fp);
-	ods_info(ods_idx_ods(index->primary_idx), fp, ODS_ALL_INFO);
+	ods_info(ods_idx_ods(index->primary_idx), fp, ODS_INFO_ALL);
 }
 
 /**
@@ -563,12 +563,12 @@ void sos_container_info(sos_t sos, FILE *fp)
 		fp = stdout;
 	ods_rbt_traverse(&sos->schema_name_rbt, print_schema, fp);
 	ods_idx_info(sos->schema_idx, fp);
-	ods_info(ods_idx_ods(sos->schema_idx), fp, ODS_ALL_INFO);
-	ods_info(sos->schema_ods, fp, ODS_ALL_INFO);
+	ods_info(ods_idx_ods(sos->schema_idx), fp, ODS_INFO_ALL);
+	ods_info(sos->schema_ods, fp, ODS_INFO_ALL);
 	sos_part_t part;
 	TAILQ_FOREACH(part, &sos->part_list, entry) {
 		if (part->obj_ods)
-			ods_info(part->obj_ods, fp, ODS_ALL_INFO);
+			ods_info(part->obj_ods, fp, ODS_INFO_ALL);
 	}
 }
 
@@ -711,6 +711,8 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 	if (sos->idx_ods)
 		ods_close(sos->idx_ods, flags);
 	sos_part_t part;
+	if (sos->primary_part)
+		sos_ref_put(&sos->primary_part->ref_count, "primary_part");
 	while (!TAILQ_EMPTY(&sos->part_list)) {
 		part = TAILQ_FIRST(&sos->part_list);
 		TAILQ_REMOVE(&sos->part_list, part, entry);
@@ -1359,6 +1361,7 @@ sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref)
 		return NULL;
 	}
 	ods_obj = ods_ref_as_obj(part->obj_ods, ref.ref.obj);
+	sos_part_put(part);
 	if (!ods_obj) {
 		errno = ENOENT;
 		return NULL;
@@ -1424,11 +1427,13 @@ sos_schema_t sos_obj_schema(sos_obj_t obj)
  */
 void sos_obj_delete(sos_obj_t obj)
 {
-	if (!obj->obj->ods)
+	if (!obj->obj->ods) {
 		free(obj->obj);
-	else
+	} else {
 		ods_obj_delete(obj->obj);
-	obj->obj = NULL;
+		ods_obj_put(obj->obj);
+		obj->obj = NULL;
+	}
 }
 
 /**

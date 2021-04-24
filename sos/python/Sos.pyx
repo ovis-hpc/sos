@@ -711,13 +711,15 @@ cdef class Partition(SosObject):
     def detach(self):
         """Detach partition from the container"""
         cdef int c_rc = sos_part_detach(self.c_part)
+        self.c_part = NULL;
         if c_rc != 0:
             self.abort(c_rc)
-        self.release()
 
     def destroy(self, path):
         """Destroy a partition"""
         cdef int c_rc
+        if self.c_part != NULL:
+            self.abort(EBUSY)
         c_rc = sos_part_destroy(path.encode())
         if c_rc != 0:
             self.abort(c_rc)
@@ -1305,13 +1307,16 @@ cdef class Key(object):
         self.c_key = c_key
         return self
 
+    def release(self):
+        if self.c_key:
+            sos_key_put(self.c_key)
+            self.c_key = NULL
+
     def __del__(self):
         self.__dealloc__()
 
     def __dealloc__(self):
-        if self.c_key:
-            sos_key_put(self.c_key)
-            self.c_key = NULL
+        self.release()
 
     def get_attr(self):
         return self.attr
@@ -1908,13 +1913,13 @@ cdef class Attr(SosObject):
         cdef sos_obj_t c_obj
         cdef sos_obj_t c_arr_obj
         cdef sos_value_data_t c_data
-        cdef sos_key_t key
+        cdef sos_key_t c_key
         cdef int t
 
         if not self.is_indexed():
             return None
 
-        c_obj = sos_index_find_max(sos_attr_index(self.c_attr), &key)
+        c_obj = sos_index_find_max(sos_attr_index(self.c_attr), &c_key)
         if c_obj == NULL:
             return None
         c_data = sos_obj_attr_data(c_obj, self.c_attr, &c_arr_obj)
@@ -1923,6 +1928,7 @@ cdef class Attr(SosObject):
         v = <object>type_getters[<int>t](c_obj, c_data, self.c_attr)
 
         sos_obj_put(c_obj)
+        sos_key_put(c_key)
         if c_arr_obj != NULL:
             sos_obj_put(c_arr_obj)
         return v
@@ -1932,13 +1938,13 @@ cdef class Attr(SosObject):
         cdef sos_obj_t c_obj
         cdef sos_obj_t c_arr_obj
         cdef sos_value_data_t c_data
-        cdef sos_key_t key
+        cdef sos_key_t c_key
         cdef int t
 
         if not self.is_indexed():
             return None
 
-        c_obj = sos_index_find_min(sos_attr_index(self.c_attr), &key)
+        c_obj = sos_index_find_min(sos_attr_index(self.c_attr), &c_key)
         if c_obj == NULL:
             return None
         c_data = sos_obj_attr_data(c_obj, self.c_attr, &c_arr_obj)
@@ -1947,6 +1953,7 @@ cdef class Attr(SosObject):
         v = <object>type_getters[<int>t](c_obj, c_data, self.c_attr)
 
         sos_obj_put(c_obj)
+        sos_key_put(c_key);
         if c_arr_obj != NULL:
             sos_obj_put(c_arr_obj)
         return v

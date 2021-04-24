@@ -8,6 +8,26 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+static inline char **sos_ref_stack_trace(int *trace_size)
+{
+	extern size_t backtrace(void *buf, size_t buf_size);
+	extern char **backtrace_symbols(void *buf, size_t buf_size);
+	void *trace[16];
+	char **symbols;
+	*trace_size = backtrace(trace, 16);
+	symbols = backtrace_symbols(trace, *trace_size);
+	return symbols;
+}
+
+static inline void sos_ref_stack_dump(FILE *f)
+{
+	int i, trace_size;
+	char **trace = sos_ref_stack_trace(&trace_size);
+	for (i = 1; i < trace_size; i++)
+		fprintf(f, "\t%s\n", trace[i]);
+}
+
 typedef struct sos_ref_inst_s {
 	const char *get_func;
 	const char *put_func;
@@ -42,8 +62,9 @@ static inline int _sos_ref_put(sos_ref_t r, const char *name, const char *func, 
 			if (0 == inst->ref_count) {
 				fprintf(stderr,
 					"name %s func %s line %d put "
-					"of zero reference\n",
+					"of zero reference:\n",
 					name, func, line);
+				sos_ref_stack_dump(stderr);
 				assert(0);
 			}
 			inst->put_func = func;
@@ -56,6 +77,7 @@ static inline int _sos_ref_put(sos_ref_t r, const char *name, const char *func, 
 	fprintf(stderr,
 		"name %s ref_count %d func %s line %d put but not taken\n",
 		name, r->ref_count, func, line);
+	sos_ref_stack_dump(stderr);
 	assert(0);
  out:
 	if (!count)
@@ -79,6 +101,7 @@ static inline void _sos_ref_get(sos_ref_t r, const char *name, const char *func,
 	if (0 == r->ref_count) {
 		fprintf(stderr, "name %s func %s line %d use after free\n",
 			name, func, line);
+		sos_ref_stack_dump(stderr);
 		assert(0);
 	}
 	LIST_FOREACH(inst, &r->head, entry) {

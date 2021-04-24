@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2020 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2014 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
@@ -357,7 +357,7 @@ static int __sos_iter_obj_ref_new(sos_iter_t sos_iter, ods_iter_t ods_iter,
 
 	new_ref->iter = ods_iter;
 	new_ref->ref.idx_data = ods_iter_data(ods_iter);
-	new_ref->key = ods_iter_key(ods_iter);
+	new_ref->key = key;
 	ods_rbn_init(&new_ref->rbn, new_ref->key);
 	ods_rbt_ins(&sos_iter->rbt, &new_ref->rbn);
 	if (rbn)

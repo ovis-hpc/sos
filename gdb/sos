@@ -1,0 +1,15 @@
+define part_list
+  set $p=$arg0->part_list.tqh_first
+  printf "%16s %9s %s\n", "Name", "Ref Count", "State"
+  printf "---------------- --------- -----\n"
+  while $p != 0
+    printf "%-16s %9d %5d\n", \
+        ((sos_part_ref_data_t)$p->ref_obj->as.ptr)->name, \
+        $p->ref_count.ref_count, \
+        ((sos_part_ref_data_t)$p->ref_obj->as.ptr)->state
+
+    call sos_ref_dump(&$p->ref_count, "Debug", stderr)
+    set $p=$p->entry.tqe_next
+  end
+end
+

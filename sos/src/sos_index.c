@@ -242,10 +242,12 @@ static int __sos_index_reopen(sos_index_t index)
 	ods_idx_t idx;
 
 	/* Close all the existing ODS */
+	sos_part_put(index->primary_part);
 	while (!LIST_EMPTY(&index->active_idx_list)) {
 		idx_ref = LIST_FIRST(&index->active_idx_list);
 		LIST_REMOVE(idx_ref, entry);
 		ods_idx_close(idx_ref->idx, ODS_COMMIT_ASYNC);
+		sos_part_put(idx_ref->part);
 		free(idx_ref);
 	}
 	/* Iterate and reopen for each partition */
@@ -267,14 +269,14 @@ static int __sos_index_reopen(sos_index_t index)
 		}
 		if (sos_part_state(part) == SOS_PART_STATE_PRIMARY) {
 			index->primary_idx = idx;
-			sos_ref_get(&part->ref_count, "index");
-			index->primary_part = part;
+			index->primary_part = sos_part_get(part);
 		}
 		ods_idx_ref_t idx_ref = malloc(sizeof *idx_ref);
 		if (!idx_ref) {
 			return errno;
 		}
 		idx_ref->idx = idx;
+		idx_ref->part = part;
 		LIST_INSERT_HEAD(&index->active_idx_list, idx_ref, entry);
 	}
 	return 0;
@@ -342,8 +344,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		}
 		if (sos_part_state(part) == SOS_PART_STATE_PRIMARY) {
 			index->primary_idx = idx;
-			sos_ref_get(&part->ref_count, "index");
-			index->primary_part = part;
+			index->primary_part = sos_part_get(part);
 		}
 		ods_idx_ref_t idx_ref = malloc(sizeof *idx_ref);
 		if (!idx_ref) {
@@ -351,7 +352,6 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 			goto err_3;
 		}
 		idx_ref->idx = idx;
-		sos_ref_get(&part->ref_count, "index");
 		idx_ref->part = part;
 		LIST_INSERT_HEAD(&index->active_idx_list, idx_ref, entry);
 	}
@@ -720,14 +720,15 @@ int sos_index_close(sos_index_t index, sos_commit_t flags)
 	ods_idx_ref_t idx_ref;
 	if (!index)
 		return EINVAL;
+	sos_part_put(index->primary_part);
 	while (!LIST_EMPTY(&index->active_idx_list)) {
 		idx_ref = LIST_FIRST(&index->active_idx_list);
 		LIST_REMOVE(idx_ref, entry);
 		ods_idx_close(idx_ref->idx, ODS_COMMIT_ASYNC);
+		sos_part_put(idx_ref->part);
 		free(idx_ref);
 	}
 	ods_obj_put(index->idx_obj);
-	sos_ref_put(&index->primary_part->ref_count, "index");
 	free(index);
 	return 0;
 }

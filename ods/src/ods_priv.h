@@ -111,7 +111,7 @@ struct ods_map_s {
 		size_t len;		/* This length of this map in Bytes */
 	} map;
 	struct ods_rbn rbn;		/* Active map tree */
-	LIST_ENTRY(ods_map_s) entry; /* Queued for deletion */
+	LIST_ENTRY(ods_map_s) entry;	/* Queued for deletion */
 };
 
 typedef struct ods_dirty_s {
@@ -164,6 +164,45 @@ struct ods_s {
 	struct ods_rbt dirty_tree;
 
 	LIST_ENTRY(ods_s) entry;
+
+	void (*commit)(ods_t ods, int flags);
+	int (*close)(ods_t ods, int flags);
+
+	ods_obj_t (*obj_alloc)(ods_t ods, size_t sz);
+	void (*obj_delete)(ods_obj_t obj);
+	void (*ref_delete)(ods_t ods, ods_ref_t ref);
+	uint32_t (*ref_status)(ods_t ods, ods_ref_t ref);
+	int (*ref_valid)(ods_t ods, ods_ref_t ref);
+	int (*extend)(ods_t ods, size_t sz);
+	ods_obj_t (*ref_as_obj)(ods_t ods, ods_ref_t ref);
+
+	uint64_t (*get_alloc_size)(ods_map_t map, uint64_t size);
+	void (*obj_iter_pos_init)(ods_obj_iter_pos_t pos);
+	int (*obj_iter)(ods_t ods, ods_obj_iter_pos_t pos,
+			ods_obj_iter_fn_t iter_fn, void *arg);
+
+	void (*dump)(ods_t ods, FILE *fp);
+	int (*stat_get)(ods_t ods, ods_stat_t osb);
+	int (*fstat_get)(ods_t ods, struct stat *);
+	int (*destroy)(ods_t ods);
+
+	struct ods_version_s (*version)(ods_t ods);
+	size_t (*lock_count)(ods_t ods);
+	int (*lock_)(ods_t ods, int lock_id, struct timespec *wait);
+	void (*unlock)(ods_t ods, int lock_id);
+	void (*dump_maps)(const char *name);
+	int (*lock_cleanup)(const char *path);
+	int (*lock_info)(const char *path, FILE *fp);
+	void (*info)(ods_t ods, FILE *fp, int flags);
+	void (*obj_put)(ods_obj_t obj);
+	int (*obj_valid)(ods_t ods, ods_obj_t obj);
+	ods_stat_t (*stat_buf_new)(ods_t ods);
+	void (*stat_buf_del)(ods_t ods, ods_stat_t buf);
+	ods_obj_t (*get_user_data)(ods_t ods);
+
+	void (*release_dead_locks)(ods_t ods);
+	uint64_t (*flush_data)(ods_t ods, int keep_time);
+
 };
 
 #define ODS_OBJ_SIGNATURE "OBJSTORE"
@@ -284,7 +323,6 @@ struct ods_obj_data_s {
 
 /* Garbage collection timeout */
 #define ODS_DEF_GC_TIMEOUT	10 /* 10 seconds */
-extern time_t __ods_gc_timeout;
 
 /* Default map size */
 #define ODS_MIN_MAP_SZ	(64 * ODS_PAGE_SIZE)	/* 256K */
@@ -292,6 +330,7 @@ extern time_t __ods_gc_timeout;
 #define ODS_MAX_MAP_SZ	(512 * ODS_DEF_MAP_SZ)	/* 512M */
 
 extern uint64_t __ods_def_map_sz;
+extern time_t __ods_gc_timeout;
 
 /* ODS Debug True/False */
 extern int __ods_debug;
@@ -324,5 +363,7 @@ static inline void ods_log(int level, const char *func, int line, char *fmt, ...
 
 void __ods_obj_delete(ods_obj_t obj);
 #define ODS_ROUNDUP(_sz_, _align_) (((_sz_) + (_align_) - 1) & ~((_align_)-1))
+
+ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode);
 
 #endif

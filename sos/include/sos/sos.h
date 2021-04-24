@@ -442,7 +442,8 @@ sos_part_state_t sos_part_state(sos_part_t part);
 int sos_part_state_set(sos_part_t part, sos_part_state_t state);
 uint32_t sos_part_refcount(sos_part_t part);
 void sos_part_uuid(sos_part_t part, uuid_t uuid);
-sos_part_t sos_part_get(sos_part_t part);
+sos_part_t _sos_part_get(sos_part_t part, const char *func, int line);
+#define sos_part_get(_p_) _sos_part_get(_p_, __func__, __LINE__)
 void sos_part_put(sos_part_t part);
 int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
 
