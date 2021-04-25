@@ -81,7 +81,7 @@ static int __set_map_size(ods_t ods, struct ods_opt *opt, const char *name, cons
 {
 	size_t size = strtol(value, NULL, 0);
 	if (size >= ODS_PAGE_SIZE) {
-		ods->obj_map_sz = size;
+		(void)ods->set(ods, ODS_MAP_SIZE, size);
 		return 0;
 	}
 	return EINVAL;
@@ -89,7 +89,9 @@ static int __set_map_size(ods_t ods, struct ods_opt *opt, const char *name, cons
 
 static const char *__get_map_size(ods_t ods, struct ods_opt *opt, const char *name)
 {
-	snprintf(opt->value, sizeof(opt->value), "%zu", ods->obj_map_sz);
+	size_t size;
+	(void)ods->get(ods, ODS_MAP_SIZE, &size);
+	snprintf(opt->value, sizeof(opt->value), "%zu", size);
 	return opt->value;
 }
 

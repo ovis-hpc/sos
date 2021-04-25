@@ -33,21 +33,20 @@
 #include "config.h"
 #include "ods_priv.h"
 #include "ods_log.h"
+#include "ods_mmap.h"
 #define ODS_OBJ_SUFFIX		".OBJ"
 #define ODS_PGTBL_SUFFIX	".PG"
 
-static size_t ref_size(ods_t ods, ods_ref_t ref);
-static void free_ref(ods_t ods, ods_ref_t ref);
-static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz);
-static ods_pgt_t pgt_map(ods_t ods);
-static void pgt_unmap(ods_t ods);
-static int ref_valid(ods_t ods, ods_ref_t ref);
-static void free_pages(ods_t ods, uint64_t pg_no);
+static size_t ref_size(ods_mmap_t ods, ods_ref_t ref);
+static void free_ref(ods_mmap_t ods, ods_ref_t ref);
+static ods_map_t map_new(ods_mmap_t ods, loff_t loff, uint64_t *ref_sz);
+static ods_pgt_t pgt_map(ods_mmap_t ods);
+static void pgt_unmap(ods_mmap_t ods);
+static int ref_valid(ods_mmap_t ods, ods_ref_t ref);
+static void free_pages(ods_mmap_t ods, uint64_t pg_no);
 static void __lock_init(ods_lock_t *lock);
-static void __ods_lock(ods_t ods);
-static void __ods_unlock(ods_t ods);
-static int __pgt_lock(ods_t ods);
-static void __pgt_unlock(ods_t ods);
+static int __pgt_lock(ods_mmap_t ods);
+static void __pgt_unlock(ods_mmap_t ods);
 static inline void map_put(ods_map_t map);
 
 extern int __ods_debug;
@@ -95,7 +94,7 @@ static inline void reset_bit(uint64_t *bits, int bit)
 	bits[word] &= ~(1L << bit);
 }
 
-static ods_pgt_t pgt_get(ods_t ods)
+static ods_pgt_t pgt_get(ods_mmap_t ods)
 {
 	ods_pgt_t pgt;
 	/* Get and/or refresh the page table */
@@ -119,19 +118,6 @@ static inline ods_map_t map_get(ods_map_t map)
 		ods_atomic_inc(&map->refcount);
 	}
 	return map;
-}
-
-static void *ref_to_ptr(ods_t ods, uint64_t ref, uint64_t *ref_sz, ods_map_t *map)
-{
-	if (!ref || !ods)
-		return NULL;
-
-	*map = map_new(ods, ref, ref_sz);
-	if (!*map)
-		return NULL;
-
-	assert(ref >= (*map)->map.off);
-	return &(*map)->data[ref - (*map)->map.off];
 }
 
 static inline uint64_t ref_to_page_no(ods_ref_t ref)
@@ -227,13 +213,62 @@ static int init_pgtbl(int pg_fd)
 	return 0;
 }
 
-static struct ods_version_s ods_mmap_version(ods_t ods)
+static int ods_mmap_get(ods_t ods_, int cfg_id, ...)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
+	va_list ap;
+	size_t *size_p;
+	uint64_t *uint64_p;
+
+	va_start(ap, cfg_id);
+	switch (cfg_id) {
+	case ODS_OBJ_SIZE:
+		size_p = va_arg(ap, size_t *);
+		*size_p = ods->obj_sz;
+		break;
+	case ODS_LOCK_COUNT:
+		size_p = va_arg(ap, size_t *);
+		*size_p = ODS_LOCK_CNT;
+		break;
+	case ODS_MAP_SIZE:
+		uint64_p = va_arg(ap, uint64_t *);
+		*uint64_p = ods->obj_map_sz;
+		break;
+	default:
+		return EINVAL;
+	}
+	va_end(ap);
+	return 0;
+}
+
+static int ods_mmap_set(ods_t ods_, int cfg_id, ...)
+{
+	ods_mmap_t ods = (ods_mmap_t)ods_;
+	va_list ap;
+	uint64_t uint64;
+	int rc = 0;
+
+	va_start(ap, cfg_id);
+	switch (cfg_id) {
+	case ODS_MAP_SIZE:
+		uint64 = va_arg(ap, uint64_t);
+		ods->obj_map_sz = uint64;
+		break;
+	default:
+		rc = EINVAL;
+	}
+	va_end(ap);
+	return rc;
+}
+
+static struct ods_version_s ods_mmap_version(ods_t ods_)
+{
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_pgt_t pgt;
 	struct ods_version_s ver = { 0, 0, 0, "" };
 	static char commit_id[] = "........................................";
 
-	__ods_lock(ods);
+	__ods_lock(ods_);
 	__pgt_lock(ods);
 	pgt = pgt_get(ods);
 	if (!pgt)
@@ -243,7 +278,7 @@ static struct ods_version_s ods_mmap_version(ods_t ods)
 	ver.git_commit_id = commit_id;
  out:
 	__pgt_unlock(ods);
-	__ods_unlock(ods);
+	__ods_unlock(ods_);
 	return ver;
 }
 
@@ -291,13 +326,9 @@ static void __release_lock(ods_lock_t *lock)
 	pthread_mutex_unlock(&lock->mutex);
 }
 
-static size_t ods_mmap_lock_count(ods_t ods)
+static int ods_mmap_lock(ods_t ods_, int lock_id, struct timespec *wait)
 {
-	return ODS_LOCK_CNT;
-}
-
-static int ods_mmap_lock(ods_t ods, int lock_id, struct timespec *wait)
-{
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_lock_t *lock;
 	ods_pgt_t pgt = ods->lck_table;
 	assert(pgt);
@@ -309,8 +340,9 @@ static int ods_mmap_lock(ods_t ods, int lock_id, struct timespec *wait)
 	return __take_lock(lock, wait);
 }
 
-static void ods_mmap_unlock(ods_t ods, int lock_id)
+static void ods_mmap_unlock(ods_t ods_, int lock_id)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_lock_t *lock;
 	ods_pgt_t pgt = ods->lck_table;
 	assert(pgt);
@@ -322,32 +354,22 @@ static void ods_mmap_unlock(ods_t ods, int lock_id)
 	__release_lock(lock);
 }
 
-static int __pgt_lock(ods_t ods)
+static int __pgt_lock(ods_mmap_t ods)
 {
 	ods_pgt_t pgt = ods->lck_table;
 	assert(pgt);
 	return __take_lock(&pgt->pgt_lock, NULL);
 }
 
-static void __pgt_unlock(ods_t ods)
+static void __pgt_unlock(ods_mmap_t ods)
 {
 	ods_pgt_t pgt = ods->lck_table;
 	assert(pgt);
 	return __release_lock(&pgt->pgt_lock);
 }
 
-static void __ods_lock(ods_t ods)
-{
-	(void)pthread_mutex_lock(&ods->lock);
-}
-
-static void __ods_unlock(ods_t ods)
-{
-	pthread_mutex_unlock(&ods->lock);
-}
-
 /* Returns a 2^x value based on the current ODS container size */
-static inline size_t new_obj_map_sz(ods_t ods)
+static inline size_t new_obj_map_sz(ods_mmap_t ods)
 {
 	uint64_t computed_size = ods->obj_sz >> 3;
 	int i = __builtin_clz(computed_size);
@@ -368,7 +390,7 @@ static inline size_t new_obj_map_sz(ods_t ods)
  * be used for the map size rounded up to the next ODS_PAGE_SZ
  * boundary.
  */
-static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
+static ods_map_t map_new(ods_mmap_t ods, loff_t loff, uint64_t *ref_sz)
 {
 	void *obj_map;
 	struct ods_rbn *rbn;
@@ -380,7 +402,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 	uint64_t sz;
 
 	/* Opportunistically check if last map will work */
-	__ods_lock(ods);
+	__ods_lock(&ods->base);
 
 	/* Get the PGT in case it has been resized by another process */
 	__pgt_lock(ods);
@@ -397,7 +419,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 	    && (loff >= map->map.off)
 	    && ((map->map.off + map->map.len) >= (loff + sz))) {
 		__pgt_unlock(ods);
-		__ods_unlock(ods);
+		__ods_unlock(&ods->base);
 		return map;
 	} else if (map) {
 		map_put(map);
@@ -423,7 +445,7 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 				map_get(map);
 			}
 			__pgt_unlock(ods);
-			__ods_unlock(ods);
+			__ods_unlock(&ods->base);
 			return map;
 		}
 		/* Found a map, but it wasn't big enough */
@@ -455,8 +477,8 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 		       ods->obj_fd, map_off);
 	if (obj_map == MAP_FAILED) {
 		ods_lerror("Map failure for %zu bytes in %s on fd %d\n",
-			   map_len, ods->path, ods->obj_fd);
-		ods_info(ods, __ods_log_fp, ODS_INFO_ALL);
+			   map_len, ods->base.path, ods->obj_fd);
+		ods_info(&ods->base, __ods_log_fp, ODS_INFO_ALL);
 		goto err_2;
 	}
 
@@ -468,25 +490,25 @@ static ods_map_t map_new(ods_t ods, loff_t loff, uint64_t *ref_sz)
 	ods_rbn_init(&map->rbn, &map->map);
 	ods_rbt_ins(&ods->map_tree, &map->rbn);
 	__pgt_unlock(ods);
-	__ods_unlock(ods);
+	__ods_unlock(&ods->base);
 	return map_get(map);	/* The map_tree consumes a reference */
 
  err_2:
 	free(map);
  err_1:
 	__pgt_unlock(ods);
-	__ods_unlock(ods);
+	__ods_unlock(&ods->base);
 	return NULL;
 }
 
-static void pgt_unmap(ods_t ods)
+static void pgt_unmap(ods_mmap_t ods)
 {
 	int rc = munmap(ods->pg_table, ods->pg_sz);
 	assert(rc == 0);
 	ods->pg_table = NULL;
 }
 
-static ods_pgt_t pgt_map(ods_t ods)
+static ods_pgt_t pgt_map(ods_mmap_t ods)
 {
 	int rc;
 	ods_pgt_t pgt_map;
@@ -505,7 +527,7 @@ static ods_pgt_t pgt_map(ods_t ods)
 
 	/* Check the Page Table signature */
 	if (memcmp(pgt_map->pg_signature, ODS_PGT_SIGNATURE, sizeof(pgt_map->pg_signature))) {
-		ods_lerror("The file '%s' is not a Page Table file\n", ods->path);
+		ods_lerror("The file '%s' is not a Page Table file\n", ods->base.path);
 		errno = EINVAL;
 		goto err_1;
 	}
@@ -535,7 +557,7 @@ static ods_pgt_t pgt_map(ods_t ods)
 	return NULL;
 }
 
-static ods_pgt_t lck_map(ods_t ods)
+static ods_pgt_t lck_map(ods_mmap_t ods)
 {
 	void *lck_map;
 
@@ -552,7 +574,7 @@ static ods_pgt_t lck_map(ods_t ods)
 	return NULL;
 }
 
-static inline int pgt_is_ok(ods_t ods)
+static inline int pgt_is_ok(ods_mmap_t ods)
 {
 	/* Make certain the generation number is still good */
 	if (ods->pg_gen != ods->pg_table->pg_gen)
@@ -597,13 +619,12 @@ static inline void map_put(ods_map_t map)
 			 * object has this as a reference
 			 */
 			ods_obj_t obj;
-			LIST_FOREACH(obj, &map->ods->obj_list, entry) {
-				if (obj->map == map) {
+			LIST_FOREACH(obj, &map->ods->base.obj_list, entry) {
+				if (obj->context == map) {
 					ods_lfatal("obj %p map %p ods %p\n",
 						   obj, map, map->ods);
-					ods_info(map->ods, __ods_log_fp,
-						 ODS_INFO_ALL);
-					assert(1);
+					ods_info(&map->ods->base, __ods_log_fp, ODS_INFO_ALL);
+					assert(0 == "Deleting map with active object references");
 				}
 			}
 		}
@@ -752,7 +773,7 @@ static int ods_mmap_lock_info(const char *path, FILE *fp)
 	return rc;
 }
 
-static void __active_map_info(ods_t ods, FILE *fp)
+static void __active_map_info(ods_mmap_t ods, FILE *fp)
 {
 	fprintf(fp, "Active Maps\n");
 	fprintf(fp, "               Ref   Map            Map            Obj\n");
@@ -779,126 +800,66 @@ static void __active_object_info(ods_t ods, FILE *fp)
 		fprintf(fp, "%14p %4d %8zu 0x%012lx %14p %14p %14p %5d %s\n",
 			obj,
 			obj->refcount,
-			obj->size, obj->ref, obj->as.ptr, obj->map,
+			obj->size, obj->ref, obj->as.ptr, obj->context,
 			(void *)obj->thread,
 			obj->alloc_line, obj->alloc_func);
-		if (obj->size == 1312) {
-			struct sos_part_ref_data_s *part = obj->as.ptr;
-			fprintf(stderr, "'%s', '%s', %d\n", part->name, part->path, part->state);
-		}
-
 	}
 	fprintf(fp, "\n");
 }
 
-static void __lock_info(ods_t ods, FILE *fp)
+static void __lock_info(ods_mmap_t ods, FILE *fp)
 {
 	pthread_mutex_t *mtx;
 	int do_hdr = 1;
 	int id;
 
 	mtx = &ods->pg_table->pgt_lock.mutex;
-	print_lock(fp, &do_hdr, ods->path, "Global", 0, mtx);
+	print_lock(fp, &do_hdr, ods->base.path, "Global", 0, mtx);
 
 	for (id = 0; id < ODS_LOCK_CNT; id++) {
 		mtx = &ods->pg_table->lck_tbl[id].mutex;
-		print_lock(fp, &do_hdr, ods->path, "User", id, mtx);
+		print_lock(fp, &do_hdr, ods->base.path, "User", id, mtx);
 	}
 }
 
-static void ods_mmap_info(ods_t ods, FILE *fp, int flags)
+static void ods_mmap_info(ods_t ods_, FILE *fp, int flags)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	if (!fp)
 		fp = __ods_log_fp;
 	fprintf(fp, "\nODS: %p path: %s "
 		"obj_fd: %d obj_size: %lu "
 		"pg_fd: %d pg_size: %lu\n\n",
-		ods, ods->path, ods->obj_fd, ods->obj_sz,
+		ods, ods->base.path, ods->obj_fd, ods->obj_sz,
 		ods->pg_fd, ods->pg_sz);
 	if (flags & ODS_INFO_MAP)
 		__active_map_info(ods, fp);
 	if (flags & ODS_INFO_ACTIVE_OBJ)
-		__active_object_info(ods, fp);
+		__active_object_info(&ods->base, fp);
 	if (flags & ODS_INFO_LOCK)
 		__lock_info(ods, fp);
 	fflush(fp);
 }
 
-/*
- * Release a reference to an object
- */
-static void __ods_obj_put(ods_obj_t obj, int lock)
-{
-	assert(obj && obj->ods);
-	if (!ods_atomic_dec(&obj->refcount)) {
-		assert(obj->refcount == 0);
-		if (lock)
-			__ods_lock(obj->ods);
-		ods_atomic_dec(&obj->ods->obj_count);
-		LIST_REMOVE(obj, entry);
-		if (lock)
-			__ods_unlock(obj->ods);
-		map_put(obj->map);
-		free(obj);
-	}
-}
-
 static void ods_mmap_obj_put(ods_obj_t obj)
 {
-	__ods_obj_put(obj, 1);
+	assert(obj && obj->ods && obj->refcount == 0);
+	map_put((ods_map_t)obj->context);
 }
 
-/*
- * Verify that an object is valid.
- */
-static int ods_mmap_obj_valid(ods_t ods, ods_obj_t obj)
+static void *ods_mmap_ref_as_ptr(ods_t ods_, ods_ref_t ref,
+	uint64_t *ref_sz, void **context)
 {
-	/* Iterate through the list of active objects to see if obj is present */
-	ods_obj_t o;
-	LIST_FOREACH(o, &ods->obj_list, entry) {
-		if (o == obj)
-			return 1;
-	}
-	return 0;
-}
-
-static ods_obj_t obj_new(ods_t ods, ods_ref_t ref)
-{
-	uint64_t ref_sz;
-	ods_obj_t obj;
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_map_t map;
-	void *ptr = ref_to_ptr(ods, ref, &ref_sz, &map);
-	if (!ptr)
+	if (!ref || !ods_)
 		return NULL;
-	obj = calloc(1, sizeof *obj);
-	if (!obj)
+	map = map_new(ods, ref, ref_sz);
+	if (!map)
 		return NULL;
-	obj->ods = ods;
-	obj->as.ptr = ptr;
-	obj->ods = ods;
-	obj->ref = ref;
-	obj->refcount = 1;
-	obj->map = map;
-	obj->size = ref_sz;
-	return obj;
-}
-
-static ods_obj_t ods_mmap_ref_as_obj(ods_t ods, ods_ref_t ref)
-{
-	ods_obj_t obj;
-	if (!ref || !ods)
-		return NULL;
-
-	obj = obj_new(ods, ref);
-	if (!obj)
-		return NULL;
-
-	__ods_lock(ods);
-	ods_atomic_inc(&ods->obj_count);
-	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
-	__ods_unlock(ods);
-
-	return obj;
+	*context = map;
+	assert(ref >= map->map.off);
+	return &(map->data[ref - map->map.off]);
 }
 
 LIST_HEAD(map_list_head, ods_map_s);
@@ -931,8 +892,9 @@ static int del_map_fn(struct ods_rbn *rbn, void *arg, int l)
 	return 0;
 }
 
-static int ods_mmap_extend(ods_t ods, size_t sz)
+static int ods_mmap_extend(ods_t ods_, size_t sz)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	struct map_list_head del_list;
 	struct del_fn_arg_s fn_arg;
 	struct stat pg_sb, obj_sb;
@@ -941,10 +903,10 @@ static int ods_mmap_extend(ods_t ods, size_t sz)
 	size_t n_sz;
 	int rc;
 
-	if (!ods->o_perm)
+	if (0 == (ods_->o_perm & ODS_PERM_WR))
 		return EPERM;
 
-	__ods_lock(ods);
+	__ods_lock(ods_);
 	__pgt_lock(ods);
 	/*
 	 * Update our cached sizes in case they have been changed
@@ -1015,7 +977,7 @@ static int ods_mmap_extend(ods_t ods, size_t sz)
 	rc = 0;
  out:
 	__pgt_unlock(ods);
-	__ods_unlock(ods);
+	__ods_unlock(ods_);
 	return rc;
 }
 
@@ -1035,25 +997,26 @@ static void ods_mmap_stat_buf_del(ods_t ods, ods_stat_t buf)
 	free(buf);
 }
 
-static int ods_mmap_stat_get(ods_t ods, ods_stat_t osb)
+static int ods_mmap_stat_get(ods_t ods_, ods_stat_t osb)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	int rc, bkt, blk;
 	uint64_t allocb, freeb, pg_no;
 	ods_pgt_t pgt;
 	ods_pg_t pg;
 	struct stat sb;
-	__ods_lock(ods);
+	__ods_lock(ods_);
 	__pgt_lock(ods);
 	pgt = pgt_get(ods);
 	if (!pgt) {
 		__pgt_unlock(ods);
-		__ods_unlock(ods);
+		__ods_unlock(ods_);
 		return ENOMEM;
 	}
 	rc = fstat(ods->obj_fd, &sb);
 	if (rc) {
 		__pgt_unlock(ods);
-		__ods_unlock(ods);
+		__ods_unlock(ods_);
 		return rc;
 	}
 
@@ -1086,12 +1049,13 @@ static int ods_mmap_stat_get(ods_t ods, ods_stat_t osb)
 		osb->st_total_blk_alloc += allocb;
 	}
 	__pgt_unlock(ods);
-	__ods_unlock(ods);
+	__ods_unlock(ods_);
 	return 0;
 }
 
-static int ods_mmap_fstat_get(ods_t ods, struct stat *sb)
+static int ods_mmap_fstat_get(ods_t ods_, struct stat *sb)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	return fstat(ods->obj_fd, sb);
 }
 
@@ -1159,23 +1123,13 @@ static int64_t map_cmp(void *akey, const void *bkey, void *arg)
 	return 0;
 }
 
-static int64_t ref_cmp(void *akey, const void *bkey, void *arg)
-{
-	return (*(ods_ref_t*)akey - *(ods_ref_t*)bkey);
-}
-
-const char *ods_mmap_path(ods_t ods)
-{
-	return ods->path;
-}
-
-static ods_obj_t ods_mmap_get_user_data(ods_t ods)
+static ods_ref_t ods_mmap_get_user_data(ods_t ods)
 {
 	/* User data starts immediately after the object data header */
-	return ods_mmap_ref_as_obj(ods, sizeof(struct ods_obj_data_s));
+	return sizeof(struct ods_obj_data_s);
 }
 
-static uint64_t alloc_pages(ods_t ods, size_t pg_needed)
+static uint64_t alloc_pages(ods_mmap_t ods, size_t pg_needed)
 {
 	uint64_t pg_no, p_pg_no, n_pg_no;
 	ods_pgt_t pgt = ods->pg_table;
@@ -1301,7 +1255,7 @@ static struct bkt_bits {
 	{   63, 2048,    2, 0x0000000000000003, 0x0000000000000000},
 };
 
-static uint64_t replenish_bkt(ods_t ods, ods_pgt_t pgt, int bkt)
+static uint64_t replenish_bkt(ods_mmap_t ods, ods_pgt_t pgt, int bkt)
 {
 	uint64_t pg_no = alloc_pages(ods, 1);
 	if (!pg_no)
@@ -1341,7 +1295,7 @@ static void del_bkt_tbl_pg(ods_pgt_t pgt, int bkt, uint32_t pg_no)
 	assert(0 == "Attempt to remove a block that was not on the free list");
 }
 
-static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
+static ods_ref_t alloc_blk(ods_mmap_t ods, ods_pgt_t pgt, uint64_t sz)
 {
 	int blk, bkt = size_to_bkt(sz);
 	ods_pg_t pg;
@@ -1370,16 +1324,16 @@ static ods_ref_t alloc_blk(ods_t ods, ods_pgt_t pgt, uint64_t sz)
 	return ref;
 }
 
-static ods_obj_t ods_mmap_obj_alloc(ods_t ods, size_t sz)
+static ods_ref_t ods_mmap_alloc(ods_t ods_, size_t sz)
 {
-	ods_obj_t obj = NULL;
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	uint64_t pg_no;
 	ods_ref_t ref = 0;
 	ods_pgt_t pgt;
 
-	if (!ods->o_perm) {
+	if (0 == (ods->base.o_perm & ODS_PERM_WR)) {
 		errno = EPERM;
-		return NULL;
+		return 0;
 	}
 
 	__pgt_lock(ods);
@@ -1405,19 +1359,11 @@ static ods_obj_t ods_mmap_obj_alloc(ods_t ods, size_t sz)
 	if (__ods_debug && ref)
 		assert(ref_valid(ods, ref));
 	__pgt_unlock(ods);
-	obj = ods_mmap_ref_as_obj(ods, ref);
-	if (!obj && ref) {
-		__pgt_lock(ods);
-		free_ref(ods, ref);
-		__pgt_unlock(ods);
-	}
-	if (!obj)
-		errno = ENOMEM;
 
-	return obj;
+	return ref;
 }
 
-static size_t ref_size(ods_t ods, ods_ref_t ref)
+static size_t ref_size(ods_mmap_t ods, ods_ref_t ref)
 {
 	uint64_t pg_no;
 	ods_pg_t pg;
@@ -1442,7 +1388,7 @@ static size_t ref_size(ods_t ods, ods_ref_t ref)
 	return pg->pg_count << ODS_PAGE_SHIFT;
 }
 
-static inline int ref_to_blk_no(ods_t ods, ods_ref_t ref)
+static inline int ref_to_blk_no(ods_mmap_t ods, ods_ref_t ref)
 {
 	uint64_t sz = ref_size(ods, ref);
 	return (ref & ~ODS_PAGE_MASK) / sz;
@@ -1453,7 +1399,7 @@ static inline int ref_to_blk_no(ods_t ods, ods_ref_t ref)
  * unallocated or inside an allocation (i.e. not the start), return
  * False (0)
  */
-static int ref_valid(ods_t ods, ods_ref_t ref)
+static int ref_valid(ods_mmap_t ods, ods_ref_t ref)
 {
 	uint64_t pg_no = ref_to_page_no(ref);
 	ods_pgt_t pgt = ods->pg_table;
@@ -1484,8 +1430,9 @@ static int ref_valid(ods_t ods, ods_ref_t ref)
 	return pgt->pg_pages[pg_no].pg_count;
 }
 
-static int ods_mmap_ref_valid(ods_t ods, ods_ref_t ref)
+static int ods_mmap_ref_valid(ods_t ods_, ods_ref_t ref)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	int rc;
 	__pgt_lock(ods);
 	rc = ref_valid(ods, ref);
@@ -1493,15 +1440,7 @@ static int ods_mmap_ref_valid(ods_t ods, ods_ref_t ref)
 	return rc;
 }
 
-static uint64_t ods_mmap_get_alloc_size(ods_map_t map, uint64_t size)
-{
-	if (size < ODS_PAGE_SIZE)
-		return bkt_to_size(size_to_bkt(size));
-	/* allocated size is in pages. */
-	return page_count(size) << ODS_PAGE_SHIFT;
-}
-
-static void free_blk(ods_t ods, ods_ref_t ref)
+static void free_blk(ods_mmap_t ods, ods_ref_t ref)
 {
 	ods_pgt_t pgt = ods->pg_table;
 	ods_pg_t pg;
@@ -1553,7 +1492,7 @@ static void free_blk(ods_t ods, ods_ref_t ref)
 	free_pages(ods, pg_no);
 }
 
-static void free_pages(ods_t ods, uint64_t pg_no)
+static void free_pages(ods_mmap_t ods, uint64_t pg_no)
 {
 	ods_pgt_t pgt = ods->pg_table;
 	ods_pg_t pg, next_ext;
@@ -1633,12 +1572,13 @@ static int commit_map_fn(struct ods_rbn *rbn, void *arg, int l)
 /*
  * This function is thread safe.
  */
-static void ods_mmap_commit(ods_t ods, int flags)
+static void ods_mmap_commit(ods_t ods_, int flags)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	int mflag = (flags ? MS_SYNC : MS_ASYNC);
-	__ods_lock(ods);
+	__ods_lock(ods_);
 	ods_rbt_traverse(&ods->map_tree, commit_map_fn, (void *)(unsigned long)mflag);
-	__ods_unlock(ods);
+	__ods_unlock(ods_);
 }
 
 /*
@@ -1647,41 +1587,21 @@ static void ods_mmap_commit(ods_t ods, int flags)
  * references to the ODS handle and the application tries to use it
  * after this function returns, it will crash.
  */
-static int ods_mmap_close(ods_t ods, int flags)
+static int ods_mmap_close(ods_t ods_, int flags)
 {
-	ods_obj_t obj;
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_map_t map;
 	if (!ods)
 		return 0;
 
-	ods_commit(ods, flags);
-
-	if (!LIST_EMPTY(&ods->obj_list)) {
-		ods_lwarn("%s: The ODS %s has %d active objects, "
-			"close is leaking resources.\n",
-			__func__, ods->path, ods->obj_count);
-		ods_mmap_info(ods, __ods_log_fp, ODS_INFO_ALL);
-		return EBUSY;
-	}
+	ods_commit(ods_, flags);
 
 	pgt_unmap(ods);
 	if (ods->lck_table)
 		munmap(ods->lck_table, ODS_PAGE_SIZE);
 	close(ods->pg_fd);
 	close(ods->obj_fd);
-	free(ods->path);
-
-	/* Clean up objects left around by poorly behaving apps */
-	if (__ods_debug) {
-		if (!LIST_EMPTY(&ods->obj_list))
-			__active_object_info(ods, __ods_log_fp);
-		while (!LIST_EMPTY(&ods->obj_list)) {
-			obj = LIST_FIRST(&ods->obj_list);
-			LIST_REMOVE(obj, entry);
-			map_put(obj->map);
-			free(obj);
-		}
-	}
+	free(ods->base.path);
 
 	/* Clean up any maps */
 	struct ods_rbn *rbn;
@@ -1697,7 +1617,7 @@ static int ods_mmap_close(ods_t ods, int flags)
 	return 0;
 }
 
-static void free_ref(ods_t ods, ods_ref_t ref)
+static void free_ref(ods_mmap_t ods, ods_ref_t ref)
 {
 	uint64_t pg_no = ref_to_page_no(ref);
 	ods_pgt_t pgt = ods->pg_table;
@@ -1709,8 +1629,9 @@ static void free_ref(ods_t ods, ods_ref_t ref)
 		free_pages(ods, pg_no);
 }
 
-static uint32_t ods_mmap_ref_status(ods_t ods, ods_ref_t ref)
+static uint32_t ods_mmap_ref_status(ods_t ods_, ods_ref_t ref)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	uint64_t pg_no;
 	ods_pgt_t pgt;
 	ods_pg_t pg;
@@ -1745,47 +1666,19 @@ static uint32_t ods_mmap_ref_status(ods_t ods, ods_ref_t ref)
 /*
  * This function is thread safe
  */
-static void ods_mmap_ref_delete(ods_t ods, ods_ref_t ref)
+static void ods_mmap_delete(ods_t ods_, ods_ref_t ref)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	__pgt_lock(ods);
 	free_ref(ods, ref);
 	__pgt_unlock(ods);
 }
 
-/*
- * This function is thread safe
- */
-static void __ods_mmap_obj_delete(ods_obj_t obj)
+static void ods_mmap_dump(ods_t ods_, FILE *fp)
 {
-	ods_ref_t ref = ods_obj_ref(obj);
-	if (ref) {
-		__pgt_lock(obj->ods);
-		free_ref(obj->ods, ref);
-		__pgt_unlock(obj->ods);
-	}
-	obj->ref = 0;
-	obj->as.ptr = NULL;
-	obj->size = 0;
-}
-
-/*
- * This function is thread safe
- */
-static void ods_mmap_obj_delete(ods_obj_t obj)
-{
-	if (!obj->ods)
-		return;
-	if (!obj->ods->o_perm) {
-		errno = EPERM;
-		return;
-	}
-	__ods_mmap_obj_delete(obj);
-}
-
-static void ods_mmap_dump(ods_t ods, FILE *fp)
-{
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	fprintf(fp, "------------------------------- ODS Dump --------------------------------\n");
-	fprintf(fp, "%-32s : \"%s\"\n", "Path", ods->path);
+	fprintf(fp, "%-32s : \"%s\"\n", "Path", ods_->path);
 	fprintf(fp, "%-32s : %d\n", "Object File Fd", ods->obj_fd);
 	fprintf(fp, "%-32s : %zu\n", "Object File Size", ods->obj_sz);
 	fprintf(fp, "%-32s : %d\n", "Page File Fd", ods->pg_fd);
@@ -1864,15 +1757,15 @@ static void ods_mmap_obj_iter_pos_init(ods_obj_iter_pos_t pos)
 /*
  * This function is _not_ thread safe
  */
-static int ods_mmap_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
+static int ods_mmap_obj_iter(ods_t ods_, ods_obj_iter_pos_t pos,
 		 ods_obj_iter_fn_t iter_fn, void *arg)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_pgt_t pgt = ods->pg_table;
 	ods_pg_t pg;
 	uint64_t pg_no, blk;
 	int bkt, rc = 0;
 	size_t sz;
-	ods_obj_t obj;
 
 	if (pos) {
 		pg_no = pos->page_no;
@@ -1897,18 +1790,14 @@ static int ods_mmap_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
 				if (test_bit(pg->pg_bits, blk))
 					/* block is free */
 					continue;
-				obj = ods_mmap_ref_as_obj(ods, (pg_no << ODS_PAGE_SHIFT) | (blk * sz));
-				rc = iter_fn(ods, obj, arg);
-				ods_mmap_obj_put(obj);
+				rc = iter_fn(ods_, (pg_no << ODS_PAGE_SHIFT) | (blk * sz), arg);
 				if (rc)
 					goto out;
 			}
 			pg_no++;
 		} else {
 			blk = 0;
-			obj = ods_mmap_ref_as_obj(ods, pg_no << ODS_PAGE_SHIFT);
-			rc = iter_fn(ods, obj, arg);
-			ods_mmap_obj_put(obj);
+			rc = iter_fn(ods_, pg_no << ODS_PAGE_SHIFT, arg);
 			pg_no += pg->pg_count;
 			if (rc)
 				goto out;
@@ -1923,13 +1812,14 @@ static int ods_mmap_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
 	return rc;
 }
 
-static void ods_mmap_release_dead_locks(ods_t ods)
+static void ods_mmap_release_dead_locks(ods_t ods_)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_pgt_t pgt;
 	pthread_mutex_t *mtx;
 	int id;
 
-	__ods_lock(ods);
+	__ods_lock(ods_);
 	pgt = pgt_get(ods);
 	if (!pgt)
 		goto out;
@@ -1942,7 +1832,7 @@ static void ods_mmap_release_dead_locks(ods_t ods)
 		check_lock(mtx, 1);
 	}
  out:
-	__ods_unlock(ods);
+	__ods_unlock(ods_);
 }
 
 static int ods_mmap_destroy(ods_t ods)
@@ -1974,7 +1864,7 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 {
 	char tmp_path[PATH_MAX];
 	struct stat sb;
-	ods_t ods;
+	ods_mmap_t ods;
 	int obj_fd = -1;
 	int pg_fd = -1;
 	int lock_fd = -1;
@@ -1985,43 +1875,43 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 		errno = ENOMEM;
 		return NULL;
 	}
-	ods->o_perm = o_perm;
+	ods->base.o_perm = o_perm;
 
-	ods->commit = ods_mmap_commit;
-	ods->close = ods_mmap_close;
-	ods->obj_alloc = ods_mmap_obj_alloc;
-	ods->get_alloc_size = ods_mmap_get_alloc_size;
-	ods->obj_delete = ods_mmap_obj_delete;
-	ods->ref_delete = ods_mmap_ref_delete;
-	ods->ref_status = ods_mmap_ref_status;
-	ods->ref_valid = ods_mmap_ref_valid;
-	ods->extend = ods_mmap_extend;
-	ods->dump = ods_mmap_dump;
-	ods->ref_as_obj = ods_mmap_ref_as_obj;
-	ods->obj_iter_pos_init = ods_mmap_obj_iter_pos_init;
-	ods->obj_iter = ods_mmap_obj_iter;
-	ods->dump = ods_mmap_dump;
-	ods->fstat_get = ods_mmap_fstat_get;
-	ods->stat_get = ods_mmap_stat_get;
-	ods->destroy = ods_mmap_destroy;
+	ods->base.commit = ods_mmap_commit;
+	ods->base.close = ods_mmap_close;
+	ods->base.alloc =  ods_mmap_alloc;
+	ods->base.delete = ods_mmap_delete;
+	ods->base.ref_as_ptr = ods_mmap_ref_as_ptr;
 
-	ods->version = ods_mmap_version;
+	ods->base.ref_status = ods_mmap_ref_status;
+	ods->base.ref_valid = ods_mmap_ref_valid;
+	ods->base.extend = ods_mmap_extend;
+	ods->base.dump = ods_mmap_dump;
+	ods->base.obj_iter_pos_init = ods_mmap_obj_iter_pos_init;
+	ods->base.obj_iter = ods_mmap_obj_iter;
+	ods->base.dump = ods_mmap_dump;
+	ods->base.fstat_get = ods_mmap_fstat_get;
+	ods->base.stat_get = ods_mmap_stat_get;
+	ods->base.destroy = ods_mmap_destroy;
 
-	ods->lock_ = ods_mmap_lock;
-	ods->unlock = ods_mmap_unlock;
-	ods->lock_count = ods_mmap_lock_count;
-	ods->lock_cleanup = ods_mmap_lock_cleanup;
-	ods->lock_info = ods_mmap_lock_info;
-	ods->info = ods_mmap_info;
+	ods->base.version = ods_mmap_version;
 
-	ods->get_user_data = ods_mmap_get_user_data;
-	ods->obj_put = ods_mmap_obj_put;
-	ods->obj_valid = ods_mmap_obj_valid;
-	ods->stat_buf_new = ods_mmap_stat_buf_new;
-	ods->stat_buf_del = ods_mmap_stat_buf_del;
+	ods->base.lock_ = ods_mmap_lock;
+	ods->base.unlock = ods_mmap_unlock;
+	ods->base.lock_cleanup = ods_mmap_lock_cleanup;
+	ods->base.lock_info = ods_mmap_lock_info;
+	ods->base.info = ods_mmap_info;
 
-	ods->release_dead_locks = ods_mmap_release_dead_locks;
-	ods->flush_data = ods_mmap_flush_data;
+	ods->base.get_user_data = ods_mmap_get_user_data;
+	ods->base.obj_put = ods_mmap_obj_put;
+	ods->base.stat_buf_new = ods_mmap_stat_buf_new;
+	ods->base.stat_buf_del = ods_mmap_stat_buf_del;
+
+	ods->base.release_dead_locks = ods_mmap_release_dead_locks;
+	ods->base.flush_data = ods_mmap_flush_data;
+
+	ods->base.get = ods_mmap_get;
+	ods->base.set = ods_mmap_set;
 
 	/* Take the ods file lock */
 	sprintf(tmp_path, "%s.lock", path);
@@ -2059,8 +1949,8 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 		goto err;
 	ods->pg_fd = pg_fd;
 
-	ods->path = strdup(path);
-	if (!ods->path)
+	ods->base.path = strdup(path);
+	if (!ods->base.path)
 		goto err;
 
 	rc = fstat(ods->obj_fd, &sb);
@@ -2086,19 +1976,16 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 	if (!lck_map(ods))
 		goto err;
 
-	pthread_mutex_init(&ods->lock, NULL);
-	LIST_INIT(&ods->obj_list);
 	ods->obj_map_sz = __ods_def_map_sz;
 	ods_rbt_init(&ods->map_tree, map_cmp, NULL);
-	ods_rbt_init(&ods->dirty_tree, ref_cmp, NULL);
 
-	return ods;
+	return &ods->base;
 
  err:
 	close(lock_fd);
 	rc = errno;
-	if (ods->path)
-		free(ods->path);
+	if (ods->base.path)
+		free(ods->base.path);
 	if (pg_fd >= 0)
 		close(pg_fd);
 	if (obj_fd >= 0)
@@ -2129,20 +2016,21 @@ static int q4_del_fn(struct ods_rbn *rbn, void *arg, int l)
 	return 0;
 }
 
-static uint64_t ods_mmap_flush_data(ods_t ods, int keep_time)
+static uint64_t ods_mmap_flush_data(ods_t ods_, int keep_time)
 {
+	ods_mmap_t ods = (ods_mmap_t)ods_;
 	struct map_list_head del_list;
 	struct del_fn_arg_s fn_arg;
 	uint64_t mapped;
 
 	if (keep_time == 0) {
 		struct ods_rbn *rbn;
-		__ods_lock(ods);
+		__ods_lock(&ods->base);
 		ODS_RBT_FOREACH(rbn, &ods->map_tree) {
 			ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
 			msync(map->data, map->map.len, MS_ASYNC | MS_INVALIDATE);
 		}
-		__ods_unlock(ods);
+		__ods_unlock(&ods->base);
 		return 0;
 	}
 	/*
@@ -2150,13 +2038,13 @@ static uint64_t ods_mmap_flush_data(ods_t ods, int keep_time)
 		* deleted to the del_list
 		*/
 	LIST_INIT(&del_list);
-	__ods_lock(ods);
+	__ods_lock(ods_);
 	fn_arg.timeout = keep_time;
 	fn_arg.del_q = &del_list;
 	fn_arg.mapped = 0;
 	ods_rbt_traverse(&ods->map_tree, q4_del_fn, &fn_arg);
 	mapped = fn_arg.mapped;
 	empty_del_list(&del_list);
-	__ods_unlock(ods);
+	__ods_unlock(ods_);
 	return mapped;
 }

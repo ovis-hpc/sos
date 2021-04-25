@@ -1297,22 +1297,27 @@ struct part_obj_iter_args_s {
 	void *arg;
 };
 
-static int __part_obj_iter_cb(ods_t ods, ods_obj_t obj, void *arg)
+static int __part_obj_iter_cb(ods_t ods, ods_ref_t obj_ref, void *arg)
 {
+	ods_obj_t ods_obj = ods_ref_as_obj(ods, obj_ref);
+	if (!ods_obj) {
+		sos_error("Object reference %p could not be instantiated as a partition\n", (void *)obj_ref);
+		return 0;
+	}
 	struct part_obj_iter_args_s *oi_args = arg;
 	sos_obj_ref_t ref;
 	sos_obj_t sos_obj;
 	sos_part_t part = oi_args->part;
-	sos_obj_data_t sos_obj_data = obj->as.ptr;
+	sos_obj_data_t sos_obj_data = ods_obj->as.ptr;
 	sos_schema_t schema = sos_schema_by_uuid(part->sos, sos_obj_data->schema_uuid);
 	if (!schema) {
-		sos_warn("Object at %p is missing a valid schema id.\n", ods_obj_ref(obj));
+		sos_warn("Object at %p is missing a valid schema id.\n", (void *)obj_ref);
 		/* This is a garbage object that should not be here */
 		return 0;
 	}
 	uuid_copy(ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
-	ref.ref.obj = ods_obj_ref(obj);
-	sos_obj = __sos_init_obj(part->sos, schema, obj, ref);
+	ref.ref.obj = obj_ref;
+	sos_obj = __sos_init_obj(part->sos, schema, ods_obj, ref);
 	return oi_args->fn(oi_args->part, sos_obj, oi_args->arg);
 }
 

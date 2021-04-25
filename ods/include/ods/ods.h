@@ -344,7 +344,7 @@ extern ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line);
 	 (_o_).size = _sz_,			\
 	 (_o_).ref = 0,				\
 	 (_o_).as.ptr = _data_,			\
-	 (_o_).map = NULL,			\
+	 (_o_).context = NULL,			\
 	 (_o_).thread = pthread_self(),		\
 	 (_o_).alloc_func = __func__,		\
 	 (_o_).alloc_line = __LINE__,		\
@@ -359,7 +359,7 @@ extern ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line);
 		.size = _sz_,			\
 		.ref = 0,			\
 		.as.ptr = _data_,		\
-		.map = NULL,			\
+		.context = NULL,			\
 		.thread = pthread_self(),	\
 		.alloc_func = __func__ ,	\
 		.alloc_line = __LINE__,		\
@@ -467,13 +467,13 @@ extern void ods_dump(ods_t ods, FILE *fp);
  * The callback function owns the reference to the provided object.
  *
  * \param ods	The ODS handle
- * \param obj	The object handle
+ * \param obj	The ODS storage reference
  * \param sz	The size of the object
  * \param arg	The 'arg' passed into ods_obj_iter()
  * \retval 0	Continue iterating
  * \retval !0	Stop iterating
  */
-typedef int (*ods_obj_iter_fn_t)(ods_t ods, ods_obj_t obj, void *arg);
+typedef int (*ods_obj_iter_fn_t)(ods_t ods, ods_ref_t obj, void *arg);
 
 typedef struct ods_obj_iter_pos_s {
 	int page_no;
@@ -558,7 +558,7 @@ struct ods_obj_s {
 	size_t size;		/* allocated size in store */
 	ods_ref_t ref;		/* persistent reference */
 	union ods_obj_type_u as;
-	ods_map_t map;
+	void *context;		/* storage backend object context */
 	pthread_t thread;
 	int alloc_line;
 	const char *alloc_func;

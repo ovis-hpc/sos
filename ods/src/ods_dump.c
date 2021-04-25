@@ -70,14 +70,17 @@ void usage(int argc, char *argv[])
 	exit(1);
 }
 
-int print_fn(ods_t ods, ods_obj_t obj, void *arg)
+int print_fn(ods_t ods, ods_ref_t ref, void *arg)
 {
+	ods_obj_t obj = ods_ref_as_obj(ods, ref);
 	printf("%p %zu\n", obj->as.ptr, obj->size);
+	ods_obj_put(obj);
 	return 0;
 }
 
 int main(int argc, char *argv[])
 {
+	extern int optind;
 	ods_t ods;
 	int c, show_alloc = 0;
 	char *name = NULL;

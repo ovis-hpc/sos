@@ -93,7 +93,9 @@ struct ods_version_s ods_version(ods_t ods)
 
 size_t ods_lock_count(ods_t ods)
 {
-	return ODS_LOCK_CNT;
+	size_t sz;
+	(void)ods->get(ods, ODS_LOCK_COUNT, &sz);
+	return sz;
 }
 
 int ods_lock(ods_t ods, int lock_id, struct timespec *wait)
@@ -149,12 +151,15 @@ void _ods_obj_put(ods_obj_t obj, const char *func, int line)
 	obj->put_line = line;
 	obj->put_func = func;
 
-	if (obj->ods) {
-		obj->ods->obj_put(obj);
-	} else {
-		if (!ods_atomic_dec(&obj->refcount))
-			/* This is a memory object */
-			free(obj);
+	if (!ods_atomic_dec(&obj->refcount)) {
+		if (obj->ods) {
+			ods_atomic_dec(&obj->ods->obj_count);
+			obj->ods->obj_put(obj);
+			__ods_lock(obj->ods);
+			LIST_REMOVE(obj, entry);
+			__ods_unlock(obj->ods);
+		}
+		free(obj);
 	}
 }
 
@@ -163,7 +168,13 @@ void _ods_obj_put(ods_obj_t obj, const char *func, int line)
  */
 int ods_obj_valid(ods_t ods, ods_obj_t obj)
 {
-	return ods->obj_valid(ods, obj);
+	/* Iterate through the list of active objects to see if obj is present */
+	ods_obj_t o;
+	LIST_FOREACH(o, &ods->obj_list, entry) {
+		if (o == obj)
+			return 1;
+	}
+	return 0;
 }
 
 ods_atomic_t ods_obj_count(ods_t ods)
@@ -173,17 +184,37 @@ ods_atomic_t ods_obj_count(ods_t ods)
 
 ods_obj_t _ods_ref_as_obj(ods_t ods, ods_ref_t ref, const char *func, int line)
 {
+	uint64_t ref_sz;
+	void *context;
+	void *ptr;
 	ods_obj_t obj;
 	if (!ref || !ods)
 		return NULL;
 
-	obj = ods->ref_as_obj(ods, ref);
+	ptr = ods->ref_as_ptr(ods, ref, &ref_sz, &context);
+	if (!ptr) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	obj = calloc(1, sizeof *obj);
 	if (!obj)
 		return NULL;
 
+	obj->ods = ods;
+	obj->as.ptr = ptr;
+	obj->ref = ref;
+	obj->refcount = 1;
+	obj->context = context;
+	obj->size = ref_sz;
 	obj->thread = pthread_self();
-	obj->alloc_line = line;
 	obj->alloc_func = func;
+	obj->alloc_line = line;
+
+	__ods_lock(ods);
+	ods_atomic_inc(&ods->obj_count);
+	LIST_INSERT_HEAD(&ods->obj_list, obj, entry);
+	__ods_unlock(ods);
 
 	return obj;
 }
@@ -254,6 +285,8 @@ ods_t ods_open(const char *path, ods_perm_t o_perm, ...)
 	ods_t ods = ods_mmap_open(path, o_perm, o_mode);
 	if (ods) {
 		pthread_mutex_lock(&ods_list_lock);
+		pthread_mutex_init(&ods->lock, NULL);
+		LIST_INIT(&ods->obj_list);
 		LIST_INSERT_HEAD(&ods_list, ods, entry);
 		pthread_mutex_unlock(&ods_list_lock);
 	}
@@ -262,21 +295,26 @@ ods_t ods_open(const char *path, ods_perm_t o_perm, ...)
 
 ods_obj_t _ods_get_user_data(ods_t ods, const char *func, int line)
 {
-	/* User data starts immediately after the object data header */
-	ods_obj_t obj = ods->get_user_data(ods);
-	obj->alloc_func = func;
-	obj->alloc_line = line;
-	return obj;
+	ods_ref_t ref = ods->get_user_data(ods);
+	return _ods_ref_as_obj(ods, ref, func, line);
 }
 
 ods_obj_t _ods_obj_alloc(ods_t ods, size_t sz, const char *func, int line)
 {
-	ods_obj_t obj = ods->obj_alloc(ods, sz);
-	if (obj) {
-		obj->alloc_func = func;
-		obj->alloc_line = line;
+	ods_ref_t ref;
+
+	if (0 == (ods->o_perm & ODS_PERM_RW)) {
+		errno = EACCES;
+		return NULL;
 	}
-	return obj;
+
+	ref = ods->alloc(ods, sz);
+	if (!ref) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	return _ods_ref_as_obj(ods, ref, func, line);
 }
 
 ods_obj_t _ods_obj_alloc_extend(ods_t ods, size_t sz, size_t extend_sz, const char *func, int line)
@@ -300,7 +338,7 @@ ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line)
 	obj->as.ptr = obj + 1;
 	obj->ref = 0;
 	obj->refcount = 1;
-	obj->map = NULL;
+	obj->context = NULL;
 	obj->size = sz;
 	obj->thread = pthread_self();
 	obj->alloc_line = line;
@@ -315,7 +353,9 @@ int ods_ref_valid(ods_t ods, ods_ref_t ref)
 
 size_t ods_size(ods_t ods)
 {
-	return ods->obj_sz;
+	size_t size;
+	(void)ods->get(ods, ODS_OBJ_SIZE, &size);
+	return size;
 }
 
 /*
@@ -341,6 +381,13 @@ int ods_close(ods_t ods, int flags)
 	LIST_REMOVE(ods, entry);
 	pthread_mutex_unlock(&ods_list_lock);
 
+	if (!LIST_EMPTY(&ods->obj_list)) {
+		ods_lwarn("%s: The ODS %s has %d active objects, "
+			"close is leaking resources.\n",
+			__func__, ods->path, ods->obj_count);
+		ods->info(ods, __ods_log_fp, ODS_INFO_ALL);
+		return EBUSY;
+	}
 	return ods->close(ods, flags);
 }
 
@@ -354,7 +401,7 @@ uint32_t ods_ref_status(ods_t ods, ods_ref_t ref)
  */
 void ods_ref_delete(ods_t ods, ods_ref_t ref)
 {
-	ods->ref_delete(ods, ref);
+	ods->delete(ods, ref);
 }
 
 /*
@@ -364,7 +411,13 @@ void ods_obj_delete(ods_obj_t obj)
 {
 	if (!obj->ods)
 		return;
-	return obj->ods->obj_delete(obj);
+	if (0 == (obj->ods->o_perm & ODS_PERM_WR))
+		return;
+	obj->ods->delete(obj->ods, obj->ref);
+	obj->ref = 0;
+	obj->context = 0;
+	obj->as.ptr = NULL;
+	obj->size = 0;
 }
 
 void ods_dump(ods_t ods, FILE *fp)

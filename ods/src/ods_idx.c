@@ -4,6 +4,7 @@
  * See the file COPYING at the top of this source tree for the terms
  * of the Copyright.
  */
+#define _GNU_SOURCE
 #include <sys/errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +23,7 @@
 #include <ods/ods_atomic.h>
 #include "ods_idx_priv.h"
 
-static pthread_spinlock_t __ods_idx_lock;
+static pthread_mutex_t __ods_idx_lock;
 
 struct ods_idx_type {
 	struct ods_idx_provider *provider;
@@ -76,7 +77,7 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 		return NULL;
 	sprintf(idx_classname, "%s:%s", type, key);
 
-	pthread_spin_lock(&__ods_idx_lock);
+	pthread_mutex_lock(&__ods_idx_lock);
 	ods_rbn = ods_rbt_find(&dylib_tree, (void *)idx_classname);
 	if (ods_rbn) {
 		idx_class = container_of(ods_rbn, struct ods_idx_class, rb_node);
@@ -112,7 +113,7 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 	ods_rbt_ins(&dylib_tree, &idx_class->rb_node);
  out:
 	free(idx_classname);
-	pthread_spin_unlock(&__ods_idx_lock);
+	pthread_mutex_unlock(&__ods_idx_lock);
 	return idx_class;
 }
 
@@ -532,7 +533,7 @@ int ods_idx_verify(ods_idx_t idx, FILE *fp)
 
 static void __attribute__ ((constructor)) ods_idx_init(void)
 {
-	pthread_spin_init(&__ods_idx_lock, 1);
+	pthread_mutex_init(&__ods_idx_lock, NULL);
 }
 
 /*
