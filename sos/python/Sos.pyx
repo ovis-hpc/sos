@@ -3834,8 +3834,8 @@ cdef set_CHAR_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
         c_data.array.data.char_[i] = <bytes>s[i]
 
 cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
-    cdef int secs
-    cdef int usecs
+    cdef uint64_t secs
+    cdef uint64_t usecs
     cdef typ = type(val)
     if typ == tuple:
         try:
