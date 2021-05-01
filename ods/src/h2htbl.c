@@ -214,7 +214,7 @@ static int h2htbl_init(ods_t ods, const char *type, const char *key, const char 
 		if (rc)
 			goto out;
 		sprintf(path_buf, "%s/bkt_%d/%s", path, i, base);
-		rc = ods_idx_create(path_buf, sb.st_mode, "HTBL", key, argp);
+		rc = ods_idx_create(path_buf, ods->o_perm, sb.st_mode, "HTBL", key, argp);
 		if (rc)
 			goto out;
 	}

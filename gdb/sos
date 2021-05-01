@@ -1,4 +1,4 @@
-define part_list
+define show_part_list
   set $p=$arg0->part_list.tqh_first
   printf "%16s %9s %s\n", "Name", "Ref Count", "State"
   printf "---------------- --------- -----\n"
@@ -10,6 +10,17 @@ define part_list
 
     call sos_ref_dump(&$p->ref_count, "Debug", stderr)
     set $p=$p->entry.tqe_next
+  end
+end
+
+define show_ods_list
+  set $p=ods_list.lh_first
+  printf "%16s %9s %s\n", "Name", "Ref Count", "State"
+  printf "---------------- --------- -----\n"
+  while $p != 0
+    printf "%-16s %9d %5d\n", \
+        $p->path, 0, 0
+    set $p=$p->entry.le_next
   end
 end
 

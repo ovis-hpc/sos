@@ -62,12 +62,13 @@
 #include <errno.h>
 #include <sos/sos.h>
 
-const char *short_options = "p:d:o:";
+const char *short_options = "p:d:o:s:";
 
 struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},
 	{"path",        required_argument,  0,  'p'},
 	{"desc",        required_argument,  0,  'd'},
+	{"store",	required_argument,  0,  's'},
 	{"mode",	required_argument,  0,  'o'},
 	{0,             0,                  0,  0}
 };
@@ -77,6 +78,7 @@ void usage(int argc, char *argv[])
 	printf("sos_part_create -p <path> -d <desc>\n");
 	printf("    -p <path>	Optional partition path. The container path is used by default.\n");
 	printf("    -d <desc>   A description of the partition's contents.\n");
+	printf("    -s <name>   Storage strategy: MMOS or LSOS");
 	printf("    -o <mode>   File creation mode bits in octal. See open(2)\n");
 	exit(1);
 }
@@ -85,6 +87,7 @@ int main(int argc, char **argv)
 {
 	char *path = NULL;
 	char *desc = "";
+	sos_perm_t o_perm = SOS_BE_MMOS;
 	int o_mode = 0660;
 	int o, rc;
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
@@ -98,6 +101,15 @@ int main(int argc, char **argv)
 		case 'o':
 			o_mode = strtol(optarg, NULL, 8);
 			break;
+		case 's':
+			if (0 == strcasecmp(optarg, "mmos")) {
+				o_perm = SOS_BE_MMOS;
+			} else if (0 == strcasecmp(optarg, "lsos")) {
+				o_perm = SOS_BE_LSOS;
+			} else {
+				fprintf(stderr, "Invalid storage policy '%s'\n", optarg);
+				usage(argc, argv);
+			}
 		case '?':
 		default:
 			usage(argc, argv);
@@ -107,7 +119,7 @@ int main(int argc, char **argv)
 		printf("The partition path is a required argument.\n");
 		usage(0, NULL);
 	}
-	rc = sos_part_create(path, desc, o_mode);
+	rc = sos_part_create(path, desc, o_perm, o_mode);
 	if (rc)
 		fprintf(stderr, "sos_part_create: The partition could not be created, error %s\n", strerror(rc));
 

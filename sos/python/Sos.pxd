@@ -404,7 +404,9 @@ cdef extern from "sos/sos.h":
         SOS_PERM_RD,
         SOS_PERM_WR,
         SOS_PERM_RW,
-        SOS_PERM_CREAT
+        SOS_PERM_CREAT,
+        SOS_BE_MMOS,
+        SOS_BE_LSOS
 
     ctypedef sos_perm_e sos_perm_t
 

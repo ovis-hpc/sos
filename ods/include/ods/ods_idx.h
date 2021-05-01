@@ -122,7 +122,8 @@ typedef struct ods_idx_data_s {
  * of these comparators.
  *
  * \param path	The path to the ODS store
- * \param mode	The file mode permission flags
+ * \param perm  The permissions, only the backend type is honored
+ * \param mode	The file mode flags (see open(3))
  * \param type	The type of the index
  * \param key	The type of the key
  * \param args  Optional(can be NULL) comma separated attr=value
@@ -132,7 +133,7 @@ typedef struct ods_idx_data_s {
  * \return !0	An errno indicating the reason for failure.
  */
 #define ODS_IDX_ARGS_LEN 256
-int ods_idx_create(const char *path, int mode,
+int ods_idx_create(const char *path, int perm, int mode,
 		   const char *type, const char *key,
 		   const char *args);
 
@@ -150,7 +151,7 @@ int ods_idx_destroy(const char *path);
  * store.
  *
  * \param path	The path to the ODS store
- * \param o_perm The requested read/write permissions
+ * \param o_perm The requested read/write permissions and backend type
  * \retval !0	The ods_idx_t handle for the index
  * \retval 0	The index file could not be opened. See the
  *		errno for the reason.

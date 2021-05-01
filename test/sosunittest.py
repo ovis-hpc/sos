@@ -23,7 +23,7 @@ def DprintDisable():
 
 class SosTestCase(unittest.TestCase):
     @classmethod
-    def setUpDb(cls, db_name):
+    def setUpDb(cls, db_name, backend=Sos.BE_MMOS):
         global _sos_test_debug
         cls.db = Sos.Container()
         cls.db_name = db_name
@@ -33,8 +33,14 @@ class SosTestCase(unittest.TestCase):
         else:
             cls.path = cls.db_name
         shutil.rmtree(cls.path, ignore_errors=True)
-        cls.db.create(cls.path)
-        cls.db.open(cls.path)
+        be = os.getenv("SOS_TEST_BACKEND")
+        if be == 'LSOS':
+            backend = Sos.BE_LSOS
+        elif be == 'MMOS':
+            backend = Sos.BE_MMOS
+        else:
+            backend = Sos.BE_MMOS
+        cls.db.open(cls.path, create=True, backend=backend)
         if os.environ.get("SOS_TEST_DEBUG"):
             _sos_test_debug = True
 

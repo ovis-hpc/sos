@@ -1381,6 +1381,7 @@ int sos_obj_commit(sos_obj_t obj)
 	obj->obj = ods_obj;
 	uuid_copy(obj->obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 	obj->obj_ref.ref.obj = ods_obj_ref(ods_obj);
+	ods_obj_update(ods_obj);
 	return 0;
 }
 

@@ -308,7 +308,7 @@ cdef class Container(SosObject):
             return sos_container_version(self.c_cont)
         return None
 
-    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660):
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, create=False, backend=SOS_BE_MMOS):
         """Open the container
 
         If the container cannot be opened (or created) an Exception
@@ -324,17 +324,24 @@ cdef class Container(SosObject):
 
         o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RO
         o_mode - The file creation mode if o_perm includes SOS_PERM_CREAT
+        create - True to create the container if it does not exist
+        backend - One of BE_MMOS (Memory Mapped Object Store) or
+                  BE_LSOS (Log Structured Object Store)
         """
         if self.c_cont != NULL:
             self.abort(EBUSY)
         self.path_ = path
-        self.o_perm = o_perm
+        if create:
+            o_perm |= SOS_PERM_CREAT
+        if backend == SOS_BE_LSOS:
+            o_perm |= SOS_BE_LSOS
+        self.o_perm = o_perm | backend
         self.o_mode = o_mode
-        self.c_cont = sos_container_open(path.encode('utf-8'), o_perm, o_mode)
+        self.c_cont = sos_container_open(path.encode('utf-8'), <sos_perm_t>o_perm, o_mode)
         if self.c_cont == NULL:
             raise self.abort(errno)
 
-    def create(self, path, o_mode=0660):
+    def create(self, path, o_mode=0660, backend=SOS_BE_MMOS):
         """Create the container
 
         This is a convenience method that calls open with
@@ -349,12 +356,14 @@ cdef class Container(SosObject):
 
         o_mode - The file creation mode, default is 0660
         """
+        cdef int c_perm = SOS_PERM_CREAT | SOS_PERM_RW
+        cdef int c_mode = o_mode
         if self.c_cont != NULL:
             self.abort(EBUSY)
         self.path_ = path
-        c_cont = sos_container_open(path.encode(),
-                        o_perm=<sos_perm_t>(SOS_PERM_CREAT|SOS_PERM_RW),
-                        o_mode=o_mode)
+        if backend == SOS_BE_LSOS:
+            c_perm |= SOS_BE_LSOS
+        c_cont = sos_container_open(path.encode(), <sos_perm_t>c_perm, c_mode)
         if c_cont == NULL:
             raise self.abort(errno)
         sos_container_close(c_cont, SOS_COMMIT_SYNC)
@@ -686,7 +695,7 @@ cdef class Partition(SosObject):
         if self.c_part == NULL:
             self.abort(errno)
 
-    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, desc=""):
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, desc="", backend=SOS_BE_MMOS):
         """Open the partition at path
 
         Positional Arguments:
@@ -700,10 +709,16 @@ cdef class Partition(SosObject):
         desc   - If o_perm contains SOS_PERM_CREAT, this is the description
                 given to the new partition
         """
+        cdef int c_perm
+        cdef int c_mode
         cdef sos_part_t c_part
         self.path_ = path
         self.desc_ = desc
-        c_part = sos_part_open(path.encode(), o_perm, o_mode, desc.encode())
+        c_mode = o_mode
+        c_perm = o_perm
+        if backend == BE_LSOS:
+            c_perm |= SOS_BE_LSOS
+        c_part = sos_part_open(path.encode(), c_perm, o_mode, desc.encode())
         if c_part == NULL:
             self.abort(errno)
         self.c_part = c_part;
@@ -1699,6 +1714,8 @@ TYPE_OBJ_ARRAY = SOS_TYPE_OBJ_ARRAY
 PERM_RW = SOS_PERM_RW
 PERM_RO = SOS_PERM_RO
 PERM_CREAT = SOS_PERM_CREAT
+BE_LSOS = SOS_BE_LSOS
+BE_MMOS = SOS_BE_MMOS
 
 VERS_MAJOR = SOS_VERS_MAJOR
 VERS_MINOR = SOS_VERS_MINOR

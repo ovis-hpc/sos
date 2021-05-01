@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2018 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2021 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2013 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
  * Export of this program may require a license from the United States
  * Government.
  *
- * This software is available to you under a choice of one of two
+ * This softwar--e is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
  * General Public License (GPL) Version 2, available from the file
  * COPYING in the main directory of this source tree, or the BSD-type
@@ -77,8 +77,12 @@
 #include "ods_priv.h"
 #include "ods_log.h"
 
-static pthread_mutex_t ods_list_lock = PTHREAD_MUTEX_INITIALIZER;
-static LIST_HEAD(ods_list_head, ods_s) ods_list = LIST_HEAD_INITIALIZER(ods_list);
+static pthread_mutex_t __ods_tree_lock = PTHREAD_MUTEX_INITIALIZER;
+int64_t ods_cmp(void *a, const void *b, void *arg)
+{
+	return strcmp(a, b);
+}
+static struct ods_rbt __ods_tree = ODS_RBT_INITIALIZER(ods_cmp);
 
 #if defined(ODS_DEBUG)
 int __ods_debug = 1;
@@ -271,25 +275,82 @@ const char *ods_path(ods_t ods)
 	return ods->path;
 }
 
-#define ODS_POLICY_MMAP	1
-#define ODS_POLICY_LSOS	2
-ods_t ods_open(const char *path, ods_perm_t o_perm, ...)
+ods_backend_type_t __ods_backend_type(const char *path)
 {
+	char tmp_path[PATH_MAX];
+	int pg_fd;
+	struct ods_backend_s be;
+
+	sprintf(tmp_path, "%s%s", path, ODS_BE_SUFFIX);
+	pg_fd = open(tmp_path, O_RDWR);
+	if (pg_fd < 0) {
+		errno = ENOENT;
+		return 0;
+	}
+	int cnt = read(pg_fd, &be, sizeof(be));
+	if (cnt < sizeof(be)) {
+		errno = EINVAL;
+		close(pg_fd);
+		return 0;
+	}
+	if (memcmp(be.be_signature, ODS_BE_SIGNATURE, sizeof(be.be_signature))) {
+		errno = EINVAL;
+		close(pg_fd);
+		return 0;
+	}
+	close(pg_fd);
+	return be.be_type;
+}
+
+ods_t ods_open(const char *path, ods_perm_t o_flags, ...)
+{
+	int be;
+	ods_t ods = NULL;
+	struct ods_rbn *rbn;
 	int o_mode = 0660;
 	va_list ap;
-	if (o_perm & ODS_PERM_CREAT) {
-		va_start(ap, o_perm);
+
+	/*
+	 * Check if the ODS is already open. If it is, bump the open count
+	 * and return the ODS
+	 */
+	pthread_mutex_lock(&__ods_tree_lock);
+	rbn = ods_rbt_find(&__ods_tree, path);
+	if (rbn) {
+		ods = container_of(rbn, struct ods_s, rbn);
+		ods_atomic_inc(&ods->open_count);
+	}
+	if (ods)
+		goto out;
+
+	if (o_flags & ODS_PERM_CREAT) {
+		be = o_flags & (ODS_BE_LSOS | ODS_BE_MMAP);
+		va_start(ap, o_flags);
 		o_mode = va_arg(ap, int);
 		va_end(ap);
+	} else {
+		be = __ods_backend_type(path);
 	}
-	ods_t ods = ods_mmap_open(path, o_perm, o_mode);
+	switch (be) {
+	case ODS_BE_MMAP:
+		ods = ods_mmap_open(path, o_flags, o_mode);
+		break;
+	case ODS_BE_LSOS:
+		ods = ods_lsos_open(path, o_flags, o_mode);
+		break;
+	default:
+		ods = ods_mmap_open(path, o_flags, o_mode);
+		break;
+	}
 	if (ods) {
-		pthread_mutex_lock(&ods_list_lock);
+		ods->open_count = 1;
 		pthread_mutex_init(&ods->lock, NULL);
 		LIST_INIT(&ods->obj_list);
-		LIST_INSERT_HEAD(&ods_list, ods, entry);
-		pthread_mutex_unlock(&ods_list_lock);
+		ods_rbn_init(&ods->rbn, ods->path);
+		ods_rbt_ins(&__ods_tree, &ods->rbn);
 	}
+out:
+	pthread_mutex_unlock(&__ods_tree_lock);
 	return ods;
 }
 
@@ -346,6 +407,18 @@ ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line)
 	return obj;
 }
 
+void ods_obj_update(ods_obj_t obj)
+{
+	if (obj && obj->ods)
+		obj->ods->update(obj->ods, obj->ref, 0, obj->size);
+}
+
+void ods_obj_update_offset(ods_obj_t obj, uint64_t offset, size_t len)
+{
+	if (obj && obj->ods)
+		obj->ods->update(obj->ods, obj->ref, offset, len);
+}
+
 int ods_ref_valid(ods_t ods, ods_ref_t ref)
 {
 	return ods->ref_valid(ods, ref);
@@ -366,20 +439,20 @@ void ods_commit(ods_t ods, int flags)
 	return ods->commit(ods, flags);
 }
 
-/*
- * This function is racing with the garbage cleanup thread and is
- * thread-safe, but is otherwise, not thread-safe. IOW, if there are
- * references to the ODS handle and the application tries to use it
- * after this function returns, it will crash.
- */
 int ods_close(ods_t ods, int flags)
 {
 	if (!ods)
 		return EINVAL;
-	/* Remove the ODS from the open list */
-	pthread_mutex_lock(&ods_list_lock);
-	LIST_REMOVE(ods, entry);
-	pthread_mutex_unlock(&ods_list_lock);
+
+	if (!ods->open_count) {
+		ods_lfatal("%s: Use after free of ODS %p.\n", __func__, ods);
+		return EBADF;
+	}
+
+	if (ods_atomic_dec(&ods->open_count)) {
+		ods_commit(ods, flags);
+		return 0;
+	}
 
 	if (!LIST_EMPTY(&ods->obj_list)) {
 		ods_lwarn("%s: The ODS %s has %d active objects, "
@@ -388,6 +461,12 @@ int ods_close(ods_t ods, int flags)
 		ods->info(ods, __ods_log_fp, ODS_INFO_ALL);
 		return EBUSY;
 	}
+
+	/* Remove the ODS from the open list */
+	pthread_mutex_lock(&__ods_tree_lock);
+	ods_rbt_del(&__ods_tree, &ods->rbn);
+	pthread_mutex_unlock(&__ods_tree_lock);
+
 	return ods->close(ods, flags);
 }
 
@@ -443,10 +522,14 @@ int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
 static void *flush_all_data_fn(void *arg)
 {
 	ods_t ods;
-	LIST_FOREACH(ods, &ods_list, entry) {
+	struct ods_rbn *rbn;
+	pthread_mutex_lock(&__ods_tree_lock);
+	ODS_RBT_FOREACH(rbn, &__ods_tree) {
+		ods = container_of(rbn, struct ods_s, rbn);
 		ods->release_dead_locks(ods);
 		(void)ods->flush_data(ods, 0);
 	}
+	pthread_mutex_unlock(&__ods_tree_lock);
 	return NULL;
 }
 uint64_t __ods_def_map_sz = ODS_DEF_MAP_SZ;
@@ -455,6 +538,7 @@ static pthread_t gc_thread;
 static void *gc_thread_fn(void *arg)
 {
 	ods_t ods;
+	struct ods_rbn *rbn;
 	uint64_t mapped;
 
 	pthread_cleanup_push(flush_all_data_fn, NULL);
@@ -462,14 +546,15 @@ static void *gc_thread_fn(void *arg)
 	do {
 		pthread_testcancel();
 		sleep(__ods_gc_timeout);
-		pthread_mutex_lock(&ods_list_lock);
+		pthread_mutex_lock(&__ods_tree_lock);
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-		LIST_FOREACH(ods, &ods_list, entry) {
+		ODS_RBT_FOREACH(rbn, &__ods_tree) {
+			ods = container_of(rbn, struct ods_s, rbn);
 			ods->release_dead_locks(ods);
 			mapped = ods->flush_data(ods, 2 * __ods_gc_timeout);
 		}
 		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-		pthread_mutex_unlock(&ods_list_lock);
+		pthread_mutex_unlock(&__ods_tree_lock);
 		ods_ldebug("Total cached data is %ld MB\n", mapped / 1024 / 1024);
 	} while (1);
 	pthread_cleanup_pop(1);

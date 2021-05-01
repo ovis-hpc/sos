@@ -85,7 +85,7 @@ static sos_obj_t next_match(sos_filter_t filt);
 static sos_obj_t prev_match(sos_filter_t filt);
 
 #if 0
-static int __iter_rbn_printer(struct ods_rbn *rbn, void *arg, int level)
+static int __iter_rbn_printer(struct ods_rbn *rbn, void *-arg, int level)
 {
 	ods_key_t key = rbn->key;
 	printf("%p %*c%-2d: %d\n", rbn, 80 - (level * 6), (rbn->color?'B':'R'),

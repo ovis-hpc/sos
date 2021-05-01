@@ -181,7 +181,7 @@ int sos_index_new(sos_t sos, const char *name,
 	strcpy(SOS_IDX(idx_obj)->idx_type, idx_type);
 	strcpy(SOS_IDX(idx_obj)->key_type, key_type);
 	strcpy(SOS_IDX(idx_obj)->args, idx_args);
-
+	ods_obj_update(idx_obj);
 	uuid_clear(idx_ref.ref.part_uuid);
 	idx_ref.ref.obj = ods_obj_ref(idx_obj);
 	rc = ods_idx_insert(sos->idx_idx, idx_key, idx_ref.idx_data);
@@ -195,7 +195,7 @@ int sos_index_new(sos_t sos, const char *name,
 		goto err_0;
 	}
 	sprintf(tmp_path, "%s/%s_idx", sos_part_path(part), name);
-	rc = ods_idx_create(tmp_path, sos->o_mode, idx_type, key_type, idx_args);
+	rc = ods_idx_create(tmp_path, sos->o_perm, sos->o_mode, idx_type, key_type, idx_args);
 	if (rc)
 		goto err_1;
 	ods_obj_put(idx_obj);
@@ -227,7 +227,7 @@ ods_idx_t _open_or_creat(sos_t sos, char *path,
 	/* Attempt to create if it does not exist. */
 	if (errno != ENOENT)
 		return NULL;
-	rc = ods_idx_create(path, mode, idx_type, key_type, args);
+	rc = ods_idx_create(path, sos->o_perm, mode, idx_type, key_type, args);
 	if (!rc)
 		return ods_idx_open(path, sos->o_perm);
 	return NULL;
@@ -240,9 +240,12 @@ static int __sos_index_reopen(sos_index_t index)
 	char tmp_path[PATH_MAX];
 	sos_part_iter_t iter;
 	ods_idx_t idx;
+	ods_idx_ref_t ods_idx_ref;
+	int rc = 0;
 
 	/* Close all the existing ODS */
 	sos_part_put(index->primary_part);
+	index->primary_part = NULL;
 	while (!LIST_EMPTY(&index->active_idx_list)) {
 		idx_ref = LIST_FIRST(&index->active_idx_list);
 		LIST_REMOVE(idx_ref, entry);
@@ -264,22 +267,38 @@ static int __sos_index_reopen(sos_index_t index)
 							SOS_IDX(index->idx_obj)->key_type,
 							SOS_IDX(index->idx_obj)->args);
 		if (!idx) {
+			rc = errno;
 			sos_part_put(part);
-			return errno;
+			goto err_0;
 		}
 		if (sos_part_state(part) == SOS_PART_STATE_PRIMARY) {
 			index->primary_idx = idx;
 			index->primary_part = sos_part_get(part);
 		}
-		ods_idx_ref_t idx_ref = malloc(sizeof *idx_ref);
-		if (!idx_ref) {
-			return errno;
+		ods_idx_ref = malloc(sizeof *ods_idx_ref);
+		if (!ods_idx_ref) {
+			rc = ENOMEM;
+			goto err_1;
 		}
-		idx_ref->idx = idx;
-		idx_ref->part = part;
-		LIST_INSERT_HEAD(&index->active_idx_list, idx_ref, entry);
+		ods_idx_ref->idx = idx;
+		ods_idx_ref->part = part;
+		LIST_INSERT_HEAD(&index->active_idx_list, ods_idx_ref, entry);
 	}
 	return 0;
+ err_1:
+	ods_idx_close(idx, ODS_COMMIT_SYNC);
+ err_0:
+	while (!LIST_EMPTY(&index->active_idx_list)) {
+		ods_idx_ref = LIST_FIRST(&index->active_idx_list);
+		LIST_REMOVE(ods_idx_ref, entry);
+		ods_idx_close(ods_idx_ref->idx, ODS_COMMIT_ASYNC);
+		sos_part_put(ods_idx_ref->part);
+	}
+	if (index->primary_idx) {
+		sos_part_put(index->primary_part);
+		index->primary_part = NULL;
+	}
+	return rc;
 }
 
 /**
@@ -301,6 +320,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 	sos_index_t index;
 	int rc;
 	sos_part_t part;
+	ods_idx_ref_t ods_idx_ref;
 
 	name_len = strlen(name);
 	if (name_len >= SOS_INDEX_NAME_LEN) {
@@ -340,29 +360,39 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 				SOS_IDX(idx_obj)->args);
 		if (!idx) {
 			sos_part_put(part);
-			goto err_2;
+			goto err_3;
 		}
 		if (sos_part_state(part) == SOS_PART_STATE_PRIMARY) {
 			index->primary_idx = idx;
 			index->primary_part = sos_part_get(part);
 		}
-		ods_idx_ref_t idx_ref = malloc(sizeof *idx_ref);
-		if (!idx_ref) {
+		ods_idx_ref = malloc(sizeof *ods_idx_ref);
+		if (!ods_idx_ref) {
 			errno = ENOMEM;
-			goto err_3;
+			goto err_4;
 		}
-		idx_ref->idx = idx;
-		idx_ref->part = part;
-		LIST_INSERT_HEAD(&index->active_idx_list, idx_ref, entry);
+		ods_idx_ref->idx = idx;
+		ods_idx_ref->part = part;
+		LIST_INSERT_HEAD(&index->active_idx_list, ods_idx_ref, entry);
 	}
 	index->idx_obj = idx_obj;
 	ods_unlock(sos->idx_ods, 0);
 	return index;
+ err_4:
+	ods_idx_close(idx, ODS_COMMIT_SYNC);
  err_3:
 	ods_obj_put(idx_obj);
  err_2:
 	ods_unlock(sos->idx_ods, 0);
  err_1:
+	while (!LIST_EMPTY(&index->active_idx_list)) {
+		ods_idx_ref = LIST_FIRST(&index->active_idx_list);
+		LIST_REMOVE(ods_idx_ref, entry);
+		ods_idx_close(ods_idx_ref->idx, ODS_COMMIT_ASYNC);
+		sos_part_put(ods_idx_ref->part);
+	}
+	if (index->primary_idx)
+		sos_part_put(index->primary_part);
 	free(index);
  err_0:
 	return NULL;

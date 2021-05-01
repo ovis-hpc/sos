@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2021 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2012 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
  * license for use of this work by or on behalf of the U.S. Government.
@@ -88,11 +88,13 @@ typedef struct ods_obj_s *ods_obj_t;
 extern int ods_destroy(const char *path);
 
 typedef enum ods_perm_e {
-	ODS_PERM_RO = 0,
-	ODS_PERM_RD = 1,
-	ODS_PERM_WR = 2,
+	ODS_PERM_RO = 0x00,
+	ODS_PERM_RD = 0x01,
+	ODS_PERM_WR = 0x02,
 	ODS_PERM_RW = ODS_PERM_RD | ODS_PERM_WR,
-	ODS_PERM_CREAT = 4
+	ODS_PERM_CREAT = 0x04,
+	ODS_BE_MMAP = 0x08,
+	ODS_BE_LSOS = 0x10
 } ods_perm_t;
 
 /**
@@ -105,23 +107,23 @@ extern const char *ods_path(ods_t ods);
  * \brief Open and optionally create an ODS object store
  *
  * \param path	The path to the ODS to be opened.
- * \param o_perm The requested read/write/create permissions.
+ * \param o_flags The requested read/write/create permissions and backend type
  * \param o_mode Optional file mode if ODS_PERM_CREAT is specified. See the creat() system call.
  * \retval !0	The ODS handle
  * \retval 0	An error occured opening/creating the ODS
  */
-extern ods_t ods_open(const char *path, ods_perm_t o_perm, ...);
+extern ods_t ods_open(const char *path, ods_perm_t o_flags, ...);
 
-#define ODS_VER_MAJOR	4
-#define ODS_VER_MINOR	4
+#define ODS_VER_MAJOR	5
+#define ODS_VER_MINOR	1
 #define ODS_VER_FIX	1
 
 #pragma pack(1)
 struct ods_version_s {
-	uint8_t major;		/* Binary compatability */
-	uint8_t minor;		/* Feature availability */
-	uint16_t fix;		/* Defect repair */
-	const char *git_commit_id;	/* git commit id */
+	uint8_t major;			/* Binary compatability */
+	uint8_t minor;			/* Feature availability */
+	uint16_t fix;			/* Defect repair */
+	const char commit_id[44];	/* git commit id */
 };
 #pragma pack()
 /**
@@ -366,6 +368,29 @@ extern ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line);
 		.put_line = 0,			\
 		.put_func = NULL		\
 	}
+
+/**
+ * @brief Notify the backend that the object data has been modified
+ *
+ * If the \c obj parameter is NULL this function does nothing.
+ *
+ * @param obj The object handle.
+ */
+void ods_obj_update(ods_obj_t obj);
+
+/**
+ * @brief Notify the backend that part of the object data has been modified
+ *
+ * This utility is useful for very large objects, i.e. object whose size
+ * is greater than a page.
+ *
+ * If the \c obj parameter is NULL this function does nothing.
+ *
+ * @param obj The object handle.
+ * @param offset The offset into the object data
+ * @param len The number of bytes that were modified
+ */
+void ods_obj_update_offset(ods_obj_t obj, uint64_t offset, size_t len);
 
 /**
  * \brief Free the storage for this object in the ODS

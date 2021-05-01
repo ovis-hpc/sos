@@ -170,7 +170,7 @@ int main(int argc, char *argv[])
 
 	char argp[ODS_IDX_ARGS_LEN];
 	sprintf(argp, "ORDER=%d", order);
-	rc = ods_idx_create(idx_path, 0660, idx_name, key_str, argp);
+	rc = ods_idx_create(idx_path, 0, 0660, idx_name, key_str, argp);
 	if (rc) {
 		printf("The index '%s' of type '%s' could not be created due "
 		       "to error %d.\n",

@@ -19,8 +19,10 @@
 struct ods_s {
 	/* The path to the file on disk */
 	char *path;
+	ods_atomic_t open_count;
+	struct ods_rbn rbn;
 
-	/* Open permissions */
+	/* Open flags */
 	ods_perm_t o_perm;
 
 	/* Local lock for this ODS instance */
@@ -30,17 +32,15 @@ struct ods_s {
 	ods_atomic_t obj_count;
 	LIST_HEAD(obj_list_head, ods_obj_s) obj_list;
 
-	LIST_ENTRY(ods_s) entry;
-
-	void (*commit)(ods_t ods, int flags);
 	int (*close)(ods_t ods, int flags);
-
+	void (*commit)(ods_t ods, int flags);
 	ods_ref_t (*alloc)(ods_t ods, size_t sz);
 	void (*delete)(ods_t ods, ods_ref_t ref);
 	void *(*ref_as_ptr)(ods_t od_, ods_ref_t ref, uint64_t *ref_sz, void **context);
 	uint32_t (*ref_status)(ods_t ods, ods_ref_t ref);
 	int (*extend)(ods_t ods, size_t sz);
 	int (*ref_valid)(ods_t ods, ods_ref_t ref);
+	void (*update)(ods_t ods, ods_ref_t ref, loff_t offset, size_t len);
 
 	void (*obj_iter_pos_init)(ods_obj_iter_pos_t pos);
 	int (*obj_iter)(ods_t ods, ods_obj_iter_pos_t pos,
@@ -103,6 +103,25 @@ extern time_t __ods_gc_timeout;
 void __ods_obj_delete(ods_obj_t obj);
 #define ODS_ROUNDUP(_sz_, _align_) (((_sz_) + (_align_) - 1) & ~((_align_)-1))
 
-ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode);
+#pragma pack(4)
+
+#define ODS_BE_SIGNATURE	"ODS_BE_1"
+#define ODS_BE_SUFFIX		".BE"
+struct ods_backend_s {
+	char be_signature[8];	/* ODS_BE_SIGNATURE */
+	struct ods_version_s be_vers; /* version */
+	uint64_t be_type;	/* The backend type */
+};
+#pragma pack()
+
+typedef enum ods_backend_type_e {
+	ODS_BACKEND_MMAP = 1,	/* Memory Structured Object Store (mmap) */
+	ODS_BACKEND_LSOS = 2	/* Log Structured Object Store */
+} ods_backend_type_t;
+
+ods_backend_type_t __ods_backend_type(const char *path);
+
+ods_t ods_mmap_open(const char *path, ods_perm_t o_flags, int o_mode);
+ods_t ods_lsos_open(const char *path, ods_perm_t o_flags, int o_mode);
 
 #endif

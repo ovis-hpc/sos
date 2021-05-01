@@ -39,6 +39,7 @@ from version_test import VersionTest
 from append_data_test import AppendDataTest
 from update_test import UpdateTest
 from partition_test import PartitionTest
+from lsos_test import LSOSTest
 
 tests = [ SchemaTest,
           ObjTestSetGet,
@@ -70,6 +71,7 @@ tests = [ SchemaTest,
           AppendDataTest,
           UpdateTest,
           PartitionTest,
+          LSOSTest
           ]
 
 if __name__ == "__main__":

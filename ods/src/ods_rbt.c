@@ -148,24 +148,11 @@ int64_t ods_rbn_cmp(struct ods_rbt *t, struct ods_rbn *a, struct ods_rbn *b)
 	return t->comparator(a->key, b->key, t->comparator_arg);
 }
 
-/**
- * \brief Insert a new node into the ODS_RBT.
- *
- * Insert a new node into a ODS_RBT. The node is allocated by the user and
- * must be freed by the user when removed from the tree. The 'key'
- * field of the provided node must have already been set up by the
- * caller.
- *
- * \param t	Pointer to the ODS_RBT.
- * \param x	Pointer to the node to insert.
- */
-void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *x)
+static int __ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *x, int allow_dup)
 {
 	struct ods_rbn *parent = NULL;
 	struct ods_rbn *n;
 	int64_t c = 0;
-
-	t->card += 1;
 
 	/* Initialize new node */
 	x->left = x->right = NULL;
@@ -175,7 +162,8 @@ void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *x)
 		x->color = ODS_RBN_BLACK;
 		t->root = x;
 		x->parent = NULL;
-		return;
+		t->card += 1;
+		return 1;
 	}
 
 	/* Always insert a RED node */
@@ -183,6 +171,8 @@ void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *x)
 	for (n = t->root; n; ) {
 		parent = n;
 		c = t->comparator(n->key, x->key, t->comparator_arg);
+		if (c == 0 && 0 == allow_dup)
+			return 0;
 		if (c > 0)
 			n = n->left;
 		else
@@ -239,6 +229,39 @@ void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *x)
 		}
 	}
 	t->root->color = ODS_RBN_BLACK;
+	t->card += 1;
+	return 1;
+}
+
+/**
+ * \brief Insert a new node into the ODS_RBT.
+ *
+ * Insert a new node into a ODS_RBT. The node is allocated by the user and
+ * must be freed by the user when removed from the tree. The 'key'
+ * field of the provided node must have already been set up by the
+ * caller.
+ *
+ * \param t	Pointer to the ODS_RBT.
+ * \param x	Pointer to the node to insert.
+ */
+void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *x)
+{
+    (void)__ods_rbt_ins(t, x, 1);
+}
+/**
+ * @brief Insert a unique node into the RBT.
+ *
+ * If the key already exists, the input rbn is not modified and FALSE
+ * (0) is returned.
+ *
+ * @param t     Pointer to the RBT.
+ * @param x     Pointer to the node to insert.
+ * @return TRUE(1) if the node is inserted
+ * @return FALSE(0) if the key already exists
+ */
+int ods_rbt_ins_unique(struct ods_rbt *t, struct ods_rbn *x)
+{
+	return __ods_rbt_ins(t, x, 0);
 }
 
 static inline struct ods_rbn *find_pred(struct ods_rbn *n)

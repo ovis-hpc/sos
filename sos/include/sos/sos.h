@@ -76,7 +76,9 @@ typedef enum sos_perm_e {
 	SOS_PERM_RD = ODS_PERM_RD,
 	SOS_PERM_WR = ODS_PERM_WR,
 	SOS_PERM_RW = ODS_PERM_RW,
-	SOS_PERM_CREAT = ODS_PERM_CREAT
+	SOS_PERM_CREAT = ODS_PERM_CREAT,
+	SOS_BE_MMOS = ODS_BE_MMAP,
+	SOS_BE_LSOS = ODS_BE_LSOS
 } sos_perm_t;
 
 #define SOS_POS_KEEP_TIME			"POS_KEEP_TIME"
@@ -113,7 +115,7 @@ struct sos_version_s {
 	uint8_t major;		/* Binary compatability */
 	uint8_t minor;		/* Feature availability */
 	uint16_t fix;		/* Defect repair */
-	const char *git_commit_id;	/* git commit id */
+	char git_commit_id[44];	/* git commit id */
 };
 #pragma pack()
 int sos_container_file_version(const char *path, struct sos_version_s *ver);
@@ -421,7 +423,7 @@ typedef struct sos_part_s *sos_part_t;
  * \defgroup part_funcs Partition Functions
  * @{
  */
-int sos_part_create(const char *path, const char *desc, int o_mode);
+int sos_part_create(const char *path, const char *desc, sos_perm_t o_perm, int o_mode);
 sos_part_t sos_part_open(const char *path, int o_perm, ...);
 int sos_part_attach(sos_t sos, const char *name, const char *path);
 int sos_part_detach(sos_part_t part);

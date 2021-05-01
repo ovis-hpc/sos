@@ -26,14 +26,12 @@ extern "C" {
 
 /* Red/Black Node */
 struct ods_rbn {
-	struct ods_rbn    *left;
-	struct ods_rbn    *right;
-	struct ods_rbn    *parent;
-	int               color;
-	union {
-		void      *key;
-		uint64_t  key64;
-	};
+	struct ods_rbn	*left;
+	struct ods_rbn  *right;
+	struct ods_rbn  *parent;
+	int             color;
+	void		*key;
+	uint64_t	key64;
 };
 
 /* Sets key on n.  */
@@ -70,6 +68,7 @@ struct ods_rbn *ods_rbt_max(struct ods_rbt *t);
 struct ods_rbn *ods_rbn_succ(struct ods_rbn *n);
 struct ods_rbn *ods_rbn_pred(struct ods_rbn *n);
 void ods_rbt_ins(struct ods_rbt *t, struct ods_rbn *n);
+int ods_rbt_ins_unique(struct ods_rbt *t, struct ods_rbn *x);
 void ods_rbt_del(struct ods_rbt *t, struct ods_rbn *n);
 int ods_rbt_traverse(struct ods_rbt *t, ods_rbn_node_fn f, void *fn_data);
 int ods_rbt_is_leaf(struct ods_rbn *n);

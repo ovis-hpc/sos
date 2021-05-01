@@ -199,6 +199,7 @@ static void __sos_part_free(void *free_arg)
  *
  * \param part_path The path to the partition.
  * \param part_desc A description for the partition.
+ * \param o_parm Used to convey the backend, one of SOS_BE_MMOS or SOS_BE_LSOS
  * \param o_mode The partition access bits, see open()
  * \retval 0 The partition was successfully created
  * \retval EEXIST The partition already exists
@@ -207,6 +208,7 @@ static void __sos_part_free(void *free_arg)
  */
 int sos_part_create(const char *part_path,
 		    const char *part_desc,
+			sos_perm_t o_perm,
 		    int o_mode)
 {
 	uuid_t uuid;
@@ -224,7 +226,7 @@ int sos_part_create(const char *part_path,
 	if (rc)
 		return errno;
 	sprintf(tmp_path, "%s/objects", part_path);
-	ods = ods_open(tmp_path, ODS_PERM_RW | ODS_PERM_CREAT, o_mode);
+	ods = ods_open(tmp_path, o_perm | ODS_PERM_RW | ODS_PERM_CREAT, o_mode);
 	if (!ods) {
 		rc = errno;
 		goto err_0;
@@ -235,6 +237,7 @@ int sos_part_create(const char *part_path,
 	strncpy(SOS_PART_UDATA(udata)->desc, part_desc, SOS_PART_DESC_LEN);
 	uuid_generate(uuid);
 	uuid_copy(SOS_PART_UDATA(udata)->uuid, uuid);
+	ods_obj_update(udata);
 	ods_obj_put(udata);
 	ods_close(ods, ODS_COMMIT_SYNC);
 	return 0;
@@ -330,7 +333,7 @@ sos_part_t sos_part_open(const char *path, int o_perm, ...)
 	if (o_perm & SOS_PERM_CREAT) {
 		o_mode = va_arg(ap, int);
 		desc = va_arg(ap, char *);
-		rc = sos_part_create(path, desc, o_mode);
+		rc = sos_part_create(path, desc, o_perm, o_mode);
 		if (rc) {
 			errno = rc;
 			return NULL;
@@ -348,6 +351,8 @@ sos_part_t sos_part_open(const char *path, int o_perm, ...)
 		free(part);
 		return NULL;
 	}
+	if (o_perm & SOS_PERM_CREAT)
+		ods_commit(part->obj_ods, ODS_COMMIT_SYNC);
 	return part;
 }
 
@@ -511,6 +516,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 	}
  out:
 	SOS_PART_UDATA(part->udata_obj)->is_busy = 0;
+	ods_obj_update(part->udata_obj);
  	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
@@ -672,11 +678,14 @@ sos_part_t _sos_part_get(sos_part_t part, const char *func, int line)
  * This reference should be dropped by the application when the application is
  * finished with the partition.
  *
+ * This function ignores a NULL partition handle.
+ *
  * \param part The partition handle.
  */
 void sos_part_put(sos_part_t part)
 {
-	sos_ref_put(&part->ref_count, "application");
+	if (part)
+		sos_ref_put(&part->ref_count, "application");
 }
 
 /**
@@ -747,15 +756,19 @@ int sos_part_attach(sos_t sos, const char *name, const char *path)
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->tail = ods_obj_ref(new_part_ref);
 		if (!head_ref)
 			SOS_PART_REF_UDATA(sos->part_ref_udata)->head = ods_obj_ref(new_part_ref);
+		ods_obj_update(prev);
 		ods_obj_put(prev);
 	} else {
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->head = ods_obj_ref(new_part_ref);
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->tail = ods_obj_ref(new_part_ref);
 	}
+	ods_obj_update(sos->part_ref_udata);
+	ods_obj_update(new_part_ref);
 	ods_obj_put(new_part_ref);
 	ods_atomic_inc(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
 	ods_atomic_inc(&SOS_PART_UDATA(part->udata_obj)->ref_count);
 	ods_unlock(sos->part_ref_ods, 0);
+	ods_commit(sos->part_ref_ods, ODS_COMMIT_SYNC);
 	pthread_mutex_unlock(&sos->lock);
 	return 0;
 err_1:
@@ -803,6 +816,7 @@ int sos_part_detach(sos_part_t part)
 	if (prev_ref) {
 		ods_obj_t prev = ods_ref_as_obj(sos->part_ref_ods, prev_ref);
 		SOS_PART_REF(prev)->next = next_ref;
+		ods_obj_update(prev);
 		ods_obj_put(prev);
 	} else {
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->head = next_ref;
@@ -810,6 +824,7 @@ int sos_part_detach(sos_part_t part)
 	if (next_ref) {
 		ods_obj_t next = ods_ref_as_obj(sos->part_ref_ods, next_ref);
 		SOS_PART_REF(next)->prev = prev_ref;
+		ods_obj_update(next);
 		ods_obj_put(next);
 	} else {
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->tail = prev_ref;
@@ -820,6 +835,7 @@ int sos_part_detach(sos_part_t part)
 	ods_obj_delete(part->ref_obj);
 	ods_atomic_inc(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
 	ods_atomic_dec(&SOS_PART_UDATA(part->udata_obj)->ref_count);
+	ods_obj_update(sos->part_ref_udata);
 	__part_close(part);
 	sos_ref_put(&part->ref_count, "application");	/* obtained by ...find */
 	sos_ref_put(&part->ref_count, "part_list");
@@ -1254,9 +1270,10 @@ int sos_part_move(sos_part_t part, const char *dest_path)
 			rc, sos_part_path(part));
 	}
 	__part_close(part);
-	rc = __part_open(part, dest_path, sos->o_perm);
+	rc = __part_open(part, dest_path, sos->o_perm & ~SOS_PERM_CREAT);
 	if (!rc)
 		strcpy(SOS_PART_REF(part->ref_obj)->path, dest_path);
+	ods_obj_update(part->ref_obj);
 out:
 	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);

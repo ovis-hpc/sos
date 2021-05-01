@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2014-2021 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -238,7 +238,9 @@ static int ht_init(ods_t ods, const char *idx_type, const char *key_type, const 
 	UDATA(udata)->lock = 0;
 	UDATA(udata)->card = 0;
 	UDATA(udata)->dups = 0;
+	ods_obj_update(udata);
 	ods_obj_put(udata);
+	ods_obj_update(ht);
 	ods_obj_put(ht);
 	return 0;
 }
@@ -387,10 +389,13 @@ static int insert_in_bucket(ods_idx_t o_idx, ods_key_t key,
 	} else {
 		next = ods_ref_as_obj(t->ods, ht->table[bkt].head_ref);
 		HENT(next)->prev_ref = ods_obj_ref(ent);
+		ods_obj_update(next);
 		ods_obj_put(next);
 	}
 	ht->table[bkt].head_ref = ods_obj_ref(ent);
 	ht->table[bkt].count++;
+	ods_obj_update_offset(t->htable_obj,
+		(uint64_t)&((ht_tbl_t)0)->table[bkt], sizeof(ht->table[bkt]));
 	if (ht->table[bkt].count > t->udata->max_bkt_len) {
 		t->udata->max_bkt_len = ht->table[bkt].count;
 		t->udata->max_bkt = bkt;
@@ -404,6 +409,8 @@ static int insert_in_bucket(ods_idx_t o_idx, ods_key_t key,
 		if (ht->last_bkt < bkt)
 			ht->last_bkt = bkt;
 	}
+	ods_obj_update_offset(t->htable_obj, 0, sizeof(struct ht_tbl_s));
+	ods_obj_update(t->udata_obj);
 	return 0;
 }
 
@@ -430,8 +437,10 @@ static int ht_insert(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 	kv = HKEY(new_key);
 	bkt = hash_bkt(t, (const char *)kv->value, kv->len);
 	rc = insert_in_bucket(o_idx, new_key, data, ent, bkt);
+	ods_obj_update(new_key);
 	ods_obj_put(new_key);
  out_1:
+	ods_obj_update(ent);
 	ods_obj_put(ent);
  out_0:
 #ifdef HT_THREAD_SAFE
@@ -584,6 +593,10 @@ static void delete_entry(ht_t t, ods_obj_t ent, int64_t bkt)
 	else
 		ht->table[bkt].tail_ref = HENT(ent)->prev_ref;
 	ods_ref_delete(t->ods, HENT(ent)->key_ref);
+	ods_obj_update(next);
+	ods_obj_update(next);
+	ods_obj_put(next);
+	ods_obj_put(next);
 	ods_obj_delete(ent);
 	ods_obj_put(ent);
 }

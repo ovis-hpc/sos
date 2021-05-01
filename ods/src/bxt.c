@@ -448,6 +448,7 @@ static int bxt_init(ods_t ods, const char *idx_type, const char *key_type, const
 	UDATA(udata)->depth = 0;
 	UDATA(udata)->card = 0;
 	UDATA(udata)->dups = 0;
+	ods_obj_update(udata);
 	ods_obj_put(udata);
 	return 0;
 }
@@ -476,6 +477,7 @@ static void bxt_close_(bxt_t t)
 		free(el);
 	}
 
+	ods_commit(t->ods, ODS_COMMIT_SYNC);
 	free(t);
 }
 
@@ -607,6 +609,7 @@ static int bxt_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void
 		if (leaf)
 			leaf = ods_obj_get(leaf);
 		rc = bxt_insert_with_leaf(idx, key, data, leaf, ent, found);
+		ods_obj_update(t->udata_obj);
 		break;
 	case ODS_VISIT_DEL:
 		if (!found) {
@@ -615,6 +618,7 @@ static int bxt_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void
 		}
 		assert(leaf);
 		rc = bxt_delete_with_leaf(idx, key, &data, ods_obj_get(leaf), ent);
+		ods_obj_update(t->udata_obj);
 		break;
 	case ODS_VISIT_UPD:
 		if (!found) {
@@ -913,6 +917,7 @@ static ods_obj_t rec_new(ods_idx_t idx, ods_key_t key, ods_idx_data_t data, int 
 		if (!akey)
 			goto err_1;
 		REC(obj)->key_ref = ods_obj_ref(akey);
+		ods_obj_update(akey);
 		ods_obj_put(akey);
 	}
 	REC(obj)->value = data;
@@ -989,6 +994,7 @@ int leaf_insert(bxt_t t, ods_obj_t leaf, ods_obj_t new_rec, int ent, int dup)
 		REC(new_rec)->prev_ref = ods_obj_ref(entry);
 		REC(entry)->next_ref = ods_obj_ref(new_rec);
 		L_ENT(leaf,ent).tail_ref = ods_obj_ref(new_rec);
+		ods_obj_update(next_rec);
 		ods_obj_put(next_rec);
 		goto out;
 	}
@@ -1011,9 +1017,11 @@ int leaf_insert(bxt_t t, ods_obj_t leaf, ods_obj_t new_rec, int ent, int dup)
 		if (REC(prev_rec)->next_ref) {
 			next_rec = ods_ref_as_obj(t->ods, REC(prev_rec)->next_ref);
 			REC(next_rec)->prev_ref = ods_obj_ref(new_rec);
+			ods_obj_update(next_rec);
 			ods_obj_put(next_rec);
 		}
 		REC(prev_rec)->next_ref = ods_obj_ref(new_rec);
+		ods_obj_update(prev_rec);
 		ods_obj_put(prev_rec);
 	} else if (entry) {
 		/*
@@ -1057,6 +1065,7 @@ int leaf_insert(bxt_t t, ods_obj_t leaf, ods_obj_t new_rec, int ent, int dup)
 		ods_obj_put(rec_key);
 	}
 #endif
+	ods_obj_update(entry);
 	ods_obj_put(entry);
 	return ent;
 }
@@ -1094,6 +1103,8 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 		if (prev_rec)
 			REC(prev_rec)->next_ref = ods_obj_ref(new_rec);
 		REC(next_rec)->prev_ref = ods_obj_ref(new_rec);
+		ods_obj_update(next_rec);
+		ods_obj_update(prev_rec);
 		ods_obj_put(next_rec);
 		ods_obj_put(prev_rec);
 	} else {
@@ -1105,6 +1116,8 @@ static void leaf_split_insert(ods_idx_t idx, bxt_t t, ods_obj_t left,
 		if (next_rec)
 			REC(next_rec)->prev_ref = ods_obj_ref(new_rec);
 		REC(prev_rec)->next_ref = ods_obj_ref(new_rec);
+		ods_obj_update(next_rec);
+		ods_obj_update(prev_rec);
 		ods_obj_put(next_rec);
 		ods_obj_put(prev_rec);
 	}
@@ -1241,6 +1254,7 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 			ods_obj_t n =
 				ods_ref_as_obj(t->ods, N_ENT(left_parent,i).node_ref);
 			NODE(n)->parent = ods_obj_ref(right_parent);
+			ods_obj_update(n);
 			ods_obj_put(n);
 			NODE(right_parent)->entries[j] = NODE(left_parent)->entries[i];
 			NODE(left_parent)->entries[i] = ENTRY_INITIALIZER;
@@ -1281,6 +1295,7 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 			if (ins_idx == j)
 				j ++;
 			NODE(n)->parent = ods_obj_ref(right_parent);
+			ods_obj_update(n);
 			ods_obj_put(n);
 			NODE(right_parent)->entries[j] = NODE(left_parent)->entries[i];
 			NODE(left_parent)->entries[i] = ENTRY_INITIALIZER;
@@ -1325,8 +1340,11 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 			    N_ENT(right_parent,0).key_ref, right_parent);
 		goto out;
 	}
+	ods_obj_update(next_parent);
 	ods_obj_put(next_parent);
+	ods_obj_update(left_node);
 	ods_obj_put(left_node);
+	ods_obj_update(right_node);
 	ods_obj_put(right_node);
 	/* Go up to the next level and split and insert */
 	left_node = left_parent;
@@ -1334,9 +1352,13 @@ static ods_obj_t node_split_insert(ods_idx_t idx, bxt_t t,
 	right_key_ref = N_ENT(right_parent,0).key_ref;
 	goto split_and_insert;
  out:
+	ods_obj_update(right_parent);
 	ods_obj_put(right_parent);
+	ods_obj_update(left_parent);
 	ods_obj_put(left_parent);
+	ods_obj_update(left_node);
 	ods_obj_put(left_node);
+	ods_obj_update(right_node);
 	ods_obj_put(right_node);
 	return next_parent;
 }
@@ -1368,7 +1390,10 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 		L_ENT(leaf, 0).tail_ref = ods_obj_ref(new_rec);
 
 		ods_atomic_inc(&t->udata->card);
+		ods_obj_update(t->udata_obj);
+		ods_obj_update(leaf);
 		ods_obj_put(leaf);
+		ods_obj_update(new_rec);
 		ods_obj_put(new_rec);
 		return 0;
 	}
@@ -1391,15 +1416,20 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 			if (N_ENT(parent,0).node_ref == ods_obj_ref(leaf)) {
 				ods_obj_t rec0 = ods_ref_as_obj(t->ods, L_ENT(leaf,0).head_ref);
 				N_ENT(parent,0).key_ref = REC(rec0)->key_ref;
+				ods_obj_update(rec0);
 				ods_obj_put(rec0);
 			}
+			ods_obj_update(parent);
 			ods_obj_put(parent);
 		}
 #ifdef ODS_DEBUG
 		debug_verify_node(t, leaf);
 #endif
 		ods_atomic_inc(&t->udata->card);
+		ods_obj_update(t->udata_obj);
+		ods_obj_update(leaf);
 		ods_obj_put(leaf);
+		ods_obj_update(new_rec);
 		ods_obj_put(new_rec);
 		return 0;
 	}
@@ -1441,6 +1471,7 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 		node_insert(t, parent, leaf, new_leaf_key_ref, new_leaf);
 		goto out;
 	}
+	ods_obj_update(parent);
 	ods_obj_put(parent);
 	parent = node_split_insert(idx, t, leaf, new_leaf_key_ref, new_leaf);
  out:
@@ -1450,9 +1481,14 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 	debug_verify_node(t, parent);
 #endif
 	ods_atomic_inc(&t->udata->card);
+	ods_obj_update(t->udata_obj);
+	ods_obj_update(leaf);
 	ods_obj_put(leaf);
+	ods_obj_update(new_leaf);
 	ods_obj_put(new_leaf);
+	ods_obj_update(parent);
 	ods_obj_put(parent);
+	ods_obj_update(new_rec);
 	ods_obj_put(new_rec);
 	return 0;
 
@@ -1542,6 +1578,10 @@ static int bxt_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 	rc = __int_lock(t, NULL);
 	if (rc)
 		return rc;
+	if (!t->udata->root_ref) {
+		rc = ENOENT;
+		goto out;
+	}
 	node = bxt_max_node(t);
 	if (node) {
 		rec = ods_ref_as_obj(t->ods, L_ENT(node, NODE(node)->count-1).tail_ref);
@@ -1554,8 +1594,10 @@ static int bxt_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 			rc = ENOMEM;
 		ods_obj_put(rec);
 		ods_obj_put(node);
-	} else
+	} else {
 		rc = ENOMEM;
+	}
+out:
 	__int_unlock(t);
 	return rc;
 }
@@ -1569,6 +1611,10 @@ static int bxt_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 	rc = __int_lock(t, NULL);
 	if (rc)
 		return rc;
+	if (!t->udata->root_ref) {
+		rc = ENOENT;
+		goto out;
+	}
 	node = bxt_min_node(t);
 	if (node) {
 		rec = ods_ref_as_obj(t->ods, L_ENT(node, 0).head_ref);
@@ -1583,6 +1629,7 @@ static int bxt_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 		ods_obj_put(node);
 	} else
 		rc = ENOMEM;
+out:
 	__int_unlock(t);
 	return rc;
 }
@@ -1784,6 +1831,7 @@ static ods_ref_t fixup_parents(bxt_t t, ods_obj_t parent, ods_obj_t node)
 			N_ENT(parent,i).key_ref = REC(rec)->key_ref;
 			ods_obj_put(rec);
 		}
+		ods_obj_update(parent);
 		ods_obj_put(node);
 		node = parent;
 		parent_ref = NODE(parent)->parent;
@@ -1876,10 +1924,12 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 		REC(prev_rec)->next_ref = REC(rec)->next_ref;
 	if (next_rec)
 		REC(next_rec)->prev_ref = REC(rec)->prev_ref;
+	ods_obj_update(next_rec);
 	ods_obj_put(next_rec);
+	ods_obj_update(prev_rec);
 	ods_obj_put(prev_rec);
 	rec_del(rec, 0);
-
+	ods_obj_update(rec);
  next_level:
 	parent = ods_ref_as_obj(t->ods, NODE(node)->parent);
 #ifdef ODS_DEBUG
@@ -1913,6 +1963,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 				ods_obj_put(parent);
 				parent = ods_ref_as_obj(t->ods, root_ref);
 				NODE(parent)->parent = 0;
+				ods_obj_update(parent);
 				ods_obj_put(parent);
 				ods_obj_delete(node);
 				ods_obj_put(node);
@@ -1956,6 +2007,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 			debug_verify_node(t, left);
 			debug_verify_node(t, node);
 #endif
+			ods_obj_update(left);
 			ods_obj_put(left);
 		}
 		if (right) {
@@ -1966,8 +2018,10 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 				 * because it calls fixup_parents()
 				 */
 				merge_from_right(t, right, node, midpoint);
-			} else
+			} else {
+				ods_obj_update(right);
 				ods_obj_put(right);
+			}
 		}
 
 		assert(NODE(node)->count >= midpoint);
@@ -1994,6 +2048,7 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 			ods_obj_t rec = ods_ref_as_obj(t->ods, L_ENT(right,0).head_ref);
 			N_ENT(parent,node_idx+1).key_ref = REC(rec)->key_ref;
 			N_ENT(parent,node_idx+1).node_ref = ods_obj_ref(right);
+			ods_obj_update(rec);
 			ods_obj_put(rec);
 		} else {
 			N_ENT(parent,node_idx+1).key_ref = N_ENT(right,0).key_ref;
@@ -2004,7 +2059,9 @@ static ods_ref_t entry_delete(bxt_t t, ods_obj_t node, ods_obj_t rec, int ent)
 	ent = node_idx;
 	ods_obj_delete(node);
 	ods_obj_put(node);
+	ods_obj_update(left);
 	ods_obj_put(left);
+	ods_obj_update(right);
 	ods_obj_put(right);
 	node = parent;
 	goto next_level;
@@ -2020,9 +2077,12 @@ static void delete_head(bxt_t t, ods_obj_t leaf, int ent)
 	if (next_rec)
 		REC(next_rec)->prev_ref = REC(rec)->prev_ref;
 	L_ENT(leaf,ent).head_ref = REC(rec)->next_ref;
+	ods_obj_update(next_rec);
 	ods_obj_put(next_rec);
+	ods_obj_update(prev_rec);
 	ods_obj_put(prev_rec);
 	rec_del(rec, 1);
+	ods_obj_update(rec);
 	ods_obj_put(rec);
 }
 
@@ -2046,9 +2106,12 @@ static void delete_dup_rec(bxt_t t, ods_obj_t leaf, ods_obj_t rec, int ent)
 		L_ENT(leaf,ent).tail_ref = REC(rec)->prev_ref;
 	}
 
+	ods_obj_update(next_rec);
 	ods_obj_put(next_rec);
+	ods_obj_update(prev_rec);
 	ods_obj_put(prev_rec);
 	rec_del(rec, 1);
+	ods_obj_update(rec);
 	ods_obj_put(rec);
 }
 
@@ -2133,6 +2196,7 @@ static int bxt_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 		goto noent;
 
 	rc = bxt_delete_with_leaf(idx, key, data, leaf, ent);
+	ods_obj_update(t->udata_obj);
 	__int_unlock(t);
 	return rc;
  noent:

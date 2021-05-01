@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2020 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2012-2021 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2012-2020 Sandia Corporation. All rights reserved.
  *
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
@@ -312,7 +312,7 @@ int sos_container_new(const char *path, int o_mode)
 }
 
 /* Must be called holding the SOS container file lock */
-static int __sos_container_new(const char *path, int o_mode)
+static int __sos_container_new(const char *path, int o_perm, int o_mode)
 {
 	char tmp_path[PATH_MAX];
 	char real_path[PATH_MAX];
@@ -341,20 +341,20 @@ static int __sos_container_new(const char *path, int o_mode)
 
 	/* Create the ODS to contain configuration objects */
 	sprintf(tmp_path, "%s/.__config", path);
-	ods = ods_open(tmp_path, ODS_PERM_CREAT | ODS_PERM_RW, o_mode);
+	ods = ods_open(tmp_path, o_perm | ODS_PERM_CREAT | ODS_PERM_RW, o_mode);
 	ods_close(ods, ODS_COMMIT_SYNC);
 	if (!ods)
 		goto err_1;
 
 	/* Create the configuration object index */
 	sprintf(tmp_path, "%s/.__config_idx", path);
-	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "STRING", NULL);
+	rc = ods_idx_create(tmp_path, o_perm, o_mode, "BXTREE", "STRING", NULL);
 	if (rc)
 		goto err_2;
 
 	/* Create the ODS to contain partition objects */
 	sprintf(tmp_path, "%s/.__part", path);
-	ods_t part_ods = ods_open(tmp_path, ODS_PERM_CREAT | ODS_PERM_RW, o_mode);
+	ods_t part_ods = ods_open(tmp_path, o_perm | ODS_PERM_CREAT | ODS_PERM_RW, o_mode);
 	if (!part_ods)
 		goto err_3;
 
@@ -369,13 +369,13 @@ static int __sos_container_new(const char *path, int o_mode)
 	SOS_PART_REF_UDATA(udata)->head = 0;
 	SOS_PART_REF_UDATA(udata)->tail = 0;
 	SOS_PART_REF_UDATA(udata)->lock = 0;
-
+	ods_obj_update(udata);
 	ods_obj_put(udata);
 	ods_close(part_ods, ODS_COMMIT_SYNC);
 
  	/* Create the ODS to contain the schema objects */
 	sprintf(tmp_path, "%s/.__schemas", path);
-	ods_t schema_ods = ods_open(tmp_path, ODS_PERM_CREAT | O_RDWR, o_mode);
+	ods_t schema_ods = ods_open(tmp_path, o_perm | ODS_PERM_CREAT | O_RDWR, o_mode);
 	if (!schema_ods)
 		goto err_4;
 	/* Initialize the schema dictionary */
@@ -387,18 +387,19 @@ static int __sos_container_new(const char *path, int o_mode)
 	}
 	SOS_SCHEMA_UDATA(udata)->signature = SOS_SCHEMA_SIGNATURE;
 	SOS_SCHEMA_UDATA(udata)->version = SOS_LATEST_VERSION;
+	ods_obj_update(udata);
 	ods_obj_put(udata);
 	ods_close(schema_ods, ODS_COMMIT_ASYNC);
 
 	/* Create the index to look up the schema names */
 	sprintf(tmp_path, "%s/.__schema_idx", path);
- 	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "STRING", NULL);
+ 	rc = ods_idx_create(tmp_path, o_perm, o_mode, "BXTREE", "STRING", NULL);
  	if (rc)
  		goto err_5;
 
  	/* Create the ODS to contain the index objects */
 	sprintf(tmp_path, "%s/.__index", path);
-	ods_t idx_ods = ods_open(tmp_path, SOS_PERM_RW | SOS_PERM_CREAT, o_mode);
+	ods_t idx_ods = ods_open(tmp_path, o_perm | SOS_PERM_RW | SOS_PERM_CREAT, o_mode);
 	if (!idx_ods)
 		goto err_6;
 
@@ -411,12 +412,13 @@ static int __sos_container_new(const char *path, int o_mode)
 	}
 	SOS_IDXDIR_UDATA(udata)->signature = SOS_IDXDIR_SIGNATURE;
 	SOS_IDXDIR_UDATA(udata)->lock = 0;
+	ods_obj_update(udata);
 	ods_obj_put(udata);
 	ods_close(idx_ods, ODS_COMMIT_ASYNC);
 
 	/* Create the index to look up the indexes */
 	sprintf(tmp_path, "%s/.__index_idx", path);
- 	rc = ods_idx_create(tmp_path, o_mode, "BXTREE", "STRING", NULL);
+ 	rc = ods_idx_create(tmp_path, o_perm, o_mode, "BXTREE", "STRING", NULL);
  	if (rc)
  		goto err_7;
 
@@ -739,13 +741,11 @@ int64_t __sos_schema_id_cmp(void *a, const void *b, void *arg)
 struct sos_version_s sos_container_version(sos_t sos)
 {
 	struct sos_version_s vers;
-	ods_obj_t udata = ods_get_user_data(sos->schema_ods);
 	struct ods_version_s overs = ods_version(sos->schema_ods);
 	vers.major = overs.major;
 	vers.minor = overs.minor;
 	vers.fix = overs.fix;
-	vers.git_commit_id = overs.git_commit_id;
-	ods_obj_put(udata);
+	memcpy(vers.git_commit_id, overs.commit_id, sizeof(overs.commit_id));
 	return vers;
 }
 
@@ -847,7 +847,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 			goto err;
 		if (0 == (o_perm & SOS_PERM_CREAT))
 			goto err;
-		rc = __sos_container_new(path_arg, o_mode);
+		rc = __sos_container_new(path_arg, o_perm, o_mode);
 		if (rc)
 			goto err;
 		need_part = 1;
@@ -964,7 +964,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 
 	if (need_part) {
 		snprintf(tmp_path, sizeof(tmp_path), "%s/default", path_arg);
-		rc = sos_part_create(tmp_path, "default container partition", o_mode);
+		rc = sos_part_create(tmp_path, "default container partition", sos->o_perm, o_mode);
 		if (rc)
 			goto err;
 		rc = sos_part_attach(sos, "default", tmp_path);
@@ -979,6 +979,9 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 			goto err;
 	}
 	close(lock_fd);
+	ods_commit(sos->part_ref_ods, ODS_COMMIT_SYNC);
+	ods_commit(sos->schema_ods, ODS_COMMIT_SYNC);
+	ods_commit(sos->idx_ods, ODS_COMMIT_SYNC);
 	return sos;
  err:
 	if (iter)

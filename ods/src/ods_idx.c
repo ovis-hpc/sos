@@ -117,7 +117,7 @@ struct ods_idx_class *get_idx_class(const char *type, const char *key)
 	return idx_class;
 }
 
-int ods_idx_create(const char *path, int mode,
+int ods_idx_create(const char *path, int perm, int mode,
 		   const char *type, const char *key,
 		   const char *args)
 {
@@ -133,7 +133,7 @@ int ods_idx_create(const char *path, int mode,
 		return ENOENT;
 
 	/* Open the object store containing the index  */
-	ods = ods_open(path, ODS_PERM_RW|ODS_PERM_CREAT, mode);
+	ods = ods_open(path, perm|ODS_PERM_RW|ODS_PERM_CREAT, mode);
 	if (!ods) {
 		errno = ENOENT;
 		goto out;
@@ -149,6 +149,7 @@ int ods_idx_create(const char *path, int mode,
 	strcpy(udata->signature, ODS_IDX_SIGNATURE);
 	strcpy(udata->type_name, type);
 	strcpy(udata->key_name, key);
+	ods_obj_update(obj);
 	ods_obj_put(obj);
 	errno = idx_class->prv->init(ods, type, key, args);
 	if (errno)
@@ -167,7 +168,7 @@ int ods_idx_destroy(const char *path)
 	return ods_destroy(path);
 }
 
-ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm)
+ods_idx_t ods_idx_open(const char *path, ods_perm_t o_flags)
 {
 	ods_idx_t idx;
 	struct ods_idx_class *idx_class;
@@ -176,8 +177,8 @@ ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm)
 	idx = calloc(1, sizeof *idx);
 	if (!idx)
 		return NULL;
-	idx->o_perm = o_perm;
-	idx->ods = ods_open(path, o_perm);
+	idx->o_perm = o_flags;
+	idx->ods = ods_open(path, o_flags & ~ODS_PERM_CREAT);
 	if (!idx->ods)
 		goto err_0;
 
@@ -228,8 +229,8 @@ void ods_idx_close(ods_idx_t idx, int flags)
 		ods_close(idx->ods, flags);
 		free(idx);
 	} else {
-		ods_ldebug("%s NOT closing due to %d open iterators.\n",
-			   ods_path(idx->ods), idx->ref_count);
+		ods_lerror("%s: %s NOT closing due to %d open iterators.\n",
+			   __func__, ods_path(idx->ods), idx->ref_count);
 		assert((ods_atomic_t)-1 != idx->ref_count);
 	}
 }
