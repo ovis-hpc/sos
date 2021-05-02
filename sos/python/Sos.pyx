@@ -3473,16 +3473,19 @@ cdef class Filter(object):
         free(res_dim)
         return (last_idx, result)
 
-    def __del__(self):
-        self.__dealloc__()
-
-    def __dealloc__(self):
+    def release(self):
         if self.c_obj:
             sos_obj_put(self.c_obj)
             self.c_obj = NULL
         if self.c_filt:
             sos_filter_free(self.c_filt)
             self.c_filt = NULL
+
+    def __del__(self):
+        self.__dealloc__()
+
+    def __dealloc__(self):
+        self.release()
 
 cdef class ColSpec:
 
@@ -5820,6 +5823,15 @@ cdef class Query:
         colspec.update(self, idx, attr)
         self.columns.append(colspec)
 
+    def release(self):
+        self.primary = None
+        self.schema = []
+        for f in self.filters:
+            f.release()
+        self.filter_idx = {}
+        self.filters = []
+        self.columns = []
+
     def select(self, columns, order_by=None, desc=False,
                where=None, from_=None, unique=False):
         """Set the attribute list returned in the result
@@ -5920,8 +5932,9 @@ cdef class Query:
         """
         if type(columns) != list and type(columns) != tuple:
             raise ValueError("The columns argument must be a list or tuple.")
-        self.primary = None
-        self.schema = []
+
+        self.release()
+
         self.unique = unique
         self.desc = desc
 
@@ -5932,9 +5945,6 @@ cdef class Query:
         if from_:
             self._from_(from_)
 
-        self.filter_idx = {}
-        self.filters = []
-        self.columns = []
         for col in columns:
             if type(col) == ColSpec:
                 spec = copy.copy(col)
@@ -5988,9 +5998,11 @@ cdef class Query:
 
     def _where(self, clause):
         if type(clause) != list and type(clause) != tuple:
+            self.release()
             raise ValueError("The where arguement is a list of conditions.")
         for c in clause:
             if type(c) != list and type(c) != tuple:
+                self.release()
                 raise ValueError("Each condition is a list/tuple; "
                                  "[<attr-name>, <condition>, <value>]")
             for f in self.filters:

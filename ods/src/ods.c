@@ -158,10 +158,10 @@ void _ods_obj_put(ods_obj_t obj, const char *func, int line)
 	if (!ods_atomic_dec(&obj->refcount)) {
 		if (obj->ods) {
 			ods_atomic_dec(&obj->ods->obj_count);
-			obj->ods->obj_put(obj);
 			__ods_lock(obj->ods);
 			LIST_REMOVE(obj, entry);
 			__ods_unlock(obj->ods);
+			obj->ods->obj_put(obj);
 		}
 		free(obj);
 	}
