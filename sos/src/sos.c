@@ -1378,31 +1378,6 @@ sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref)
 	return __sos_init_obj(sos, schema, ods_obj, ref);
 }
 
-#if 0
-/**
- * \brief  Return the object associated with the value
- *
- * This function will return a sos_obj_t for the object that is referred
- * to by ref_val. Use the function sos_ref_as_obj() to obtain an
- * object from a raw <tt>sos_obj_ref_t</tt> value.
- *
- * \param sos The container handle
- * \param ref_val A value handle to an attribute of type SOS_TYPE_OBJ
- * \retval The object to which the reference refers.
- * \retval NULL The reference did not point to a well formed object, or the schema
- *              in the object header was not part of the container.
- */
-sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val)
-{
-	if (sos_attr_type(ref_val->attr) != SOS_TYPE_OBJ)
-		return NULL;
-
-	if (ref_is_null(ref_val->data->prim.ref_))
-		return NULL;
-
-	return sos_ref_as_obj(sos, ref_val->data->prim.ref_);
-}
-#endif
 /**
  * \brief Returns an Object's schema
  * \param obj The object handle
