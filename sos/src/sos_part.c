@@ -517,6 +517,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
  out:
 	SOS_PART_UDATA(part->udata_obj)->is_busy = 0;
 	ods_obj_update(part->udata_obj);
+	ods_obj_update(part->ref_obj);
  	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;

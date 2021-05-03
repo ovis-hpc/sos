@@ -1395,6 +1395,7 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 		ods_obj_put(leaf);
 		ods_obj_update(new_rec);
 		ods_obj_put(new_rec);
+		ods_obj_update(new_key);
 		return 0;
 	}
 	/* Allocate a record object */
@@ -1429,6 +1430,7 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 		ods_obj_update(t->udata_obj);
 		ods_obj_update(leaf);
 		ods_obj_put(leaf);
+		ods_obj_update(new_key);
 		ods_obj_update(new_rec);
 		ods_obj_put(new_rec);
 		return 0;

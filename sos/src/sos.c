@@ -956,8 +956,6 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 		goto err;
 	}
 
-	ods_iter_delete(iter);
-
 	pthread_mutex_lock(&cont_list_lock);
 	LIST_INSERT_HEAD(&cont_list, sos, entry);
 	pthread_mutex_unlock(&cont_list_lock);
@@ -978,6 +976,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 		if (rc)
 			goto err;
 	}
+	ods_iter_delete(iter);
 	close(lock_fd);
 	ods_commit(sos->part_ref_ods, ODS_COMMIT_SYNC);
 	ods_commit(sos->schema_ods, ODS_COMMIT_SYNC);

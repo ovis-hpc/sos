@@ -548,6 +548,7 @@ static void *gc_thread_fn(void *arg)
 		sleep(__ods_gc_timeout);
 		pthread_mutex_lock(&__ods_tree_lock);
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+		mapped = 0;
 		ODS_RBT_FOREACH(rbn, &__ods_tree) {
 			ods = container_of(rbn, struct ods_s, rbn);
 			ods->release_dead_locks(ods);

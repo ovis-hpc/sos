@@ -58,6 +58,7 @@ typedef void (*ods_free_t)(void *ptr);
 static ods_alloc_t __alloc_fn = malloc;
 static ods_free_t __free_fn = free;
 static void __lsos_update(ods_map_t map, ods_ref_t ref, size_t len);
+static uint64_t ods_lsos_flush_data(ods_t ods_, int keep_time);
 
 extern int __ods_debug;
 extern uint64_t __ods_def_map_sz;
@@ -571,7 +572,7 @@ static void flush_commit_buffer(ods_map_t map,
 	ods_lsos_t ods = map->ods;
 	int rc;
 
-	ods_ldebug("%s: fd %d fileoff %ld len %ld %s\n", __func__, ods->data_fd,
+	ods_ldebug("fd %d fileoff %ld len %ld %s\n", ods->data_fd,
 		   commit_fileoff, commit_len, map->ods->base.path);
 
 	/* Seek to the file offset */
@@ -1721,6 +1722,7 @@ static void ods_lsos_commit(ods_t ods_, int flags)
 	__ods_lock(ods_);
 	ods_rbt_traverse(&ods->map_tree, commit_map_fn, (void *)(unsigned long)mflag);
 	__ods_unlock(ods_);
+	ods_lsos_flush_data(ods_, 0);
 }
 
 static int ods_lsos_close(ods_t ods_, int flags)

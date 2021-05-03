@@ -1624,7 +1624,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	SOS_SCHEMA(schema_obj)->attr_cnt = schema->data->attr_cnt;
 	uuid_generate(SOS_SCHEMA(schema_obj)->uuid);
 	SOS_SCHEMA(schema_obj)->array_cnt = schema->data->array_cnt;
-
+	ods_obj_update(schema_obj);
 	idx = 0;
 	schema->dict = calloc(schema->data->attr_cnt, sizeof(sos_attr_t));
 	if (!schema->dict)
@@ -1645,6 +1645,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 			for (i = 0; i < attr->ext_ptr->count; i++)
 				join->data.uint32_[i] = attr->ext_ptr->data.uint32_[i];
 			attr_data->ext_ref = ods_obj_ref(ext_obj);
+			ods_obj_update(ext_obj);
 			ods_obj_put(ext_obj);
 		}
 		attr->data = attr_data;
@@ -1668,7 +1669,9 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	sos->schema_count++;
 	LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
 
+	ods_obj_update(schema_key);
 	ods_obj_put(schema_key);
+	ods_obj_update(udata);
 	ods_obj_put(udata);
 
 	ods_unlock(sos->schema_ods, 0);
