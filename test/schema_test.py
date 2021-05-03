@@ -71,7 +71,6 @@ class SchemaTest(SosTestCase):
             Sos.TYPE_LONG_DOUBLE_ARRAY
         ]
 
-
     @classmethod
     def tearDownClass(cls):
         cls.tearDownDb()
@@ -111,6 +110,11 @@ class SchemaTest(SosTestCase):
             schema.from_template('schema_{0}'.format(i), attr_list)
             schema.add(self.db)
         self.assertTrue(1 == 1)
+
+class LsosSchemaTest(SchemaTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'

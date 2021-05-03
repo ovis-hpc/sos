@@ -172,6 +172,11 @@ class JoinTestU32_Str_Str(SosTestCase):
     def test_u32_str_str_fwd_col_2_ne(self):
         self.u32_str_str_fwd_col(Sos.COND_NE, lambda a, b : a != b, 2, col_2_arg, (2, 2, 2, 3))
 
+class LsosJoinTestU32_Str_Str(JoinTestU32_Str_Str):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

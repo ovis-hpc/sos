@@ -165,6 +165,11 @@ class JoinTestI16(SosTestCase):
     def test_int16_fwd_col_2_ne(self):
         self.int16_fwd_col(Sos.COND_NE, lambda a, b : a != b, 2, (-3, -4, -5, -6), (2, 2, 2, 3))
 
+class LsosJoinTestI16(JoinTestI16):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

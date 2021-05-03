@@ -249,6 +249,11 @@ class PartitionTest(SosTestCase):
         c.close()
         shutil.rmtree(c.path(), ignore_errors=True)
 
+class LsosPartitionTest(PartitionTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

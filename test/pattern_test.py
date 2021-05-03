@@ -17,14 +17,17 @@ class Debug(object): pass
 
 logger = logging.getLogger(__name__)
 
-data1 = []
-data2 = []
-first_ptn_id = 256
-next_ptn_id = first_ptn_id
-
 class PatternTest(SosTestCase):
     @classmethod
     def setUpClass(cls):
+        global data1
+        global data2
+        global first_ptn_id
+        global next_ptn_id
+        data1 = []
+        data2 = []
+        first_ptn_id = 256
+        next_ptn_id = first_ptn_id
         cls.setUpDb("pattern_test_cont")
         cls.schema = Sos.Schema()
         cls.schema.from_template('test_pattern',
@@ -155,6 +158,11 @@ class PatternTest(SosTestCase):
             test_time = time.time() - start
             # Add another pattern to the mix
             self.__add_pattern()
+
+class LsosPatternTest(PatternTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'

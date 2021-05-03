@@ -235,6 +235,7 @@ class QueryTest(SosTestCase):
                           order_by = 'uint16',
                           unique = True)
         self.assertTrue( self.__count(self.query) == 1023 )
+        self.query.release()
         # now add another 1024 objects
         self.__generate_data(self.schema1, 0, 1024)
         self.query.select(['uint16'],
@@ -434,6 +435,11 @@ class QueryTest(SosTestCase):
             pass
         else:
             self.assertTrue( False )
+
+class LsosQueryTest(QueryTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'

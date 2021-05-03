@@ -212,6 +212,11 @@ class KeyTest(SosTestCase):
         self._test_array_key_str('uint32_array', '  504  ,  504, 504')
 
 
+class LsosKeyTest(KeyTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

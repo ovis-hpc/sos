@@ -61,6 +61,11 @@ class UpdateTest(SosTestCase):
             for kv in v[:-1]:
                 self.assertEqual( kv, k + 1 )
 
+class LsosUpdateTest(UpdateTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

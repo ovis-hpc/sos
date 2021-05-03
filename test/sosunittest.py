@@ -23,9 +23,17 @@ def DprintDisable():
 
 class SosTestCase(unittest.TestCase):
     @classmethod
-    def setUpDb(cls, db_name, backend=Sos.BE_MMOS):
+    def backend(cls):
+        return Sos.BE_MMOS
+
+    @classmethod
+    def setUpDb(cls, db_name):
         global _sos_test_debug
         cls.db = Sos.Container()
+        if cls.backend() == Sos.BE_MMOS:
+            db_name = 'MMOS_' + db_name
+        else:
+            db_name = 'LSOS_' + db_name
         cls.db_name = db_name
         db_path = os.getenv("SOS_TEST_DATA_DIR")
         if db_path:
@@ -34,13 +42,17 @@ class SosTestCase(unittest.TestCase):
             cls.path = cls.db_name
         shutil.rmtree(cls.path, ignore_errors=True)
         be = os.getenv("SOS_TEST_BACKEND")
-        if be == 'LSOS':
-            backend = Sos.BE_LSOS
-        elif be == 'MMOS':
-            backend = Sos.BE_MMOS
+        if be:
+            if be == 'LSOS':
+                be = Sos.BE_LSOS
+            elif be == 'MMOS':
+                be = Sos.BE_MMOS
+            else:
+                raise ValueError("Invalid setting {0} for SOS_TEST_BACKEND environent variable".format(be))
         else:
-            backend = Sos.BE_MMOS
-        cls.db.open(cls.path, create=True, backend=backend)
+            be = cls.backend()
+
+        cls.db.open(cls.path, create=True, backend=be)
         if os.environ.get("SOS_TEST_DEBUG"):
             _sos_test_debug = True
 

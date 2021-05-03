@@ -285,6 +285,11 @@ class ValueTestFromStr(SosTestCase):
                               [ -1.1234, 2.2345, -3.4567, 4.5678 ],
                               '-1.123400,2.234500,-3.456700,4.567800')
 
+class LsosValueTestFromStr(ValueTestFromStr):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

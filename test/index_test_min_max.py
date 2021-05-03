@@ -123,6 +123,11 @@ class IndexTestMinMax(SosTestCase):
         v = a.max()
         self.assertEqual(v, data[3][5])
 
+class LsosIndexTestMinMax(IndexTestMinMax):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

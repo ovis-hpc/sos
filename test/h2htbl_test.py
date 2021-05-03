@@ -62,6 +62,11 @@ class H2HTBLTest(SosTestCase):
             self.assertTrue( tkn is not None )
             self.assertEqual( tkn_text, tkn['tkn_text'] )
 
+class LsosH2HTBLTest(H2HTBLTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

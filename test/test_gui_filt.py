@@ -92,6 +92,11 @@ class GuiFilter(SosTestCase):
     def test_004_comp_time(self):
         self.__query_test('comp_time', None, 8, self.start, self.end, 60 * 7)
 
+class LsosGuiFilter(GuiFilter):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

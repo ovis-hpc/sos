@@ -71,6 +71,11 @@ class JoinTestGet(SosTestCase):
                              str(o['a_3']))
             o = next(f)
 
+class LsosJoinTestGet(JoinTestGet):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

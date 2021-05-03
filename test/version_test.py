@@ -26,6 +26,11 @@ class VersionTest(SosTestCase):
         self.assertEqual(vers['fix'], Sos.VERS_FIX)
         self.assertEqual(vers['git_commit_id'], Sos.GIT_COMMIT_ID)
 
+class LsosVersionTest(VersionTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

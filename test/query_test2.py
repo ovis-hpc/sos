@@ -37,6 +37,11 @@ class QueryTest2(SosTestCase):
                      order_by = attr_name)
         query.begin()
 
+class LsosQueryTest2(QueryTest2):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
+
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)

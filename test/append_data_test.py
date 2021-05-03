@@ -13,12 +13,13 @@ class Debug(object): pass
 
 logger = logging.getLogger(__name__)
 
-data = []
-key = 1000
-
 class AppendDataTest(SosTestCase):
     @classmethod
     def setUpClass(cls):
+        global data
+        global key
+        data = []
+        key = 1000
         cls.setUpDb('append_data_test_cont')
         cls.schema = Sos.Schema()
         cls.schema.from_template('append_data_test',
@@ -135,6 +136,11 @@ class AppendDataTest(SosTestCase):
 
     def test_02_prev(self):
         self.__test_prev("int32")
+
+class LsosAppendDataTest(AppendDataTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'

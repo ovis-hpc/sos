@@ -16,11 +16,12 @@ import datetime as dt
 class Debug(object): pass
 
 logger = logging.getLogger(__name__)
-data = []
 
 class FilterTest(SosTestCase):
     @classmethod
     def setUpClass(cls):
+        global data
+        data = []
         cls.setUpDb('filter_test_cont')
         cls.schema = Sos.Schema()
         cls.schema.from_template('filter_test',
@@ -254,6 +255,11 @@ class FilterTest(SosTestCase):
 
     def test_700_next_prev_join_u64_timestamp(self):
         self.__join_test_next_prev("join_u64_timestamp", "timestamp", data[100][8], data[200][8])
+
+class LsosFilterTest(FilterTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'

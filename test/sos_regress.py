@@ -8,40 +8,40 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-from schema_test import SchemaTest
-from query_test import QueryTest
-from query_test2 import QueryTest2
-from value_test_from_str import ValueTestFromStr
-from obj_test_set_get import ObjTestSetGet
-from index_test_min_max import IndexTestMinMax
-from join_test_u16 import JoinTestU16
-from join_test_u32 import JoinTestU32
-from join_test_u64 import JoinTestU64
-from join_test_i16 import JoinTestI16
-from join_test_i32 import JoinTestI32
-from join_test_i64 import JoinTestI64
-from join_test_u32_str_str import JoinTestU32_Str_Str
-from join_test_u32_str_u32 import JoinTestU32_Str_U32
-from join_test_u32_str_str import JoinTestU32_Str_Str
-from join_test_key import JoinTestKey
-from join_test_getter import JoinTestGet
-from filter_test import FilterTest
-from test_filt_join_cond import FilterJoinCond
-from test_gui_filt import GuiFilter
-from filt_count_test import FilterCountTest
-from delete_test import DeleteTest
-from pattern_test import PatternTest
-from h2htbl_test import H2HTBLTest
-from key_test import KeyTest
-from timestamp_test import TimestampTest
-from array_test import ArrayTest
-from version_test import VersionTest
-from append_data_test import AppendDataTest
-from update_test import UpdateTest
-from partition_test import PartitionTest
-from lsos_test import LSOSTest
+from schema_test import SchemaTest, LsosSchemaTest
+from query_test import QueryTest, LsosQueryTest
+from query_test2 import QueryTest2, LsosQueryTest2
+from value_test_from_str import ValueTestFromStr, LsosValueTestFromStr
+from obj_test_set_get import ObjTestSetGet, LsosObjTestSetGet
+from index_test_min_max import IndexTestMinMax, LsosIndexTestMinMax
+from join_test_u16 import JoinTestU16, LsosJoinTestU16
+from join_test_u32 import JoinTestU32, LsosJoinTestU32
+from join_test_u64 import JoinTestU64, LsosJoinTestU64
+from join_test_i16 import JoinTestI16, LsosJoinTestI16
+from join_test_i32 import JoinTestI32, LsosJoinTestI32
+from join_test_i64 import JoinTestI64, LsosJoinTestI64
+from join_test_u32_str_str import JoinTestU32_Str_Str, LsosJoinTestU32_Str_Str
+from join_test_u32_str_u32 import JoinTestU32_Str_U32, LsosJoinTestU32_Str_U32
+from join_test_u32_str_str import JoinTestU32_Str_Str, LsosJoinTestU32_Str_Str
+from join_test_key import JoinTestKey, LsosJoinTestKey
+from join_test_getter import JoinTestGet, LsosJoinTestGet
+from filter_test import FilterTest, LsosFilterTest
+from test_filt_join_cond import FilterJoinCond, LsosFilterJoinCond
+from test_gui_filt import GuiFilter, LsosGuiFilter
+from filt_count_test import FilterCountTest, LsosFilterCountTest
+from delete_test import DeleteTest, LsosDeleteTest
+from pattern_test import PatternTest, LsosPatternTest
+from h2htbl_test import H2HTBLTest, LsosH2HTBLTest
+from key_test import KeyTest, LsosKeyTest
+from timestamp_test import TimestampTest, LsosTimestampTest
+from array_test import ArrayTest, LsosArrayTest
+from version_test import VersionTest, LsosVersionTest
+from append_data_test import AppendDataTest, LsosAppendDataTest
+from update_test import UpdateTest, LsosUpdateTest
+from partition_test import PartitionTest, LsosPartitionTest
 
-tests = [ SchemaTest,
+tests = [
+          SchemaTest,
           ObjTestSetGet,
           ValueTestFromStr,
           IndexTestMinMax,
@@ -71,10 +71,41 @@ tests = [ SchemaTest,
           AppendDataTest,
           UpdateTest,
           PartitionTest,
-          LSOSTest
+          LsosSchemaTest,
+          LsosObjTestSetGet,
+          LsosValueTestFromStr,
+          LsosIndexTestMinMax,
+          LsosJoinTestU16,
+          LsosJoinTestU32,
+          LsosJoinTestU64,
+          LsosJoinTestI16,
+          LsosJoinTestI32,
+          LsosJoinTestI64,
+          LsosJoinTestU32_Str_Str,
+          LsosJoinTestU32_Str_U32,
+          LsosJoinTestKey,
+          LsosJoinTestGet,
+          LsosFilterTest,
+          LsosFilterCountTest,
+          LsosFilterJoinCond,
+          LsosGuiFilter,
+          LsosDeleteTest,
+          LsosPatternTest,
+          LsosH2HTBLTest,
+          LsosKeyTest,
+          LsosTimestampTest,
+          LsosArrayTest,
+          LsosVersionTest,
+          LsosQueryTest,
+          LsosQueryTest2,
+          LsosAppendDataTest,
+          LsosUpdateTest,
+          LsosPartitionTest,
           ]
 
+
 if __name__ == "__main__":
+    from sosdb import Sos
     chkpath = os.getenv("SOS_TEST_DATA_DIR")
     if chkpath is None:
         print("Please set the SOS_TEST_DATA_DIR environment variable" \
@@ -89,6 +120,7 @@ if __name__ == "__main__":
         execfile(_pystart)
 
     sos_suite = unittest.TestSuite()
+    print(len(tests))
     for t in tests:
         sos_suite.addTest(unittest.makeSuite(t))
 

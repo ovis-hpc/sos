@@ -8,7 +8,7 @@ import shutil
 import logging
 import os
 from sosdb import Sos
-from sosunittest import SosTestCase, Dprint
+from sosunittest import SosTestCase, Dprint, DprintEnable, DprintDisable
 import random
 import numpy as np
 import numpy.random as nprnd
@@ -16,15 +16,22 @@ import time
 class Debug(object): pass
 
 logger = logging.getLogger(__name__)
+
+_debug = True
+
 data_tuple = []
 data_unix = []
 data_float = []
 
-_debug = True
-
 class TimestampTest(SosTestCase):
     @classmethod
     def setUpClass(cls):
+        global data_tuple
+        global data_unix
+        global data_float
+        data_tuple = []
+        data_unix = []
+        data_float = []
         cls.setUpDb("timestamp_test_cont")
         cls.schema = Sos.Schema()
         cls.schema.from_template('timestamp_test',
@@ -133,6 +140,7 @@ class TimestampTest(SosTestCase):
         for d in data_unix:
             k = ts_attr.key((d[1], 0))
             o = ts_idx.find(k)
+            Dprint( str(k), o )
             self.assertTrue( o is not None )
 
             k = ts_attr.key(d[1])
@@ -222,6 +230,11 @@ class TimestampTest(SosTestCase):
                 o = f.prev()
             self.assertEqual( count, 0 )
             Dprint("--------------------------------")
+
+class LsosTimestampTest(TimestampTest):
+    @classmethod
+    def backend(cls):
+        return Sos.BE_LSOS
 
 if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
