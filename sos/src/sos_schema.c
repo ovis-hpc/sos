@@ -1385,6 +1385,26 @@ int sos_obj_commit(sos_obj_t obj)
 	return 0;
 }
 
+void __sos_schema_close(sos_t sos, sos_schema_t schema)
+{
+	sos_attr_t attr;
+	char idx_name[SOS_SCHEMA_NAME_LEN + SOS_ATTR_NAME_LEN + 2];
+	pthread_mutex_lock(&sos->lock);
+	if (schema->state != SOS_SCHEMA_OPEN)
+		goto out;
+	TAILQ_FOREACH(attr, &schema->idx_attr_list, idx_entry) {
+		assert(attr->data->indexed);
+		sprintf(idx_name, "%s_%s", schema->data->name, attr->data->name);
+		if (attr->index) {
+			sos_index_close(attr->index, SOS_COMMIT_ASYNC);
+			attr->index = NULL;
+		}
+	}
+	schema->state = SOS_SCHEMA_CLOSED;
+out:
+	pthread_mutex_unlock(&sos->lock);
+}
+
 int __sos_schema_open(sos_t sos, sos_schema_t schema)
 {
 	int rc = 0;
@@ -1677,7 +1697,10 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	ods_unlock(sos->schema_ods, 0);
 	ods_commit(sos->schema_ods, ODS_COMMIT_SYNC);
 	ods_idx_commit(sos->schema_idx, ODS_COMMIT_SYNC);
-	return __sos_schema_open(sos, schema);	/* Force creation of index objects */
+	rc = __sos_schema_open(sos, schema);	/* Force creation of index objects */
+	if (!rc)
+		__sos_schema_close(sos, schema);
+	return rc;
  err_3:
 	ods_obj_delete(schema_key);
 	ods_obj_put(schema_key);
