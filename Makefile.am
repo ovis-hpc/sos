@@ -18,4 +18,4 @@ sosdb_rpm-clean:
 	rm -rf sosdb_rpm/
 	rm -f $(distdir).tar.gz
 
-EXTRA_DIST = autogen.sh LICENSE.txt
+EXTRA_DIST = autogen.sh COPYING
