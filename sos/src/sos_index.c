@@ -537,7 +537,7 @@ sos_obj_t sos_index_find(sos_index_t index, sos_key_t key)
  */
 int sos_index_find_ref(sos_index_t index, sos_key_t key, sos_obj_ref_t *ref)
 {
-	int rc;
+	int rc = ENOENT;
 	ods_idx_ref_t idx_ref;
 	LIST_FOREACH(idx_ref, &index->active_idx_list, entry) {
 		rc = ods_idx_find(index->primary_idx, key, &ref->idx_data);

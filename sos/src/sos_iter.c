@@ -194,7 +194,7 @@ sos_attr_t sos_iter_attr(sos_iter_t iter)
  */
 int sos_iter_flags_set(sos_iter_t iter, sos_iter_flags_t flags)
 {
-	int rc;
+	int rc = 0;
 	ods_iter_ref_t iter_ref;
 	LIST_FOREACH(iter_ref, &iter->iter_list, entry) {
 		rc = ods_iter_flags_set(iter_ref->iter, flags);
@@ -839,7 +839,7 @@ int sos_iter_find(sos_iter_t iter, sos_key_t key)
  */
 int sos_iter_find_first(sos_iter_t iter, sos_key_t key)
 {
-	int rc;
+	int rc = ENOENT;
 	ods_iter_ref_t iter_ref;
 
 	__sos_reset_iter(iter);
@@ -869,7 +869,7 @@ int sos_iter_find_first(sos_iter_t iter, sos_key_t key)
  */
 int sos_iter_find_last(sos_iter_t iter, sos_key_t key)
 {
-	int rc;
+	int rc = ENOENT;
 	ods_iter_ref_t iter_ref;
 
 	__sos_reset_iter(iter);
