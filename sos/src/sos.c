@@ -287,6 +287,8 @@ struct idx_ent_s {
 /**
  * \brief Create a Container
  *
+ * This interface is deprecated. New software should use sos_container_open()
+ *
  * Creates a SOS container. The o_flags and o_mode parameters accept
  * the same values and have the same meaning as the corresponding
  * parameters to the open() system call.
@@ -962,7 +964,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 
 	if (need_part) {
 		snprintf(tmp_path, sizeof(tmp_path), "%s/default", path_arg);
-		rc = sos_part_create(tmp_path, "default container partition", sos->o_perm, o_mode);
+		rc = __sos_part_create(tmp_path, "default container partition", sos->o_perm, o_mode);
 		if (rc)
 			goto err;
 		rc = sos_part_attach(sos, "default", tmp_path);

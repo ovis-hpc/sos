@@ -133,7 +133,6 @@
  *
  * The Partition API include the following:
  *
- * - sos_part_create() Create a new partition
  * - sos_part_delete() Delete a partition
  * - sos_part_move() Move a parition to another storage location
  * - sos_part_copy() Copy a partition to another storage location
@@ -191,25 +190,45 @@ static void __sos_part_free(void *free_arg)
 		ods_close(part->obj_ods, ODS_COMMIT_ASYNC);
 	free(part);
 }
-
 /**
  * \brief Create a new partition
  *
- * Creates a new, unattached partition in the OFFLINE state.
+ * This interface is deprecated. New software should use sos_part_open()
  *
- * \param part_path The path to the partition.
- * \param part_desc A description for the partition.
- * \param o_parm Used to convey the backend, one of SOS_BE_MMOS or SOS_BE_LSOS
- * \param o_mode The partition access bits, see open()
- * \retval 0 The partition was successfully created
- * \retval EEXIST The partition already exists
- * \retval EPERM Insufficient permission
- * \retval ENOSPACE The filesystem is full
+ * \param sos The sos_t container handle
+ * \param part_name The name of the new partition.
+ * \param part_path An optional path to the partition. If null,
+ *                  the container path will be used.
+ * \retval 0 Success
+ * \retval EEXIST The specified partition already exists
+ * \retval EBADF Invalid container handle or other storage error
+ * \retval ENOMEM Insufficient resources
  */
-int sos_part_create(const char *part_path,
-		    const char *part_desc,
-			sos_perm_t o_perm,
-		    int o_mode)
+int sos_part_create(sos_t sos, const char *part_name, const char *part_path)
+{
+	char tmp_path[PATH_MAX];
+	sos_part_t part;
+
+	/* See if there is already a partition by this name */
+	part = sos_part_by_name(sos, part_name);
+	if (part) {
+		sos_part_put(part);
+		return EEXIST;
+	}
+
+	snprintf(tmp_path, sizeof(tmp_path), "%s/%s", part_path, part_name);
+	/* open/create the new partition */
+	part = sos_part_open(tmp_path, sos->o_perm | SOS_PERM_CREAT, sos->o_mode, "");
+	if (!part)
+		return errno;
+	sos_part_put(part);
+
+	/* attach the partition to the container */
+	return sos_part_attach(sos, part_name, tmp_path);
+}
+
+int __sos_part_create(const char *part_path, const char *part_desc,
+			sos_perm_t o_perm, int o_mode)
 {
 	uuid_t uuid;
 	char tmp_path[PATH_MAX];
@@ -311,7 +330,7 @@ static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj)
  * @brief Open a partition
  *
  * Open a partition and return the partition handle. The partition is not
- * associated with a container.
+ * associated with a container, see sos_part_attach().
  *
  * @param path
  * @param o_perm The SOS access permissions. If SOS_PERM_CREAT is included,
@@ -333,7 +352,7 @@ sos_part_t sos_part_open(const char *path, int o_perm, ...)
 	if (o_perm & SOS_PERM_CREAT) {
 		o_mode = va_arg(ap, int);
 		desc = va_arg(ap, char *);
-		rc = sos_part_create(path, desc, o_perm, o_mode);
+		rc = __sos_part_create(path, desc, o_perm, o_mode);
 		if (rc) {
 			errno = rc;
 			return NULL;
@@ -897,6 +916,17 @@ sos_part_t sos_part_by_name(sos_t sos, const char *name)
 		sos_part_get(part);
 	pthread_mutex_unlock(&sos->lock);
 	return part;
+}
+
+/**
+ * \brief Find a partition by name
+ *
+ * This interface is deprecated. New software should use
+ * sos_part_by_name()
+ */
+sos_part_t sos_part_find(sos_t sos, const char *name)
+{
+	return sos_part_by_name(sos, name);
 }
 
 static sos_part_t __sos_part_by_path(sos_t sos, const char *path)

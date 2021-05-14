@@ -89,7 +89,7 @@ int main(int argc, char **argv)
 	char *desc = "";
 	sos_perm_t o_perm = SOS_BE_MMOS;
 	int o_mode = 0660;
-	int o, rc;
+	int o, rc = 0;
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (o) {
 		case 'p':
@@ -119,9 +119,12 @@ int main(int argc, char **argv)
 		printf("The partition path is a required argument.\n");
 		usage(0, NULL);
 	}
-	rc = sos_part_create(path, desc, o_perm, o_mode);
-	if (rc)
-		fprintf(stderr, "sos_part_create: The partition could not be created, error %s\n", strerror(rc));
-
+	sos_part_t part = sos_part_open(path, o_perm | SOS_PERM_CREAT, o_mode, desc);
+	if (!part) {
+		fprintf(stderr, "sos_part_create: The partition could not be created, error %s\n", strerror(errno));
+		rc = errno;
+	} else {
+		sos_part_put(part);
+	}
 	return rc;
 }

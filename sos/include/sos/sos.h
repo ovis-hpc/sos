@@ -423,12 +423,13 @@ typedef struct sos_part_s *sos_part_t;
  * \defgroup part_funcs Partition Functions
  * @{
  */
-int sos_part_create(const char *path, const char *desc, sos_perm_t o_perm, int o_mode);
+int sos_part_create(sos_t sos, const char *name, const char *path);	/* deprecated */
 sos_part_t sos_part_open(const char *path, int o_perm, ...);
 int sos_part_attach(sos_t sos, const char *name, const char *path);
 int sos_part_detach(sos_part_t part);
 int sos_part_destroy(char *path);
 int sos_part_move(sos_part_t part, const char *part_path);
+sos_part_t sos_part_find(sos_t sos, const char *name);	/* deprecated */
 sos_part_t sos_part_by_name(sos_t sos, const char *name);
 sos_part_t sos_part_by_path(sos_t sos, const char *path);
 sos_part_t sos_part_by_uuid(sos_t sos, const uuid_t uuid);
