@@ -16,6 +16,11 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+typedef enum ods_backend_type_e {
+	ODS_BACKEND_MMAP = 1,	/* Memory Structured Object Store (mmap) */
+	ODS_BACKEND_LSOS = 2	/* Log Structured Object Store */
+} ods_backend_type_t;
+
 struct ods_s {
 	/* The path to the file on disk */
 	char *path;
@@ -24,6 +29,8 @@ struct ods_s {
 
 	/* Open flags */
 	ods_perm_t o_perm;
+
+	ods_perm_t be_type;
 
 	/* Local lock for this ODS instance */
 	pthread_mutex_t lock;
@@ -113,11 +120,6 @@ struct ods_backend_s {
 	uint64_t be_type;	/* The backend type */
 };
 #pragma pack()
-
-typedef enum ods_backend_type_e {
-	ODS_BACKEND_MMAP = 1,	/* Memory Structured Object Store (mmap) */
-	ODS_BACKEND_LSOS = 2	/* Log Structured Object Store */
-} ods_backend_type_t;
 
 ods_backend_type_t __ods_backend_type(const char *path);
 

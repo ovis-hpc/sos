@@ -113,6 +113,7 @@ extern const char *ods_path(ods_t ods);
  * \retval 0	An error occured opening/creating the ODS
  */
 extern ods_t ods_open(const char *path, ods_perm_t o_flags, ...);
+ods_perm_t ods_backend_type_get(ods_t ods);
 
 #define ODS_VER_MAJOR	5
 #define ODS_VER_MINOR	1

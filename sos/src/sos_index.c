@@ -215,6 +215,7 @@ int sos_index_new(sos_t sos, const char *name,
 }
 
 ods_idx_t _open_or_creat(sos_t sos, char *path,
+			sos_perm_t be,
 			uint32_t mode,
 			const char *idx_type,
 			const char *key_type,
@@ -227,7 +228,7 @@ ods_idx_t _open_or_creat(sos_t sos, char *path,
 	/* Attempt to create if it does not exist. */
 	if (errno != ENOENT)
 		return NULL;
-	rc = ods_idx_create(path, sos->o_perm, mode, idx_type, key_type, args);
+	rc = ods_idx_create(path, sos->o_perm | be, mode, idx_type, key_type, args);
 	if (!rc)
 		return ods_idx_open(path, sos->o_perm);
 	return NULL;
@@ -262,6 +263,7 @@ static int __sos_index_reopen(sos_index_t index)
 		}
 		sprintf(tmp_path, "%s/%s_idx", sos_part_path(part), index->name);
 		idx = _open_or_creat(index->sos, tmp_path,
+							sos_part_be_get(part),
 							SOS_IDX(index->idx_obj)->mode,
 							SOS_IDX(index->idx_obj)->idx_type,
 							SOS_IDX(index->idx_obj)->key_type,
@@ -354,6 +356,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		}
 		sprintf(tmp_path, "%s/%s_idx", sos_part_path(part), name);
 		idx = _open_or_creat(sos, tmp_path,
+				sos_part_be_get(part),
 				SOS_IDX(idx_obj)->mode,
 				SOS_IDX(idx_obj)->idx_type,
 				SOS_IDX(idx_obj)->key_type,
@@ -468,7 +471,6 @@ int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
 	if (!ods_ref_valid(obj->obj->ods, obj->obj_ref.ref.obj))
 		return EINVAL;
-
 	/* Ensure that the primary partition hasn't changed */
 	sos_part_t part = __sos_primary_obj_part(index->sos);
 	if (part != index->primary_part) {
@@ -476,6 +478,8 @@ int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 		if (rc)
 			return rc;
 	}
+	sos_obj_commit(obj);
+	ods_obj_update(obj->obj);
 	return ods_idx_insert(index->primary_idx, key, obj->obj_ref.idx_data);
 }
 

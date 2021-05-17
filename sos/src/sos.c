@@ -293,9 +293,8 @@ struct idx_ent_s {
  * the same values and have the same meaning as the corresponding
  * parameters to the open() system call.
  *
- * Like the POSIX \c creat() system call, shis function is racy and
- * should not be deprecated in favor of the \c sos_container_open()
- * function.
+ * Like the POSIX \c creat() system call, this function is racy. New software
+ * should use use the \c sos_container_open() function.
  *
  * \param path		Pathname for the Container.
  * \param o_mode	The file mode for the Container.
@@ -314,13 +313,27 @@ int sos_container_new(const char *path, int o_mode)
 }
 
 /* Must be called holding the SOS container file lock */
-static int __sos_container_new(const char *path, int o_perm, int o_mode)
+static int __sos_container_new(const char *path, sos_perm_t *p_perm, int o_mode)
 {
 	char tmp_path[PATH_MAX];
 	char real_path[PATH_MAX];
 	int rc;
 	int x_mode;
 	ods_t ods;
+	sos_perm_t o_perm = *p_perm;
+
+	if (0 == (o_perm & (SOS_BE_LSOS | SOS_BE_MMOS))) {
+		char *bes = getenv("SOS_DEFAULT_BACKEND");
+		if (bes) {
+			if (0 == strcasecmp(bes, "lsos")) {
+				o_perm |= SOS_BE_LSOS;
+			} else {
+				o_perm |= SOS_BE_MMOS;
+			}
+		} else {
+			o_perm |= SOS_BE_MMOS;
+		}
+	}
 
 	x_mode = o_mode;
 	if (x_mode & (S_IWGRP | S_IRGRP))
@@ -423,7 +436,11 @@ static int __sos_container_new(const char *path, int o_perm, int o_mode)
  	rc = ods_idx_create(tmp_path, o_perm, o_mode, "BXTREE", "STRING", NULL);
  	if (rc)
  		goto err_7;
-
+	*p_perm = o_perm;
+	const char *be_type = "MMOS";
+	if (o_perm & (SOS_BE_LSOS | SOS_BE_MMOS))
+		be_type = "LSOS";
+	sos_container_config_set(path, "BACKEND_TYPE", be_type);
 	return 0;
  err_7:
 	sprintf(tmp_path, "%s/.__index", path);
@@ -849,16 +866,19 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 			goto err;
 		if (0 == (o_perm & SOS_PERM_CREAT))
 			goto err;
-		rc = __sos_container_new(path_arg, o_perm, o_mode);
+		rc = __sos_container_new(path_arg, &o_perm, o_mode);
 		if (rc)
 			goto err;
 		need_part = 1;
 		rc = stat(sos->path, &sb);
 		if (rc)
 			goto err;
+		o_perm &= ~SOS_PERM_CREAT;
+	} else {
+		o_mode = sb.st_mode;
 	}
 
-	sos->o_mode = sb.st_mode;
+	sos->o_mode = o_mode;
 	sos->o_perm = (ods_perm_t)o_perm;
 	ods_rbt_init(&sos->schema_name_rbt, __sos_schema_name_cmp, NULL);
 	ods_rbt_init(&sos->schema_id_rbt, __sos_schema_id_cmp, NULL);
@@ -868,6 +888,13 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	if (rc) {
 		sos_error("Error %d initializing configuration on open of %s\n", errno, path_arg);
 		goto err;
+	}
+	const char *be_type = sos_container_config_get(path, "BACKEND_TYPE");
+	if (be_type) {
+		if (0 == strcasecmp(be_type, "LSOS"))
+			sos->o_perm |= SOS_BE_LSOS;
+	} else {
+		sos->o_perm |= SOS_BE_MMOS;
 	}
 
 	/* Open the ODS containing the Index objects */

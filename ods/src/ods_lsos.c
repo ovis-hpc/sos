@@ -1040,6 +1040,7 @@ static void empty_del_list(struct map_list_head *del_q)
 		map = LIST_FIRST(del_q);
 		LIST_REMOVE(map, entry);
 		ods_ldebug("Unmapping %p len %ld MB\n", map->data, map->map.len/1024/1024);
+		commit_map_pages(map);
 		/* Drop the tree reference and remove it from the tree */
 		ods_rbt_del(&map->ods->map_tree, &map->rbn);
 		map_put(map);
@@ -2121,7 +2122,7 @@ ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 		return NULL;
 	}
 	ods->base.o_perm = o_perm;
-
+	ods->base.be_type = ODS_BE_LSOS;
 	ods->base.commit = ods_lsos_commit;
 	ods->base.close = ods_lsos_close;
 	ods->base.alloc =  ods_lsos_alloc;

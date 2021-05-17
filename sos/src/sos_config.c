@@ -188,6 +188,7 @@ int sos_container_config_set(const char *path, const char *opt_name, const char 
 		goto err_5;
 	ods_iter_delete(iter);
 	ods_obj_put(config_key);
+	ods_obj_update(obj);
 	ods_obj_put(obj);
 	ods_close(config_ods, ODS_COMMIT_SYNC);
 	ods_idx_close(config_idx, ODS_COMMIT_SYNC);
@@ -210,7 +211,7 @@ int sos_container_config_set(const char *path, const char *opt_name, const char 
 	return errno;
 }
 
-char *sos_container_config_get(const char *path, const char *opt_name)
+const char *sos_container_config_get(const char *path, const char *opt_name)
 {
 	char tmp_path[PATH_MAX];
 	int rc;

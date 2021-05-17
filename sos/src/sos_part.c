@@ -375,6 +375,18 @@ sos_part_t sos_part_open(const char *path, int o_perm, ...)
 	return part;
 }
 
+sos_perm_t sos_part_be_get(sos_part_t part)
+{
+	ods_perm_t be = ods_backend_type_get(part->obj_ods);
+	switch (be) {
+	case ODS_BE_MMAP:
+		return SOS_BE_MMOS;
+	case ODS_BE_LSOS:
+		return SOS_BE_LSOS;
+	default:
+		return SOS_BE_MMOS;
+	}
+}
 struct iter_args {
 	double start;
 	double timeout;
@@ -538,6 +550,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 	ods_obj_update(part->udata_obj);
 	ods_obj_update(part->ref_obj);
  	ods_unlock(sos->part_ref_ods, 0);
+	ods_commit(sos->part_ref_ods, ODS_COMMIT_SYNC);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
 }
@@ -707,6 +720,7 @@ void sos_part_put(sos_part_t part)
 	if (part)
 		sos_ref_put(&part->ref_count, "application");
 }
+
 
 /**
  * \brief Free the memory associated with the Iterator

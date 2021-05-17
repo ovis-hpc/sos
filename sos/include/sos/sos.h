@@ -135,7 +135,7 @@ int sos_container_lock_cleanup(const char *path);
 void sos_inuse_obj_info(sos_t sos, FILE *fp);
 void sos_free_obj_info(sos_t sos, FILE *fp);
 int sos_container_config_set(const char *path, const char *option, const char *value);
-char *sos_container_config_get(const char *path, const char *option);
+const char *sos_container_config_get(const char *path, const char *option);
 sos_config_iter_t sos_config_iter_new(const char *path);
 void sos_config_iter_free(sos_config_iter_t iter);
 sos_config_t sos_config_first(sos_config_iter_t iter);
@@ -425,6 +425,7 @@ typedef struct sos_part_s *sos_part_t;
  */
 int sos_part_create(sos_t sos, const char *name, const char *path);	/* deprecated */
 sos_part_t sos_part_open(const char *path, int o_perm, ...);
+sos_perm_t sos_part_be_get(sos_part_t part);
 int sos_part_attach(sos_t sos, const char *name, const char *path);
 int sos_part_detach(sos_part_t part);
 int sos_part_destroy(char *path);

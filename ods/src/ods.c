@@ -389,6 +389,11 @@ ods_obj_t _ods_obj_alloc_extend(ods_t ods, size_t sz, size_t extend_sz, const ch
 	return obj;
 }
 
+ods_perm_t ods_backend_type_get(ods_t ods)
+{
+	return ods->be_type;
+}
+
 ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line)
 {
 	ods_obj_t obj;

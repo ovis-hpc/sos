@@ -1879,7 +1879,7 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 		return NULL;
 	}
 	ods->base.o_perm = o_perm;
-
+	ods->base.be_type = ODS_BE_MMAP;
 	ods->base.commit = ods_mmap_commit;
 	ods->base.close = ods_mmap_close;
 	ods->base.alloc =  ods_mmap_alloc;
