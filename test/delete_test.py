@@ -22,6 +22,10 @@ data2 = []
 class DeleteTest(SosTestCase):
     @classmethod
     def setUpClass(cls):
+        global data1
+        global data2
+        data1 = []
+        data2 = []
         cls.setUpDb("delete_test_cont")
         cls.schema = Sos.Schema()
         cls.schema.from_template('test_delete',
@@ -42,6 +46,7 @@ class DeleteTest(SosTestCase):
         return ( int(t), int(int((t - int(t)) * 1.0e6 )) )
 
     def test_00_add_obj(self):
+        global data1
         for cnt in range(0, 25):
             t = self.__time_to_tuple(time.time())
             i = random.random()
@@ -52,6 +57,7 @@ class DeleteTest(SosTestCase):
                 obj.index_add()
 
     def test_01_del(self):
+        global data1
         k_attr = self.schema['key']
         idx = k_attr.index()
         # delete the objects
@@ -65,6 +71,7 @@ class DeleteTest(SosTestCase):
             o.delete()
 
     def test_02_add_obj(self):
+        global data2
         for cnt in range(0, 50):
             t = self.__time_to_tuple(time.time())
             i = random.random()
@@ -75,6 +82,7 @@ class DeleteTest(SosTestCase):
                 obj.index_add()
 
     def test_03_del(self):
+        global data2
         k_attr = self.schema['key']
         idx = k_attr.index()
         for i in range(0, len(data2) // 2):
