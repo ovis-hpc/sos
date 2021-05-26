@@ -318,8 +318,8 @@ typedef enum sos_cond_e sos_cond_t;
 typedef struct sos_schema_template_attr {
 	const char *name;
 	sos_type_t type;
-	size_t size;		/*! must be specified if the type is SOS_TYPE_STRUCT or SOS_TYPE_JOIN */
-	const char **join_list;	/*! Am array of attribute names */
+	size_t size;		/*! Must be specified if the type is SOS_TYPE_STRUCT or SOS_TYPE_JOIN */
+	const char **join_list;	/*! An array of attribute names */
 	int indexed;
 	const char *idx_type;
 	const char *key_type;
@@ -350,7 +350,7 @@ int sos_schema_delete(sos_t sos, const char *name);
 sos_schema_t sos_schema_first(sos_t sos);
 sos_schema_t sos_schema_next(sos_schema_t schema);
 const char *sos_schema_name(sos_schema_t schema);
-int sos_schema_id(sos_schema_t schema);
+void sos_schema_uuid(sos_schema_t schema, uuid_t uuid);
 int sos_schema_attr_count(sos_schema_t schema);
 int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, ...);
 int sos_schema_index_add(sos_schema_t schema, const char *name);
@@ -365,9 +365,13 @@ sos_attr_t sos_schema_attr_next(sos_attr_t attr);
 sos_attr_t sos_schema_attr_prev(sos_attr_t attr);
 
 int sos_attr_id(sos_attr_t attr);
+int sos_attr_is_indexed(sos_attr_t attr);
 const char *sos_attr_name(sos_attr_t attr);
 sos_type_t sos_attr_type(sos_attr_t attr);
 sos_index_t sos_attr_index(sos_attr_t attr);
+const char *sos_attr_idx_type(sos_attr_t attr);
+const char *sos_attr_key_type(sos_attr_t attr);
+const char *sos_attr_idx_args(sos_attr_t attr);
 size_t sos_attr_size(sos_attr_t attr);
 sos_schema_t sos_attr_schema(sos_attr_t attr);
 sos_array_t sos_attr_join_list(sos_attr_t attr);
@@ -376,6 +380,9 @@ int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
 				  char **endptr);
 size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr);
+size_t sos_obj_attr_value_set_va(sos_obj_t sos_obj, sos_attr_t attr, va_list ap);
+size_t sos_obj_attr_by_name_set(sos_obj_t sos_obj, const char *attr_name, ...);
+size_t sos_obj_attr_by_id_set(sos_obj_t sos_obj, int attr_id, ...);
 
 /** @} */
 /** @} */
@@ -493,12 +500,15 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
  * each value in the object.
  *
  * - sos_obj_new()	 Create a new object in the container
+ * - sos_obj_new_with_data() Create and populate a new object with data
+ * - sos_obj_malloc() Create a memory object that lives outside a container
  * - sos_obj_delete()    Delete an object from the container
  * - sos_obj_get()	 Take a reference on an object
  * - sos_obj_put()	 Drop a reference on an object
  * - sos_obj_index()	 Add an object to its indices
  * - sos_obj_remove()	 Remove an object from its indices
  * - sos_obj_ptr()       Returns a pointer to the object's data
+ * - sos_obj_size()	Returns the size in bytes of the object
  * - sos_obj_find()	 Find an object based on an attribute value
  * - sos_value()	 Return a value given object and attribute handles.
  * - sos_value_by_name() Get the value handle by name
@@ -516,8 +526,11 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
 #define SOS_OBJ_LE	2
 
 sos_obj_t sos_obj_new(sos_schema_t schema);
+sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_size);
+sos_obj_t sos_obj_malloc(sos_schema_t schema);
 int sos_obj_commit(sos_obj_t obj);
 sos_schema_t sos_obj_schema(sos_obj_t obj);
+size_t sos_obj_size(sos_obj_t obj);
 int sos_obj_copy(sos_obj_t dst, sos_obj_t src);
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj);
 sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref);

@@ -148,7 +148,8 @@
 #include "sos_priv.h"
 
 #ifndef DOXYGEN
-LIST_HEAD(cont_list_head, sos_container_s) cont_list;
+LIST_HEAD(cont_list_head, sos_container_s)
+cont_list;
 #endif
 pthread_mutex_t cont_list_lock;
 pthread_mutex_t _sos_log_lock;
@@ -388,7 +389,7 @@ static int __sos_container_new(const char *path, sos_perm_t *p_perm, int o_mode)
 	ods_obj_put(udata);
 	ods_close(part_ods, ODS_COMMIT_SYNC);
 
- 	/* Create the ODS to contain the schema objects */
+	/* Create the ODS to contain the schema objects */
 	sprintf(tmp_path, "%s/.__schemas", path);
 	ods_t schema_ods = ods_open(tmp_path, o_perm | ODS_PERM_CREAT | O_RDWR, o_mode);
 	if (!schema_ods)
@@ -408,11 +409,11 @@ static int __sos_container_new(const char *path, sos_perm_t *p_perm, int o_mode)
 
 	/* Create the index to look up the schema names */
 	sprintf(tmp_path, "%s/.__schema_idx", path);
- 	rc = ods_idx_create(tmp_path, o_perm, o_mode, "BXTREE", "STRING", NULL);
- 	if (rc)
- 		goto err_5;
+	rc = ods_idx_create(tmp_path, o_perm, o_mode, "BXTREE", "STRING", NULL);
+	if (rc)
+		goto err_5;
 
- 	/* Create the ODS to contain the index objects */
+	/* Create the ODS to contain the index objects */
 	sprintf(tmp_path, "%s/.__index", path);
 	ods_t idx_ods = ods_open(tmp_path, o_perm | SOS_PERM_RW | SOS_PERM_CREAT, o_mode);
 	if (!idx_ods)
@@ -433,37 +434,37 @@ static int __sos_container_new(const char *path, sos_perm_t *p_perm, int o_mode)
 
 	/* Create the index to look up the indexes */
 	sprintf(tmp_path, "%s/.__index_idx", path);
- 	rc = ods_idx_create(tmp_path, o_perm, o_mode, "BXTREE", "STRING", NULL);
- 	if (rc)
- 		goto err_7;
+	rc = ods_idx_create(tmp_path, o_perm, o_mode, "BXTREE", "STRING", NULL);
+	if (rc)
+		goto err_7;
 	*p_perm = o_perm;
 	const char *be_type = "MMOS";
 	if (o_perm & (SOS_BE_LSOS | SOS_BE_MMOS))
 		be_type = "LSOS";
 	sos_container_config_set(path, "BACKEND_TYPE", be_type);
 	return 0;
- err_7:
+err_7:
 	sprintf(tmp_path, "%s/.__index", path);
 	ods_destroy(tmp_path);
- err_6:
+err_6:
 	sprintf(tmp_path, "%s/.__schemas_idx", path);
 	ods_destroy(tmp_path);
- err_5:
+err_5:
 	sprintf(tmp_path, "%s/.__schemas", path);
 	ods_destroy(tmp_path);
- err_4:
+err_4:
 	sprintf(tmp_path, "%s/.__part", path);
 	ods_destroy(tmp_path);
- err_3:
+err_3:
 	sprintf(tmp_path, "%s/.__config_idx", path);
 	ods_destroy(tmp_path);
- err_2:
+err_2:
 	sprintf(tmp_path, "%s/.__config", path);
 	ods_destroy(tmp_path);
- err_1:
+err_1:
 	rmdir(path);
-	errno = rc;		/* rmdir will stomp errno */
- err_0:
+	errno = rc; /* rmdir will stomp errno */
+err_0:
 	return rc;
 }
 
@@ -515,8 +516,8 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 	/* Commit the object ods */
 	sos_part_t part;
 	TAILQ_FOREACH(part, &sos->part_list, entry)
-		if (part->obj_ods)
-			ods_commit(part->obj_ods, commit);
+	if (part->obj_ods)
+		ods_commit(part->obj_ods, commit);
 
 	/* Commit all the attribute indices */
 	LIST_FOREACH(schema, &sos->schema_list, entry) {
@@ -594,7 +595,7 @@ void sos_container_info(sos_t sos, FILE *fp)
 }
 
 static int show_locks(const char *path, const struct stat *sb,
-		      int typeflags, struct FTW *ftw)
+			  int typeflags, struct FTW *ftw)
 {
 	size_t len;
 	char tmp_path[PATH_MAX];
@@ -653,7 +654,7 @@ int sos_container_lock_cleanup(const char *path)
 {
 	int rc;
 
-	rc = nftw(path, release_locks, 1024, FTW_DEPTH|FTW_PHYS);
+	rc = nftw(path, release_locks, 1024, FTW_DEPTH | FTW_PHYS);
 	return rc;
 }
 
@@ -1011,7 +1012,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	ods_commit(sos->schema_ods, ODS_COMMIT_SYNC);
 	ods_commit(sos->idx_ods, ODS_COMMIT_SYNC);
 	return sos;
- err:
+err:
 	if (iter)
 		ods_iter_delete(iter);
 	free_sos(sos, SOS_COMMIT_ASYNC);
@@ -1043,13 +1044,12 @@ int sos_container_verify(sos_t sos)
 		idx = ods_idx_open(path, sos->o_perm);
 		ods_obj_put(idx_obj);
 		if (!idx) {
-			fprintf(stdout, "Error %d opening %s\n",
-				errno, path);
+			sos_error("Error %d opening %s\n", errno, path);
 			goto out;
 		}
 		res = ods_idx_verify(idx, stdout);
 	}
- out:
+out:
 	ods_iter_delete(iter);
 	return res;
 }
@@ -1086,8 +1086,9 @@ int sos_container_move(const char *path_arg, const char *new_path)
 		strcat(tmp_path, "/");
 		strcat(tmp_path, path_arg);
 		path = strdup(tmp_path);
-	} else
+	} else {
 		path = strdup(path_arg);
+	}
 	if (!path)
 		return ENOMEM;
 
@@ -1114,11 +1115,11 @@ int sos_container_move(const char *path_arg, const char *new_path)
 		part_obj = ods_ref_as_obj(part_ods, next_ref);
 	}
 
- out_2:
+out_2:
 	ods_obj_put(part_udata);
- out_1:
+out_1:
 	ods_close(part_ods, ODS_COMMIT_SYNC);
- out_0:
+out_0:
 	free(path);
 	return rc;
 }
@@ -1205,14 +1206,15 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 	if (ods_obj->ods && !ods_ref_valid(ods_obj->ods, obj_ref.ref.obj)) {
 		sos_obj_ref_str_t ref_str;
 		sos_error("Invalid object reference %s",
-			sos_obj_ref_to_str(obj_ref, ref_str));
+			  sos_obj_ref_to_str(obj_ref, ref_str));
 		return NULL;
 	}
 	if (!LIST_EMPTY(&sos->obj_free_list)) {
 		sos_obj = LIST_FIRST(&sos->obj_free_list);
 		LIST_REMOVE(sos_obj, entry);
-	} else
+	} else {
 		sos_obj = malloc(sizeof *sos_obj);
+	}
 	if (!sos_obj)
 		return NULL;
 	uuid_copy(SOS_OBJ(ods_obj)->schema_uuid, schema->data->uuid);
@@ -1272,7 +1274,6 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 		return NULL;
 	}
 	size_t array_data_sz = schema->data->array_cnt * ARRAY_RESERVE;
-
 	ods_obj = ods_obj_malloc(schema->data->obj_sz + array_data_sz);
 	if (!ods_obj)
 		goto err_0;
@@ -1284,10 +1285,108 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 		goto err_1;
 	__sos_fixup_array_values(schema, sos_obj);
 	return sos_obj;
- err_1:
+err_1:
 	ods_obj_delete(ods_obj);
 	ods_obj_put(ods_obj);
- err_0:
+err_0:
+	return NULL;
+}
+
+/**
+ * @brief Create a new object and populate it with data
+ *
+ * The \c data provided is copied into the object following the object
+ * header. Note that object data is variable length when there are
+ * arrays in the schema.
+ *
+ * @param schema The object schema
+ * @param data The attribute data
+ * @param data_size The data size in bytes
+ * @return sos_obj_t The object handle
+ */
+sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_size)
+{
+	ods_obj_t ods_obj;
+	sos_obj_t sos_obj;
+	sos_part_t part;
+	sos_obj_ref_t obj_ref;
+
+	if (!schema || !schema->sos)
+	{
+		errno = EINVAL;
+		return NULL;
+	}
+	part = __sos_primary_obj_part(schema->sos);
+	if (!part)
+	{
+		errno = ENOSPC;
+		return NULL;
+	}
+	if (data_size < schema->data->obj_sz) {
+		errno = EINVAL;
+		return NULL;
+	}
+	ods_obj = ods_obj_malloc(data_size + sizeof(struct sos_obj_data_s));
+	if (!ods_obj)
+		goto err_0;
+	uuid_copy(obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
+	obj_ref.ref.obj = ods_obj_ref(ods_obj);
+	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj, obj_ref);
+	if (!sos_obj)
+		goto err_1;
+	sos_obj->size = data_size + sizeof(struct sos_obj_data_s);
+	memcpy(&ods_obj->as.bytes[sizeof(struct sos_obj_data_s)], data, data_size);
+	return sos_obj;
+err_1:
+	ods_obj_delete(ods_obj);
+	ods_obj_put(ods_obj);
+err_0:
+	return NULL;
+}
+
+/**
+ * \brief Allocate a SOS object in memory
+ *
+ * This call allocates a memory based object that is not stored in
+ * the container.
+ *
+ * \param schema        The schema handle
+ * \returns Pointer to the new object
+ * \returns NULL if there is an error
+ */
+sos_obj_t sos_obj_malloc(sos_schema_t schema)
+{
+	ods_obj_t ods_obj;
+	sos_obj_t sos_obj;
+
+	if (!schema)
+	{
+		errno = EINVAL;
+		return NULL;
+	}
+	size_t array_data_sz = schema->data->array_cnt * ARRAY_RESERVE;
+	ods_obj = ods_obj_malloc(schema->data->obj_sz + array_data_sz);
+	if (!ods_obj)
+		goto err_0;
+
+	memset(ods_obj->as.ptr, 0, schema->data->obj_sz + array_data_sz);
+
+	sos_obj = malloc(sizeof *sos_obj);
+	if (!sos_obj)
+		goto err_1;
+	uuid_copy(SOS_OBJ(ods_obj)->schema_uuid, schema->data->uuid);
+	sos_obj->sos = NULL;
+	sos_obj->obj = ods_obj;
+	ods_atomic_inc(&schema->data->ref_count);
+	sos_obj->schema = schema;
+	sos_obj->size = schema->data->obj_sz;
+	sos_obj->ref_count = 1;
+
+	__sos_fixup_array_values(schema, sos_obj);
+	return sos_obj;
+err_1:
+	ods_obj_put(ods_obj);
+err_0:
 	return NULL;
 }
 
@@ -1330,7 +1429,7 @@ int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 			if (!src_data || !dst_data)
 				return EINVAL;
 			memcpy(dst_data->prim.struc_, src_data->prim.struc_,
-			       sos_attr_size(src_attr));
+				sos_attr_size(src_attr));
 		} else {
 			struct sos_value_s src_v_, dst_v_;
 			sos_value_t src_value;
@@ -1342,7 +1441,7 @@ int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 			if (!dst_value)
 				return ENOMEM;
 			memcpy(sos_array(dst_value), sos_array(src_value),
-			       sos_value_size(dst_value));
+			   sos_value_size(dst_value));
 			sos_value_put(src_value);
 			sos_value_put(dst_value);
 		}
@@ -1598,7 +1697,7 @@ int sos_obj_index(sos_obj_t obj)
 			goto err;
 	}
 	return 0;
- err:
+err:
 	return rc;
 }
 

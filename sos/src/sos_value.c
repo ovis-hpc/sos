@@ -543,8 +543,11 @@ sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *ar
 	if (arr_obj)
 		*arr_obj = NULL;
 	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
-	if (sos_attr_is_array(attr))
+	if (sos_attr_is_array(attr)) {
+		if (0 == ref_val->array_info.offset)
+			return NULL;
 		ref_val = (sos_value_data_t)&(obj->obj->as.bytes[ref_val->array_info.offset]);
+	}
 	return ref_val;
 }
 
@@ -779,6 +782,49 @@ size_t sos_value_data_set_va(sos_value_data_t vd, sos_type_t type, va_list ap)
 	}
 	return size;
 }
+
+size_t sos_obj_attr_value_set_va(sos_obj_t sos_obj, sos_attr_t attr, va_list ap)
+{
+	sos_value_data_t vd;
+	struct sos_value_s val_;
+	va_list ap_copy;
+	if (sos_attr_is_array(attr)) {
+		va_copy(ap_copy, ap);
+		size_t count = va_arg(ap_copy, size_t);
+		(void)sos_array_new(&val_, attr, sos_obj, count);
+		sos_obj_put(sos_obj);
+		va_end(ap_copy);
+	}
+	vd = sos_obj_attr_data(sos_obj, attr, NULL);
+	return sos_value_data_set_va(vd, sos_attr_type(attr), ap);
+}
+
+size_t sos_obj_attr_by_name_set(sos_obj_t sos_obj, const char *attr_name, ...)
+{
+	size_t size;
+	va_list ap;
+	va_start(ap, attr_name);
+	sos_attr_t attr = sos_schema_attr_by_name(sos_obj->schema, attr_name);
+	if (!attr)
+		return 0;
+	size = sos_obj_attr_value_set_va(sos_obj, attr, ap);
+	va_end(ap);
+	return size;
+}
+
+size_t sos_obj_attr_by_id_set(sos_obj_t sos_obj, int attr_id, ...)
+{
+	size_t size;
+	va_list ap;
+	va_start(ap, attr_id);
+	sos_attr_t attr = sos_schema_attr_by_id(sos_obj->schema, attr_id);
+	if (!attr)
+		return 0;
+	size = sos_obj_attr_value_set_va(sos_obj, attr, ap);
+	va_end(ap);
+	return size;
+}
+
 
 size_t sos_value_data_size(sos_value_data_t vd, sos_type_t type)
 {

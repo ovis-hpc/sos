@@ -170,6 +170,7 @@ sos_schema_t sos_schema_new(const char *name)
 		TAILQ_INIT(&schema->attr_list);
 		TAILQ_INIT(&schema->idx_attr_list);
 		schema->ref_count = 1;
+		uuid_generate(schema->data->uuid);
 	}
 	return schema;
 }
@@ -267,7 +268,7 @@ sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 				goto err;
 			}
 			const char *idx_type = t->attrs[i].idx_type;
-			if (!idx_type)
+			if (!idx_type || idx_type[0] == '\0')
 				idx_type = "BXTREE";
 			rc = sos_schema_index_modify
 				(schema,
@@ -667,19 +668,19 @@ int sos_schema_index_modify(sos_schema_t schema, const char *name,
 	if (!attr)
 		return ENOENT;
 
-	if (idx_type) {
+	if (idx_type && idx_type[0] != '\0') {
 		if (attr->idx_type)
 			free(attr->idx_type);
 		attr->idx_type = strdup(idx_type);
 		__toupper(attr->idx_type);
 	}
-	if (key_type) {
+	if (key_type && key_type[0] != '\0') {
 		if (attr->key_type)
 			free(attr->key_type);
 		attr->key_type = strdup(key_type);
 		__toupper(attr->key_type);
 	}
-	if (idx_args) {
+	if (idx_args && idx_args[0] != '\0') {
 		if (attr->idx_args) {
 			free(attr->idx_args);
 		}
@@ -771,6 +772,57 @@ const char *sos_attr_name(sos_attr_t attr)
 }
 
 /**
+ * @brief Return the index type
+ *
+ * This field specifies the index plugin that will implement the
+ * SOS index API. Currently supported values include the following:
+ * - "BXTREE"
+ * - "HT"
+ * - "H2BXT"
+ * - "H2HTBL"
+ *
+ * @param attr The attribute handle
+ * @return const char* The index plugin name
+ */
+const char *sos_attr_idx_type(sos_attr_t attr)
+{
+	return attr->idx_type ? attr->idx_type : "";
+}
+
+/**
+ * @brief Return the attribute key type
+ *
+ * @param attr The attribute handle
+ * @return const char* The key type
+ */
+const char *sos_attr_key_type(sos_attr_t attr)
+{
+	return attr->key_type ? attr->key_type : "";
+}
+
+/**
+ * @brief Return the index specific configuration arguments
+ *
+ * @param attr The attribute handle
+ * @return const char* The index specific configuration arguments
+ */
+const char *sos_attr_idx_args(sos_attr_t attr)
+{
+	return attr->idx_args ? attr->idx_args : "";
+}
+
+/**
+ * @brief Return !0 if the attribute is indexed
+ *
+ * @param attr The attribute handle
+ * @return !0 if attribute has an index
+ */
+int sos_attr_is_indexed(sos_attr_t attr)
+{
+	return attr->data->indexed;
+}
+
+/**
  * \brief Return an array with the list of attributes in the join list
  *
  * The function will return NULL if the attribute is not of the type
@@ -823,22 +875,33 @@ int sos_attr_is_array(sos_attr_t attr)
 /**
  * \brief Return a pointer to the object's data
  *
- * This function returns a pointer to the object's internal data. The
- * application is responsible for understanding the internal
- * format. The application must call sos_obj_put() when finished with
- * the object to avoid a memory leak.
+ * This function returns a pointer to the object's attribute data.
+ * The application is responsible for understanding the internal format.
  *
  * This function is intended to be used when the schema of the object
- * is well known by the application. If the application is generic for
- * all objects, see the sos_value() functions.
+ * is well known by the application.
  *
- * \param obj
- * \retval void * pointer to the objects's data
+ * \param obj The object handle
+ * \retval void * pointer to the objects's internal data
  */
 void *sos_obj_ptr(sos_obj_t obj)
 {
 	sos_obj_data_t data = obj->obj->as.ptr;
 	return data->data;
+}
+
+/**
+ * @brief Return an objects size in bytes
+ *
+ * This function returns the size of the objects attribute data and
+ * is intended to be used in conjunction with the sos_obj_ptr() function.
+ *
+ * @param obj The object handle
+ * @return size_t The size in bytes of the object
+ */
+size_t sos_obj_size(sos_obj_t obj)
+{
+	return obj->size - sizeof(struct sos_obj_data_s);
 }
 
 /*
@@ -943,12 +1006,20 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
 /**
  * \brief Return the index for an attribute
  *
+ * If the attribute is indexed, but has not yet been added to a container,
+ * the function will return NULL and set errno to ENOENT;
+ *
  * \param attr	The sos_attr_t handle
  * \returns The attribute index handle or NULL if the attribute is not indexed
  */
 sos_index_t sos_attr_index(sos_attr_t attr)
 {
 	if (attr->data->indexed) {
+		if (NULL == attr->schema->sos) {
+			/* The schema has not yet been added to a container. */
+			errno = ENOENT;
+			goto out;
+		}
 		int rc = __sos_schema_open(attr->schema->sos, attr->schema);
 		if (rc) {
 			errno = rc;
@@ -956,6 +1027,7 @@ sos_index_t sos_attr_index(sos_attr_t attr)
 		}
 		return attr->index;
 	}
+out:
 	return NULL;
 }
 
@@ -1642,7 +1714,7 @@ int sos_schema_add(sos_t sos, sos_schema_t schema)
 	SOS_SCHEMA(schema_obj)->obj_sz = schema->data->obj_sz;
 	SOS_SCHEMA(schema_obj)->el_sz = schema->data->el_sz;
 	SOS_SCHEMA(schema_obj)->attr_cnt = schema->data->attr_cnt;
-	uuid_generate(SOS_SCHEMA(schema_obj)->uuid);
+	uuid_copy(SOS_SCHEMA(schema_obj)->uuid, schema->data->uuid);
 	SOS_SCHEMA(schema_obj)->array_cnt = schema->data->array_cnt;
 	ods_obj_update(schema_obj);
 	idx = 0;
