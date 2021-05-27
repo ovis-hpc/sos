@@ -51,6 +51,7 @@
 /*
  * Author: Tom Tucker tom at ogc dot us
  */
+#define _GNU_SOURCE
 #include <limits.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -211,7 +212,7 @@ int sos_container_config_set(const char *path, const char *opt_name, const char 
 	return errno;
 }
 
-const char *sos_container_config_get(const char *path, const char *opt_name)
+char *sos_container_config_get(const char *path, const char *opt_name)
 {
 	char tmp_path[PATH_MAX];
 	int rc;

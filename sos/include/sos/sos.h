@@ -135,7 +135,7 @@ int sos_container_lock_cleanup(const char *path);
 void sos_inuse_obj_info(sos_t sos, FILE *fp);
 void sos_free_obj_info(sos_t sos, FILE *fp);
 int sos_container_config_set(const char *path, const char *option, const char *value);
-const char *sos_container_config_get(const char *path, const char *option);
+char *sos_container_config_get(const char *path, const char *option);
 sos_config_iter_t sos_config_iter_new(const char *path);
 void sos_config_iter_free(sos_config_iter_t iter);
 sos_config_t sos_config_first(sos_config_iter_t iter);

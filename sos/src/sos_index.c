@@ -256,6 +256,8 @@ static int __sos_index_reopen(sos_index_t index)
 	}
 	/* Iterate and reopen for each partition */
 	iter = sos_part_iter_new(index->sos);
+	if (!iter)
+		return errno;
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
 		if (sos_part_state(part) == SOS_PART_STATE_OFFLINE) {
 			sos_part_put(part);
@@ -286,6 +288,7 @@ static int __sos_index_reopen(sos_index_t index)
 		ods_idx_ref->part = part;
 		LIST_INSERT_HEAD(&index->active_idx_list, ods_idx_ref, entry);
 	}
+	sos_part_iter_free(iter);
 	return 0;
  err_1:
 	ods_idx_close(idx, ODS_COMMIT_SYNC);
@@ -300,6 +303,7 @@ static int __sos_index_reopen(sos_index_t index)
 		sos_part_put(index->primary_part);
 		index->primary_part = NULL;
 	}
+	sos_part_iter_free(iter);
 	return rc;
 }
 
