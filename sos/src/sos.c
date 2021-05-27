@@ -890,10 +890,11 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 		sos_error("Error %d initializing configuration on open of %s\n", errno, path_arg);
 		goto err;
 	}
-	const char *be_type = sos_container_config_get(path, "BACKEND_TYPE");
+	char *be_type = sos_container_config_get(path, "BACKEND_TYPE");
 	if (be_type) {
 		if (0 == strcasecmp(be_type, "LSOS"))
 			sos->o_perm |= SOS_BE_LSOS;
+		free(be_type);
 	} else {
 		sos->o_perm |= SOS_BE_MMOS;
 	}
@@ -1322,7 +1323,7 @@ sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_
 		errno = ENOSPC;
 		return NULL;
 	}
-	if (data_size < schema->data->obj_sz) {
+	if (data_size < (schema->data->obj_sz - sizeof(struct sos_obj_data_s))) {
 		errno = EINVAL;
 		return NULL;
 	}
@@ -1581,8 +1582,12 @@ void sos_obj_put(sos_obj_t obj)
 {
 	if (obj && !ods_atomic_dec(&obj->ref_count)) {
 		sos_t sos = obj->sos;
-		if (!sos)
+		if (!sos) {
+			if (obj->obj)
+				ods_obj_put(obj->obj);
+			free(obj);
 			return;
+		}
 		ods_obj_put(obj->obj);
 		pthread_mutex_lock(&sos->lock);
 		LIST_REMOVE(obj, entry);
