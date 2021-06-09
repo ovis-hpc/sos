@@ -153,6 +153,9 @@ cont_list;
 #endif
 pthread_mutex_t cont_list_lock;
 pthread_mutex_t _sos_log_lock;
+static sos_obj_ref_t NULL_REF = {
+	.ref = { { 0 }, 0 }
+};
 
 char *sos_obj_ref_to_str(sos_obj_ref_t ref, sos_obj_ref_str_t str)
 {
@@ -1204,15 +1207,19 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 	sos_obj_t sos_obj;
 
 	/* Verify the reference provided */
-	if (ods_obj->ods && !ods_ref_valid(ods_obj->ods, obj_ref.ref.obj)) {
-		sos_obj_ref_str_t ref_str;
-		sos_error("Invalid object reference %s",
-			  sos_obj_ref_to_str(obj_ref, ref_str));
-		return NULL;
-	}
-	if (!LIST_EMPTY(&sos->obj_free_list)) {
-		sos_obj = LIST_FIRST(&sos->obj_free_list);
-		LIST_REMOVE(sos_obj, entry);
+	if (sos) {
+		if (ods_obj->ods && !ods_ref_valid(ods_obj->ods, obj_ref.ref.obj)) {
+			sos_obj_ref_str_t ref_str;
+			sos_error("Invalid object reference %s",
+				sos_obj_ref_to_str(obj_ref, ref_str));
+			return NULL;
+		}
+		if (!LIST_EMPTY(&sos->obj_free_list)) {
+			sos_obj = LIST_FIRST(&sos->obj_free_list);
+			LIST_REMOVE(sos_obj, entry);
+		} else {
+			sos_obj = malloc(sizeof *sos_obj);
+		}
 	} else {
 		sos_obj = malloc(sizeof *sos_obj);
 	}
@@ -1225,9 +1232,12 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 	ods_atomic_inc(&schema->data->ref_count);
 	sos_obj->schema = schema;
 	sos_obj->ref_count = 1;
-	sos_obj->size = schema->data->obj_sz;
-	LIST_INSERT_HEAD(&sos->obj_list, sos_obj, entry);
-
+	size_t array_size = __sos_obj_array_size(sos_obj);
+	sos_obj->next_array_off = schema->data->obj_sz + array_size;
+	sos_obj->size = sos_obj->next_array_off;
+	sos_obj->array_data_size = sos_obj->obj->size - sos_obj->size;
+	if (sos)
+		LIST_INSERT_HEAD(&sos->obj_list, sos_obj, entry);
 	return sos_obj;
 }
 
@@ -1235,9 +1245,11 @@ sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
 			 sos_obj_ref_t obj_ref)
 {
 	sos_obj_t sos_obj;
-	pthread_mutex_lock(&sos->lock);
+	if (sos)
+		pthread_mutex_lock(&sos->lock);
 	sos_obj = __sos_init_obj_no_lock(sos, schema, ods_obj, obj_ref);
-	pthread_mutex_unlock(&sos->lock);
+	if (sos)
+		pthread_mutex_unlock(&sos->lock);
 	return sos_obj;
 }
 
@@ -1284,7 +1296,6 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj, obj_ref);
 	if (!sos_obj)
 		goto err_1;
-	__sos_fixup_array_values(schema, sos_obj);
 	return sos_obj;
 err_1:
 	ods_obj_delete(ods_obj);
@@ -1309,19 +1320,21 @@ sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_
 {
 	ods_obj_t ods_obj;
 	sos_obj_t sos_obj;
-	sos_part_t part;
+	sos_part_t part = NULL;
 	sos_obj_ref_t obj_ref;
 
-	if (!schema || !schema->sos)
+	if (!schema)
 	{
 		errno = EINVAL;
 		return NULL;
 	}
-	part = __sos_primary_obj_part(schema->sos);
-	if (!part)
-	{
-		errno = ENOSPC;
-		return NULL;
+	if (schema->sos) {
+		part = __sos_primary_obj_part(schema->sos);
+		if (!part)
+		{
+			errno = ENOSPC;
+			return NULL;
+		}
 	}
 	if (data_size < (schema->data->obj_sz - sizeof(struct sos_obj_data_s))) {
 		errno = EINVAL;
@@ -1330,16 +1343,17 @@ sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_
 	ods_obj = ods_obj_malloc(data_size + sizeof(struct sos_obj_data_s));
 	if (!ods_obj)
 		goto err_0;
-	uuid_copy(obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
+	if (part)
+		uuid_copy(obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 	obj_ref.ref.obj = ods_obj_ref(ods_obj);
+ 	memcpy(&ods_obj->as.bytes[sizeof(struct sos_obj_data_s)], data, data_size);
 	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj, obj_ref);
 	if (!sos_obj)
 		goto err_1;
-	sos_obj->size = data_size + sizeof(struct sos_obj_data_s);
-	memcpy(&ods_obj->as.bytes[sizeof(struct sos_obj_data_s)], data, data_size);
 	return sos_obj;
 err_1:
-	ods_obj_delete(ods_obj);
+	if (schema->sos)
+		ods_obj_delete(ods_obj);
 	ods_obj_put(ods_obj);
 err_0:
 	return NULL;
@@ -1358,8 +1372,7 @@ err_0:
 sos_obj_t sos_obj_malloc(sos_schema_t schema)
 {
 	ods_obj_t ods_obj;
-	sos_obj_t sos_obj;
-
+	sos_obj_ref_t obj_ref = NULL_REF;
 	if (!schema)
 	{
 		errno = EINVAL;
@@ -1369,24 +1382,8 @@ sos_obj_t sos_obj_malloc(sos_schema_t schema)
 	ods_obj = ods_obj_malloc(schema->data->obj_sz + array_data_sz);
 	if (!ods_obj)
 		goto err_0;
-
 	memset(ods_obj->as.ptr, 0, schema->data->obj_sz + array_data_sz);
-
-	sos_obj = malloc(sizeof *sos_obj);
-	if (!sos_obj)
-		goto err_1;
-	uuid_copy(SOS_OBJ(ods_obj)->schema_uuid, schema->data->uuid);
-	sos_obj->sos = NULL;
-	sos_obj->obj = ods_obj;
-	ods_atomic_inc(&schema->data->ref_count);
-	sos_obj->schema = schema;
-	sos_obj->size = schema->data->obj_sz;
-	sos_obj->ref_count = 1;
-
-	__sos_fixup_array_values(schema, sos_obj);
-	return sos_obj;
-err_1:
-	ods_obj_put(ods_obj);
+	return __sos_init_obj(NULL, schema, ods_obj, obj_ref);
 err_0:
 	return NULL;
 }
@@ -1450,10 +1447,6 @@ int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 	}
 	return 0;
 }
-
-static sos_obj_ref_t NULL_REF = {
-	.ref = { { 0 }, 0 }
-};
 
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj)
 {
@@ -1745,11 +1738,18 @@ int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj,
 				  const char *attr_name, char *str, size_t len)
 {
-	sos_attr_t attr;
-	attr = sos_schema_attr_by_name(sos_obj->schema, attr_name);
+	sos_attr_t attr = sos_schema_attr_by_name(sos_obj->schema, attr_name);
 	if (!attr)
 		return NULL;
+	return sos_obj_attr_to_str(sos_obj, attr, str, len);
+}
 
+char *sos_obj_attr_by_id_to_str(sos_obj_t sos_obj,
+				int attr_id, char *str, size_t len)
+{
+	sos_attr_t attr = sos_schema_attr_by_id(sos_obj->schema, attr_id);
+	if (!attr)
+		return NULL;
 	return sos_obj_attr_to_str(sos_obj, attr, str, len);
 }
 

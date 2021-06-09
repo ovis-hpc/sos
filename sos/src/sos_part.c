@@ -729,6 +729,8 @@ void sos_part_put(sos_part_t part)
  */
 void sos_part_iter_free(sos_part_iter_t iter)
 {
+	if (!iter)
+		return;
 	if (iter->part)
 		sos_ref_put(&iter->part->ref_count, "iterator");
 	free(iter);

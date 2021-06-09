@@ -177,7 +177,7 @@ sos_schema_t sos_schema_new(const char *name)
 
 void sos_schema_free(sos_schema_t schema)
 {
-	if (schema->sos)
+	if (!schema)
 		return;
 	__sos_schema_free(schema);
 }
@@ -188,7 +188,7 @@ void __sos_schema_free(sos_schema_t schema)
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		sos_attr_t attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
-		if (attr->index)
+		if (schema->sos && attr->index)
 			sos_index_close(attr->index, ODS_COMMIT_ASYNC);
 		free(attr->key_type);
 		free(attr->idx_type);
@@ -201,7 +201,7 @@ void __sos_schema_free(sos_schema_t schema)
 		free(schema->dict);
 
 	/* Drop our reference on the schema object */
-	if (schema->schema_obj)
+	if (schema->sos && schema->schema_obj)
 		ods_obj_put(schema->schema_obj);
 
 	free(schema);
@@ -219,7 +219,7 @@ void __sos_schema_free(sos_schema_t schema)
  *         .attrs = {
  *              {
  *                  .name = "First",
- *                  .TYPE = SOS_TYPE_BYTE_ARRAY
+ *                  .type = SOS_TYPE_BYTE_ARRAY,
  *              },
  *              {
  *                   .name = "Last",
@@ -901,7 +901,7 @@ void *sos_obj_ptr(sos_obj_t obj)
  */
 size_t sos_obj_size(sos_obj_t obj)
 {
-	return obj->size - sizeof(struct sos_obj_data_s);
+	return obj->size;
 }
 
 /*
@@ -1331,7 +1331,7 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	return NULL;
 }
 
-void __sos_fixup_array_values(sos_schema_t schema, sos_obj_t obj)
+void __sos_init_array_values(sos_schema_t schema, sos_obj_t obj)
 {
 	sos_value_data_t data;
 	sos_attr_t attr;

@@ -181,6 +181,7 @@ typedef struct sos_idxdir_udata_s {
  */
 typedef struct sos_obj_data_s {
 	uuid_t schema_uuid;	/* The unique schema identifier */
+	uint64_t data_size;
 	uint8_t data[0];
 } *sos_obj_data_t;
 
@@ -494,7 +495,9 @@ ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size
 ods_key_comp_t __sos_set_key_comp_to_max(ods_key_comp_t comp, sos_attr_t a, size_t *comp_len);
 int __sos_value_is_max(sos_value_t v);
 int __sos_value_is_min(sos_value_t v);
-void __sos_fixup_array_values(sos_schema_t schema, sos_obj_t obj);
+void __sos_init_array_values(sos_schema_t schema, sos_obj_t obj);
+size_t __sos_obj_array_size(sos_obj_t obj);
+size_t __sos_obj_total_size(sos_obj_t obj);
 sos_part_t __sos_part_find_by_uuid(sos_t sos, uuid_t uuid);
 sos_part_t __sos_part_find_by_ods(sos_t sos, ods_t ods);
 

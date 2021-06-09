@@ -324,6 +324,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 	SOS_KEY(idx_key);
 	ods_idx_t idx;
 	sos_index_t index;
+	sos_part_iter_t iter = NULL;
 	int rc;
 	sos_part_t part;
 	ods_idx_ref_t ods_idx_ref;
@@ -352,7 +353,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		goto err_2;
 	}
 
-	sos_part_iter_t iter = sos_part_iter_new(sos);
+	iter = sos_part_iter_new(sos);
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
 		if (sos_part_state(part) == SOS_PART_STATE_OFFLINE) {
 			sos_part_put(part);
@@ -384,6 +385,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 	}
 	index->idx_obj = idx_obj;
 	ods_unlock(sos->idx_ods, 0);
+	sos_part_iter_free(iter);
 	return index;
  err_4:
 	ods_idx_close(idx, ODS_COMMIT_SYNC);
@@ -402,6 +404,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		sos_part_put(index->primary_part);
 	free(index);
  err_0:
+	sos_part_iter_free(iter);
 	return NULL;
 }
 
