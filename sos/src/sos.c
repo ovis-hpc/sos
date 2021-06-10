@@ -598,14 +598,14 @@ void sos_container_info(sos_t sos, FILE *fp)
 }
 
 static int show_locks(const char *path, const struct stat *sb,
-			  int typeflags, struct FTW *ftw)
+			int typeflags, struct FTW *ftw)
 {
 	size_t len;
 	char tmp_path[PATH_MAX];
 
 	strncpy(tmp_path, path, PATH_MAX);
 	len = strlen(tmp_path);
-	if (strcmp(&tmp_path[len-3], ".PG"))
+	if (strcmp(&tmp_path[len-3], ".BE"))
 		return 0;
 	/* strip the .PG, ods_lock_info will append it */
 	tmp_path[len-3] = '\0';
@@ -621,7 +621,7 @@ static int release_locks(const char *path, const struct stat *sb,
 
 	strncpy(tmp_path, path, PATH_MAX);
 	len = strlen(tmp_path);
-	if (strcmp(&tmp_path[len-3], ".PG"))
+	if (strcmp(&tmp_path[len-3], ".BE"))
 		return 0;
 	/* strip the .PG, ods_lock_info will append it */
 	tmp_path[len-3] = '\0';
@@ -814,6 +814,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	int need_part = 0;
 	va_list ap;
 
+	(void)sos_container_lock_cleanup(path_arg);
 	va_start(ap, o_perm);
 	o_mode = va_arg(ap, int);
 	va_end(ap);
