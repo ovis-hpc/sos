@@ -69,6 +69,7 @@ typedef struct dsos_client_request_s {
 
 typedef struct dsos_client_s {
 	CLIENT *client;
+	pthread_mutex_t rpc_lock;
 	int client_id;
 	int shutdown;
 	pthread_t thread;
@@ -104,9 +105,32 @@ struct dsos_container_s {
 	int handles[];		/* Array of container handles from each server */
 };
 
+typedef struct dsos_schema_s {
+	dsos_container_t cont;	/* The container */
+	sos_schema_t schema;	/* The SOS schema */
+	int handles[];		/* Array of schema handles from each server */
+} *dsos_schema_t;
+
+typedef struct dsos_obj_ref_s {
+	int client_id;			/* Client this object came from */
+	struct sos_value_s key_value;	/* Iterator key value */
+	sos_obj_t obj;			/* SOS object */
+	struct ods_rbn rbn;		/* obj_tree node */
+} *dsos_obj_ref_t;
+
 typedef struct dsos_iter_s {
-	dsos_iter_id iter_id;
-	dsos_obj_list_res result;
+	enum iter_action {
+		DSOS_ITER_BEGIN,
+		DSOS_ITER_END,
+		DSOS_ITER_NEXT,
+		DSOS_ITER_PREV
+	} action;
+	dsos_container_t cont;		/* The container */
+	dsos_schema_t schema;		/* The schema for objects on this iterator */
+	sos_attr_t key_attr;		/* The attribute that is the key */
+	dsos_iter_id *handles;		/* Server specific handle */
+	int *counts;			/* Objects in tree from each client */
+	struct ods_rbt obj_tree;	/* RBT of objects indexed by key_attr */
 } *dsos_iter_t;
 
 struct dsos_session_s g_session;
@@ -126,7 +150,9 @@ static int handle_transaction_begin(dsos_client_t client, dsos_client_request_t 
 	enum clnt_stat rpc_err;
 
 	// fprintf(stderr, "Beginning transaction on client %d\n", client->client_id);
+	pthread_mutex_lock(&client->rpc_lock);
 	rpc_err = transaction_begin_1(rqst->cont_id, &rres, client->client);
+	pthread_mutex_unlock(&client->rpc_lock);
 	if (rpc_err != RPC_SUCCESS) {
 		fprintf(stderr, "transaction_begin_1 failed on client %d with RPC error %d\n",
 			client->client_id, rpc_err);
@@ -144,7 +170,9 @@ static int handle_obj_create(dsos_client_t client, dsos_client_request_t rqst)
 	dsos_create_res create_res = {};
 
 	// fprintf(stderr, "Creating object on client %d\n", client->client_id);
+	pthread_mutex_lock(&client->rpc_lock);
 	enum clnt_stat rpc_err = obj_create_1(rqst->request.obj_create.obj_entry, &create_res, client->client);
+	pthread_mutex_unlock(&client->rpc_lock);
 	if (rpc_err != RPC_SUCCESS) {
 		fprintf(stderr, "obj_create_1 failed with RPC error %d\n", rpc_err);
 		return rpc_err;
@@ -188,6 +216,8 @@ next:
 		dsos_container_id cont_id;
 		rqst = TAILQ_FIRST(&client->flush_q);
 		TAILQ_REMOVE(&client->flush_q, rqst, link);
+		client->queue_depth -= 1;
+
 		switch (rqst->type) {
 		case REQ_OBJ_CREATE:
 			cont_id = rqst->request.obj_create.obj_entry->cont_id;
@@ -208,10 +238,12 @@ next:
 		// TODO: it's possible that requests refer to different containers. This code does not handle that.
 		if (TAILQ_EMPTY(&client->flush_q)) {
 			int rres;
+			pthread_mutex_lock(&client->rpc_lock);
 			enum clnt_stat rpc_err = transaction_end_1(cont_id, &rres, client->client);
+			pthread_mutex_unlock(&client->rpc_lock);
 			if (rpc_err != RPC_SUCCESS) {
-					fprintf(stderr, "transaction_end_1 failed on client %d with RPC error %d\n",
-					client->client_id, rpc_err);
+				fprintf(stderr, "transaction_end_1 failed on client %d with RPC error %d\n",
+				client->client_id, rpc_err);
 			}
 			if (rres) {
 				fprintf(stderr, "transaction_begin_1 failed on client %d with error %d\n",
@@ -243,7 +275,6 @@ void dsos_session_close(dsos_session_t sess)
 		clnt_destroy(client->client);
 	}
 }
-
 dsos_session_t dsos_session_open(const char *config_file)
 {
 	char hostname[256];
@@ -283,6 +314,7 @@ dsos_session_t dsos_session_open(const char *config_file)
 		};
 		clnt_control(clnt, CLSET_TIMEOUT, (char *)&timeout);
 		dsos_client_t client = &g_session.clients[i];
+		pthread_mutex_init(&client->rpc_lock, NULL);
 		client->client = clnt;
 		client->client_id = i;
 		client->shutdown = 0;
@@ -299,10 +331,18 @@ dsos_session_t dsos_session_open(const char *config_file)
 		if (rc) {
 			return NULL;
 		}
+		char thread_name[16];
+		sprintf(thread_name, "client:%d", i);
+		pthread_setname_np(client->thread, thread_name);
 	}
 
 	g_session.next_client = 0;
 	return &g_session;
+}
+
+void dsos_container_close(dsos_container_t cont)
+{
+	;
 }
 
 dsos_container_t
@@ -326,7 +366,10 @@ dsos_container_open(
 	dsos_open_res open_res;
 	for (i = 0; i < cont->handle_count; i++) {
 		/* Open/Create the container */
-		rpc_err = open_1((char *)path, SOS_PERM_RW | SOS_PERM_CREAT, 0660, &open_res, sess->clients[i].client);
+		dsos_client_t client = &sess->clients[i];
+		pthread_mutex_lock(&client->rpc_lock);
+		rpc_err = open_1((char *)path, SOS_PERM_RW | SOS_PERM_CREAT, 0660, &open_res, client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
 		if (rpc_err != RPC_SUCCESS) {
 			fprintf(stderr, "open_1 failed with RPC error %d\n", rpc_err);
 			goto err_1;
@@ -342,8 +385,12 @@ dsos_container_open(
 err_1:
 	for (i = 0; i < sess->client_count; i++) {
 		int rc;
-		if (cont->handles[i])
-			rpc_err = close_1(cont->handles[i], &rc, sess->clients[i].client);
+		if (cont->handles[i]) {
+			dsos_client_t client = &sess->clients[i];
+			pthread_mutex_lock(&client->rpc_lock);
+			rpc_err = close_1(cont->handles[i], &rc, client->client);
+			pthread_mutex_unlock(&client->rpc_lock);
+		}
 	}
 	free(cont->path);
 	free(cont);
@@ -351,12 +398,6 @@ err_0:
 	free(cont);
 	return NULL;
 }
-
-typedef struct dsos_schema_s {
-	dsos_container_t cont;	/* The container */
-	sos_schema_t schema;	/* The SOS schema */
-	int handles[];		/* Array of schema handles from each server */
-} *dsos_schema_t;
 
 static inline dsos_schema_t dsos_schema_alloc(dsos_container_t cont)
 {
@@ -384,7 +425,10 @@ dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dso
 	}
 	dsos_schema_res schema_res = {};
 	for (i = 0; i < cont->handle_count; i++) {
-		rpc_err = schema_create_1(cont->handles[i], *spec, &schema_res, cont->sess->clients[i].client);
+		dsos_client_t client = &cont->sess->clients[i];
+		pthread_mutex_lock(&client->rpc_lock);
+		rpc_err = schema_create_1(cont->handles[i], *spec, &schema_res, client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
 		if (rpc_err != RPC_SUCCESS) {
 			fprintf(stderr, "schema_create_1 failed on client %d with RPC error %d\n",
 				i, rpc_err);
@@ -428,8 +472,11 @@ dsos_schema_t dsos_schema_by_name(dsos_container_t cont, const char *name, dsos_
 	}
 	schema->schema = NULL;
 	for (i = 0; i < cont->handle_count; i++) {
+		dsos_client_t client = &cont->sess->clients[i];
+		pthread_mutex_lock(&client->rpc_lock);
 		rpc_err = schema_find_by_name_1(cont->handles[i], (char *)name, &schema_res,
-					cont->sess->clients[i].client);
+					client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
 		if (rpc_err != RPC_SUCCESS) {
 			fprintf(stderr, "schema_find_by_name_1 failed on client %d with RPC error %d\n",
 				i, rpc_err);
@@ -472,10 +519,10 @@ void dsos_transaction_begin(dsos_container_t cont, dsos_res_t *res)
 		rqst->cont_id = cont->handles[client_id];
 		rqst->request.transaction_begin.cont_id = rqst->cont_id;
 		rqst->type = REQ_TRANSACTION_BEGIN;
-		__sync_fetch_and_add(&client->queue_depth, 1);
-		client->request_count += 1.0;
 		pthread_mutex_lock(&client->queue_lock);
 		TAILQ_INSERT_TAIL(&client->queue_q, rqst, link);
+		client->queue_depth += 1;
+		client->request_count += 1.0;
 		pthread_mutex_unlock(&client->queue_lock);
 		pthread_cond_signal(&client->queue_cond);
 	}
@@ -527,7 +574,6 @@ void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj,
 	client_id = __sync_fetch_and_add(&cont->sess->next_client, 1) % cont->sess->client_count;
 	client = &cont->sess->clients[client_id];
 	cont_id = cont->handles[client_id];
-	client->obj_count += 1.0;
 	obj_e = malloc(sizeof *obj_e);
 	if (!obj_e)
 		goto enomem;
@@ -546,6 +592,7 @@ void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj,
 	 * If there is already an obj create request on the queue, add
 	 * this object to the object list for that request
 	 */
+	client->obj_count += 1.0;
 	if (rqst && rqst->type == REQ_OBJ_CREATE && rqst->cont_id == cont_id) {
 		obj_e->next = rqst->request.obj_create.obj_entry;
 		rqst->request.obj_create.obj_entry = obj_e;
@@ -554,9 +601,8 @@ void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj,
 		rqst->cont_id = cont->handles[client_id];
 		rqst->type = REQ_OBJ_CREATE;
 		rqst->request.obj_create.obj_entry = obj_e;
-		__sync_fetch_and_add(&client->queue_depth, 1);
-		client->request_count += 1.0;
 		TAILQ_INSERT_TAIL(&client->queue_q, rqst, link);
+		client->request_count += 1.0;
 	}
 	pthread_mutex_unlock(&client->queue_lock);
 	pthread_cond_broadcast(&client->queue_cond);
@@ -566,6 +612,239 @@ enomem:
 	res->any_err = errno;
 	res->res[client_id] = errno;
 	return;
+}
+
+static int64_t key_comparator(void *a, const void *b, void *arg)
+{
+	return sos_value_cmp((sos_value_t)a, (sos_value_t)b);
+}
+
+dsos_iter_t dsos_iter_create(dsos_container_t cont, dsos_schema_t schema, const char *attr_name)
+{
+	enum clnt_stat rpc_err;
+	int i, res;
+	sos_attr_t key_attr;
+	dsos_iter_res iter_res;
+	dsos_iter_t iter;
+
+	key_attr = sos_schema_attr_by_name(schema->schema, attr_name);
+	if (!key_attr) {
+		errno = ENOENT;
+		return NULL;
+	}
+	if (0 == sos_attr_is_indexed(key_attr)) {
+		errno = EINVAL;
+		return NULL;
+	}
+	iter = calloc(1, sizeof *iter);
+	if (!iter)
+		return NULL;
+	iter->key_attr = key_attr;
+	iter->cont = cont;
+	iter->schema = schema;
+	iter->handles = calloc(cont->handle_count, sizeof(dsos_iter_id));
+	if (!iter->handles) {
+		errno = ENOMEM;
+		goto err_0;
+	}
+	iter->counts = calloc(cont->handle_count, sizeof(int));
+	if (!iter->counts) {
+		errno = ENOMEM;
+		goto err_1;
+	}
+	ods_rbt_init(&iter->obj_tree, key_comparator, NULL);
+	for (i = 0; i < cont->handle_count; i++) {
+		dsos_client_t client = &cont->sess->clients[i];
+		memset(&iter_res, 0, sizeof(iter_res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rpc_err = iter_create_1(cont->handles[i], schema->handles[i],
+				"Attr_1", &iter_res,client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		if (rpc_err != RPC_SUCCESS) {
+			fprintf(stderr, "iter_create_1 failed on client %d with RPC error %d\n",
+				i, rpc_err);
+			errno = ENETDOWN;
+			goto err_2;
+		}
+		if (iter_res.error) {
+			fprintf(stderr, "iter_create_1 failed on client %d with error %d\n",
+				i, iter_res.error);
+			errno = iter_res.error;
+			goto err_2;
+		}
+		iter->handles[i] = iter_res.dsos_iter_res_u.iter;
+	}
+	return iter;
+err_2:
+	for (; i > 0; i--) {
+		dsos_client_t client = &cont->sess->clients[i];
+		pthread_mutex_lock(&client->rpc_lock);
+		rpc_err = iter_delete_1(cont->handles[i-1], iter->handles[i-1],
+					&res, client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+	}
+err_1:
+	free(iter->handles);
+err_0:
+	free(iter);
+	return NULL;
+}
+
+static int iter_obj_add(dsos_iter_t iter, int client_id)
+{
+	dsos_container_id cont_id = iter->cont->handles[client_id];
+	dsos_iter_id iter_id = iter->handles[client_id];
+	enum clnt_stat rpc_err;
+	dsos_obj_list_res obj_res;
+	dsos_obj_entry *obj_e;
+	int count = 0;
+	dsos_client_t client = &iter->cont->sess->clients[client_id];
+	memset(&obj_res, 0, sizeof(obj_res));
+	pthread_mutex_lock(&client->rpc_lock);
+	switch (iter->action) {
+	case DSOS_ITER_BEGIN:
+		rpc_err = iter_begin_1(cont_id, iter_id, &obj_res, client->client);
+		break;
+	case DSOS_ITER_NEXT:
+		rpc_err = iter_next_1(cont_id, iter_id, &obj_res, client->client);
+		break;
+	case DSOS_ITER_PREV:
+		rpc_err = iter_prev_1(cont_id, iter_id, &obj_res, client->client);
+		break;
+	case DSOS_ITER_END:
+		rpc_err = iter_end_1(cont_id, iter_id, &obj_res, client->client);
+		break;
+	}
+	pthread_mutex_unlock(&client->rpc_lock);
+	if (rpc_err != RPC_SUCCESS)
+		return RPC_ERROR(rpc_err);
+	if (obj_res.error)
+		return obj_res.error;
+
+	/* Build the objects from the list */
+	obj_e = obj_res.dsos_obj_list_res_u.obj_list;
+	while (obj_e) {
+		dsos_obj_entry *next_obj_e = obj_e->next;
+		int attr_id;
+
+		dsos_obj_ref_t obj_ref = malloc(sizeof *obj_ref);
+		assert(obj_ref);
+		obj_ref->client_id = client_id;
+		sos_obj_t obj = sos_obj_new_with_data(
+					iter->schema->schema,
+					obj_e->value.dsos_obj_value_val,
+					obj_e->value.dsos_obj_value_len);
+		assert(obj);
+		obj_ref->obj = obj;
+		sos_value_init(&obj_ref->key_value, obj, iter->key_attr);
+		ods_rbn_init(&obj_ref->rbn, &obj_ref->key_value);
+		ods_rbt_ins(&iter->obj_tree, &obj_ref->rbn);
+		iter->counts[client_id] += 1;
+		count += 1;
+		free(obj_e->value.dsos_obj_value_val);
+		free(obj_e);
+
+		obj_e = next_obj_e;
+	}
+	if (!count)
+		return ENOENT;
+	return 0;
+}
+
+static sos_obj_t iter_obj(dsos_iter_t iter, struct ods_rbn *rbn)
+{
+	sos_obj_t obj;
+	dsos_obj_ref_t ref;
+	int rc;
+
+	if (!rbn)
+		return NULL;
+
+	ref = container_of(rbn, struct dsos_obj_ref_s, rbn);
+	obj = ref->obj;
+	ods_rbt_del(&iter->obj_tree, rbn);
+	sos_value_put(&ref->key_value);
+	/*
+	 * If all objects from a given client have been consumed,
+	 * replenish the tree with more objects from that client.
+	 */
+	iter->counts[ref->client_id] -= 1;
+	if (0 == iter->counts[ref->client_id]) {
+		rc = iter_obj_add(iter, ref->client_id);
+		if (rc) {
+			/* This client is exausted, -1 means empty */
+			iter->counts[ref->client_id] = -1;
+		}
+	}
+	free(ref);
+	return obj;
+}
+
+static sos_obj_t iter_obj_min(dsos_iter_t iter)
+{
+	struct ods_rbn *rbn = ods_rbt_min(&iter->obj_tree);
+	return iter_obj(iter, rbn);
+}
+
+static sos_obj_t iter_obj_max(dsos_iter_t iter)
+{
+	struct ods_rbn *rbn = ods_rbt_max(&iter->obj_tree);
+	return iter_obj(iter, rbn);
+}
+
+sos_obj_t dsos_iter_begin(dsos_iter_t iter)
+{
+	int client_id, rc;
+	iter->action = DSOS_ITER_BEGIN;
+	for (client_id = 0; client_id < iter->cont->sess->client_count; client_id++) {
+		rc = iter_obj_add(iter, client_id);
+	}
+	iter->action = DSOS_ITER_NEXT;
+	return iter_obj_min(iter);
+}
+
+sos_obj_t dsos_iter_end(dsos_iter_t iter)
+{
+	int client_id, rc;
+	for (client_id = 0; client_id < iter->cont->sess->client_count; client_id++) {
+		rc = iter_obj_add(iter, client_id);
+	}
+	return iter_obj_max(iter);
+}
+
+sos_obj_t dsos_iter_next(dsos_iter_t iter)
+{
+	return iter_obj_min(iter);
+}
+
+sos_obj_t dsos_iter_prev(dsos_iter_t iter)
+{
+	return iter_obj_max(iter);
+}
+
+int dsos_iter_find_glb(dsos_iter_t iter, sos_key_t key)
+{
+	return ENOSYS;
+}
+
+int dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key)
+{
+	return ENOSYS;
+}
+
+int dsos_iter_find(dsos_iter_t iter, sos_key_t key)
+{
+	return ENOSYS;
+}
+
+int dsos_attr_value_min(dsos_container_t cont, sos_attr_t attr)
+{
+	return ENOSYS;
+}
+
+int dsos_attr_value_max(dsos_container_t cont, sos_attr_t attr)
+{
+	return ENOSYS;
 }
 
 int main (int argc, char *argv[])
@@ -597,14 +876,12 @@ int main (int argc, char *argv[])
 	if (!cont)
 		exit(1);
 	dsos_schema_t dschema;
-#if 1
 	sos_schema_t schema = sos_schema_from_template(&my_schema_template);
 	dschema = dsos_schema_create(cont, schema, &res);
 	if (dschema == NULL && res.any_err != EEXIST) {
 		printf("Error creating schema\n");
 		exit(1);
 	}
-#endif
 	/* Make certain that we can look it up */
 	dschema = dsos_schema_by_name(cont, my_schema_template.name, &res);
 
@@ -637,46 +914,25 @@ int main (int argc, char *argv[])
 			clock_gettime(CLOCK_REALTIME, &end);
 			double elapsed = diff_timespec_s(start, end);
 			fprintf(stdout, "%10g objects/sec, total %10d, obj/rqst = %g\n", (double)xcount / elapsed, i,
-					sess->clients[0].obj_count / sess->clients[0].request_count);
-			if (i < obj_count + 1)
-				dsos_transaction_begin(cont, &res);
+				sess->clients[0].obj_count / sess->clients[0].request_count);
+			dsos_transaction_begin(cont, &res);
 			clock_gettime(CLOCK_REALTIME, &start);
 		}
 	}
 	sos_obj_put(obj);
-	if (i % xcount)
-		dsos_transaction_end(cont, &res);
-
-	dsos_session_close(sess);
-#if 0
-	dsos_iter_res *iter_res = iter_create_1(cont, spec->id, "Attr_1", clnt);
-	dsos_iter_id iter_id = iter_res->dsos_iter_res_u.iter;
-	dsos_obj_list_res *obj_res = iter_begin_1(cont, iter_id, clnt);
-
-	/* Build the objects from the list */
-	while (obj_res->error == 0) {
-		dsos_obj_link obj_link = obj_res->dsos_obj_list_res_u.obj_list;
-		while (obj_link) {
-			int attr_id;
-			sos_obj_t obj = sos_obj_new_with_data(schema,
-				obj_link->value.dsos_obj_value_val,
-				obj_link->value.dsos_obj_value_len);
-			obj_link = obj_link->next;
-			for (attr_id = 0; attr_id < sos_schema_attr_count(schema); attr_id++) {
-				char *s, attr_value[255];
-				s = sos_obj_attr_by_id_to_str(obj, attr_id, attr_value, sizeof(attr_value));
-				fprintf(stdout, "%s, ", s);
-			}
-			fprintf(stdout, "\n");
-			sos_obj_put(obj);
+	dsos_transaction_end(cont, &res);
+	dsos_iter_t iter = dsos_iter_create(cont, dschema, "Attr_1");
+	for (obj = dsos_iter_begin(iter); obj; obj = dsos_iter_next(iter)) {
+		int attr_id;
+		for (attr_id = 0; attr_id < sos_schema_attr_count(schema); attr_id++) {
+			char *s, attr_value[255];
+			s = sos_obj_attr_by_id_to_str(obj, attr_id, attr_value, sizeof(attr_value));
+			fprintf(stdout, "%s, ", s);
 		}
-		xdr_free((xdrproc_t)xdr_dsos_obj_list_res, (char *)obj_res);
-		obj_res = iter_next_1(cont, iter_id, clnt);
+		fprintf(stdout, "\n");
+		sos_obj_put(obj);
 	}
-	xdr_free((xdrproc_t)xdr_dsos_obj_list_res, (char *)obj_res);
-	int *close_res = close_1(cont, clnt);
-	fprintf(stdout, "close result %d\n", *close_res);
-	clnt_destroy (clnt);
-#endif
-	exit (0);
+	dsos_container_close(cont);
+	dsos_session_close(sess);
+	return 0;
 }

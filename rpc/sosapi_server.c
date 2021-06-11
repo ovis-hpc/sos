@@ -45,6 +45,8 @@ struct dsos_object {
 
 struct dsos_iter {
 	uint64_t handle;
+	dsos_container_id cont_id;
+	dsos_schema_id schema_id;
 	sos_iter_t iter;
 	struct ods_rbn rbn;
 };
@@ -535,7 +537,7 @@ bool_t obj_delete_1_svc(dsos_container_id cont, dsos_obj_id obj, int *res, struc
 	return TRUE;
 }
 
-bool_t iter_create_1_svc(dsos_container_id cont, dsos_schema_id schema_id, dsos_attr_name attr_name,
+bool_t iter_create_1_svc(dsos_container_id cont_id, dsos_schema_id schema_id, dsos_attr_name attr_name,
 	dsos_iter_res *res, struct svc_req *rqstp)
 {
 	sos_iter_t iter;
@@ -543,7 +545,7 @@ bool_t iter_create_1_svc(dsos_container_id cont, dsos_schema_id schema_id, dsos_
 	struct dsos_session *client;
 	struct dsos_schema *schema;
 
-	client = get_client(cont);
+	client = get_client(cont_id);
 	if (!client) {
 		res->error = DSOS_ERR_CLIENT;
 		goto out_0;
@@ -574,6 +576,8 @@ bool_t iter_create_1_svc(dsos_container_id cont, dsos_schema_id schema_id, dsos_
 		goto out_3;
 	}
 
+	diter->cont_id = cont_id;
+	diter->schema_id = schema_id;
 	diter->iter = iter;
 	diter->handle = get_next_handle();
 	ods_rbn_init(&diter->rbn, &diter->handle);
@@ -619,7 +623,7 @@ out_0:
 	return TRUE;
 }
 
-int __make_obj_list(dsos_obj_list_res *result, struct dsos_iter *diter)
+static int __make_obj_list(dsos_obj_list_res *result, struct dsos_iter *diter)
 {
 	int count = 5;
 	struct dsos_obj_entry *entry = NULL;
@@ -640,6 +644,8 @@ int __make_obj_list(dsos_obj_list_res *result, struct dsos_iter *diter)
 			result->dsos_obj_list_res_u.obj_list = entry;
 		}
 		entry->next = NULL;
+		entry->cont_id = diter->cont_id;
+		entry->schema_id = diter->schema_id;
 		count --;
 		void *obj_data = sos_obj_ptr(obj);
 		entry->value.dsos_obj_value_len = sos_obj_size(obj);

@@ -1,6 +1,7 @@
 #ifndef _SOSAPI_COMMON_H
 #define _SOSAPI_COMMON_H
 #include <sos/sos.h>
+#include <ods/ods_rbt.h>
 
 /* DSOS errors start at 512, below that they are errno */
 enum dsos_error {
@@ -14,6 +15,8 @@ enum dsos_error {
 	DSOS_ERR_PARAMETER,
 	DSOS_ERR_TRANSPORT
 };
+
+#define RPC_ERROR(_err_)	(_err_ + 1024)
 
 typedef struct dsos_result_s {
 	int count;

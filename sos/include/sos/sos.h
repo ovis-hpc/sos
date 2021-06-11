@@ -383,7 +383,7 @@ size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr);
 size_t sos_obj_attr_value_set_va(sos_obj_t sos_obj, sos_attr_t attr, va_list ap);
 size_t sos_obj_attr_by_name_set(sos_obj_t sos_obj, const char *attr_name, ...);
 size_t sos_obj_attr_by_id_set(sos_obj_t sos_obj, int attr_id, ...);
-
+sos_value_t sos_obj_attr_value_get(sos_obj_t sos_obj, sos_attr_t attr);
 /** @} */
 /** @} */
 
@@ -695,12 +695,11 @@ typedef struct sos_comp_key_spec {
 	sos_key_t _name_ = &_name_ ## _ ## key_s;
 
 sos_key_t sos_key_new(size_t sz);
-sos_key_t sos_key_new_from_attr(sos_key_t key, sos_attr_t attr, ...);
+sos_key_t sos_key_for_attr(sos_key_t key, sos_attr_t attr, ...);
 void sos_key_put(sos_key_t key);
 int sos_key_copy(sos_key_t dst, sos_key_t src);
 size_t sos_key_set(sos_key_t key, void *value, size_t sz);
 char *sos_key_to_str(sos_key_t key, const char *fmt, const char *sep, size_t el_sz);
-sos_key_t sos_key_for_attr(sos_key_t key, sos_attr_t attr, ...);
 int sos_key_join(sos_key_t key, sos_attr_t join_attr, ...);
 int sos_key_join_va(sos_key_t key, sos_attr_t join_attr, va_list ap);
 int sos_key_join_size(sos_attr_t join_attr, ...);
