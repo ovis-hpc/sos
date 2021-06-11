@@ -929,6 +929,7 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 	sos_value_data_t ref_val;
 	uint64_t off;
 	size_t size;
+	int failed = 0;
 
 	if (!sos_attr_is_array(attr)) {
 		errno = EINVAL;
@@ -951,9 +952,14 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 	val->attr = attr;
 	val->data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
 
+retry:
 	if (val->data->array_info.offset) {
-		if (val->data->array_info.size < size)
+		if (val->data->array_info.size < size) {
+			/*
+			 * An array cannot be grown after the object is committed.
+			 */
 			goto err;
+		}
 		/* Current allocation is big enough, reuse it */
 		off = val->data->array_info.offset;
 	} else 	if (off + size < ods_obj_size(obj->obj)) {
@@ -962,9 +968,17 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 		val->data->array_info.size = size;
 		obj->next_array_off += size;
 	} else {
-		assert(0 == "Need to realloc object");
-		errno = E2BIG;
-		return NULL;
+		if (failed)
+			goto err;
+		sos_obj_ref_t obj_ref;
+		size_t new_sz = ods_obj_size(obj->obj) + off + size;
+		obj->obj = ods_obj_realloc(obj->obj, new_sz);
+		if (!obj->obj)
+			goto err;
+		obj_ref.ref.obj = ods_obj_ref(obj->obj);
+		obj->obj_ref = obj_ref;
+		failed = 1;
+		goto retry;
 	}
 	ref_val = (sos_value_data_t)&obj->obj->as.bytes[off];
 	ref_val->array.count = count;
@@ -1336,7 +1350,6 @@ void __sos_init_array_values(sos_schema_t schema, sos_obj_t obj)
 	sos_value_data_t data;
 	sos_attr_t attr;
 	obj->next_array_off = schema->data->obj_sz;
-	obj->array_data_size = ods_obj_size(obj->obj) - schema->data->obj_sz;
 	TAILQ_FOREACH(attr, &schema->attr_list, entry) {
 		if (!sos_attr_is_array(attr))
 			continue;

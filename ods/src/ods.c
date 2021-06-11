@@ -412,6 +412,23 @@ ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line)
 	return obj;
 }
 
+ods_obj_t _ods_obj_realloc(ods_obj_t obj, size_t sz, const char *func, int line)
+{
+	obj = realloc(obj, sz + sizeof(struct ods_obj_s));
+	if (!obj)
+		return NULL;
+	obj->ods = NULL;
+	obj->as.ptr = obj + 1;
+	obj->ref = 0;
+	obj->refcount = 1;
+	obj->context = NULL;
+	obj->size = sz;
+	obj->thread = pthread_self();
+	obj->alloc_line = line;
+	obj->alloc_func = func;
+	return obj;
+}
+
 void ods_obj_update(ods_obj_t obj)
 {
 	if (obj && obj->ods)

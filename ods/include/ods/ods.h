@@ -338,7 +338,9 @@ extern ods_obj_t _ods_obj_alloc_extend(ods_t ods, size_t sz, size_t extend_sz,
  *		is an error.
  */
 extern ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line);
-#define ods_obj_malloc(sz) _ods_obj_malloc(sz, __func__, __LINE__)
+extern ods_obj_t _ods_obj_realloc(ods_obj_t obj, size_t sz, const char *func, int line);
+#define ods_obj_malloc(_sz_) _ods_obj_malloc(_sz_, __func__, __LINE__)
+#define ods_obj_realloc(_o_, _sz_) _ods_obj_realloc(_o_, _sz_, __func__, __LINE__)
 
 #define ODS_OBJ_INIT(_o_, _data_, _sz_)		\
 	(					\

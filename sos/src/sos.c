@@ -1236,7 +1236,6 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 	size_t array_size = __sos_obj_array_size(sos_obj);
 	sos_obj->next_array_off = schema->data->obj_sz + array_size;
 	sos_obj->size = sos_obj->next_array_off;
-	sos_obj->array_data_size = sos_obj->obj->size - sos_obj->size;
 	if (sos)
 		LIST_INSERT_HEAD(&sos->obj_list, sos_obj, entry);
 	return sos_obj;
@@ -1297,6 +1296,8 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj, obj_ref);
 	if (!sos_obj)
 		goto err_1;
+	/* Initialize array attributes to zero length */
+	__sos_init_array_values(schema, sos_obj);
 	return sos_obj;
 err_1:
 	ods_obj_delete(ods_obj);

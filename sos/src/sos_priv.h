@@ -193,7 +193,6 @@ struct sos_obj_s {
 	ods_obj_t obj;
 	LIST_ENTRY(sos_obj_s) entry;
 	size_t size;
-	size_t array_data_size;
 	uint64_t next_array_off;
 };
 #define SOS_OBJ(_o_) ODS_PTR(sos_obj_data_t, (_o_))

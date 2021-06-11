@@ -45,7 +45,8 @@ class ArrayTest(SosTestCase):
             elif i == 1:
                 v = self.schema[i].name()
             else:
-                v = list(range(0, 16))
+                # Make this big to force object reallocation
+                v = list(range(0, 1024))
             a.append(v)
         for i in range(0, 10):
             o = self.schema.alloc()
