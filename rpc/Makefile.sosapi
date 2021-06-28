@@ -6,18 +6,18 @@
 CLIENT = sosapi_client
 SERVER = sosapi_server
 
-SOURCES_CLNT.c =
-SOURCES_CLNT.h =
-SOURCES_SVC.c =
-SOURCES_SVC.h =
+SOURCES_CLNT.c = sosapi_client.c sosapi_common.c ../ods/src/ods_rbt.c
+SOURCES_CLNT.h = sosapi.h ../ods/include/ods/ods_rbt.h
+SOURCES_SVC.c =  sosapi_server.c sosapi_common.c ../ods/src/ods_rbt.c ast.c
+SOURCES_SVC.h = sosapi.h ast.h ../ods/include/ods/ods_rbt.h
 SOURCES.x = sosapi.x
 
-TARGETS_SVC.c = sosapi_svc.c sosapi_server.c sosapi_xdr.c ../ods/src/ods_rbt.c
-TARGETS_CLNT.c = sosapi_clnt.c sosapi_client.c sosapi_xdr.c ../ods/src/ods_rbt.c
+TARGETS_SVC.c = sosapi_svc.c sosapi_xdr.c
+TARGETS_CLNT.c = sosapi_clnt.c sosapi_xdr.c
 TARGETS = sosapi.h sosapi_common.h sosapi_xdr.c sosapi_clnt.c sosapi_svc.c sosapi_client.c sosapi_server.c sosapi_common.c
 
-OBJECTS_CLNT = $(SOURCES_CLNT.c:%.c=%.o) $(TARGETS_CLNT.c:%.c=%.o) sosapi_common.o
-OBJECTS_SVC = $(SOURCES_SVC.c:%.c=%.o) $(TARGETS_SVC.c:%.c=%.o) sosapi_common.o
+OBJECTS_CLNT = $(SOURCES_CLNT.c:%.c=%.o) $(TARGETS_CLNT.c:%.c=%.o)
+OBJECTS_SVC = $(SOURCES_SVC.c:%.c=%.o) $(TARGETS_SVC.c:%.c=%.o)
 # Compiler flags
 
 CPPFLAGS += -D_REENTRANT

@@ -291,6 +291,7 @@ typedef union sos_value_data_u {
 /*! Describes the value of an attribute in an object */
 typedef struct sos_value_s {
 	sos_obj_t obj;		/*! The object to which the value refers  */
+	sos_type_t type;	/*! The value type, used when attr is NULL, i.e. this is a constant */
 	sos_attr_t attr;	/*! The attribute in the object */
 	sos_value_data_t data;	      /*! Points at data_ or into obj */
 	union sos_value_data_u data_; /*! Memory based value data */
@@ -516,7 +517,7 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
  * - sos_value_to_str()	 Get the value as a string
  * - sos_value_strlen()  Get the size of the buffer required by sos_value_to_str()
  * - sos_value_from_str() Set the value from a string
- * - sos_value_init()	 Initializes a stack variable as a value.
+ * - sos_value_init()	 Initializes a stack variable as a object value.
  */
 
 /**
@@ -552,6 +553,7 @@ sos_value_t sos_value_new();
 void sos_value_free(sos_value_t v);
 void *sos_obj_ptr(sos_obj_t obj);
 sos_value_t sos_value_init(sos_value_t value, sos_obj_t obj, sos_attr_t attr);
+sos_value_t sos_value_init_const(sos_value_t value, sos_type_t type, ...);
 sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src);
 #define SOS_VALUE(_name_)				\
 	struct sos_value_s  _name_ ## __, *_name_ = &_name_ ## __;

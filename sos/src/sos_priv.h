@@ -502,6 +502,7 @@ sos_part_t __sos_part_find_by_ods(sos_t sos, ods_t ods);
 
 extern FILE *__ods_log_fp;
 extern uint64_t __ods_log_mask;
+extern sos_value_size_fn_t __attr_size_fn_for_type[];
 
 static inline void sos_log(int level, const char *func, int line, char *fmt, ...)
 {

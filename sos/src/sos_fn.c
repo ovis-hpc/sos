@@ -163,7 +163,7 @@ static size_t join_size_fn(sos_value_t value)
 	return sos_array_count(value);
 }
 
-static sos_value_size_fn_t __attr_size_fn_for_type[] = {
+sos_value_size_fn_t __attr_size_fn_for_type[] = {
 	[SOS_TYPE_INT16] = int16_size_fn,
 	[SOS_TYPE_INT32] = int32_size_fn,
 	[SOS_TYPE_INT64] = int64_size_fn,

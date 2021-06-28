@@ -13,6 +13,7 @@
 #include <sys/queue.h>
 #include "sosapi.h"          /* Created by rpcgen */
 #include "sosapi_common.h"
+#include "ast.h"
 
 static struct timespec ZERO_TIME = {
 	0, 0
@@ -34,6 +35,8 @@ struct dsos_session {
 	struct ods_rbt schema_uuid_tree;
 	pthread_mutex_t iter_tree_lock;
 	struct ods_rbt iter_tree;
+	pthread_mutex_t query_tree_lock;
+	struct ods_rbt query_tree;
 	struct ods_rbn rbn;
 };
 
@@ -58,6 +61,20 @@ struct dsos_schema {
 	struct ods_rbn id_rbn;
 	struct ods_rbn name_rbn;
 	struct ods_rbn uuid_rbn;
+};
+
+struct dsos_query {
+	uint64_t handle;
+	enum dsos_query_state_e {
+		DSOSQ_STATE_INIT = 0,
+		DSOSQ_STATE_BEGIN,
+		DSOSQ_STATE_NEXT,
+		DSOSQ_STATE_EMPTY
+	} state;
+	dsos_container_id cont_id;
+	sos_iter_t iter;
+	struct ast *ast;
+	struct ods_rbn rbn;
 };
 
 static uint64_t next_handle = 1;
@@ -157,6 +174,8 @@ open_1_svc(char *path, int perm, int mode, dsos_open_res *res,  struct svc_req *
 	ods_rbt_init(&client->schema_name_tree, name_comparator, NULL);
 	pthread_mutex_init(&client->iter_tree_lock, NULL);
 	ods_rbt_init(&client->iter_tree, handle_comparator, NULL);
+	pthread_mutex_init(&client->query_tree_lock, NULL);
+	ods_rbt_init(&client->query_tree, handle_comparator, NULL);
 	clock_gettime(CLOCK_REALTIME, &client->acc_time);
 	client->open_time = client->acc_time;
 	ods_rbn_init(&client->rbn, &client->handle);
@@ -303,16 +322,18 @@ static struct dsos_iter *get_iter(struct dsos_session *client, dsos_iter_id iter
 }
 static void put_iter(struct dsos_iter *iter) {}
 
-#if 0
-static struct dsos_object *get_object(struct dsos_session *client, dsos_obj_id obj_handle)
+static struct dsos_query *get_query(struct dsos_session *client, dsos_query_id query_id)
 {
-	struct ods_rbn *obj_rbn = ods_rbt_find(&client->obj_tree, &obj_handle);
-	if (!obj_rbn)
-		return NULL;
-	return container_of(obj_rbn, struct dsos_object, rbn);
+	struct dsos_query *query = NULL;
+	struct ods_rbn *query_rbn;
+	pthread_mutex_lock(&client->query_tree_lock);
+	query_rbn = ods_rbt_find(&client->query_tree, &query_id);
+	if (query_rbn)
+		query = container_of(query_rbn, struct dsos_query, rbn);
+	pthread_mutex_unlock(&client->query_tree_lock);
+	return query;
 }
-static void put_object(struct dsos_object *object) {}
-#endif
+static void put_query(struct dsos_query *query) {}
 
 static struct dsos_schema *
 cache_schema(struct dsos_session *client, sos_schema_t schema)
@@ -343,14 +364,14 @@ err_0:
 	free(dschema);
 	return NULL;
 }
-bool_t schema_create_1_svc(dsos_container_id cont, dsos_schema_spec spec, dsos_schema_res *res, struct svc_req *req)
+bool_t schema_create_1_svc(dsos_container_id cont_id, dsos_schema_spec spec, dsos_schema_res *res, struct svc_req *req)
 {
 	struct dsos_session *client;
 	sos_schema_t schema;
 	int rc;
 	struct dsos_schema *dschema;
 
-	client = get_client(cont);
+	client = get_client(cont_id);
 	if (!client) {
 		res->error = DSOS_ERR_CLIENT;
 		goto out_0;
@@ -383,14 +404,14 @@ out_0:
 	return TRUE;
 }
 
-bool_t schema_find_by_id_1_svc(dsos_container_id cont, dsos_schema_id schema_id, dsos_schema_res *res, struct svc_req *rqstp)
+bool_t schema_find_by_id_1_svc(dsos_container_id cont_id, dsos_schema_id schema_id, dsos_schema_res *res, struct svc_req *rqstp)
 {
 	struct dsos_session *client;
 	struct ods_rbn *rbn;
 	struct dsos_schema *dschema;
 	int rc;
 
-	client = get_client(cont);
+	client = get_client(cont_id);
 	if (!client) {
 		res->error = DSOS_ERR_CLIENT;
 		goto out_0;
@@ -410,7 +431,7 @@ out_0:
 	return TRUE;
 }
 
-bool_t schema_find_by_name_1_svc(dsos_container_id cont, char *name, dsos_schema_res *res, struct svc_req *rqstp)
+bool_t schema_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_schema_res *res, struct svc_req *rqstp)
 {
 	struct dsos_session *client;
 	struct ods_rbn *rbn;
@@ -418,7 +439,7 @@ bool_t schema_find_by_name_1_svc(dsos_container_id cont, char *name, dsos_schema
 	sos_schema_t schema;
 	int rc;
 
-	client = get_client(cont);
+	client = get_client(cont_id);
 	if (!client) {
 		res->error = DSOS_ERR_CLIENT;
 		goto out_0;
@@ -449,7 +470,7 @@ out_0:
 	return TRUE;
 }
 
-bool_t schema_find_by_uuid_1_svc(dsos_container_id cont, char *uuid, dsos_schema_res *res, struct svc_req *rqstp)
+bool_t schema_find_by_uuid_1_svc(dsos_container_id cont_id, char *uuid, dsos_schema_res *res, struct svc_req *rqstp)
 {
 	struct dsos_session *client;
 	struct ods_rbn *rbn;
@@ -457,7 +478,7 @@ bool_t schema_find_by_uuid_1_svc(dsos_container_id cont, char *uuid, dsos_schema
 	sos_schema_t schema;
 	int rc;
 
-	client = get_client(cont);
+	client = get_client(cont_id);
 	if (!client) {
 		res->error = DSOS_ERR_CLIENT;
 		goto out_0;
@@ -520,7 +541,7 @@ bool_t obj_create_1_svc(dsos_obj_link obj_list, dsos_create_res *res, struct svc
 		sos_obj_put(obj);
 		obj_e = obj_e->next;
 		res->error = 0;
-		res->dsos_create_res_u.obj = 0; // object->handle;
+		res->dsos_create_res_u.obj_id = 0; // object->handle;
 	}
 out_2:
 	put_schema(schema);
@@ -538,7 +559,7 @@ bool_t obj_delete_1_svc(dsos_container_id cont, dsos_obj_id obj, int *res, struc
 }
 
 bool_t iter_create_1_svc(dsos_container_id cont_id, dsos_schema_id schema_id, dsos_attr_name attr_name,
-	dsos_iter_res *res, struct svc_req *rqstp)
+			dsos_iter_res *res, struct svc_req *rqstp)
 {
 	sos_iter_t iter;
 	struct dsos_iter *diter;
@@ -583,7 +604,7 @@ bool_t iter_create_1_svc(dsos_container_id cont_id, dsos_schema_id schema_id, ds
 	ods_rbn_init(&diter->rbn, &diter->handle);
 	ods_rbt_ins(&client->iter_tree, &diter->rbn);
 	res->error = 0;
-	res->dsos_iter_res_u.iter = diter->handle;
+	res->dsos_iter_res_u.iter_id = diter->handle;
 	goto out_2;
 
 out_3:
@@ -745,7 +766,202 @@ bool_t iter_find_lub_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_l
 {
 	return TRUE;
 }
+
+bool_t query_create_1_svc(dsos_container_id cont_id, dsos_query_options opts, dsos_query_create_res *res, struct svc_req *rqst)
+{
+	struct dsos_query *query;
+	struct dsos_session *client;
+
+	client = get_client(cont_id);
+	if (!client) {
+		res->error = DSOS_ERR_CLIENT;
+		goto out_0;
+	}
+
+	clock_gettime(CLOCK_REALTIME, &client->acc_time);
+	query = calloc(1, sizeof *query);
+	if (!query) {
+		res->error = errno;
+		goto out_1;
+	}
+	query->state = DSOSQ_STATE_INIT;
+	query->ast = ast_create(client->sos);
+	query->cont_id = cont_id;
+	query->handle = get_next_handle();
+	ods_rbn_init(&query->rbn, &query->handle);
+	ods_rbt_ins(&client->query_tree, &query->rbn);
+	res->error = 0;
+	res->dsos_query_create_res_u.query_id = query->handle;
+
+out_1:
+	put_client(client);
+out_0:
+	return TRUE;
+}
+
+bool_t query_select_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_query query_str, dsos_query_select_res *res, struct svc_req *rqst)
+{
+	struct dsos_session *client;
+	struct dsos_query *query;
+	int rc, count;
+	char err_msg[256];
+	client = get_client(cont_id);
+	memset(res, 0, sizeof(*res));
+	if (!client) {
+		res->error = DSOS_ERR_CLIENT;
+		sprintf(err_msg, "Invalid container id %d\n", cont_id);
+		res->dsos_query_select_res_u.error_msg = strdup(err_msg);
+		goto out_0;
+	}
+	clock_gettime(CLOCK_REALTIME, &client->acc_time);
+	query = get_query(client, query_id);
+	if (!query) {
+		res->error = DSOS_ERR_QUERY_ID;
+		sprintf(err_msg, "Invalid query id %d\n", query_id);
+		res->dsos_query_select_res_u.error_msg = strdup(err_msg);
+		goto out_0;
+	}
+	rc = ast_parse(query->ast, query_str);
+	res->error = rc;
+	if (rc) {
+		res->dsos_query_select_res_u.error_msg = strdup(query->ast->error_msg);
+	} else {
+		res->dsos_query_select_res_u.select.key_attr_id = sos_attr_id(query->ast->iter_attr_e->sos_attr);
+		res->dsos_query_select_res_u.select.spec = dsos_spec_from_schema(query->ast->sos_iter_schema);
+	}
+
+out_0:
+	if (0 == res->error)
+		query->state = DSOSQ_STATE_BEGIN;
+	return TRUE;
+}
+
+static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
+				dsos_query_next_res *result)
+{
+	sos_iter_t iter = ast->sos_iter;
+	int count = 5;
+	dsos_schema_id schema_id;
+	struct dsos_obj_entry *entry = NULL;
+	result->error = DSOS_ERR_QUERY_EMPTY;
+	int rc = 0;
+	memset(result, 0, sizeof(*result));
+	while (!rc && count) {
+		sos_obj_t obj = sos_iter_obj(iter);
+		if (!obj) {
+			result->error = errno;
+			goto err_0;
+		}
+		rc = ast_eval(ast, obj);
+		if (!rc) {
+			sos_obj_put(obj);
+			rc = sos_iter_next(iter);
+			continue;
+		}
+		result->error = 0;
+		if (entry) {
+			entry->next = malloc(sizeof *entry);
+			entry = entry->next;
+		} else {
+			entry = malloc(sizeof *entry);
+			result->dsos_query_next_res_u.result.obj_list = entry;
+		}
+		result->dsos_query_next_res_u.result.count += 1;
+		result->dsos_query_next_res_u.result.format = 0;
+		entry->next = NULL;
+		entry->cont_id = client->handle;
+		entry->schema_id = schema_id;
+		count --;
+		void *obj_data = sos_obj_ptr(obj);
+		entry->value.dsos_obj_value_len = sos_obj_size(obj);
+		entry->value.dsos_obj_value_val = malloc(entry->value.dsos_obj_value_len);
+		memcpy(entry->value.dsos_obj_value_val, obj_data, entry->value.dsos_obj_value_len);
+		sos_obj_put(obj);
+		if (count)
+			rc = sos_iter_next(iter);
+	}
+	return 0;
+err_0:
+	return -1;
+}
+
+bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_query_next_res *res, struct svc_req *rqst)
+{
+	struct dsos_session *client;
+	struct dsos_query *query;
+	int rc, count;
+	char err_msg[256];
+	client = get_client(cont_id);
+	if (!client) {
+		sprintf(err_msg, "Invalid container id %d", cont_id);
+		res->error = DSOS_ERR_CLIENT;
+		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+		goto out_0;
+	}
+	clock_gettime(CLOCK_REALTIME, &client->acc_time);
+	query = get_query(client, query_id);
+	if (!query) {
+		sprintf(err_msg, "Invalid query id %d", query_id);
+		res->error = DSOS_ERR_QUERY_ID;
+		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+		goto out_0;
+	}
+
+	switch (query->state) {
+	case DSOSQ_STATE_INIT:
+		sprintf(err_msg, "There is no valid 'select' pending on query %d", query_id);
+		res->error = DSOS_ERR_QUERY_BAD_SELECT;
+		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+		break;
+	case DSOSQ_STATE_BEGIN:
+		rc = sos_iter_begin(query->ast->sos_iter);
+		if (rc) {
+			sprintf(err_msg, "No data returned for query %d.", query_id);
+			res->error = DSOS_ERR_QUERY_EMPTY;
+			res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+			goto out_0;
+		}
+		rc = __make_query_obj_list(client, query->ast, res);
+		if (!rc) {
+			query->state = DSOSQ_STATE_NEXT;
+		} else {
+			query->state = DSOSQ_STATE_EMPTY;
+			sprintf(err_msg, "No more data for query %d.", query_id);
+			res->error = DSOS_ERR_QUERY_EMPTY;
+			res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+		}
+		break;
+	case DSOSQ_STATE_NEXT:
+		rc = sos_iter_next(query->ast->sos_iter);
+		if (rc) {
+			sprintf(err_msg, "No more data for query %d.", query_id);
+			res->error = DSOS_ERR_QUERY_EMPTY;
+			res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+			goto out_0;
+		}
+		rc = __make_query_obj_list(client, query->ast, res);
+		if (rc) {
+			sprintf(err_msg, "No more data for query %d.", query_id);
+			res->error = DSOS_ERR_QUERY_EMPTY;
+			res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+		}
+		break;
+	case DSOSQ_STATE_EMPTY:
+		sprintf(err_msg, "No more data for query %d.", query_id);
+		res->error = DSOS_ERR_QUERY_EMPTY;
+		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+	}
+out_0:
+	return TRUE;
+}
+
+bool_t query_delete_1_svc(dsos_container_id cont_id, dsos_query_id query_id, int *res, struct svc_req *rqst)
+{
+	return TRUE;
+}
+
 int sosdb_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
+
 {
 	xdr_free (xdr_result, result);
 

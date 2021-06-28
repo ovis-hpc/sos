@@ -1070,7 +1070,7 @@ int sos_value_is_array(sos_value_t v)
  */
 sos_type_t sos_value_type(sos_value_t v)
 {
-	return v->attr->data->type;
+	return v->type;
 }
 
 /**
@@ -1082,7 +1082,9 @@ sos_type_t sos_value_type(sos_value_t v)
  */
 size_t sos_value_size(sos_value_t value)
 {
-	return value->attr->size_fn(value);
+	if (value->attr)
+		return value->attr->size_fn(value);
+	return __attr_size_fn_for_type[value->type](value);
 }
 
 void *sos_value_as_key(sos_value_t value)

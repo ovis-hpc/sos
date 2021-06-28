@@ -200,25 +200,6 @@ static int OBJ_ARRAY_cmp(sos_value_t a, sos_value_t b, size_t size)
 	return a_len - b_len;
 }
 
-#if 0
-#define ARRAY_CMP(_n_, _t_, _f_)					\
-	static int _n_ ## _cmp(sos_value_t a, sos_value_t b, size_t size) \
-	{								\
-		size_t a_len = sos_value_size(a);			\
-		size_t b_len = sos_value_size(b);			\
-		int i;							\
-		size_t cmp_len = (a_len < b_len ? a_len : b_len);	\
-		for (i = 0; i < cmp_len / sizeof(_t_); i++) {		\
-			_t_ av = a->data->array.data._f_[i];		\
-			_t_ bv = b->data->array.data._f_[i];		\
-			if (av < bv)					\
-				return -1;				\
-			if (av > bv)					\
-				return 1;				\
-		}							\
-		return a_len - b_len;					\
-	}
-#else
 #define ARRAY_CMP(_n_, _t_, _f_)					\
 static int _n_ ## _cmp(sos_value_t a, sos_value_t b, size_t size) \
 {								\
@@ -234,7 +215,6 @@ static int _n_ ## _cmp(sos_value_t a, sos_value_t b, size_t size) \
 	}							\
 	return a_len - b_len;					\
 }
-#endif
 
 ARRAY_CMP(INT16_ARRAY, int16_t, int16_)
 ARRAY_CMP(INT32_ARRAY, int32_t, int32_)
@@ -246,6 +226,128 @@ ARRAY_CMP(FLOAT_ARRAY, float, float_)
 ARRAY_CMP(DOUBLE_ARRAY, double, double_)
 ARRAY_CMP(LONG_DOUBLE_ARRAY, long double, long_double_)
 
+static int JOIN_cmp(sos_value_t a, sos_value_t b, size_t size)
+{
+	sos_array_t ck_a = sos_array(a);
+	sos_array_t ck_b = sos_array(b);
+	ods_key_comp_t comp_a;
+	ods_key_comp_t comp_b;
+	off_t koff;
+	int64_t res = 0;
+	int cmp_len = ck_a->count;
+	if (ck_b->count < cmp_len)
+		cmp_len = ck_b->count;
+	for (koff = 0; koff < cmp_len;) {
+		comp_a = (ods_key_comp_t)&(ck_a->data.byte_[koff]);
+		comp_b = (ods_key_comp_t)&(ck_b->data.byte_[koff]);
+		switch (comp_a->type) {
+		case SOS_TYPE_DOUBLE:
+			if (comp_a->value.double_ < comp_b->value.double_)
+				return -1;
+			if (comp_a->value.double_ > comp_b->value.double_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.double_);
+			break;
+		case SOS_TYPE_TIMESTAMP:
+			if (comp_a->value.tv_.tv_sec < comp_b->value.tv_.tv_sec)
+				return -1;
+			if (comp_a->value.tv_.tv_sec > comp_b->value.tv_.tv_sec)
+				return 1;
+			if (comp_a->value.tv_.tv_usec < comp_b->value.tv_.tv_usec)
+				return -1;
+			if (comp_a->value.tv_.tv_usec > comp_b->value.tv_.tv_usec)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.tv_);
+			break;
+		case SOS_TYPE_UINT64:
+			if (comp_a->value.uint64_ < comp_b->value.uint64_)
+				return -1;
+			if (comp_a->value.uint64_ > comp_b->value.uint64_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.uint64_);
+			break;
+		case SOS_TYPE_INT64:
+			if (comp_a->value.int64_ < comp_b->value.int64_)
+				return -1;
+			if (comp_a->value.int64_ > comp_b->value.int64_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.int64_);
+			break;
+		case SOS_TYPE_FLOAT:
+			if (comp_a->value.float_ < comp_b->value.float_)
+				return -1;
+			if (comp_a->value.float_ > comp_b->value.float_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.float_);
+			break;
+		case SOS_TYPE_UINT32:
+			if (comp_a->value.uint32_ < comp_b->value.uint32_)
+				return -1;
+			if (comp_a->value.uint32_ > comp_b->value.uint32_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.uint32_);
+			break;
+		case SOS_TYPE_INT32:
+			if (comp_a->value.int32_ < comp_b->value.int32_)
+				return -1;
+			if (comp_a->value.int32_ > comp_b->value.int32_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.int32_);
+			break;
+		case SOS_TYPE_UINT16:
+			if (comp_a->value.uint16_ < comp_b->value.uint16_)
+				return -1;
+			if (comp_a->value.uint16_ > comp_b->value.uint16_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.uint16_);
+			break;
+		case SOS_TYPE_INT16:
+			if (comp_a->value.int16_ < comp_b->value.int16_)
+				return -1;
+			if (comp_a->value.int16_ > comp_b->value.int16_)
+				return 1;
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.int16_);
+			break;
+		case SOS_TYPE_STRUCT:
+		case SOS_TYPE_BYTE_ARRAY:
+			res = comp_a->value.str.len < comp_b->value.str.len ? comp_a->value.str.len : comp_b->value.str.len;
+			res = memcmp(comp_a->value.str.str, comp_b->value.str.str, res);
+			if (res == 0)
+				res = comp_a->value.str.len - comp_b->value.str.len;
+			if (res)
+				return res;
+			/* NB: if we get here we know the value and length of the two values are identical */
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.str.len) + comp_a->value.str.len;
+			break;
+		case SOS_TYPE_CHAR_ARRAY:
+			res = comp_a->value.str.len < comp_b->value.str.len ? comp_a->value.str.len : comp_b->value.str.len;
+			res = strncmp(comp_a->value.str.str, comp_b->value.str.str, res);
+			if (res == 0)
+				res = comp_a->value.str.len - comp_b->value.str.len;
+			if (res)
+				return res;
+			/* NB: if we get here we know the value and length of the two strings are identical */
+			koff += sizeof(uint16_t) + sizeof(comp_a->value.str.len) + comp_a->value.str.len;
+			break;
+		case SOS_TYPE_LONG_DOUBLE:
+		case SOS_TYPE_INT16_ARRAY:
+		case SOS_TYPE_INT32_ARRAY:
+		case SOS_TYPE_INT64_ARRAY:
+		case SOS_TYPE_UINT16_ARRAY:
+		case SOS_TYPE_UINT32_ARRAY:
+		case SOS_TYPE_UINT64_ARRAY:
+		case SOS_TYPE_FLOAT_ARRAY:
+		case SOS_TYPE_DOUBLE_ARRAY:
+		case SOS_TYPE_LONG_DOUBLE_ARRAY:
+		default:
+			break;
+		}
+	}
+	if (res == 0)
+		return ck_a->count - ck_b->count;
+	return res;
+}
+
 static cmp_fn_t cmp_fn_table[] = {
 	[SOS_TYPE_INT16] = INT16_cmp,
 	[SOS_TYPE_INT32] = INT32_cmp,
@@ -256,6 +358,7 @@ static cmp_fn_t cmp_fn_table[] = {
 	[SOS_TYPE_FLOAT] = FLOAT_cmp,
 	[SOS_TYPE_DOUBLE] = DOUBLE_cmp,
 	[SOS_TYPE_LONG_DOUBLE] = LONG_DOUBLE_cmp,
+	[SOS_TYPE_JOIN] = JOIN_cmp,
 	[SOS_TYPE_OBJ] = OBJ_cmp,
 	[SOS_TYPE_STRUCT] = STRUCT_cmp,
 	[SOS_TYPE_TIMESTAMP] = TIMESTAMP_cmp,
@@ -285,16 +388,118 @@ static cmp_fn_t cmp_fn_table[] = {
  */
 int sos_value_cmp(sos_value_t a, sos_value_t b)
 {
-	if (a->attr->data->type < sizeof(cmp_fn_table)/sizeof(cmp_fn_table[0]))
-		return cmp_fn_table[a->attr->data->type](a, b, sos_attr_size(a->attr));
+	if (a->type < sizeof(cmp_fn_table)/sizeof(cmp_fn_table[0]))
+		return cmp_fn_table[a->type](a, b, sos_value_size(a));
 	return a == b;
 }
-static sos_value_t mem_value_init(sos_value_t val, sos_attr_t attr)
+
+typedef int (*true_fn_t)(sos_value_t a);
+
+static int INT16_true(sos_value_t a)
 {
-	memset(val, 0, sizeof(*val));
-	val->attr = attr;
-	val->data = &val->data_;
-	return val;
+	return a->data->prim.int16_ != 0;
+}
+
+static int INT32_true(sos_value_t a)
+{
+	return a->data->prim.int32_ != 0;
+}
+
+static int INT64_true(sos_value_t a)
+{
+	return a->data->prim.int64_ != 0;
+}
+
+static int UINT16_true(sos_value_t a)
+{
+	return a->data->prim.uint16_ != 0;
+}
+
+static int UINT32_true(sos_value_t a)
+{
+	return a->data->prim.uint32_ != 0;
+}
+
+static int UINT64_true(sos_value_t a)
+{
+	return a->data->prim.uint64_ != 0;
+}
+
+static int FLOAT_true(sos_value_t a)
+{
+	return a->data->prim.float_ != 0;
+}
+
+static int DOUBLE_true(sos_value_t a)
+{
+	return a->data->prim.double_ != 0;
+}
+
+static int LONG_DOUBLE_true(sos_value_t a)
+{
+	return a->data->prim.long_double_ != 0;
+}
+
+static int TIMESTAMP_true(sos_value_t a)
+{
+	return (a->data->prim.timestamp_.tv.tv_sec != 0) && (a->data->prim.timestamp_.tv.tv_usec != 0);
+}
+
+static int OBJ_true(sos_value_t a)
+{
+	return 1;
+}
+
+static int STRUCT_true(sos_value_t a)
+{
+	return 1;
+}
+
+static int ARRAY_true(sos_value_t a)
+{
+	return 0 == sos_array_count(a);
+}
+
+static true_fn_t true_fn_table[] = {
+	[SOS_TYPE_INT16] = INT16_true,
+	[SOS_TYPE_INT32] = INT32_true,
+	[SOS_TYPE_INT64] = INT64_true,
+	[SOS_TYPE_UINT16] = UINT16_true,
+	[SOS_TYPE_UINT32] = UINT32_true,
+	[SOS_TYPE_UINT64] = UINT64_true,
+	[SOS_TYPE_FLOAT] = FLOAT_true,
+	[SOS_TYPE_DOUBLE] = DOUBLE_true,
+	[SOS_TYPE_LONG_DOUBLE] = LONG_DOUBLE_true,
+	[SOS_TYPE_OBJ] = OBJ_true,
+	[SOS_TYPE_STRUCT] = STRUCT_true,
+	[SOS_TYPE_TIMESTAMP] = TIMESTAMP_true,
+	[SOS_TYPE_CHAR_ARRAY] = ARRAY_true,
+	[SOS_TYPE_BYTE_ARRAY] = ARRAY_true,
+	[SOS_TYPE_INT16_ARRAY] = ARRAY_true,
+	[SOS_TYPE_INT32_ARRAY] = ARRAY_true,
+	[SOS_TYPE_INT64_ARRAY] = ARRAY_true,
+	[SOS_TYPE_UINT16_ARRAY] = ARRAY_true,
+	[SOS_TYPE_UINT32_ARRAY] = ARRAY_true,
+	[SOS_TYPE_UINT64_ARRAY] = ARRAY_true,
+	[SOS_TYPE_FLOAT_ARRAY] = ARRAY_true,
+	[SOS_TYPE_DOUBLE_ARRAY] = ARRAY_true,
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = ARRAY_true,
+	[SOS_TYPE_OBJ_ARRAY] = ARRAY_true,
+};
+/**
+ * \brief Determine if a value is true or false
+ *
+ * Primitive values are true if they are non-zero. An array
+ * value is \c true if it has a non-zero count.
+ *
+ * \param a The value
+ * \returns 1 (true) or 0 (false)
+ */
+int sos_value_true(sos_value_t a)
+{
+	if (a->type < sizeof(cmp_fn_table)/sizeof(cmp_fn_table[0]))
+		return true_fn_table[a->type](a);
+	return 0;
 }
 
 sos_value_t sos_value_new()
@@ -384,7 +589,7 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 	} else {
 		data = (sos_array_t)&val->data_;
 	}
-
+	val->type = sos_attr_type(attr);
 	val->attr = attr;
 	val->obj = NULL;
 	val->data = (sos_value_data_t)data;
@@ -428,9 +633,14 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
 sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 {
 	sos_value_data_t ref_val;
-	if (!obj)
-		return mem_value_init(val, attr);
-
+	if (!obj) {
+		memset(val, 0, sizeof(*val));
+		val->type = sos_attr_type(attr);
+		val->attr = attr;
+		val->data = &val->data_;
+		return val;
+	}
+	val->type = sos_attr_type(attr);
 	if (sos_attr_type(attr) == SOS_TYPE_JOIN)
 		return __sos_join_value_init(val, obj, attr);
 
@@ -442,6 +652,49 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 
 	val->obj = sos_obj_get(obj);
 	val->data = ref_val;
+	return val;
+}
+
+sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
+{
+	sos_value_data_t vd = &val->data_;
+	va_list ap;
+	va_start(ap, type);
+	val->type = type;
+	val->attr = NULL;
+	val->obj = NULL;
+	val->data = &val->data_;
+	switch (type) {
+	case SOS_TYPE_INT32:
+		vd->prim.int32_ = va_arg(ap, int32_t);
+		break;
+	case SOS_TYPE_INT64:
+		vd->prim.int64_ = va_arg(ap, int64_t);
+		break;
+	case SOS_TYPE_UINT16:
+		vd->prim.uint16_ = va_arg(ap, int);
+		break;
+	case SOS_TYPE_UINT32:
+		vd->prim.uint32_ = va_arg(ap, uint32_t);
+		break;
+	case SOS_TYPE_UINT64:
+		vd->prim.uint64_ = va_arg(ap, uint64_t);
+		break;
+	case SOS_TYPE_FLOAT:
+		vd->prim.float_ = va_arg(ap, double);
+		break;
+	case SOS_TYPE_DOUBLE:
+		vd->prim.double_ = va_arg(ap, double);
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		vd->prim.long_double_ = va_arg(ap, long double);
+		break;
+	case SOS_TYPE_TIMESTAMP:
+		vd->prim.timestamp_.tv = va_arg(ap, struct ods_timeval_s);
+		break;
+	default:
+		return NULL;
+	}
 	return val;
 }
 
@@ -491,6 +744,7 @@ void sos_value_data_del(sos_value_data_t vd)
  */
 sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src)
 {
+	dst->type = src->type;
 	dst->attr = src->attr;
 	size_t sz = sos_value_size(src);
 	if (sos_value_type(src) == SOS_TYPE_STRUCT) {
