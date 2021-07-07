@@ -163,7 +163,7 @@ err_0:
 
 struct dsos_schema_spec *dsos_schema_spec_dup(dsos_schema_spec *src_spec)
 {
-	int attr_id, rc;
+	int attr_id;
 	dsos_schema_spec *dst_spec;
 	dst_spec = calloc(1, sizeof *dst_spec);
 	if (!dst_spec)

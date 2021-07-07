@@ -1450,6 +1450,41 @@ int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 	return 0;
 }
 
+int sos_obj_attr_copy(sos_obj_t dst_obj, sos_attr_t dst_attr,
+					sos_obj_t src_obj, sos_attr_t src_attr)
+{
+	sos_value_data_t src_data, dst_data;
+
+	if (sos_attr_type(src_attr) != sos_attr_type(dst_attr))
+		return EINVAL;
+	if (sos_attr_type(src_attr) == SOS_TYPE_JOIN)
+		return 0;
+
+	if (!sos_attr_is_array(src_attr)) {
+		src_data = sos_obj_attr_data(src_obj, src_attr, NULL);
+		dst_data = sos_obj_attr_data(dst_obj, dst_attr, NULL);
+		if (!src_data || !dst_data)
+			return EINVAL;
+		memcpy(dst_data->prim.struc_, src_data->prim.struc_,
+			sos_attr_size(src_attr));
+	} else {
+		struct sos_value_s src_v_, dst_v_;
+		sos_value_t src_value;
+		sos_value_t dst_value;
+		src_value = sos_value_init(&src_v_, src_obj, src_attr);
+		if (!src_value)
+			return EINVAL;
+		dst_value = sos_value_init(&dst_v_, dst_obj, dst_attr);
+		if (!dst_value)
+			return ENOMEM;
+		memcpy(sos_array(dst_value), sos_array(src_value),
+			sos_value_size(dst_value));
+		sos_value_put(src_value);
+		sos_value_put(dst_value);
+	}
+	return 0;
+}
+
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj)
 {
 	if (!obj)

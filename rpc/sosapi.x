@@ -52,6 +52,7 @@ struct dsos_attr_spec {
     dsos_attr_name name;
     int id;
 };
+
 struct dsos_schema_spec_attr {
 	dsos_schema_name name;
 	int type;
@@ -82,6 +83,15 @@ typedef int dsos_schema_attr;
 union dsos_schema_attr_res switch (int error) {
     case 0:
         dsos_schema_attr attr;
+    default:
+        void;
+};
+
+typedef string dsos_name<>;
+
+union dsos_schema_query_res switch (int error) {
+    case 0:
+        dsos_name names<>;
     default:
         void;
 };
@@ -153,6 +163,7 @@ program SOSDB {
         dsos_schema_res SCHEMA_FIND_BY_ID(dsos_container_id, dsos_schema_id) = 21;
         dsos_schema_res SCHEMA_FIND_BY_NAME(dsos_container_id, string) = 22;
         dsos_schema_res SCHEMA_FIND_BY_UUID(dsos_container_id, string) = 23;
+        dsos_schema_query_res SCHEMA_QUERY(dsos_container_id) = 64;
 
         /* Object operations */
         dsos_create_res OBJ_CREATE(dsos_obj_link) = 30;

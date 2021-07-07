@@ -18,6 +18,10 @@ AC_SUBST([ODS_COMMIT_ID],["$COMMIT_ID"])
 
 dnl Checks for programs
 AC_PROG_CC
+AC_PROG_LEX
+AC_ARG_VAR([BISON], [bison command])
+AC_CHECK_PROG([BISON], [bison -y], [bison -y], [no])
+AS_IF([test "x$BISON" = "xno"], [AC_MSG_ERROR([bison not found])])
 
 dnl this will add document options. Please see m4/options.m4.
 OPTION_DOC
@@ -81,6 +85,7 @@ AC_CONFIG_FILES([
 		sos/include/Makefile
 		sos/src/Makefile
 		sos/python/Makefile
+		rpc/Makefile
 		rpm/sosdb.spec
 ])
 

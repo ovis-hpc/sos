@@ -62,6 +62,7 @@
 #include <uuid/uuid.h>
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
+#include <stdarg.h>
 
 /** \defgroup cont SOS Containers
  * @{
@@ -533,6 +534,8 @@ int sos_obj_commit(sos_obj_t obj);
 sos_schema_t sos_obj_schema(sos_obj_t obj);
 size_t sos_obj_size(sos_obj_t obj);
 int sos_obj_copy(sos_obj_t dst, sos_obj_t src);
+int sos_obj_attr_copy(sos_obj_t dst_obj, sos_attr_t dst_attr,
+					sos_obj_t src_obj, sos_attr_t src_attr);
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj);
 sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref);
 
@@ -554,6 +557,7 @@ void sos_value_free(sos_value_t v);
 void *sos_obj_ptr(sos_obj_t obj);
 sos_value_t sos_value_init(sos_value_t value, sos_obj_t obj, sos_attr_t attr);
 sos_value_t sos_value_init_const(sos_value_t value, sos_type_t type, ...);
+int sos_value_true(sos_value_t value);
 sos_value_t sos_value_copy(sos_value_t dst, sos_value_t src);
 #define SOS_VALUE(_name_)				\
 	struct sos_value_s  _name_ ## __, *_name_ = &_name_ ## __;

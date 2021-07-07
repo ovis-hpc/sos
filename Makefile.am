@@ -1,5 +1,5 @@
 ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = ods sos
+SUBDIRS = ods sos rpc
 
 if ENABLE_DOC
 SUBDIRS += doc man
