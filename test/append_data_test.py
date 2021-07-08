@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import print_function
 import unittest
 import logging
 import os
@@ -146,8 +145,5 @@ if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)
     logger.setLevel(logging.INFO)
-    _pystart = os.environ.get("PYTHONSTARTUP")
-    if _pystart:
-        execfile(_pystart)
     unittest.TestLoader.testMethodPrefix = "test_"
     unittest.main()

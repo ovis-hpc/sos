@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from past.builtins import execfile
 from builtins import next
 from builtins import range
 from builtins import object
@@ -182,8 +181,5 @@ if __name__ == "__main__":
     LOGFMT = '%(asctime)s %(name)s %(levelname)s: %(message)s'
     logging.basicConfig(format=LOGFMT)
     logger.setLevel(logging.INFO)
-    _pystart = os.environ.get("PYTHONSTARTUP")
-    if _pystart:
-        execfile(_pystart)
     unittest.TestLoader.testMethodPrefix = "test_"
     unittest.main()
