@@ -744,7 +744,7 @@ static int obj_array_from_str_fn(sos_value_t v, const char *value, char **endptr
 {
 	int i;
 	const char *str;
-	sos_obj_ref_t ref;
+	sos_obj_ref_t ref = {};
 	char *end;
 
 	for (i = 0, str = value; i < v->data->array.count && *str != '\0';

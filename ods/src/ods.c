@@ -541,7 +541,7 @@ int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos,
 	return ods->obj_iter(ods, NULL, iter_fn, arg);
 }
 
-static void *flush_all_data_fn(void *arg)
+static void flush_all_data_fn(void *arg)
 {
 	ods_t ods;
 	struct ods_rbn *rbn;
@@ -552,7 +552,6 @@ static void *flush_all_data_fn(void *arg)
 		(void)ods->flush_data(ods, 0);
 	}
 	pthread_mutex_unlock(&__ods_tree_lock);
-	return NULL;
 }
 uint64_t __ods_def_map_sz = ODS_DEF_MAP_SZ;
 time_t __ods_gc_timeout = ODS_DEF_GC_TIMEOUT;
