@@ -19,9 +19,12 @@ AC_SUBST([ODS_COMMIT_ID],["$COMMIT_ID"])
 dnl Checks for programs
 AC_PROG_CC
 AC_PROG_LEX
-AC_ARG_VAR([BISON], [bison command])
-AC_CHECK_PROG([BISON], [bison -y], [bison -y], [no])
-AS_IF([test "x$BISON" = "xno"], [AC_MSG_ERROR([bison not found])])
+OPTION_DEFAULT_DISABLE([dsos], [ENABLE_DSOS])
+if test -z "$ENABLE_DSOS_TRUE"; then
+   AC_ARG_VAR([BISON], [bison command])
+   AC_CHECK_PROG([BISON], [bison -y], [bison -y], [no])
+   AS_IF([test "x$BISON" = "xno"], [AC_MSG_ERROR([bison not found])])
+fi
 
 dnl this will add document options. Please see m4/options.m4.
 OPTION_DOC
