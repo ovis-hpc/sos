@@ -181,7 +181,6 @@ typedef struct sos_idxdir_udata_s {
  */
 typedef struct sos_obj_data_s {
 	uuid_t schema_uuid;	/* The unique schema identifier */
-	uint64_t data_size;
 	uint8_t data[0];
 } *sos_obj_data_t;
 
