@@ -39,7 +39,7 @@ typedef struct cmd_arg_s {
 
 struct cmd_s {
 	char *name;     /* User printable name of the function. */
-	cmd_fn_t cmd_fn; /* Function to call to do the job. */
+	cmd_fn_t cmd_fn;
 	char *doc;      /* Documentation for this function.  */
 	int args_count;
 	struct cmd_arg_s args[255];   /* Array of valid arguments to the commmand */
@@ -108,7 +108,7 @@ struct cmd_s commands[] = {
 	},
 	[HELP_CMD] = {"help", help_command, "help"},
 	[HELP_CMD_2] = {"?", help_command, "Synonym for `help'"},
-	[LAST_CMD] = {(char *)NULL, (Function *)NULL, (char *)NULL}
+	[LAST_CMD] = {}
 };
 
 av_t av_find(av_list_t avl, const char *name)
@@ -256,7 +256,7 @@ char *stripwhite(char *string)
 char *command_generator();
 char *argument_generator();
 char **dsosql_completion();
-extern char **completion_matches(char *text, CPFunction *entry_func);
+extern char **completion_matches(char *text, void *entry_func);
 
 /* Tell the GNU Readline library how to complete.  We want to try to complete
    on command names if this is the first word in the line, or on filenames
@@ -267,7 +267,7 @@ void initialize_readline()
 	rl_readline_name = "dsosql";
 
 	/* Tell the completer that we want a crack first. */
-	rl_attempted_completion_function = (CPPFunction *)dsosql_completion;
+	rl_attempted_completion_function = dsosql_completion;
 }
 
 /* Attempt to complete on the contents of TEXT.  START and END show the

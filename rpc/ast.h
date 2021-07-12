@@ -87,7 +87,7 @@ struct ast_schema_entry_s {
 	const char *name;
 	sos_schema_t schema;
 	uint64_t schema_id;
-	TAILQ_ENTRY(ast_name_entry_s) link;
+	TAILQ_ENTRY(ast_schema_entry_s) link;
 	LIST_HEAD(join_list_head, ast_attr_entry_s) join_list;
 };
 
