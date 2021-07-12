@@ -320,7 +320,7 @@ const char *sos_schema_name(sos_schema_t schema)
  * \brief Return the schema's unique id
  *
  * Every schema has a unique Id that is stored along with the object
- * in the database. This a llows the object's type to be identified.
+ * in the database. This allows the object's type to be identified.
  *
  * \param schema The schema handle.
  * \retval The schema Id

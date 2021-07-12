@@ -442,7 +442,7 @@ static int __sos_container_new(const char *path, sos_perm_t *p_perm, int o_mode)
 		goto err_7;
 	*p_perm = o_perm;
 	const char *be_type = "MMOS";
-	if (o_perm & (SOS_BE_LSOS | SOS_BE_MMOS))
+	if (o_perm & SOS_BE_LSOS)
 		be_type = "LSOS";
 	sos_container_config_set(path, "BACKEND_TYPE", be_type);
 	return 0;
@@ -880,7 +880,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 			goto err;
 		o_perm &= ~SOS_PERM_CREAT;
 	} else {
-		o_mode = sb.st_mode;
+		o_mode = sb.st_mode & 0666;
 	}
 
 	sos->o_mode = o_mode;
@@ -898,6 +898,8 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	if (be_type) {
 		if (0 == strcasecmp(be_type, "LSOS"))
 			sos->o_perm |= SOS_BE_LSOS;
+		else
+			sos->o_perm |= SOS_BE_MMOS;
 		free(be_type);
 	} else {
 		sos->o_perm |= SOS_BE_MMOS;
@@ -905,7 +907,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 
 	/* Open the ODS containing the Index objects */
 	sprintf(tmp_path, "%s/.__index", path);
-	sos->idx_ods = ods_open(tmp_path, sos->o_perm);
+	sos->idx_ods = ods_open(tmp_path, sos->o_perm, sos->o_mode);
 	if (!sos->idx_ods)
 		goto err;
 
