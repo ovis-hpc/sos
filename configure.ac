@@ -18,12 +18,13 @@ AC_SUBST([ODS_COMMIT_ID],["$COMMIT_ID"])
 
 dnl Checks for programs
 AC_PROG_CC
-AC_PROG_LEX
 OPTION_DEFAULT_DISABLE([dsos], [ENABLE_DSOS])
 if test -z "$ENABLE_DSOS_TRUE"; then
+   AC_PROG_LEX
+   AS_IF([test "x$LEX" != "xflex"], [AC_MSG_ERROR([You need to install flex to build DSOS])])
    AC_ARG_VAR([BISON], [bison command])
    AC_CHECK_PROG([BISON], [bison -y], [bison -y], [no])
-   AS_IF([test "x$BISON" = "xno"], [AC_MSG_ERROR([bison not found])])
+   AS_IF([test "x$BISON" = "xno"], [AC_MSG_ERROR([You need to install bison to build DSOS])])
 fi
 
 dnl this will add document options. Please see m4/options.m4.
@@ -37,8 +38,8 @@ if test -z "$ENABLE_PYTHON_TRUE"; then
  	AM_PATH_PYTHON(,,[:])
  	AX_PYTHON_DEVEL([>='3'])
  	NUMPY_INCLUDE_PATH=$($PYTHON -c "import numpy; print(numpy.get_include())")
- 	which cython >/dev/null 2>&1 || AC_MSG_ERROR("cython not found")
- 	test -n "$NUMPY_INCLUDE_PATH" || AC_MSG_ERROR("numpy not found.")
+ 	which cython >/dev/null 2>&1 || AC_MSG_ERROR("You need to install cython when building the Python interfaces")
+ 	test -n "$NUMPY_INCLUDE_PATH" || AC_MSG_ERROR("You need to install numpy when building the Python interfaces.")
  	AC_MSG_RESULT([${NUMPY_INCLUDE_PATH}])
  	AC_SUBST([NUMPY_INCLUDE_PATH])
 fi
