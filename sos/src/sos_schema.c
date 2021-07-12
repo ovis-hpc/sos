@@ -901,7 +901,7 @@ void *sos_obj_ptr(sos_obj_t obj)
  */
 size_t sos_obj_size(sos_obj_t obj)
 {
-	return obj->size;
+	return obj->size - sizeof(struct sos_obj_data_s);
 }
 
 /*
