@@ -369,7 +369,6 @@ err_1:
 		}
 	}
 	free(cont->path);
-	free(cont);
 err_0:
 	free(cont);
 	return NULL;
@@ -521,7 +520,7 @@ dsos_name_array_t dsos_schema_query(dsos_container_t cont, dsos_res_t *res)
 		names->names[i] =
 			strdup(query_res.dsos_schema_query_res_u.names.names_val[i]);
 	}
-	xdr_free((xdrproc_t)xdr_dsos_schema_res, (char *)&query_res);
+	xdr_free((xdrproc_t)xdr_dsos_schema_query_res, (char *)&query_res);
 	return names;
 }
 
