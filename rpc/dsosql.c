@@ -3,10 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/queue.h>
-#include "dsos.h"
-#include "dsosql.h"
-
-#include <stdio.h>
+#include <limits.h>
 #include <sys/types.h>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -15,6 +12,10 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
+#include <pwd.h>
+
+#include "dsos.h"
+#include "dsosql.h"
 #include "json.h"
 
 typedef struct av_s {
@@ -48,6 +49,7 @@ struct cmd_s {
 int open_session(cmd_t, av_list_t avl);
 int open_container(cmd_t, av_list_t avl);
 int create_schema(cmd_t, av_list_t avl);
+int show_schema(cmd_t, av_list_t avl);
 int show_command(cmd_t, av_list_t avl);
 int quit_command(cmd_t, av_list_t avl);
 int import_csv(cmd_t, av_list_t avl);
@@ -61,6 +63,7 @@ enum dsosql_command_id_e {
 	ATTACH_CMD,
 	OPEN_CMD,
 	CREATE_SCHEMA_CMD,
+	SHOW_SCHEMA_CMD,
 	IMPORT_CMD,
     SELECT_CMD,
 	SHOW_CMD,
@@ -89,6 +92,12 @@ struct cmd_s commands[] = {
 				{
 					{ SOS_TYPE_STRING, "name" },
 					{ SOS_TYPE_STRING, "from" }
+				}
+	},
+	[SHOW_SCHEMA_CMD] = { "show_schema", show_schema, "show_schema [ name NAME-RE ]",
+				1,
+				{
+					{ SOS_TYPE_STRING, "name" },
 				}
 	},
 	[IMPORT_CMD] = {"import", import_csv, "import schema SCHEMA-NAME from CSV-FILE-NAME",
@@ -444,6 +453,20 @@ int open_container(cmd_t cmd, av_list_t avl)
 	return 0;
 }
 
+int show_schema(cmd_t cmd, av_list_t avl)
+{
+    dsos_res_t res;
+    dsos_name_array_t schemas = dsos_schema_query(g_cont, &res);
+    if (schemas) {
+        int i;
+        char *name;
+        for (i = 0; i < schemas->count; i++) {
+            printf("%s\n", schemas->names[i]);
+        }
+    }
+    return 0;
+}
+
 int create_schema(cmd_t cmd, av_list_t avl)
 {
 	char *template;
@@ -459,7 +482,7 @@ int create_schema(cmd_t cmd, av_list_t avl)
 		return 0;
 	}
 	if (!g_cont) {
-		printf("You cannot import a CSV until you open a container\n");
+		printf("You cannot create a schema you open a container\n");
 		goto err;
 	}
 	av = av_find(avl, "name");
@@ -555,13 +578,27 @@ int quit_command(cmd_t cmd, av_list_t avl)
 	return (0);
 }
 
-char *progname;
+static char *progname;
+static char history_path[PATH_MAX];
+void update_history(void)
+{
+    int rc = write_history(history_path);
+    if (rc)
+        printf("warning: write_history returned %d\n", rc);
+}
 
 int main(int argc, char *argv[])
 {
-	char *line, *s;
+    int rc;
+    char *line, *s;
+    struct passwd *pw = getpwuid(getuid());
 	progname = argv[0];
+    atexit(update_history);
 	initialize_readline(); /* Bind our completer. */
+    snprintf(history_path, sizeof(history_path), "%s/.dsosql_history", pw->pw_dir);
+    rc = read_history(history_path);
+    if (rc)
+        printf("warning: read_history returned %d\n", rc);
 	/* Loop reading and executing lines until the user quits. */
 	for (; done == 0;) {
 		line = readline("dsosql: ");
