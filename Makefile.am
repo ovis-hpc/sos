@@ -1,7 +1,7 @@
 ACLOCAL_AMFLAGS = -I m4
 SUBDIRS = ods sos
 if ENABLE_DSOS
-SUBDIRS += rpc
+SUBDIRS += rpcgen libtirpc rpc
 endif
 
 if ENABLE_DOC

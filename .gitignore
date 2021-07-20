@@ -13,4 +13,8 @@ config.h.in
 *.swp
 *.pyc
 *.o
+sosapi.h
+sosapi_clnt.c
+sosapi_svc.c
+sosapi_xdr.c
 
