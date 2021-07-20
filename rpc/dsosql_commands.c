@@ -75,8 +75,8 @@ int col_widths[] = {
 	[SOS_TYPE_JOIN] = 32,
 	[SOS_TYPE_BYTE_ARRAY] = -1,
 	[SOS_TYPE_CHAR_ARRAY] = -1,
- 	[SOS_TYPE_INT16_ARRAY] = -1,
- 	[SOS_TYPE_INT32_ARRAY] = -1,
+	[SOS_TYPE_INT16_ARRAY] = -1,
+	[SOS_TYPE_INT32_ARRAY] = -1,
 	[SOS_TYPE_INT64_ARRAY] = -1,
 	[SOS_TYPE_UINT16_ARRAY] = -1,
 	[SOS_TYPE_UINT32_ARRAY] = -1,
@@ -458,7 +458,7 @@ struct type_def_s {
 };
 
 struct type_def_s types[] = {
-   	{ "bytes", SOS_TYPE_BYTE_ARRAY },
+	{ "bytes", SOS_TYPE_BYTE_ARRAY },
 	{ "double", SOS_TYPE_DOUBLE },
 	{ "double_array", SOS_TYPE_DOUBLE_ARRAY },
 	{ "float", SOS_TYPE_FLOAT },
@@ -580,16 +580,15 @@ int dsosql_create_schema(dsos_container_t cont, char *schema_name, char *templat
 			int item_no = 0;
 			for (join_attr = json_item_first(&join_list->base);
 			     join_attr;
-			     join_attr = json_item_next(join_attr))
-				{
-					if (json_entity_type(join_attr) != JSON_STRING_VALUE) {
-						printf("The template file attribute join_list members muse be quoted strings.\n");
-						rc = EINVAL;
-						goto err;
-					}
-					attr_names[item_no] = json_value_str(join_attr)->str;
-					item_no += 1;
+			     join_attr = json_item_next(join_attr)) {
+				if (json_entity_type(join_attr) != JSON_STRING_VALUE) {
+					printf("The template file attribute join_list members muse be quoted strings.\n");
+					rc = EINVAL;
+					goto err;
 				}
+				attr_names[item_no] = json_value_str(join_attr)->str;
+				item_no += 1;
+			}
 		}
 		rc = sos_schema_attr_add(schema, name, type, size, attr_names);
 		attr = json_attr_find(i, "index");
@@ -668,10 +667,10 @@ int dsosql_import_csv(dsos_container_t cont, FILE* fp, char *schema_name, char *
 	records = 0;
 	gettimeofday(&t0, NULL);
 	tr = t0;
-    dsos_transaction_begin(cont, &res);
+	dsos_transaction_begin(cont, &res);
 	while (1) {
 		char *inp;
-        char buf[4096];
+		char buf[4096];
 		do {
 			inp = fgets(buf, sizeof(buf), fp);
 			if (!inp)
@@ -711,7 +710,7 @@ int dsosql_import_csv(dsos_container_t cont, FILE* fp, char *schema_name, char *
 		ods_atomic_inc(&records);
 
 		if (records && (0 == (records % 10000))) {
-            dsos_transaction_end(cont, &res);
+			dsos_transaction_end(cont, &res);
 			double ts, tsr;
 			gettimeofday(&t1, NULL);
 			ts = (double)(t1.tv_sec - t0.tv_sec);
@@ -725,11 +724,11 @@ int dsosql_import_csv(dsos_container_t cont, FILE* fp, char *schema_name, char *
 			       );
 			prev_recs = records;
 			tr = t1;
-            dsos_transaction_begin(cont, &res);
+			dsos_transaction_begin(cont, &res);
 		}
 	}
  out:
-    dsos_transaction_end(cont, &res);
+	dsos_transaction_end(cont, &res);
 	printf("Added %d records.\n", records);
 	return 0;
 }
@@ -824,25 +823,26 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str)
 int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 {
 	dsos_query_t query = dsos_query_create(cont);
-    sos_schema_t schema;
-    sos_obj_t obj;
-    struct col_s *col;
-    int rec_count;
+	sos_schema_t schema;
+	sos_obj_t obj;
+	struct col_s *col;
+	int rec_count;
 	int rc = dsos_query_select(query, select_clause);
 	if (rc) {
 		printf("Error %d returned by select clause '%s'\n", rc, select_clause);
-        return rc;
+		return rc;
 	}
 	schema = dsos_query_schema(query);
-    /* Add all the attributes in the schema to the col_list */
-    sos_attr_t attr;
+	/* Add all the attributes in the schema to the col_list */
+	sos_attr_t attr;
 	while (!TAILQ_EMPTY(&col_list)) {
-        col = TAILQ_FIRST(&col_list);
-        TAILQ_REMOVE(&col_list, col, entry);
-        free(col);
-    }
-    for (attr = sos_schema_attr_first(schema); attr; attr = sos_schema_attr_next(attr))
-        add_column(sos_attr_name(attr));
+		col = TAILQ_FIRST(&col_list);
+		TAILQ_REMOVE(&col_list, col, entry);
+		free(col);
+	}
+	for (attr = sos_schema_attr_first(schema); attr; attr = sos_schema_attr_next(attr))
+		if (sos_attr_type(attr) != SOS_TYPE_JOIN)
+			add_column(sos_attr_name(attr));
 	TAILQ_FOREACH(col, &col_list, entry) {
 		attr = sos_schema_attr_by_name(schema, col->name);
 		if (!attr) {
@@ -855,13 +855,13 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 			col->width = col_widths[sos_attr_type(attr)];
 	}
 
-    table_header(stdout);
-    rec_count = 0;
+	table_header(stdout);
+	rec_count = 0;
 	for (obj = dsos_query_next(query); obj; obj = dsos_query_next(query)) {
-        table_row(stdout, schema, obj);
+		table_row(stdout, schema, obj);
 		sos_obj_put(obj);
-        rec_count += 1;
+		rec_count += 1;
 	}
-    table_footer(stdout, rec_count, 0);
-    return 0;
+	table_footer(stdout, rec_count, 0);
+	return 0;
 }

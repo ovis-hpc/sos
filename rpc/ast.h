@@ -5,24 +5,24 @@
 #include <inttypes.h>
 
 enum ast_token_e {
-	ASTT_LPAREN = 1,	/* '(' */
-	ASTT_RPAREN,        /* ')' */
-	ASTT_ASTERISK,
-	ASTT_DQSTRING,		/* "[^"]*" */
-	ASTT_SQSTRING,		/* '[^']*' */
-	ASTT_INTEGER,		/* [:digit:]+ */
-	ASTT_FLOAT,			/* e.g. -1234.345e-10 */
-	ASTT_LT,			/* '<' */
-	ASTT_LE,			/* '<=' */
-	ASTT_EQ,			/* '==' */
-	ASTT_GE,			/* '>=' */
-	ASTT_GT,			/* '>' */
-	ASTT_NE,			/* '!=' */
+	ASTT_LPAREN = 1,    /* '(' */
+	ASTT_RPAREN,	    /* ')' */
+	ASTT_ASTERISK,	    /* '*' */
+	ASTT_DQSTRING,	    /* "[^"]*" */
+	ASTT_SQSTRING,	    /* '[^']*' */
+	ASTT_INTEGER,	    /* [:digit:]+ */
+	ASTT_FLOAT,	    /* e.g. -1234.345e-10 */
+	ASTT_LT,	    /* '<' */
+	ASTT_LE,	    /* '<=' */
+	ASTT_EQ,	    /* '==' */
+	ASTT_GE,	    /* '>=' */
+	ASTT_GT,	    /* '>' */
+	ASTT_NE,	    /* '!=' */
 	ASTT_COMMA,         /* ',' */
-	ASTT_OR,			/* 'or' */
-	ASTT_AND,			/* 'and' */
-	ASTT_NOT,			/* '!' */
-	ASTT_EOF,			/* End of expression */
+	ASTT_OR,	    /* 'or' */
+	ASTT_AND,	    /* 'and' */
+	ASTT_NOT,	    /* '!' */
+	ASTT_EOF,	    /* End of expression */
 	/* KEYWORD */
 	ASTT_SELECT,        /* 'select' */
 	ASTT_FROM,          /* 'from' */
@@ -30,7 +30,7 @@ enum ast_token_e {
 	ASTT_WHERE,         /* 'where' */
 	ASTT_NAME,          /* An alphanumeric name that doesn't match
 			     * any of the above */
-	ASTT_ERR = 255		/* Invalid token */
+	ASTT_ERR = 255	    /* Invalid token */
 };
 
 enum ast_parse_e {
@@ -43,9 +43,10 @@ enum ast_parse_e {
 	ASTP_SYNTAX,
 };
 
-struct ast_value_attr {
-	sos_schema_t schema;
+typedef struct ast_attr_entry_s *ast_attr_entry_t;
+struct ast_term_attr {
 	sos_attr_t attr;
+	ast_attr_entry_t entry;
 };
 
 struct ast_term {
@@ -57,7 +58,7 @@ struct ast_term {
 	struct sos_value_s value_;
 	sos_value_t value;
 	union {
-		struct ast_value_attr *attr;
+		struct ast_term_attr *attr;
 		struct ast_term_binop *binop;
 	};
 };
@@ -66,22 +67,24 @@ struct ast_term_binop {
 	struct ast_term *lhs;
 	enum ast_token_e op;
 	struct ast_term *rhs;
+	LIST_ENTRY(ast_term_binop) entry;
 };
 
 typedef struct ast_schema_entry_s *ast_schema_entry_t;
-typedef struct ast_attr_entry_s {
+struct ast_attr_entry_s {
 	const char *name;
 	sos_attr_t sos_attr;    /* attribute in source object */
 	sos_attr_t res_attr;    /* attribute in query result object */
 	sos_attr_t join_attr;   /* Best join-attr this attribute appears */
-	uint32_t join_attr_idx;      /* Position the attribute appears in the join */
-	uint32_t min_join_idx;
-	uint32_t rank;
+	int  join_attr_idx;	/* Position the attribute appears in the join */
+	unsigned min_join_idx;
+	int  rank;
+	struct ast_term *binop;	/* The expression that this attr appears in */
 	ast_schema_entry_t schema;
-	struct ast_value_attr *value_attr;
+	struct ast_term_attr *value_attr;
 	TAILQ_ENTRY(ast_attr_entry_s) link;
 	LIST_ENTRY(ast_attr_entry_s) join_link;
-} *ast_attr_entry_t;
+};
 
 struct ast_schema_entry_s {
 	const char *name;
@@ -90,6 +93,16 @@ struct ast_schema_entry_s {
 	TAILQ_ENTRY(ast_schema_entry_s) link;
 	LIST_HEAD(join_list_head, ast_attr_entry_s) join_list;
 };
+
+typedef struct ast_attr_limits {
+	const char *name;
+	sos_attr_t attr;
+	sos_value_t min_v;
+	sos_value_t max_v;
+	int join_idx;
+	sos_attr_t join_attr;
+	struct ods_rbn rbn;
+} *ast_attr_limits_t;
 
 struct ast {
 	regex_t dqstring_re;
@@ -104,12 +117,28 @@ struct ast {
 	struct ast_attr_entry_s *iter_attr_e;
 	sos_schema_t result_schema;
 
+	/* Number of attributes in the iterator key */
+	int key_attr_count;
+
+	/* Attributes in the key in precedence order */
+	sos_attr_t key_attrs[16];
+
+	/* Key used to position iterator */
+	sos_key_t key;
+
 	uint64_t query_id;
 	struct ast_term *where;
 	struct ast_term *order_by;
+
 	TAILQ_HEAD(ast_schema_list, ast_schema_entry_s) schema_list;
 	TAILQ_HEAD(select_attr_list, ast_attr_entry_s) select_list;
 	TAILQ_HEAD(where_attr_list, ast_attr_entry_s) where_list;
+	LIST_HEAD(binop_list, ast_term_binop) binop_list;
+
+	struct ods_rbt attr_tree;
+
+	/* !0 if there may be more matches */
+	int more;
 
 	/* location where error occurred */
 	int pos;
@@ -124,5 +153,6 @@ struct ast {
 extern struct ast *ast_create(sos_t sos, uint64_t query_id);
 extern int ast_parse(struct ast *ast, char *expr);
 extern int ast_eval(struct ast *ast, sos_obj_t obj);
-
+extern struct ast_term *ast_find_term(struct ast_term *term, const char *name);
+extern int ast_start_key(struct ast *ast, sos_key_t start_key);
 #endif

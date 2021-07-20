@@ -620,6 +620,9 @@ ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size
 	case SOS_TYPE_LONG_DOUBLE:
 		sos_error("Unsupported type in sos_key_join\n");
 		break;
+	case SOS_TYPE_BYTE_ARRAY:
+		comp->value.str.len = 0;
+		break;
 	default:
 		assert(0 == "unsupported type for function");
 		break;
@@ -1026,7 +1029,7 @@ int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...)
  *
  *    SOS_VALUE(a);
  *    SOS_VALUE(b);
- *    struct sos_key_comp_spec spec[] = {
+ *    struct sos_comp_key_spec spec[] = {
  *       { .type = SOS_KEY_UINT32, .value = a ),
  *       { .type = SOS_KEY_UINT32, .value = b )
  *    };

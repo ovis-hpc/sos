@@ -945,8 +945,11 @@ int dsos_query_select(dsos_query_t query, const char *clause)
 			fprintf(stderr, "%s: RPC error communicating with client %d\n", __func__, client_id);
 			continue;
 		}
-		if (res.error)
+		if (res.error) {
+			fprintf(stderr, "%s: %s\n", __func__,
+				res.dsos_query_select_res_u.error_msg);
 			return res.error;
+		}
 		if (query->schema == NULL) {
 			query->schema = dsos_schema_from_spec(res.dsos_query_select_res_u.select.spec);
 			if (!query->schema)

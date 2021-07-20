@@ -1453,7 +1453,7 @@ int sos_obj_copy(sos_obj_t dst_obj, sos_obj_t src_obj)
 }
 
 int sos_obj_attr_copy(sos_obj_t dst_obj, sos_attr_t dst_attr,
-					sos_obj_t src_obj, sos_attr_t src_attr)
+		      sos_obj_t src_obj, sos_attr_t src_attr)
 {
 	sos_value_data_t src_data, dst_data;
 
@@ -1468,7 +1468,7 @@ int sos_obj_attr_copy(sos_obj_t dst_obj, sos_attr_t dst_attr,
 		if (!src_data || !dst_data)
 			return EINVAL;
 		memcpy(dst_data->prim.struc_, src_data->prim.struc_,
-			sos_attr_size(src_attr));
+		       sos_attr_size(src_attr));
 	} else {
 		struct sos_value_s src_v_, dst_v_;
 		sos_value_t src_value;
@@ -1476,11 +1476,14 @@ int sos_obj_attr_copy(sos_obj_t dst_obj, sos_attr_t dst_attr,
 		src_value = sos_value_init(&src_v_, src_obj, src_attr);
 		if (!src_value)
 			return EINVAL;
-		dst_value = sos_value_init(&dst_v_, dst_obj, dst_attr);
+		dst_value = sos_array_new(&dst_v_, dst_attr, dst_obj,
+					  sos_array_count(src_value));
 		if (!dst_value)
 			return ENOMEM;
-		memcpy(sos_array(dst_value), sos_array(src_value),
-			sos_value_size(dst_value));
+		sos_array(dst_value)->count = sos_array(src_value)->count;
+		memcpy(sos_array_data(dst_value, byte_),
+		       sos_array_data(src_value, byte_),
+		       sos_value_size(src_value));
 		sos_value_put(src_value);
 		sos_value_put(dst_value);
 	}

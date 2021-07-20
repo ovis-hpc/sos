@@ -1,3 +1,4 @@
+/* -*- c-basic-offset: 8 -*- */
 #define _GNU_SOURCE
 #include <sos/sos.h>
 #include <inttypes.h>
@@ -73,7 +74,6 @@ struct dsos_query {
 		DSOSQ_STATE_EMPTY
 	} state;
 	dsos_container_id cont_id;
-	sos_iter_t iter;
 	struct ast *ast;
 	struct ods_rbn rbn;
 };
@@ -927,12 +927,19 @@ err_0:
 	return -1;
 }
 
+struct ast_term *query_find_term(struct dsos_query *query, sos_attr_t filt_attr)
+{
+	return ast_find_term(query->ast->where, sos_attr_name(filt_attr));
+}
+
 bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_query_next_res *res, struct svc_req *rqst)
 {
 	struct dsos_session *client;
 	struct dsos_query *query;
 	int rc;
 	char err_msg[256];
+	SOS_KEY(key);
+
 	client = get_client(cont_id);
 	if (!client) {
 		sprintf(err_msg, "Invalid container id %ld", cont_id);
@@ -948,7 +955,6 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
 		goto out_0;
 	}
-
 	switch (query->state) {
 	case DSOSQ_STATE_INIT:
 		sprintf(err_msg, "There is no valid 'select' pending on query %ld", query_id);
@@ -956,45 +962,44 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
 		break;
 	case DSOSQ_STATE_BEGIN:
-		rc = sos_iter_begin(query->ast->sos_iter);
-		if (rc) {
-			sprintf(err_msg, "No data returned for query %ld.", query_id);
-			res->error = DSOS_ERR_QUERY_EMPTY;
-			res->dsos_query_next_res_u.error_msg = strdup(err_msg);
-			goto out_0;
-		}
-		rc = __make_query_obj_list(client, query->ast, res);
-		if (!rc) {
-			query->state = DSOSQ_STATE_NEXT;
+		rc = ast_start_key(query->ast, key);
+		if (rc == ESRCH) {
+			rc = sos_iter_sup(query->ast->sos_iter, key);
+			if (rc)
+				rc = sos_iter_begin(query->ast->sos_iter);
 		} else {
-			query->state = DSOSQ_STATE_EMPTY;
-			sprintf(err_msg, "No more data for query %ld.", query_id);
-			res->error = DSOS_ERR_QUERY_EMPTY;
-			res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+			rc = sos_iter_begin(query->ast->sos_iter);
 		}
+		if (rc)
+			goto empty;
+		rc = __make_query_obj_list(client, query->ast, res);
+		if (!rc)
+			query->state = DSOSQ_STATE_NEXT;
+		else
+			goto empty;
 		break;
 	case DSOSQ_STATE_NEXT:
+		if (!query->ast->more)
+			goto empty;
 		rc = sos_iter_next(query->ast->sos_iter);
-		if (rc) {
-			sprintf(err_msg, "No more data for query %ld.", query_id);
-			res->error = DSOS_ERR_QUERY_EMPTY;
-			res->dsos_query_next_res_u.error_msg = strdup(err_msg);
-			goto out_0;
-		}
+		if (rc)
+			goto empty;
 		rc = __make_query_obj_list(client, query->ast, res);
-		if (rc) {
-			sprintf(err_msg, "No more data for query %ld.", query_id);
-			res->error = DSOS_ERR_QUERY_EMPTY;
-			res->dsos_query_next_res_u.error_msg = strdup(err_msg);
-		}
+		if (rc)
+			goto empty;
 		break;
 	case DSOSQ_STATE_EMPTY:
-		sprintf(err_msg, "No more data for query %ld.", query_id);
-		res->error = DSOS_ERR_QUERY_EMPTY;
-		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+		goto empty;
 	}
 	put_query(query);
 out_0:
+	return TRUE;
+empty:
+	query->ast->more = 0;
+	sprintf(err_msg, "No more data for query %ld.", query_id);
+	res->error = DSOS_ERR_QUERY_EMPTY;
+	res->dsos_query_next_res_u.error_msg = strdup(err_msg);
+	put_query(query);
 	return TRUE;
 }
 

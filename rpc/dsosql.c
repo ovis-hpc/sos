@@ -1,3 +1,4 @@
+/* -*- c-basic-offset: 8 -*- */
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
@@ -65,7 +66,7 @@ enum dsosql_command_id_e {
 	CREATE_SCHEMA_CMD,
 	SHOW_SCHEMA_CMD,
 	IMPORT_CMD,
-    SELECT_CMD,
+	SELECT_CMD,
 	SHOW_CMD,
 	HELP_CMD,
 	HELP_CMD_2,
@@ -74,46 +75,46 @@ enum dsosql_command_id_e {
 
 struct cmd_s commands[] = {
 	[ATTACH_CMD] = {"attach", open_session, "Open a session with the DSOSD cluster specified by FILE",
-			1,
-			{
-				{ SOS_TYPE_STRING, "path" },
-			}
+		1,
+		{
+			{ SOS_TYPE_STRING, "path" },
+		}
 	},
 	[OPEN_CMD] = {"open", open_container, "open path PATH [perm SOS_PERM_RW/RO] [mode 0660]",
-		      3,
-		      {
-			      { SOS_TYPE_STRING, "path"},
-			      { SOS_TYPE_STRING, "perm"},
-			      { SOS_TYPE_UINT32, "mode"}
-		      }
+	      3,
+	      {
+		      { SOS_TYPE_STRING, "path"},
+		      { SOS_TYPE_STRING, "perm"},
+		      { SOS_TYPE_UINT32, "mode"}
+	      }
 	},
 	[CREATE_SCHEMA_CMD] = { "create_schema", create_schema, "create_schema name SCHEMA-NAME from FILE-NAME",
-				2,
-				{
-					{ SOS_TYPE_STRING, "name" },
-					{ SOS_TYPE_STRING, "from" }
-				}
+		2,
+		{
+			 { SOS_TYPE_STRING, "name" },
+			 { SOS_TYPE_STRING, "from" }
+		}
 	},
 	[SHOW_SCHEMA_CMD] = { "show_schema", show_schema, "show_schema [ name NAME-RE ]",
-				1,
-				{
-					{ SOS_TYPE_STRING, "name" },
-				}
+		1,
+		{
+			{ SOS_TYPE_STRING, "name" },
+		}
 	},
 	[IMPORT_CMD] = {"import", import_csv, "import schema SCHEMA-NAME from CSV-FILE-NAME",
-			2,
-			{
-				{ SOS_TYPE_STRING, "schema" },
-				{ SOS_TYPE_STRING, "from" }
-			}
+		2,
+		{
+			{ SOS_TYPE_STRING, "schema" },
+			{ SOS_TYPE_STRING, "from" }
+		}
 	},
 	[SELECT_CMD] = {"select", select_command, "select COLS from SCHEMA where COND",
 	},
 	[SHOW_CMD] = {"show", show_command, "Display information about a DSOSD object.",
-		      2,
-		      {
-			      { -1, "schemas" }
-		      }
+	      2,
+	      {
+		      { -1, "schemas" }
+	      }
 	},
 	[HELP_CMD] = {"help", help_command, "help"},
 	[HELP_CMD_2] = {"?", help_command, "Synonym for `help'"},
@@ -137,17 +138,17 @@ av_list_t av_parse_args(cmd_t cmd, char *args_)
 	char *token, *value;
 	av_list_t avlist = calloc(1, sizeof(*avlist));
 	av_t av;
-    /*
-     * If the command argument count is 0, it means that the args
-     * should be passed through unparsed
-     */
-    if (cmd->args_count == 0) {
-        av = calloc(1, sizeof(*av));
-        av->name = strdup("");
-        av->value_str = strdup(rl_line_buffer);
-        LIST_INSERT_HEAD(&avlist->head, av, link);
-        return avlist;
-    }
+	/*
+	 * If the command argument count is 0, it means that the args
+	 * should be passed through unparsed
+	 */
+	if (cmd->args_count == 0) {
+		av = calloc(1, sizeof(*av));
+		av->name = strdup("");
+		av->value_str = strdup(rl_line_buffer);
+		LIST_INSERT_HEAD(&avlist->head, av, link);
+		return avlist;
+	}
 	for (token = strtok(args, " ="); token && token[0] != '\0'; token = strtok(NULL, " =")) {
 		/* Find this 'token' in the argument list */
 		for (arg_id = 0; arg_id < cmd->args_count; arg_id++) {
@@ -565,10 +566,10 @@ int import_csv(cmd_t cmd, av_list_t avl)
 
 int select_command(cmd_t cmd, av_list_t avl)
 {
-    dsos_query_t query = dsos_query_create(g_cont);
-    av_t av = LIST_FIRST(&avl->head);
-    int rc = dsosql_query_select(g_cont, av->value_str);
-    return 0;
+	dsos_query_t query = dsos_query_create(g_cont);
+	av_t av = LIST_FIRST(&avl->head);
+	int rc = dsosql_query_select(g_cont, av->value_str);
+	return 0;
 }
 
 static int done;
@@ -582,23 +583,23 @@ static char *progname;
 static char history_path[PATH_MAX];
 void update_history(void)
 {
-    int rc = write_history(history_path);
-    if (rc)
-        printf("warning: write_history returned %d\n", rc);
+	int rc = write_history(history_path);
+	if (rc)
+		printf("warning: write_history returned %d\n", rc);
 }
 
 int main(int argc, char *argv[])
 {
-    int rc;
-    char *line, *s;
-    struct passwd *pw = getpwuid(getuid());
+	int rc;
+	char *line, *s;
+	struct passwd *pw = getpwuid(getuid());
 	progname = argv[0];
-    atexit(update_history);
+	atexit(update_history);
 	initialize_readline(); /* Bind our completer. */
-    snprintf(history_path, sizeof(history_path), "%s/.dsosql_history", pw->pw_dir);
-    rc = read_history(history_path);
-    if (rc)
-        printf("warning: read_history returned %d\n", rc);
+	snprintf(history_path, sizeof(history_path), "%s/.dsosql_history", pw->pw_dir);
+	rc = read_history(history_path);
+	if (rc)
+		printf("warning: read_history returned %d\n", rc);
 	/* Loop reading and executing lines until the user quits. */
 	for (; done == 0;) {
 		line = readline("dsosql: ");

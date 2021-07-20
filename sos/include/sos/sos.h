@@ -377,7 +377,8 @@ const char *sos_attr_idx_args(sos_attr_t attr);
 size_t sos_attr_size(sos_attr_t attr);
 sos_schema_t sos_attr_schema(sos_attr_t attr);
 sos_array_t sos_attr_join_list(sos_attr_t attr);
-
+sos_value_t sos_attr_min(sos_attr_t attr);
+sos_value_t sos_attr_max(sos_attr_t attr);
 int sos_obj_attr_by_name_from_str(sos_obj_t sos_obj,
 				  const char *attr_name, const char *attr_value,
 				  char **endptr);

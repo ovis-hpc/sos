@@ -63,6 +63,7 @@
 #include <assert.h>
 #include <string.h>
 #include <endian.h>
+#include <values.h>
 #include <sos/sos.h>
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
@@ -1381,72 +1382,6 @@ size_t __sos_obj_total_size(sos_obj_t obj)
 	return obj->schema->data->obj_sz + __sos_obj_array_size(obj);
 }
 
-#if 0
-struct attr_entry {
-	sos_attr_t attr;
-	size_t size;
-	struct rbn rbn;
-	uint8_t data[0];
-};
-
-static int __sos_array_size_cmp(void *a, void *b)
-{
-	size_t _a = *(size_t *)a;
-	size_t _b = *(size_t *)b;
-
-	if (_a > _b)
-		return 1;
-	if (_b < _a)
-		return -1;
-	return 0;
-}
-
-void __sos_obj_array_defrag(sos_obj_t obj)
-{
-	sos_value_data_t data;
-	sos_value_data_t array;
-	sos_attr_t attr;
-	struct attr_entry *ae;
-
-	rbt_init(&ischema_rbt, __sos_array_size_cmp);
-	rbt_ins(&sos->schema_name_rbt, &schema->name_rbn);
-	rbn_init(&schema->id_rbn, &schema->data->id);
-	rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
-
-	TAILQ_FOREACH(attr, &obj->schema->attr_list, entry) {
-		if (!sos_attr_is_array(attr))
-			continue;
-
-		data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
-		array = (sos_value_data_t)&(obj->obj->as.bytes[data->array_info.offset]);
-
-		ae = malloc(sizeof *ae + data->array_info.size);
-		ae->size = data->array_info.size;
-		ae->attr = attr;
-		memcpy(ae->data, array->array.data.byte_, data->array_info.size);
-
-		rbn_init(&ae->rbn, &ae->size);
-		rbt_ins(&attr_tree, &ae->rbn);
-	}
-
-	/* Now we have the attributes sorted by size. Put them back into memory */
-	uint64_t off = obj->schema->obj_sz;
-	uint8_t *ptr;
-	while (!rbt_empty(&attr_tree)) {
-		struct rbn *rbn = rbt_max(&attr_tree);
-		attr = container_of(rbt, struct attr_entry, rbn);
-		rbt_del(&attr_tree, rbn);
-		ptr = &obj->obj->as.uint8[off];
-		memcpy(ptr, ae->data, ae->size);
-		data = (sos_value_data_t)&obj->obj->as.bytes[ae->attr->data->offset];
-		data->array_info.offset = off;
-		free(ae);
-	}
-
-	return size;
-}
-#endif
-
 int sos_obj_commit(sos_obj_t obj)
 {
 	ods_obj_t ods_obj;
@@ -1952,6 +1887,72 @@ sos_schema_t __sos_internal_schema_new(const char *name, uuid_t uuid,
 	return schema;
 }
 
+static struct sos_value_s __attr_min[] = {
+	[SOS_TYPE_INT16] = { .type = SOS_TYPE_INT16, .data_.prim.int16_ = SHRT_MIN },
+	[SOS_TYPE_INT32] = { .type = SOS_TYPE_INT32, .data_.prim.int32_ = INT_MIN },
+	[SOS_TYPE_INT64] = { .type = SOS_TYPE_INT64, .data_.prim.int64_ = LONG_MIN },
+	[SOS_TYPE_UINT16] = { .type = SOS_TYPE_UINT16, .data_.prim.uint16_ = 0 },
+	[SOS_TYPE_UINT32] = { .type = SOS_TYPE_UINT32, .data_.prim.uint32_ = 0 },
+	[SOS_TYPE_UINT64] = { .type = SOS_TYPE_UINT64, .data_.prim.uint64_ = 0 },
+	[SOS_TYPE_FLOAT] = { .type = SOS_TYPE_FLOAT, .data_.prim.float_ = FLT_MIN },
+	[SOS_TYPE_DOUBLE] = { .type = SOS_TYPE_DOUBLE, .data_.prim.double_ = DBL_MIN },
+	[SOS_TYPE_LONG_DOUBLE] = { .type = SOS_TYPE_LONG_DOUBLE, .data_.prim.long_double_ = DBL_MIN },/* TODO, this is wrong */
+	[SOS_TYPE_TIMESTAMP] = { .type = SOS_TYPE_TIMESTAMP, .data_.prim.timestamp_.timestamp = 0 },
+	[SOS_TYPE_OBJ] = { .type = SOS_TYPE_OBJ },
+	[SOS_TYPE_STRUCT] =  { .type = SOS_TYPE_STRUCT },
+	[SOS_TYPE_JOIN] = { .type = SOS_TYPE_JOIN },
+	[SOS_TYPE_BYTE_ARRAY] = { .type = SOS_TYPE_BYTE_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_STRING] = { .type = SOS_TYPE_STRING, .data_.array.count = 0 },
+	[SOS_TYPE_INT16_ARRAY] = { .type = SOS_TYPE_INT16_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_INT32_ARRAY] = { .type = SOS_TYPE_INT32_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_INT64_ARRAY] = { .type = SOS_TYPE_INT64_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_UINT16_ARRAY] = { .type = SOS_TYPE_UINT16_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_UINT32_ARRAY] = { .type = SOS_TYPE_UINT32_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_UINT64_ARRAY] = { .type = SOS_TYPE_UINT64_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_FLOAT_ARRAY] = { .type = SOS_TYPE_FLOAT_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_DOUBLE_ARRAY] = { .type = SOS_TYPE_DOUBLE_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = { .type = SOS_TYPE_LONG_DOUBLE_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_OBJ_ARRAY] = { .type = SOS_TYPE_OBJ_ARRAY, .data_.array.count = 0 }
+};
+
+sos_value_t sos_attr_min(sos_attr_t attr)
+{
+	return &__attr_min[sos_attr_type(attr)];
+}
+
+static struct sos_value_s __attr_max[] = {
+	[SOS_TYPE_INT16] = { .type = SOS_TYPE_INT16, .data_.prim.int16_ = SHRT_MAX },
+	[SOS_TYPE_INT32] = { .type = SOS_TYPE_INT32, .data_.prim.int32_ = INT_MAX },
+	[SOS_TYPE_INT64] = { .type = SOS_TYPE_INT64, .data_.prim.int64_ = LONG_MAX },
+	[SOS_TYPE_UINT16] = { .type = SOS_TYPE_UINT16, .data_.prim.uint16_ = USHRT_MAX },
+	[SOS_TYPE_UINT32] = { .type = SOS_TYPE_UINT32, .data_.prim.uint32_ = UINT_MAX },
+	[SOS_TYPE_UINT64] = { .type = SOS_TYPE_UINT64, .data_.prim.uint64_ = ULONG_MAX },
+	[SOS_TYPE_FLOAT] = { .type = SOS_TYPE_FLOAT, .data_.prim.float_ = FLT_MAX },
+	[SOS_TYPE_DOUBLE] = { .type = SOS_TYPE_DOUBLE, .data_.prim.double_ = DBL_MAX },
+	[SOS_TYPE_LONG_DOUBLE] = { .type = SOS_TYPE_LONG_DOUBLE, .data_.prim.long_double_ = DBL_MAX },/* TODO, this is wrong */
+	[SOS_TYPE_TIMESTAMP] = { .type = SOS_TYPE_TIMESTAMP, .data_.prim.timestamp_.timestamp = ULONG_MAX },
+	[SOS_TYPE_OBJ] = { .type = SOS_TYPE_OBJ },
+	[SOS_TYPE_STRUCT] =  { .type = SOS_TYPE_STRUCT },
+	[SOS_TYPE_JOIN] = { .type = SOS_TYPE_JOIN },
+	[SOS_TYPE_BYTE_ARRAY] = { .type = SOS_TYPE_BYTE_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_STRING] = { .type = SOS_TYPE_STRING, .data_.array.count = 0 },
+	[SOS_TYPE_INT16_ARRAY] = { .type = SOS_TYPE_INT16_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_INT32_ARRAY] = { .type = SOS_TYPE_INT32_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_INT64_ARRAY] = { .type = SOS_TYPE_INT64_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_UINT16_ARRAY] = { .type = SOS_TYPE_UINT16_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_UINT32_ARRAY] = { .type = SOS_TYPE_UINT32_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_UINT64_ARRAY] = { .type = SOS_TYPE_UINT64_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_FLOAT_ARRAY] = { .type = SOS_TYPE_FLOAT_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_DOUBLE_ARRAY] = { .type = SOS_TYPE_DOUBLE_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_LONG_DOUBLE_ARRAY] = { .type = SOS_TYPE_LONG_DOUBLE_ARRAY, .data_.array.count = 0 },
+	[SOS_TYPE_OBJ_ARRAY] = { .type = SOS_TYPE_OBJ_ARRAY, .data_.array.count = 0 }
+};
+
+sos_value_t sos_attr_max(sos_attr_t attr)
+{
+	return &__attr_max[sos_attr_type(attr)];
+}
+
 struct ischema_data {
 	const char *name;
 	const char *uuid_str;
@@ -2009,4 +2010,10 @@ static void __attribute__ ((constructor)) sos_lib_init(void)
 		schema = __sos_internal_schema_new(id->name, uuid, id->el_type, id->el_size);
 		assert(schema);
 	}
+	int i;
+	for (i = 0; i < sizeof(__attr_max) / sizeof(__attr_max[0]); i++)
+		__attr_max[i].data = &__attr_max[i].data_;
+
+	for (i = 0; i < sizeof(__attr_min) / sizeof(__attr_min[0]); i++)
+		__attr_min[i].data = &__attr_min[i].data_;
 }

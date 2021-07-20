@@ -1,3 +1,4 @@
+/* -*- c-basic-offset: 8 -*- */
 #define _GNU_SOURCE
 #include <stdlib.h>
 #include <string.h>
@@ -7,6 +8,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <sos/sos.h>
+#include "sos_priv.h"
 #include "ast.h"
 
 static int is_comparator(enum ast_token_e token)
@@ -220,12 +222,14 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
  *      <schema_name> '[' <attr_name> ']'
  * If the <attr_name> alone is specified, the default schema is used.
  */
-static enum ast_parse_e parse_attr(struct ast *ast, const char *name, struct ast_value_attr *value_attr)
+static enum ast_parse_e parse_attr(struct ast *ast, const char *name, struct ast_term_attr *value_attr)
 {
 	ast_attr_entry_t ae = calloc(1, sizeof *ae);
 	ae->value_attr = value_attr;
 	ae->name = strdup(name);
 	ae->rank = 0;
+	ae->join_attr_idx = -1;
+	value_attr->entry = ae;
 	TAILQ_INSERT_TAIL(&ast->where_list, ae, link);
 	return 0;
 }
@@ -243,14 +247,39 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 	enum ast_token_e token;
 	struct ast_term *term;
 	enum ast_parse_e err;
+	int rparen;
+	struct ast_term *newb;
 
 	token = ast_lex(ast, expr, ppos, &token_str);
 	switch (token) {
 	case ASTT_LPAREN:
+		rparen = 0;
 		term = ast_parse_binop(ast, expr, ppos);
-		token = ast_lex(ast, expr, ppos, &token_str);
-		if (token != ASTT_RPAREN)
-			ast->result = ASTP_UNBALANCED_PAREN;
+		while (!rparen) {
+			token = ast_lex(ast, expr, ppos, &token_str);
+			switch (token) {
+			case ASTT_RPAREN:
+				rparen = 1;
+				break;
+			case ASTT_OR:
+			case ASTT_AND:
+				newb = calloc(1, sizeof(*newb));
+				newb->kind = ASTV_BINOP;
+				newb->binop = calloc(1, sizeof(*newb->binop));
+				LIST_INSERT_HEAD(&ast->binop_list, newb->binop, entry);
+				newb->binop->lhs = term;
+				newb->binop->op = token;
+				newb->binop->rhs = ast_parse_binop(ast, expr, ppos);
+				if (ast->result)
+					break;
+				term = newb;
+				break;
+			default:
+				ast->result = ASTP_UNBALANCED_PAREN;
+				rparen = 1;
+				break;
+			}
+		}
 		break;
 	case ASTT_NAME:	/* Attribute */
 		term = calloc(1, sizeof(*term));
@@ -263,23 +292,14 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 			ast->result = err;
 		}
 		break;
-	case ASTT_DQSTRING:	/* Attribute */
-		term = calloc(1, sizeof(*term));
-		term->value = calloc(1, sizeof(*term->value));
-		term->kind = ASTV_ATTR;
-		term->attr = calloc(1, sizeof(*term->attr));
-		err = parse_attr(ast, token_str, term->attr);
-		if (err) {
-			free(term->value->attr);
-			ast->result = err;
-		}
-		break;
+	case ASTT_DQSTRING:
 	case ASTT_SQSTRING:	/* String value */
 		term = calloc(1, sizeof(*term));
 		term->value = calloc(1, sizeof(*term->value));
 		term->kind = ASTV_CONST;
 		term->value = sos_value_init_const(&term->value_,
 						   SOS_TYPE_CHAR_ARRAY,
+						   strlen(token_str)+1,
 						   token_str);
 		break;
 	case ASTT_INTEGER:
@@ -306,24 +326,88 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 }
 
 /*
+ * Update the attributes value min and max. If the value_term is not a
+ * CONST, ignore the update
+ */
+static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, struct ast_term *value_term, enum ast_token_e op)
+{
+	struct ast_attr_limits *limits;
+	const char *attr_name;
+	struct ods_rbn *rbn;
+
+	/* Ignore values that are not constants */
+	if (value_term->kind != ASTV_CONST)
+		return;
+
+	attr_name = sos_attr_name(attr_term->attr->attr);
+	rbn = ods_rbt_find(&ast->attr_tree, attr_name);
+	if (!rbn) {
+		/* Allocate a new attribute */ 
+		limits = calloc(1, sizeof(*limits));
+		limits->name = strdup(attr_name);
+		limits->attr = attr_term->attr->attr;
+		limits->min_v = sos_attr_min(limits->attr);
+		limits->max_v = sos_attr_max(limits->attr);
+		limits->join_idx = -1;
+		limits->join_attr = NULL;
+		ods_rbn_init(&limits->rbn, (void *)limits->name);
+		ods_rbt_ins(&ast->attr_tree, &limits->rbn);
+	} else {
+		limits = container_of(rbn, struct ast_attr_limits, rbn);
+	}
+	assert(limits);
+	switch (op) {
+	case ASTT_LT:
+	case ASTT_LE:
+		if (sos_value_cmp(value_term->value, limits->max_v) > 0)
+			limits->max_v = value_term->value;
+		break;
+	case ASTT_EQ:
+	case ASTT_GE:
+	case ASTT_GT:
+		if (sos_value_cmp(value_term->value, limits->min_v) < 0)
+			limits->min_v = value_term->value;
+		break;
+	case ASTT_NE:
+	default:
+		break;
+	}
+}	
+
+/*
  * <term> <op> <term>
  */
 static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *ppos)
 {
 	char *token_str;
-
+	struct ast_term *term;
 	struct ast_term_binop *binop = calloc(1, sizeof(*binop));
+	LIST_INSERT_HEAD(&ast->binop_list, binop, entry);
 	binop->lhs = ast_parse_term(ast, expr, ppos);
 	binop->op = ast_lex(ast, expr, ppos, &token_str);
+	if (binop->op == ASTT_EOF) {
+		/*
+		 * if lhs is a binop, it's ok, otherwise, it's a
+		 *  syntax error
+		 */
+		if (binop->lhs->kind == ASTV_BINOP) {
+			term = binop->lhs;
+			free(binop);
+			return term;
+		}
+	}
+
 	if (!is_comparator(binop->op)) {
 		ast->result = ASTP_ERROR;
 		free(binop);
 		return NULL;
 	}
+
 	binop->rhs = ast_parse_term(ast, expr, ppos);
-	struct ast_term *term = calloc(1, sizeof(*term));
+	term = calloc(1, sizeof(*term));
 	term->kind = ASTV_BINOP;
 	term->binop = binop;
+
 	return term;
 }
 
@@ -336,18 +420,17 @@ int ast_parse_select_clause(struct ast *ast, const char *expr, int *ppos)
 
 	for (token = ast_lex(ast, expr, &next_pos, &token_str);
 	     token == ASTT_NAME || token == ASTT_ASTERISK;
-	     token = ast_lex(ast, expr, &next_pos, &token_str))
-		{
-			struct ast_attr_entry_s *ae = calloc(1, sizeof *ae);
-			ae->name = strdup(token_str);
-			*ppos = next_pos;	/* consume this token */
-			TAILQ_INSERT_TAIL(&ast->select_list, ae, link);
-			/* Check for a ',' indicating another name */
-			token = ast_lex(ast, expr, &next_pos, &token_str);
-			if (token != ASTT_COMMA)
-				/* End of schema name list, do not consume token */
-				break;
-		}
+	     token = ast_lex(ast, expr, &next_pos, &token_str)) {
+		struct ast_attr_entry_s *ae = calloc(1, sizeof *ae);
+		ae->name = strdup(token_str);
+		*ppos = next_pos;	/* consume this token */
+		TAILQ_INSERT_TAIL(&ast->select_list, ae, link);
+		/* Check for a ',' indicating another name */
+		token = ast_lex(ast, expr, &next_pos, &token_str);
+		if (token != ASTT_COMMA)
+			/* End of schema name list, do not consume token */
+			break;
+	}
 	return ast->result;
 }
 
@@ -394,20 +477,24 @@ int ast_parse_where_clause(struct ast *ast, const char *expr, int *ppos)
 	next_pos = *ppos;
 	for (token = ast_lex(ast, expr, &next_pos, &token_str);
 	     is_comparator(token);
-	     token = ast_lex(ast, expr, &next_pos, &token_str))
-		{
-			*ppos = next_pos;
-			newb = calloc(1, sizeof(*newb));
-			newb->kind = ASTV_BINOP;
-			newb->binop = calloc(1, sizeof(*binop));
-			newb->binop->lhs = ast->where;
-			newb->binop->op = token;
+	     token = ast_lex(ast, expr, &next_pos, &token_str)) {
+		*ppos = next_pos;
+		newb = calloc(1, sizeof(*newb));
+		newb->kind = ASTV_BINOP;
+		newb->binop = calloc(1, sizeof(*newb->binop));
+		LIST_INSERT_HEAD(&ast->binop_list, newb->binop, entry);
+		newb->binop->lhs = ast->where;
+		newb->binop->op = token;
+		if (token == ASTT_OR || token == ASTT_AND) {
+			newb->binop->rhs = ast_parse_binop(ast, expr, &next_pos);
+		} else {
 			newb->binop->rhs = ast_parse_term(ast, expr, &next_pos);
-			if (ast->result)
-				break;
-			*ppos = next_pos;
-			ast->where = binop = newb;
 		}
+		if (ast->result)
+			break;
+		*ppos = next_pos;
+		ast->where = binop = newb;
+	}
 	return ast->result;
 }
 
@@ -457,10 +544,13 @@ static int __resolve_sos_entities(struct ast *ast)
 		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
 			sos_attr_t attr;
 			for (attr = sos_schema_attr_first(schema_e->schema); attr; attr = sos_schema_attr_next(attr)) {
+				if (sos_attr_type(attr) == SOS_TYPE_JOIN)
+					continue;
 				attr_e = calloc(1, sizeof(*attr_e));
 				attr_e->name = strdup(sos_attr_name(attr));
 				attr_e->sos_attr = attr;
 				attr_e->schema = schema_e;
+				TAILQ_INSERT_TAIL(&ast->select_list, attr_e, link);
 			}
 		}
 	}
@@ -504,7 +594,6 @@ static int __resolve_sos_entities(struct ast *ast)
 			attr_e->sos_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
 			assert(attr_e->value_attr);
 			attr_e->value_attr->attr = attr_e->sos_attr;
-			attr_e->value_attr->schema = schema_e->schema;
 			if (attr_e->sos_attr) {
 				attr_e->schema = schema_e;
 				break;
@@ -525,6 +614,16 @@ static int __resolve_sos_entities(struct ast *ast)
 			return ast->result;
 		}
 	}
+	
+	struct ast_term_binop *binop;
+	LIST_FOREACH(binop, &ast->binop_list, entry) {
+		/* Update the attribute min/max values in the attr tree */
+		if (binop->lhs->kind == ASTV_ATTR)
+			update_attr_limits(ast, binop->lhs, binop->rhs, binop->op);
+		else if (binop->rhs->kind == ASTV_ATTR)
+			update_attr_limits(ast, binop->rhs, binop->lhs, binop->op);
+	}
+
 	/*
 	 * Run through the attributes in the 'where' clause; compute the
 	 * Nnumber of times attributes in the where clause appear in the join and
@@ -598,10 +697,24 @@ static int __resolve_sos_entities(struct ast *ast)
 		char **join_list = calloc(ja->count, sizeof(char *));
 		assert(join_list);
 		int i, rc;
+		ast->key_attr_count = ja->count;
 		for (i = 0; i < ja->count; i++) {
 			sos_attr_t jaa = sos_schema_attr_by_id(ast->sos_iter_schema, ja->data.uint32_[i]);
 			sos_attr_t resa = sos_schema_attr_by_name(res_schema, sos_attr_name(jaa));
+			ast->key_attrs[i] = jaa;
 			join_list[i] = (char *)sos_attr_name(jaa);
+			TAILQ_FOREACH(attr_e, &ast->where_list, link) {
+				if (0 == strcmp(attr_e->name, join_list[i])) {
+					attr_e->join_attr_idx = i;
+					/* Update the attribute limits */
+					struct ast_attr_limits *limits;
+					struct ods_rbn *rbn = ods_rbt_find(&ast->attr_tree, attr_e->name);
+					assert(rbn);
+					limits = container_of(rbn, struct ast_attr_limits, rbn);
+					limits->join_idx = i;
+					limits->join_attr = jaa;
+				}
+			}
 			if (!resa) {
 				attr_e = calloc(1, sizeof(*attr_e));
 				attr_e->name = strdup(sos_attr_name(jaa));
@@ -699,6 +812,30 @@ int ast_parse(struct ast *ast, char *expr)
 	return ast->result;
 }
 
+static void more_check(struct ast *ast, struct ast_term *attr_term)
+{
+	struct ods_rbn *rbn;
+	struct ast_attr_limits *limits;
+
+	if (attr_term->kind != ASTV_ATTR)
+		return;
+
+	rbn = ods_rbt_find(&ast->attr_tree, sos_attr_name(attr_term->attr->attr));
+	if (!rbn)
+		return;
+	limits = container_of(rbn, struct ast_attr_limits, rbn);
+	if (limits->join_idx != 0)
+		return;
+	if (sos_value_cmp(attr_term->value, limits->max_v) > 0)
+		ast->more = 0;
+}
+
+/*
+ * Determine if given the iterator key and the assumption that the
+ * keys are in ascending order, if it is possible that there is
+ * another match in the index.
+ */
+
 static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_obj_t obj)
 {
 	sos_value_t lhs, rhs;
@@ -711,20 +848,21 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 	}
 
 	lhs = ast_term_visit(ast, term->binop->lhs, obj);
-	rhs = ast_term_visit(ast, term->binop->rhs, obj);
 
 	switch (term->binop->op) {
 	case ASTT_OR:
-		return sos_value_init_const(
-					    &term->value_, SOS_TYPE_INT32,
-					    sos_value_true(lhs) || sos_value_true(rhs)
-					    );
+		if (sos_value_true(lhs))
+			return sos_value_init_const(&term->value_, SOS_TYPE_INT32, (1 == 1));
+		rhs = ast_term_visit(ast, term->binop->rhs, obj);
+		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, sos_value_true(rhs));
 	case ASTT_AND:
+		rhs = ast_term_visit(ast, term->binop->rhs, obj);
 		return sos_value_init_const(
 					    &term->value_, SOS_TYPE_INT32,
 					    sos_value_true(lhs) && sos_value_true(rhs)
 					    );
 	default:
+		rhs = ast_term_visit(ast, term->binop->rhs, obj);
 		break;
 	}
 
@@ -732,12 +870,18 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 	switch (term->binop->op) {
 	case ASTT_LT:
 		rc = (rc < 0);
+		if (!rc)
+			more_check(ast, term->binop->lhs);
 		break;
 	case ASTT_LE:
 		rc = (rc <= 0);
+		if (!rc)
+			more_check(ast, term->binop->lhs);
 		break;
 	case ASTT_EQ:
 		rc = (rc == 0);
+		if (!rc)
+			more_check(ast, term->binop->lhs);
 		break;
 	case ASTT_GE:
 		rc = (rc >= 0);
@@ -760,9 +904,43 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 
 int ast_eval(struct ast *ast, sos_obj_t obj)
 {
+	if (!ast->more)
+		return 0;
 	if (ast->where)
 		return sos_value_true(ast_term_visit(ast, ast->where, obj));
 	return 1;
+}
+
+struct ast_term *ast_find_term(struct ast_term *term, const char *attr_name)
+{
+	struct ast_term *lhs, *rhs;
+	int join_idx, join_count;
+	sos_array_t join_list;
+	if (!term)
+		return NULL;
+
+	switch (term->kind) {
+	case ASTV_CONST:
+		return NULL;
+	case ASTV_ATTR:
+		if (0 == strcmp(attr_name, sos_attr_name(term->attr->attr)))
+			return term;
+		return NULL;
+	case ASTV_BINOP:
+		lhs = ast_find_term(term->binop->lhs, attr_name);
+		rhs = ast_find_term(term->binop->rhs, attr_name);
+		if (lhs || rhs)
+			return term;
+		break;
+	default:
+		assert(0 == "Invalid term in expression");
+	}
+	return NULL;
+}
+
+static int64_t attr_cmp(void *a, const void *b, void *arg)
+{
+	return strcmp((char *)a,(char *)b);
 }
 
 struct ast *ast_create(sos_t sos, uint64_t query_id)
@@ -771,6 +949,7 @@ struct ast *ast_create(sos_t sos, uint64_t query_id)
 	if (!ast)
 		return NULL;
 	ast->sos = sos;
+	ast->more = 1;
 	ast->query_id = query_id;
 	int rc = regcomp(&ast->dqstring_re, "\"([^\"]*)|(\\.{1})\"", REG_EXTENDED);
 	assert(0 == rc);
@@ -783,5 +962,225 @@ struct ast *ast_create(sos_t sos, uint64_t query_id)
 	TAILQ_INIT(&ast->schema_list);
 	TAILQ_INIT(&ast->select_list);
 	TAILQ_INIT(&ast->where_list);
+	LIST_INIT(&ast->binop_list);
+	ods_rbt_init(&ast->attr_tree, attr_cmp, NULL);
 	return ast;
+}
+
+typedef int (*ast_binop_find_fn_t)(struct ast_term *binop, const void *arg);
+
+static struct ast_term *
+__ast_binop_find_term(struct ast_term *term,
+		      ast_binop_find_fn_t cmp_fn, const void *cmp_arg, enum ast_token_e *op)
+{
+	struct ast_term *lhs, *rhs;
+
+	if (term->kind != ASTV_BINOP)
+		return NULL;
+
+	int rc = cmp_fn(term, cmp_arg);
+	if (rc)
+		*op = term->binop->op;
+	if (rc > 0)
+		return term->binop->rhs;
+	else if (rc < 0)
+		return term->binop->lhs;
+
+	lhs = __ast_binop_find_term(term->binop->lhs, cmp_fn, cmp_arg, op);
+	if (lhs)
+		return lhs;
+
+	rhs = __ast_binop_find_term(term->binop->rhs, cmp_fn, cmp_arg, op);
+	if (rhs)
+		return rhs;
+
+	return NULL;
+}
+
+struct ast_term *ast_binop_find(struct ast *ast, ast_binop_find_fn_t cmp_fn, const void *cmp_arg, enum ast_token_e *op)
+{
+	struct ast_term *term = ast->where;
+	if (!term || term->kind != ASTV_BINOP)
+		return NULL;
+
+	return __ast_binop_find_term(term, cmp_fn, cmp_arg, op);
+}
+
+/**
+ * @brief Compare rhs and lhs based on attribute name
+ * 
+ * Return the constant value for the specified attribute name
+ *
+ * >0 rhs
+ * <0 lhs
+ * 0 No match
+ */
+static int __attr_ge(struct ast_term *term, const void *name)
+{
+	struct ast_term *lhs;
+	struct ast_term *rhs;
+	enum ast_token_e op;
+	assert(term->kind == ASTV_BINOP);
+
+	lhs = term->binop->lhs;
+	rhs = term->binop->rhs;
+	op = term->binop->op;
+
+	if (lhs->kind == ASTV_ATTR) {
+		/* Check if it matches our name */
+		const char *aname =
+			sos_attr_name(lhs->attr->attr);
+		if (0 == strcmp(aname, name)) {
+			/* The rhs must be a constant */
+			if  (rhs->kind != ASTV_CONST)
+				return 0;
+			if (op != ASTT_EQ
+			    && op != ASTT_GE
+			    && op != ASTT_GT)
+				return 0;
+			return 1;/* rhs is const value for attr */
+		}
+		return 0;
+	}
+
+	if (rhs->kind == ASTV_ATTR) {
+		/* Check if it matches our name */
+		const char *aname =
+			sos_attr_name(rhs->attr->attr);
+		if (0 == strcmp(aname, name)) {
+			/* The lhs must be a constant */
+			if  (lhs->kind != ASTV_CONST)
+				return 0;
+			if (op != ASTT_EQ
+			    && op != ASTT_LE
+			    && op != ASTT_LT)
+				return 0;
+			return -1; /* lhs is constant value for attr */
+		}
+		return 0;
+	}
+
+	return 0;
+}
+
+/**
+ * @brief  Find the value for attribute \c name in the were cause
+ *
+ * Find the value for attribute \c name that appears in the where
+ * clause that is compared to a constant value and for which the
+ * comparason is '>', '>=', or '=='. Note the following equivalencies:
+ *
+ * const <= attr <==> attr >= const
+ * const == attr <==> attr == const
+ * const < attr  <==> attr > const
+ *
+ */
+struct ast_term *ast_attr_value_ge(struct ast *ast, const char *name, enum ast_token_e *op)
+{
+	return ast_binop_find(ast, __attr_ge, name, op);
+}
+
+sos_key_t __sos_key_from_const(sos_key_t key, sos_attr_t attr, struct ast_attr_limits *limits)
+{
+	sos_value_data_t data = limits->min_v->data;
+	switch (sos_attr_type(attr)) {
+	case SOS_TYPE_INT16:
+		return sos_key_for_attr(key, attr, data->prim.int16_);
+	case SOS_TYPE_INT32:
+		return sos_key_for_attr(key, attr, data->prim.int32_);
+	case SOS_TYPE_INT64:
+		return sos_key_for_attr(key, attr, data->prim.int64_);
+	case SOS_TYPE_UINT16:
+		return sos_key_for_attr(key, attr, data->prim.uint16_);
+	case SOS_TYPE_UINT32:
+		return sos_key_for_attr(key, attr, data->prim.uint32_);
+	case SOS_TYPE_UINT64:
+		return sos_key_for_attr(key, attr, data->prim.uint64_);
+	case SOS_TYPE_FLOAT:
+		return sos_key_for_attr(key, attr, data->prim.float_);
+	case SOS_TYPE_DOUBLE:
+		return sos_key_for_attr(key, attr, data->prim.double_);
+	case SOS_TYPE_LONG_DOUBLE:
+	case SOS_TYPE_TIMESTAMP:
+		return sos_key_for_attr(key, attr, data->prim.timestamp_);
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_STRING:
+		return sos_key_for_attr(key, attr, data->array.count, data->array.data.char_);
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_INT16_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+	case SOS_TYPE_OBJ_ARRAY:
+		break;
+	}
+	return NULL;
+}
+
+/**
+ * Build up a key that the caller can use to search for a
+ * least-upper-bound in order to skip non-matching keys given the
+ * where clause.
+ *
+ * The key assumes that the iterator will be traversed from glb to
+ * max-match.
+ *
+ * returns ESRCH if the key has been prepared for sos_iter_find_glb(),
+ * otherwise, the caller should assume that the key is of no use
+ * and should call sos_iter_begin()
+ */
+int ast_start_key(struct ast *ast, sos_key_t key)
+{
+	ast_attr_entry_t attr;
+	sos_attr_t iter_attr = sos_iter_attr(ast->sos_iter);
+	int rc = 0;
+	int search = 0;
+	int join_idx;
+	ods_comp_key_t comp_key;
+	ods_key_comp_t key_comp;
+	sos_array_t attr_ids;
+	struct ods_rbn *rbn;
+	struct ast_attr_limits *limits;
+    
+	if (sos_attr_type(iter_attr) != SOS_TYPE_JOIN) {
+		rbn = ods_rbt_find(&ast->attr_tree, sos_attr_name(iter_attr));
+		if (!rbn)
+			return 0;
+		limits = container_of(rbn, struct ast_attr_limits, rbn);
+		key = __sos_key_from_const(key, iter_attr, limits);
+		return ESRCH;
+	}
+	/*
+	 * Build up a component key with values from the where clause
+	 */
+	attr_ids = sos_attr_join_list(iter_attr);
+	comp_key = (ods_comp_key_t)ods_key_value(key);
+	key_comp = comp_key->value;
+	comp_key->len = 0;
+
+	for (join_idx = 0; join_idx < attr_ids->count; join_idx++) {
+		int join_attr_id = attr_ids->data.uint32_[join_idx];
+		size_t comp_len;
+		enum ast_token_e op;
+		sos_attr_t attr =
+			sos_schema_attr_by_id(sos_attr_schema(iter_attr),
+					      join_attr_id);
+		rbn = ods_rbt_find(&ast->attr_tree, sos_attr_name(attr));
+		if (rbn) {
+			limits = container_of(rbn, struct ast_attr_limits, rbn);
+			key_comp = __sos_set_key_comp(key_comp, limits->min_v, &comp_len);
+		} else {
+			key_comp = __sos_set_key_comp_to_min(key_comp, attr, &comp_len);
+		}
+		search = ESRCH;
+		comp_key->len += comp_len;
+	}
+	return search;
 }

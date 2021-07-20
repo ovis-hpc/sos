@@ -657,8 +657,11 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 
 sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 {
-	sos_value_data_t vd = &val->data_;
+	sos_value_data_t vd;
+	int count, size;
+	char *data;
 	va_list ap;
+	vd = &val->data_;
 	va_start(ap, type);
 	val->type = type;
 	val->attr = NULL;
@@ -692,6 +695,96 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_TIMESTAMP:
 		vd->prim.timestamp_.tv = va_arg(ap, struct ods_timeval_s);
 		break;
+	case SOS_TYPE_BYTE_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		val->data = malloc(count);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, count);
+		break;
+	case SOS_TYPE_STRING:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		val->data = malloc(count);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, count);
+		break;
+	case SOS_TYPE_INT16_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		size = count * sizeof(int16_t);
+		val->data = malloc(size);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, size);
+		break;
+	case SOS_TYPE_INT32_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		size = count * sizeof(int32_t);
+		val->data = malloc(size);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, size);
+		break;
+	case SOS_TYPE_INT64_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		size = count * sizeof(int64_t);
+		val->data = malloc(size);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, size);
+		break;
+	case SOS_TYPE_UINT16_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		size = count * sizeof(uint16_t);
+		val->data = malloc(size);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, size);
+		break;
+	case SOS_TYPE_UINT32_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		size = count * sizeof(uint32_t);
+		val->data = malloc(size);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, size);
+		break;
+	case SOS_TYPE_UINT64_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		size = count * sizeof(uint64_t);
+		val->data = malloc(size);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, size);
+		break;
+	case SOS_TYPE_FLOAT_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		size = count * sizeof(float);
+		val->data = malloc(size);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, size);
+		break;
+	case SOS_TYPE_DOUBLE_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		size = count * sizeof(double);
+		val->data = malloc(size);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, size);
+		break;
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+		count = va_arg(ap, int);
+		data =  va_arg(ap, char *);
+		size = count * sizeof(long double);
+		val->data = malloc(size);
+		val->data->array.count = count;
+		memcpy(val->data->array.data.byte_, data, size);
+		break;
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_OBJ_ARRAY:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
 	default:
 		return NULL;
 	}
