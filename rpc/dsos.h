@@ -1,6 +1,5 @@
 #ifndef _DSOS_H_
 #define _DSOS_H_
-#define _GNU_SOURCE
 #include <inttypes.h>
 #include <time.h>
 #include <sos/sos.h>
@@ -49,9 +48,11 @@ typedef struct dsos_name_array_s {
 extern void dsos_session_close(dsos_session_t sess);
 extern dsos_session_t dsos_session_open(const char *config_file);
 extern void dsos_container_close(dsos_container_t cont);
+extern void dsos_container_commit(dsos_container_t cont);
 extern dsos_container_t dsos_container_open(dsos_session_t sess, const char *path, sos_perm_t perm, int mode);
 extern dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dsos_res_t *res);
 extern dsos_schema_t dsos_schema_by_name(dsos_container_t cont, const char *name, dsos_res_t *res);
+extern dsos_schema_t dsos_schema_by_uuid(dsos_container_t cont, uuid_t uuid, dsos_res_t *res);
 extern dsos_name_array_t dsos_schema_query(dsos_container_t cont, dsos_res_t *res);
 extern sos_attr_t dsos_schema_attr_by_id(dsos_schema_t schema, int attr_id);
 extern sos_attr_t dsos_schema_attr_by_name(dsos_schema_t schema, const char *name);

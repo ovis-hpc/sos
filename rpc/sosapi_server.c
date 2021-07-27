@@ -870,13 +870,14 @@ out_0:
 	return TRUE;
 }
 
+#define QUERY_OBJECT_COUNT	4096
 static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 				dsos_query_next_res *result)
 {
 	sos_iter_t iter = ast->sos_iter;
 	struct dsos_schema *dschema = cache_schema(client, ast->result_schema);
 	dsos_schema_id schema_id = dschema->handle;
-	int count = 5;
+	int count = QUERY_OBJECT_COUNT;
 	struct dsos_obj_entry *entry = NULL;
 	result->error = DSOS_ERR_QUERY_EMPTY;
 	int rc = 0;
@@ -884,7 +885,7 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 	ast_attr_entry_t attr_e;
 	sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
 
-	while (!rc && count) {
+	while (!rc && count && ast->more) {
 		sos_obj_t obj = sos_iter_obj(iter);
 		if (!obj) {
 			result->error = errno;

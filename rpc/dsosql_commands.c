@@ -315,7 +315,7 @@ static void table_footer(FILE *outp, int rec_count, int iter_count)
 		fprintf(outp, " ");
 	}
 	fprintf(outp, "\n");
-	fprintf(outp, "Records %d/%d.\n", rec_count, iter_count);
+	fprintf(outp, "Records %d\n", rec_count);
 }
 
 static void csv_footer(FILE *outp, int rec_count, int iter_count)

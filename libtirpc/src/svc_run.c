@@ -74,7 +74,7 @@ svc_run()
       for (i = 0; i < max_pollfd; ++i)
         {
           my_pollfd[i].fd = svc_pollfd[i].fd;
-          my_pollfd[i].events = svc_pollfd[i].events;
+          my_pollfd[i].events = svc_pollfd[i].events | POLLRDHUP;
           my_pollfd[i].revents = 0;
         }
 

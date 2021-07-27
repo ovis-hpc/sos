@@ -618,13 +618,16 @@ ods_key_comp_t __sos_set_key_comp_to_min(ods_key_comp_t comp, sos_attr_t a, size
 		*comp_len = sizeof(uint16_t) + sizeof(uint16_t);
 		break;
 	case SOS_TYPE_LONG_DOUBLE:
-		sos_error("Unsupported type in sos_key_join\n");
+		sos_error("Unsupported type in composite key\n");
 		break;
-	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_JOIN:
+		sos_error("Unsupported type in composite key\n");
+		break;
+	default: /* arrays */
 		comp->value.str.len = 0;
-		break;
-	default:
-		assert(0 == "unsupported type for function");
+		*comp_len = sizeof(comp->value.str) + sizeof(uint16_t);
 		break;
 	}
 	return __sos_next_key_comp(comp);
@@ -705,10 +708,16 @@ ods_key_comp_t __sos_set_key_comp_to_max(ods_key_comp_t comp, sos_attr_t a, size
 		*comp_len = sizeof(uint16_t) + sizeof(uint16_t);
 		break;
 	case SOS_TYPE_LONG_DOUBLE:
-		sos_error("Unsupported type in sos_key_join\n");
+		sos_error("Unsupported type in composite key\n");
 		break;
-	default:
-		assert(0 == "unsupported type for function");
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_JOIN:
+		sos_error("Unsupported type in composite key\n");
+		break;
+	default: /* arrays */
+		comp->value.str.len = 0;
+		*comp_len = sizeof(comp->value.str) + sizeof(uint16_t);
 		break;
 	}
 	return __sos_next_key_comp(comp);

@@ -598,6 +598,10 @@ cdef extern from "sos/sos.h":
                                       char **endptr)
     char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj, const char *attr_name,
                                       char *str, size_t len)
+    char *sos_obj_attr_by_name_to_str(sos_obj_t sos_obj, const char *attr_name,
+				char *str, size_t len)
+    char *sos_obj_attr_by_id_to_str(sos_obj_t sos_obj, int,
+				char *str, size_t len);
 
 
     ctypedef ods_obj_s *sos_key_t

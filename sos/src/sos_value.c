@@ -1133,16 +1133,30 @@ size_t sos_value_data_set_va(sos_value_data_t vd, sos_type_t type, va_list ap)
 size_t sos_obj_attr_value_set_va(sos_obj_t sos_obj, sos_attr_t attr, va_list ap)
 {
 	sos_value_data_t vd;
+	sos_value_t v;
 	struct sos_value_s val_;
 	va_list ap_copy;
+	size_t count;
+
 	if (sos_attr_is_array(attr)) {
 		va_copy(ap_copy, ap);
-		size_t count = va_arg(ap_copy, size_t);
-		(void)sos_array_new(&val_, attr, sos_obj, count);
+		count = va_arg(ap_copy, size_t);
+		v = sos_array_new(&val_, attr, sos_obj, count);
 		sos_obj_put(sos_obj);
 		va_end(ap_copy);
+		if (!v) {
+			sos_error("%s: Error %d creating a new array of size %d\n",
+				  __func__, errno, count);
+			errno = ENOMEM;
+			return 0;
+		}
 	}
 	vd = sos_obj_attr_data(sos_obj, attr, NULL);
+	if (!vd) {
+		sos_error("%s: Error %d getting object data from attribute\n",
+			  __func__, errno);
+		return 0;
+	}
 	return sos_value_data_set_va(vd, sos_attr_type(attr), ap);
 }
 
@@ -1171,7 +1185,6 @@ size_t sos_obj_attr_by_id_set(sos_obj_t sos_obj, int attr_id, ...)
 	va_end(ap);
 	return size;
 }
-
 
 size_t sos_value_data_size(sos_value_data_t vd, sos_type_t type)
 {

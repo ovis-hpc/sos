@@ -425,6 +425,11 @@ int open_container(cmd_t cmd, av_list_t avl)
 	int mode;
 	av_t av;
 
+	if (!g_session) {
+		printf("Please connect to a cluster with the 'attach' command "
+		       "before attempting to open a container\n");
+		return 0;
+	}
 	av = av_find(avl, "path");
 	if (!av) {
 		printf("The path parameter is required.\n");
@@ -459,11 +464,11 @@ int show_schema(cmd_t cmd, av_list_t avl)
     dsos_res_t res;
     dsos_name_array_t schemas = dsos_schema_query(g_cont, &res);
     if (schemas) {
-        int i;
-        char *name;
-        for (i = 0; i < schemas->count; i++) {
-            printf("%s\n", schemas->names[i]);
-        }
+	int i;
+	char *name;
+	for (i = 0; i < schemas->count; i++) {
+	    printf("%s\n", schemas->names[i]);
+	}
     }
     return 0;
 }

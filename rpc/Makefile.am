@@ -1,5 +1,5 @@
 AUTOMAKE_OPTIONS=subdir-objects
-SUBDIRS =
+SUBDIRS = . python
 lib_LTLIBRARIES =
 sbin_PROGRAMS =
 bin_PROGRAMS =
@@ -22,7 +22,9 @@ AM_CFLAGS = -Wno-unused-variable \
 
 libdsos_la_SOURCES = sosapi_client.c sosapi_server.c sosapi_common.c \
 	../ods/src/ods_rbt.c sosapi_svc.c sosapi_xdr.c sosapi_clnt.c \
-	json_parser.c json_lexer.c json.c
+	json_parser.c json_lexer.c json.c \
+	ast.c ast.h
+
 libdsos_la_LIBADD = ../ods/src/libods.la ../sos/src/libsos.la \
 	../libtirpc/src/libtirpc.la \
 	-ldl -lpthread -luuid

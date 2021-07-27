@@ -157,11 +157,12 @@ AC_CONFIG_FILES([
 		sos/src/Makefile
 		sos/python/Makefile
 		rpcgen/Makefile
-		rpc/Makefile
 		libtirpc/Makefile
 		libtirpc/src/Makefile
 		libtirpc/man/Makefile
 		libtirpc/doc/Makefile
+		rpc/Makefile
+		rpc/python/Makefile
 		rpm/sosdb.spec
 ])
 

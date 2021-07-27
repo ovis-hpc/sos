@@ -363,6 +363,9 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 			limits->max_v = value_term->value;
 		break;
 	case ASTT_EQ:
+		limits->min_v = value_term->value;
+		limits->max_v = value_term->value;
+		break;
 	case ASTT_GE:
 	case ASTT_GT:
 		if (sos_value_cmp(value_term->value, limits->min_v) < 0)
@@ -382,7 +385,6 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 	char *token_str;
 	struct ast_term *term;
 	struct ast_term_binop *binop = calloc(1, sizeof(*binop));
-	LIST_INSERT_HEAD(&ast->binop_list, binop, entry);
 	binop->lhs = ast_parse_term(ast, expr, ppos);
 	binop->op = ast_lex(ast, expr, ppos, &token_str);
 	if (binop->op == ASTT_EOF) {
@@ -407,6 +409,7 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 	term = calloc(1, sizeof(*term));
 	term->kind = ASTV_BINOP;
 	term->binop = binop;
+	LIST_INSERT_HEAD(&ast->binop_list, binop, entry);
 
 	return term;
 }
@@ -463,11 +466,11 @@ int ast_parse_where_clause(struct ast *ast, const char *expr, int *ppos)
 {
 	char *token_str;
 	enum ast_token_e token;
-	struct ast_term *binop, *newb;
+	struct ast_term *newb;
 	int next_pos;
 
 	/* A where clause has at least one binary op */
-	ast->where = binop = ast_parse_binop(ast, expr, ppos);
+	ast->where = ast_parse_binop(ast, expr, ppos);
 	if (ast->result)
 		return ast->result;
 	/*
@@ -493,7 +496,7 @@ int ast_parse_where_clause(struct ast *ast, const char *expr, int *ppos)
 		if (ast->result)
 			break;
 		*ppos = next_pos;
-		ast->where = binop = newb;
+		ast->where = newb;
 	}
 	return ast->result;
 }
