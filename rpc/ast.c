@@ -346,8 +346,8 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 		limits = calloc(1, sizeof(*limits));
 		limits->name = strdup(attr_name);
 		limits->attr = attr_term->attr->attr;
-		limits->min_v = sos_attr_min(limits->attr);
-		limits->max_v = sos_attr_max(limits->attr);
+		limits->min_v = sos_attr_max(limits->attr);
+		limits->max_v = sos_attr_min(limits->attr);
 		limits->join_idx = -1;
 		limits->join_attr = NULL;
 		ods_rbn_init(&limits->rbn, (void *)limits->name);

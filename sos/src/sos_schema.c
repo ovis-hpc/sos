@@ -1894,9 +1894,9 @@ static struct sos_value_s __attr_min[] = {
 	[SOS_TYPE_UINT16] = { .type = SOS_TYPE_UINT16, .data_.prim.uint16_ = 0 },
 	[SOS_TYPE_UINT32] = { .type = SOS_TYPE_UINT32, .data_.prim.uint32_ = 0 },
 	[SOS_TYPE_UINT64] = { .type = SOS_TYPE_UINT64, .data_.prim.uint64_ = 0 },
-	[SOS_TYPE_FLOAT] = { .type = SOS_TYPE_FLOAT, .data_.prim.float_ = FLT_MIN },
-	[SOS_TYPE_DOUBLE] = { .type = SOS_TYPE_DOUBLE, .data_.prim.double_ = DBL_MIN },
-	[SOS_TYPE_LONG_DOUBLE] = { .type = SOS_TYPE_LONG_DOUBLE, .data_.prim.long_double_ = DBL_MIN },/* TODO, this is wrong */
+	[SOS_TYPE_FLOAT] = { .type = SOS_TYPE_FLOAT, .data_.prim.float_ = -FLT_MAX },
+	[SOS_TYPE_DOUBLE] = { .type = SOS_TYPE_DOUBLE, .data_.prim.double_ = -DBL_MAX },
+	[SOS_TYPE_LONG_DOUBLE] = { .type = SOS_TYPE_LONG_DOUBLE, .data_.prim.long_double_ = -DBL_MAX },/* TODO, this is wrong */
 	[SOS_TYPE_TIMESTAMP] = { .type = SOS_TYPE_TIMESTAMP, .data_.prim.timestamp_.timestamp = 0 },
 	[SOS_TYPE_OBJ] = { .type = SOS_TYPE_OBJ },
 	[SOS_TYPE_STRUCT] =  { .type = SOS_TYPE_STRUCT },
