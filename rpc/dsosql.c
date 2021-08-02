@@ -571,7 +571,10 @@ int import_csv(cmd_t cmd, av_list_t avl)
 
 int select_command(cmd_t cmd, av_list_t avl)
 {
-	dsos_query_t query = dsos_query_create(g_cont);
+	if (!g_cont) {
+		printf("Use the 'open' command to open a container before using 'select'\n");
+		return 0;
+	}
 	av_t av = LIST_FIRST(&avl->head);
 	int rc = dsosql_query_select(g_cont, av->value_str);
 	return 0;
