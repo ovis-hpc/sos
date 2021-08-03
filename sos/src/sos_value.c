@@ -149,12 +149,10 @@ static int LONG_DOUBLE_cmp(sos_value_t a, sos_value_t b, size_t size)
 
 static int TIMESTAMP_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
-	int res = a->data->prim.timestamp_.tv.tv_sec - b->data->prim.timestamp_.tv.tv_sec;
-	if (res)
-		return res;
-	res = a->data->prim.timestamp_.tv.tv_usec - b->data->prim.timestamp_.tv.tv_usec;
-	if (res)
-		return res;
+	if (a->data->prim.timestamp_.tv.tv_sec < b->data->prim.timestamp_.tv.tv_sec)
+		return -1;
+	if (a->data->prim.timestamp_.tv.tv_sec > b->data->prim.timestamp_.tv.tv_sec)
+		return 1;
 	return 0;
 }
 

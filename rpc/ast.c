@@ -7,6 +7,7 @@
 #include <regex.h>
 #include <assert.h>
 #include <errno.h>
+#include <math.h>
 #include <sos/sos.h>
 #include "sos_priv.h"
 #include "ast.h"
@@ -342,7 +343,7 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 	attr_name = sos_attr_name(attr_term->attr->attr);
 	rbn = ods_rbt_find(&ast->attr_tree, attr_name);
 	if (!rbn) {
-		/* Allocate a new attribute */ 
+		/* Allocate a new attribute */
 		limits = calloc(1, sizeof(*limits));
 		limits->name = strdup(attr_name);
 		limits->attr = attr_term->attr->attr;
@@ -355,6 +356,45 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 	} else {
 		limits = container_of(rbn, struct ast_attr_limits, rbn);
 	}
+
+	/* Reinterpret the value_term based on the type of the attribute */
+	switch (sos_attr_type(attr_term->attr->attr)) {
+	case SOS_TYPE_DOUBLE:
+		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_INT64:
+			value_term->value->type = SOS_TYPE_DOUBLE;
+			value_term->value->data->prim.double_ =
+				(double)value_term->value->data->prim.int64_;
+			break;
+		default:
+			break;
+		}
+		break;
+	case SOS_TYPE_TIMESTAMP:
+		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_INT64:
+			value_term->value->type = SOS_TYPE_TIMESTAMP;
+			value_term->value->data->prim.timestamp_.tv.tv_sec =
+				value_term->value->data->prim.int64_;
+			value_term->value->data->prim.timestamp_.tv.tv_usec = 0;
+			break;
+		case SOS_TYPE_DOUBLE:
+			value_term->value->type = SOS_TYPE_TIMESTAMP;
+			value_term->value->data->prim.timestamp_.tv.tv_sec =
+				(uint32_t)floor(value_term->value->data->prim.double_);
+			value_term->value->data->prim.timestamp_.tv.tv_usec =
+				(uint32_t)(value_term->value->data->prim.double_ -
+					   floor(value_term->value->data->prim.double_)
+					   * 1.e6);
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+
 	assert(limits);
 	switch (op) {
 	case ASTT_LT:
@@ -375,7 +415,7 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 	default:
 		break;
 	}
-}	
+}
 
 /*
  * <term> <op> <term>
@@ -612,12 +652,13 @@ static int __resolve_sos_entities(struct ast *ast)
 		if (SOS_TYPE_JOIN == sos_attr_type(attr_e->sos_attr)) {
 			ast->result = ASTP_BAD_ATTR_TYPE;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
-				 "The '%s' attribute is SOS_TYPE_JOIN and cannot appear in the 'where' clause.",
+				 "The '%s' attribute is SOS_TYPE_JOIN and "
+				 "cannot appear in the 'where' clause.",
 				 attr_e->name);
 			return ast->result;
 		}
 	}
-	
+
 	struct ast_term_binop *binop;
 	LIST_FOREACH(binop, &ast->binop_list, entry) {
 		/* Update the attribute min/max values in the attr tree */
@@ -1011,7 +1052,7 @@ struct ast_term *ast_binop_find(struct ast *ast, ast_binop_find_fn_t cmp_fn, con
 
 /**
  * @brief Compare rhs and lhs based on attribute name
- * 
+ *
  * Return the constant value for the specified attribute name
  *
  * >0 rhs
@@ -1151,7 +1192,7 @@ int ast_start_key(struct ast *ast, sos_key_t key)
 	sos_array_t attr_ids;
 	struct ods_rbn *rbn;
 	struct ast_attr_limits *limits;
-    
+
 	if (sos_attr_type(iter_attr) != SOS_TYPE_JOIN) {
 		rbn = ods_rbt_find(&ast->attr_tree, sos_attr_name(iter_attr));
 		if (!rbn)
