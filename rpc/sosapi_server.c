@@ -859,7 +859,8 @@ bool_t query_select_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dso
 	if (rc) {
 		res->dsos_query_select_res_u.error_msg = strdup(query->ast->error_msg);
 	} else {
-		sos_attr_t res_key_attr = sos_schema_attr_by_name(query->ast->result_schema, sos_attr_name(query->ast->iter_attr_e->sos_attr));
+		sos_attr_t res_key_attr = sos_schema_attr_by_name(query->ast->result_schema,
+								  sos_attr_name(query->ast->iter_attr_e->sos_attr));
 		res->dsos_query_select_res_u.select.key_attr_id = sos_attr_id(res_key_attr);
 		res->dsos_query_select_res_u.select.spec = dsos_spec_from_schema(query->ast->result_schema);
 	}
@@ -883,9 +884,9 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 	int rc = 0;
 	memset(result, 0, sizeof(*result));
 	ast_attr_entry_t attr_e;
-	sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
 
 	while (!rc && count && ast->more) {
+		sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
 		sos_obj_t obj = sos_iter_obj(iter);
 		if (!obj) {
 			result->error = errno;
@@ -919,10 +920,10 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 		entry->value.dsos_obj_value_val = malloc(entry->value.dsos_obj_value_len);
 		memcpy(entry->value.dsos_obj_value_val, obj_data, entry->value.dsos_obj_value_len);
 		sos_obj_put(obj);
+		sos_obj_put(result_obj);
 		if (count)
 			rc = sos_iter_next(iter);
 	}
-	sos_obj_put(result_obj);
 	return 0;
 err_0:
 	return -1;
