@@ -46,6 +46,7 @@ enum ast_parse_e {
 typedef struct ast_attr_entry_s *ast_attr_entry_t;
 struct ast_term_attr {
 	sos_attr_t attr;
+	struct ast_attr_limits *limits;
 	ast_attr_entry_t entry;
 };
 
@@ -104,6 +105,13 @@ typedef struct ast_attr_limits {
 	struct ods_rbn rbn;
 } *ast_attr_limits_t;
 
+enum ast_succ_e {
+	 AST_KEY_NONE = 0,	/* No possible additional matches for this key */
+	 AST_KEY_MORE = 1,
+	 AST_KEY_MAX = 2, /* Key is at it's max value */
+};
+
+#define AST_MAX_JOIN_KEYS 16
 struct ast {
 	regex_t dqstring_re;
 	regex_t sqstring_re;
@@ -117,14 +125,19 @@ struct ast {
 	struct ast_attr_entry_s *iter_attr_e;
 	sos_schema_t result_schema;
 
-	/* Number of attributes in the iterator key */
-	int key_attr_count;
-
-	/* Attributes in the key in precedence order */
-	sos_attr_t key_attrs[16];
-
 	/* Key used to position iterator */
 	sos_key_t key;
+
+	/* Number of attributes in the iterator key */
+	int key_count;
+
+	/* Attribute key limits in precedence order */
+	struct ast_attr_limits *key_limits[AST_MAX_JOIN_KEYS];
+
+	/* !0 if there may be successor matching recods in the
+            index. Indexed by the key order */
+	enum ast_succ_e succ_key[AST_MAX_JOIN_KEYS];
+	// int more;		/* !0 if any succ_key is 0 */
 
 	uint64_t query_id;
 	struct ast_term *where;
@@ -137,9 +150,6 @@ struct ast {
 
 	struct ods_rbt attr_tree;
 
-	/* !0 if there may be more matches */
-	int more;
-
 	/* location where error occurred */
 	int pos;
 
@@ -150,9 +160,15 @@ struct ast {
 	char error_msg[256];
 };
 
+enum ast_eval_e {
+	 AST_EVAL_MATCH = 1,
+	 AST_EVAL_NOMATCH = 2,
+	 AST_EVAL_EMPTY = 3
+};
+
 extern struct ast *ast_create(sos_t sos, uint64_t query_id);
 extern int ast_parse(struct ast *ast, char *expr);
-extern int ast_eval(struct ast *ast, sos_obj_t obj);
+extern enum ast_eval_e ast_eval(struct ast *ast, sos_obj_t obj);
 extern struct ast_term *ast_find_term(struct ast_term *term, const char *name);
 extern int ast_start_key(struct ast *ast, sos_key_t start_key);
 #endif

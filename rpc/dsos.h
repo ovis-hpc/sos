@@ -74,5 +74,6 @@ extern dsos_query_t dsos_query_create(dsos_container_t cont);
 extern int dsos_query_select(dsos_query_t query, const char *clause);
 extern sos_obj_t dsos_query_next(dsos_query_t query);
 extern sos_schema_t dsos_query_schema(dsos_query_t query);
+extern sos_attr_t dsos_query_index_attr(dsos_query_t query);
 
 #endif

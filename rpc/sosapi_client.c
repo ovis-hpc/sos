@@ -1196,3 +1196,7 @@ sos_schema_t dsos_query_schema(dsos_query_t query)
 	return query->schema;
 }
 
+sos_attr_t dsos_query_index_attr(dsos_query_t query)
+{
+	return query->key_attr;
+}

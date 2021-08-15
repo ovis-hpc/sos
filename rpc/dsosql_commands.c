@@ -157,9 +157,28 @@ enum query_fmt {
 	JSON_FMT
 } format;
 
-static void table_header(FILE *outp)
+static void table_header(FILE *outp, sos_attr_t index_attr)
 {
 	struct col_s *col;
+	if (index_attr) {
+		if (sos_attr_type(index_attr) != SOS_TYPE_JOIN) {
+			fprintf(outp, "ORDER_BY \"%s\"\n", sos_attr_name(index_attr));
+		} else {
+			int join_idx;
+			sos_array_t join_list = sos_attr_join_list(index_attr);
+			sos_schema_t schema = sos_attr_schema(index_attr);
+			fprintf(outp, "ORDER_BY ");
+			for (join_idx = 0; join_idx < join_list->count; join_idx++) {
+				sos_attr_t join_attr = sos_schema_attr_by_id(schema,
+									     join_list->data.uint32_[join_idx]);
+				fprintf(outp, "\"%s\"", sos_attr_name(join_attr));
+				if (join_idx < join_list->count - 1) {
+					fprintf(outp, ", ");
+				}
+			}
+			fprintf(outp, "\n");
+		}
+	}
 	/* Print the header labels */
 	TAILQ_FOREACH(col, &col_list, entry) {
 		if (col->width > 0)
@@ -406,7 +425,7 @@ int dsosql_query(sos_t sos, const char *schema_name, const char *index_name)
 		csv_header(stdout);
 		break;
 	default:
-		table_header(stdout);
+		table_header(stdout, NULL);
 		break;
 	}
 
@@ -855,7 +874,7 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 			col->width = col_widths[sos_attr_type(attr)];
 	}
 
-	table_header(stdout);
+	table_header(stdout, dsos_query_index_attr(query));
 	rec_count = 0;
 	for (obj = dsos_query_next(query); obj; obj = dsos_query_next(query)) {
 		table_row(stdout, schema, obj);

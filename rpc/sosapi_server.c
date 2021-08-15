@@ -875,6 +875,7 @@ out_0:
 static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 				dsos_query_next_res *result)
 {
+	enum ast_eval_e eval;
 	sos_iter_t iter = ast->sos_iter;
 	struct dsos_schema *dschema = cache_schema(client, ast->result_schema);
 	dsos_schema_id schema_id = dschema->handle;
@@ -885,19 +886,25 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 	memset(result, 0, sizeof(*result));
 	ast_attr_entry_t attr_e;
 
-	while (!rc && count && ast->more) {
-		sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
+	while (!rc && count) {
 		sos_obj_t obj = sos_iter_obj(iter);
 		if (!obj) {
 			result->error = errno;
 			goto err_0;
 		}
-		rc = ast_eval(ast, obj);
-		if (!rc) {
+		eval = ast_eval(ast, obj);
+		switch (eval) {
+		case AST_EVAL_NOMATCH:
 			sos_obj_put(obj);
 			rc = sos_iter_next(iter);
 			continue;
+		case AST_EVAL_EMPTY:
+			rc = ENOENT;
+			continue;
+		case AST_EVAL_MATCH:
+			break;
 		}
+		sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
 		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
 			sos_obj_attr_copy(result_obj, attr_e->res_attr, obj, attr_e->sos_attr);
 		}
@@ -967,8 +974,10 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 		rc = ast_start_key(query->ast, key);
 		if (rc == ESRCH) {
 			rc = sos_iter_sup(query->ast->sos_iter, key);
+			/*
 			if (rc)
 				rc = sos_iter_begin(query->ast->sos_iter);
+			*/
 		} else {
 			rc = sos_iter_begin(query->ast->sos_iter);
 		}
@@ -981,8 +990,6 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 			goto empty;
 		break;
 	case DSOSQ_STATE_NEXT:
-		if (!query->ast->more)
-			goto empty;
 		rc = sos_iter_next(query->ast->sos_iter);
 		if (rc)
 			goto empty;
@@ -997,7 +1004,6 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 out_0:
 	return TRUE;
 empty:
-	query->ast->more = 0;
 	sprintf(err_msg, "No more data for query %ld.", query_id);
 	res->error = DSOS_ERR_QUERY_EMPTY;
 	res->dsos_query_next_res_u.error_msg = strdup(err_msg);

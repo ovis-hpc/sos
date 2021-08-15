@@ -334,6 +334,7 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 {
 	struct ast_attr_limits *limits;
 	const char *attr_name;
+	sos_type_t attr_type;
 	struct ods_rbn *rbn;
 
 	/* Ignore values that are not constants */
@@ -341,14 +342,24 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 		return;
 
 	attr_name = sos_attr_name(attr_term->attr->attr);
+	attr_type = sos_attr_type(attr_term->attr->attr);
+
 	rbn = ods_rbt_find(&ast->attr_tree, attr_name);
 	if (!rbn) {
 		/* Allocate a new attribute */
 		limits = calloc(1, sizeof(*limits));
 		limits->name = strdup(attr_name);
 		limits->attr = attr_term->attr->attr;
-		limits->min_v = sos_attr_max(limits->attr);
-		limits->max_v = sos_attr_min(limits->attr);
+		if (attr_type != SOS_TYPE_BYTE_ARRAY &&
+		    /* TODO: Array support? */
+		    attr_type != SOS_TYPE_STRING) {
+			limits->min_v = sos_attr_max(limits->attr);
+			limits->max_v = sos_attr_min(limits->attr);
+		} else {
+			/* Variable length strings don't have a bounded min/max */
+			limits->min_v = value_term->value;
+			limits->max_v = value_term->value;
+		}
 		limits->join_idx = -1;
 		limits->join_attr = NULL;
 		ods_rbn_init(&limits->rbn, (void *)limits->name);
@@ -356,7 +367,7 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 	} else {
 		limits = container_of(rbn, struct ast_attr_limits, rbn);
 	}
-
+	attr_term->attr->limits = limits;
 	/* Reinterpret the value_term based on the type of the attribute */
 	switch (sos_attr_type(attr_term->attr->attr)) {
 	case SOS_TYPE_DOUBLE:
@@ -392,6 +403,13 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 		}
 		break;
 	default:
+		/*
+		 * Coerce the type of the value to the attribute
+		 * type. This is necessary because all integer values
+		 * in the SQL are signed while the attributes may be
+		 * unsigned.
+		 */
+		value_term->value->type = sos_attr_type(attr_term->attr->attr);
 		break;
 	}
 
@@ -403,8 +421,10 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 			limits->max_v = value_term->value;
 		break;
 	case ASTT_EQ:
-		limits->min_v = value_term->value;
-		limits->max_v = value_term->value;
+		if (sos_value_cmp(value_term->value, limits->min_v) < 0)
+			limits->min_v = value_term->value;
+		if (sos_value_cmp(value_term->value, limits->max_v) > 0)
+			limits->max_v = value_term->value;
 		break;
 	case ASTT_GE:
 	case ASTT_GT:
@@ -741,11 +761,11 @@ static int __resolve_sos_entities(struct ast *ast)
 		char **join_list = calloc(ja->count, sizeof(char *));
 		assert(join_list);
 		int i, rc;
-		ast->key_attr_count = ja->count;
+		ast->key_count = ja->count;
 		for (i = 0; i < ja->count; i++) {
 			sos_attr_t jaa = sos_schema_attr_by_id(ast->sos_iter_schema, ja->data.uint32_[i]);
 			sos_attr_t resa = sos_schema_attr_by_name(res_schema, sos_attr_name(jaa));
-			ast->key_attrs[i] = jaa;
+			ast->succ_key[i] = AST_KEY_MORE;
 			join_list[i] = (char *)sos_attr_name(jaa);
 			TAILQ_FOREACH(attr_e, &ast->where_list, link) {
 				if (0 == strcmp(attr_e->name, join_list[i])) {
@@ -757,6 +777,7 @@ static int __resolve_sos_entities(struct ast *ast)
 					limits = container_of(rbn, struct ast_attr_limits, rbn);
 					limits->join_idx = i;
 					limits->join_attr = jaa;
+					ast->key_limits[i] = limits;
 				}
 			}
 			if (!resa) {
@@ -783,6 +804,9 @@ static int __resolve_sos_entities(struct ast *ast)
 		assert(0 == rc);
 		free(join_list);
 	} else {
+		ast->key_count = 1;
+		ast->succ_key[0] = AST_KEY_MORE;
+		ast->key_limits[0] = NULL;
 		/* Ensure that best_attr is in the result schema */
 		sos_attr_t res_a = sos_schema_attr_by_name(res_schema, best_attr_e->name);
 		if (!res_a) {
@@ -856,24 +880,6 @@ int ast_parse(struct ast *ast, char *expr)
 	return ast->result;
 }
 
-static void more_check(struct ast *ast, struct ast_term *attr_term)
-{
-	struct ods_rbn *rbn;
-	struct ast_attr_limits *limits;
-
-	if (attr_term->kind != ASTV_ATTR)
-		return;
-
-	rbn = ods_rbt_find(&ast->attr_tree, sos_attr_name(attr_term->attr->attr));
-	if (!rbn)
-		return;
-	limits = container_of(rbn, struct ast_attr_limits, rbn);
-	if (limits->join_idx != 0)
-		return;
-	if (sos_value_cmp(attr_term->value, limits->max_v) > 0)
-		ast->more = 0;
-}
-
 /*
  * Determine if given the iterator key and the assumption that the
  * keys are in ascending order, if it is possible that there is
@@ -900,11 +906,10 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 		rhs = ast_term_visit(ast, term->binop->rhs, obj);
 		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, sos_value_true(rhs));
 	case ASTT_AND:
+		if (!sos_value_true(lhs))
+			return sos_value_init_const(&term->value_, SOS_TYPE_INT32, 0);
 		rhs = ast_term_visit(ast, term->binop->rhs, obj);
-		return sos_value_init_const(
-					    &term->value_, SOS_TYPE_INT32,
-					    sos_value_true(lhs) && sos_value_true(rhs)
-					    );
+		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, sos_value_true(rhs));
 	default:
 		rhs = ast_term_visit(ast, term->binop->rhs, obj);
 		break;
@@ -914,18 +919,12 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 	switch (term->binop->op) {
 	case ASTT_LT:
 		rc = (rc < 0);
-		if (!rc)
-			more_check(ast, term->binop->lhs);
 		break;
 	case ASTT_LE:
 		rc = (rc <= 0);
-		if (!rc)
-			more_check(ast, term->binop->lhs);
 		break;
 	case ASTT_EQ:
 		rc = (rc == 0);
-		if (!rc)
-			more_check(ast, term->binop->lhs);
 		break;
 	case ASTT_GE:
 		rc = (rc >= 0);
@@ -946,13 +945,53 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 	return term->value;
 }
 
-int ast_eval(struct ast *ast, sos_obj_t obj)
+/*
+ * Run through the attributes check if the where condition could
+ * possible match
+ */
+static int limit_check(struct ast *ast, sos_obj_t obj)
 {
-	if (!ast->more)
-		return 0;
-	if (ast->where)
-		return sos_value_true(ast_term_visit(ast, ast->where, obj));
-	return 1;
+	int idx;
+	struct ods_rbn *rbn;
+	struct ast_attr_limits *limits;
+	struct sos_value_s v_;
+	sos_value_t v;
+	sos_attr_t attr;
+	for (idx = 0; idx < ast->key_count; idx++) {
+		limits = ast->key_limits[idx];
+		assert(limits);
+		assert(limits->join_idx == idx);
+		v = sos_value_init(&v_, obj, limits->attr);
+		assert(v);
+		int rc = sos_value_cmp(v, limits->max_v);
+		if (rc >= 0) {
+			if (rc == 0) {
+				ast->succ_key[idx] = AST_KEY_MAX;
+			} else if (idx == 0) {
+				ast->succ_key[idx] = AST_KEY_NONE;
+			} else if (ast->succ_key[idx-1] != AST_KEY_MORE) {
+				ast->succ_key[idx] = AST_KEY_NONE;
+			}
+		}
+	}
+	for (idx = 0; idx < ast->key_count; idx++) {
+		if (ast->succ_key[idx] == AST_KEY_NONE)
+			return 1;
+	}
+	return 0;
+}
+
+enum ast_eval_e ast_eval(struct ast *ast, sos_obj_t obj)
+{
+	if (limit_check(ast, obj))
+	    return AST_EVAL_EMPTY;
+
+	if (ast->where) {
+		if (sos_value_true(ast_term_visit(ast, ast->where, obj)))
+			return AST_EVAL_MATCH;
+		return AST_EVAL_NOMATCH;
+	}
+	return AST_EVAL_MATCH;
 }
 
 struct ast_term *ast_find_term(struct ast_term *term, const char *attr_name)
@@ -993,7 +1032,6 @@ struct ast *ast_create(sos_t sos, uint64_t query_id)
 	if (!ast)
 		return NULL;
 	ast->sos = sos;
-	ast->more = 1;
 	ast->query_id = query_id;
 	int rc = regcomp(&ast->dqstring_re, "\"([^\"]*)|(\\.{1})\"", REG_EXTENDED);
 	assert(0 == rc);
@@ -1169,9 +1207,8 @@ sos_key_t __sos_key_from_const(sos_key_t key, sos_attr_t attr, struct ast_attr_l
 }
 
 /**
- * Build up a key that the caller can use to search for a
- * least-upper-bound in order to skip non-matching keys given the
- * where clause.
+ * Build up a key that the caller can use to search for an index entry
+ * that is the 1st possible match given the where clause.
  *
  * The key assumes that the iterator will be traversed from glb to
  * max-match.
