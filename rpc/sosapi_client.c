@@ -108,6 +108,16 @@ struct dsos_query_s {
 };
 
 struct dsos_session_s g_session;
+static int g_last_err;
+static char g_last_errmsg[1024];
+
+const char *dsos_last_errmsg(void) {
+	return g_last_errmsg;
+}
+
+const int dsos_last_err(void) {
+	return g_last_err;
+}
 
 static inline void dsos_res_init(dsos_container_t cont, dsos_res_t *res) {
 	int i;
@@ -1066,6 +1076,8 @@ int dsos_query_select(dsos_query_t query, const char *clause)
 		if (res.error) {
 			fprintf(stderr, "%s: %s\n", __func__,
 				res.dsos_query_select_res_u.error_msg);
+			g_last_err = res.error;
+			snprintf(g_last_errmsg, sizeof(g_last_errmsg), res.dsos_query_select_res_u.error_msg);
 			return res.error;
 		}
 		if (query->schema == NULL) {

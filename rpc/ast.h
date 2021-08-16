@@ -25,6 +25,7 @@ enum ast_token_e {
 	ASTT_EOF,	    /* End of expression */
 	/* KEYWORD */
 	ASTT_SELECT,        /* 'select' */
+	ASTT_KEYWORD = ASTT_SELECT,
 	ASTT_FROM,          /* 'from' */
 	ASTT_ORDER_BY,      /* 'order_by' */
 	ASTT_WHERE,         /* 'where' */
@@ -108,7 +109,8 @@ typedef struct ast_attr_limits {
 enum ast_succ_e {
 	 AST_KEY_NONE = 0,	/* No possible additional matches for this key */
 	 AST_KEY_MORE = 1,
-	 AST_KEY_MAX = 2, /* Key is at it's max value */
+	 AST_KEY_MIN = 2, /* Key is at its min value */
+	 AST_KEY_MAX = 3, /* Key is at its max value */
 };
 
 #define AST_MAX_JOIN_KEYS 16
@@ -122,6 +124,7 @@ struct ast {
 	sos_t sos;
 	sos_iter_t sos_iter;
 	sos_schema_t sos_iter_schema;
+	char *iter_attr_name;
 	struct ast_attr_entry_s *iter_attr_e;
 	sos_schema_t result_schema;
 
@@ -141,11 +144,11 @@ struct ast {
 
 	uint64_t query_id;
 	struct ast_term *where;
-	struct ast_term *order_by;
 
 	TAILQ_HEAD(ast_schema_list, ast_schema_entry_s) schema_list;
 	TAILQ_HEAD(select_attr_list, ast_attr_entry_s) select_list;
 	TAILQ_HEAD(where_attr_list, ast_attr_entry_s) where_list;
+	TAILQ_HEAD(index_attr_list, ast_attr_entry_s) index_list;
 	LIST_HEAD(binop_list, ast_term_binop) binop_list;
 
 	struct ods_rbt attr_tree;
@@ -169,6 +172,7 @@ enum ast_eval_e {
 extern struct ast *ast_create(sos_t sos, uint64_t query_id);
 extern int ast_parse(struct ast *ast, char *expr);
 extern enum ast_eval_e ast_eval(struct ast *ast, sos_obj_t obj);
+extern enum ast_eval_e ast_eval_limits(struct ast *ast, sos_obj_t obj);
 extern struct ast_term *ast_find_term(struct ast_term *term, const char *name);
 extern int ast_start_key(struct ast *ast, sos_key_t start_key);
 #endif

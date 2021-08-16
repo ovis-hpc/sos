@@ -966,7 +966,9 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 	}
 	switch (query->state) {
 	case DSOSQ_STATE_INIT:
-		sprintf(err_msg, "There is no valid 'select' pending on query %ld", query_id);
+		sprintf(err_msg,
+			"There is no valid 'select' pending on query %ld",
+			query_id);
 		res->error = DSOS_ERR_QUERY_BAD_SELECT;
 		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
 		break;
@@ -974,10 +976,6 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 		rc = ast_start_key(query->ast, key);
 		if (rc == ESRCH) {
 			rc = sos_iter_sup(query->ast->sos_iter, key);
-			/*
-			if (rc)
-				rc = sos_iter_begin(query->ast->sos_iter);
-			*/
 		} else {
 			rc = sos_iter_begin(query->ast->sos_iter);
 		}

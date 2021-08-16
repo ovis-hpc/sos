@@ -443,11 +443,13 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *ppos)
 {
 	char *token_str;
+	int next_pos;
 	struct ast_term *term;
 	struct ast_term_binop *binop = calloc(1, sizeof(*binop));
 	binop->lhs = ast_parse_term(ast, expr, ppos);
-	binop->op = ast_lex(ast, expr, ppos, &token_str);
-	if (binop->op == ASTT_EOF) {
+	next_pos = *ppos;
+	binop->op = ast_lex(ast, expr, &next_pos, &token_str);
+	if (binop->op == ASTT_EOF || binop->op >= ASTT_KEYWORD) {
 		/*
 		 * if lhs is a binop, it's ok, otherwise, it's a
 		 *  syntax error
@@ -458,7 +460,7 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 			return term;
 		}
 	}
-
+	*ppos = next_pos;
 	if (!is_comparator(binop->op)) {
 		ast->result = ASTP_ERROR;
 		free(binop);
@@ -519,6 +521,34 @@ int ast_parse_from_clause(struct ast *ast, const char *expr, int *ppos)
 				/* end of schema name list, do not consume token */
 				break;
 		}
+	return ast->result;
+}
+
+int ast_parse_order_by_clause(struct ast *ast, const char *expr, int *ppos)
+{
+	char *token_str;
+	enum ast_token_e token;
+	struct ast_term *term;
+
+	token = ast_lex(ast, expr, ppos, &token_str);
+	if (token != ASTT_NAME) {
+		ast->result = ASTP_ERROR;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			 "Expected attribute name but found '%s'", token_str);
+		goto out;
+	}
+	term = calloc(1, sizeof(*term));
+	term->value = calloc(1, sizeof(*term->value));
+	term->kind = ASTV_ATTR;
+	term->attr = calloc(1, sizeof(*term->attr));
+	ast_attr_entry_t ae = calloc(1, sizeof *ae);
+	ae->value_attr = term->attr;
+	ae->name = strdup(token_str);
+	ae->rank = 0;
+	ae->join_attr_idx = -1;
+	term->attr->entry = ae;
+	TAILQ_INSERT_TAIL(&ast->index_list, ae, link);
+ out:
 	return ast->result;
 }
 
@@ -679,6 +709,28 @@ static int __resolve_sos_entities(struct ast *ast)
 		}
 	}
 
+	/*
+	 * Resolve all of the attributes in the 'order_by' clause
+	 */
+	TAILQ_FOREACH(attr_e, &ast->index_list, link) {
+		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
+			attr_e->sos_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
+			assert(attr_e->value_attr);
+			attr_e->value_attr->attr = attr_e->sos_attr;
+			if (attr_e->sos_attr) {
+				attr_e->schema = schema_e;
+				break;
+			}
+		}
+		if (!attr_e->sos_attr) {
+			ast->result = ASTP_BAD_ATTR_NAME;
+			snprintf(ast->error_msg, sizeof(ast->error_msg),
+				 "The '%s' attribute was not found in any schema in the 'from' clause.",
+				 attr_e->name);
+			return ast->result;
+		}
+	}
+
 	struct ast_term_binop *binop;
 	LIST_FOREACH(binop, &ast->binop_list, entry) {
 		/* Update the attribute min/max values in the attr tree */
@@ -687,10 +739,9 @@ static int __resolve_sos_entities(struct ast *ast)
 		else if (binop->rhs->kind == ASTV_ATTR)
 			update_attr_limits(ast, binop->rhs, binop->lhs, binop->op);
 	}
-
 	/*
 	 * Run through the attributes in the 'where' clause; compute the
-	 * Nnumber of times attributes in the where clause appear in the join and
+	 * number of times attributes in the where clause appear in the join and
 	 * the attribute that has the minimum attribute index
 	 */
 	TAILQ_FOREACH(attr_e, &ast->where_list, link) {
@@ -712,9 +763,15 @@ static int __resolve_sos_entities(struct ast *ast)
 			}
 		}
 	}
-	/* Find the join index with the highest rank and use it to create the iterator */
 	struct ast_attr_entry_s *join_e;
-	struct ast_attr_entry_s *best_attr_e = NULL;
+	struct ast_attr_entry_s *best_attr_e = TAILQ_FIRST(&ast->index_list);
+	if (best_attr_e)
+		goto create_iterator;
+
+	/*
+	 * Find the join index with the highest rank and use it to
+	 * create the iterator
+	 */
 	TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
 		LIST_FOREACH(join_e, &schema_e->join_list, join_link) {
 			if (!best_attr_e) {
@@ -749,6 +806,8 @@ static int __resolve_sos_entities(struct ast *ast)
 				best_attr_e = attr_e;
 		}
 	}
+
+ create_iterator:
 	/* Create the SOS iterator using the best attribute */
 	ast->iter_attr_e = best_attr_e;
 	ast->sos_iter = sos_attr_iter_new(best_attr_e->sos_attr);
@@ -861,6 +920,7 @@ int ast_parse(struct ast *ast, char *expr)
 			rc = ast_parse_from_clause(ast, expr, &pos);
 			break;
 		case ASTT_ORDER_BY:
+			rc = ast_parse_order_by_clause(ast, expr, &pos);
 			break;
 		case ASTT_WHERE:
 			rc = ast_parse_where_clause(ast, expr, &pos);
@@ -952,14 +1012,14 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 static int limit_check(struct ast *ast, sos_obj_t obj)
 {
 	int idx;
-	struct ods_rbn *rbn;
 	struct ast_attr_limits *limits;
 	struct sos_value_s v_;
 	sos_value_t v;
 	sos_attr_t attr;
 	for (idx = 0; idx < ast->key_count; idx++) {
 		limits = ast->key_limits[idx];
-		assert(limits);
+		if (!limits)
+			continue;
 		assert(limits->join_idx == idx);
 		v = sos_value_init(&v_, obj, limits->attr);
 		assert(v);
@@ -973,12 +1033,47 @@ static int limit_check(struct ast *ast, sos_obj_t obj)
 				ast->succ_key[idx] = AST_KEY_NONE;
 			}
 		}
+		sos_value_put(v);
 	}
 	for (idx = 0; idx < ast->key_count; idx++) {
 		if (ast->succ_key[idx] == AST_KEY_NONE)
 			return 1;
 	}
 	return 0;
+}
+
+/*
+ * All components of the key except the last one should be
+ * between min and max
+ */
+enum ast_eval_e ast_eval_limits(struct ast *ast, sos_obj_t obj)
+{
+	int idx;
+	struct ast_attr_limits *limits;
+	struct sos_value_s v_;
+	sos_value_t v;
+	sos_attr_t attr;
+
+	for (idx = 0; idx < ast->key_count; idx++) {
+		limits = ast->key_limits[idx];
+		if (!limits) {
+			/* All but the last key must have limits or we can't check the object */
+			if (idx < ast->key_count - 1)
+				return AST_EVAL_MATCH;
+			else
+				continue;
+		}
+		assert(limits->join_idx == idx);
+		v = sos_value_init(&v_, obj, limits->attr);
+		assert(v);
+		int rc = sos_value_cmp(v, limits->min_v);
+		if (rc < 0 && idx < ast->key_count - 1)
+			return AST_EVAL_NOMATCH;
+		rc = sos_value_cmp(v, limits->max_v);
+		if (rc > 0)
+			return AST_EVAL_NOMATCH;
+	}
+	return AST_EVAL_MATCH;
 }
 
 enum ast_eval_e ast_eval(struct ast *ast, sos_obj_t obj)
@@ -1044,6 +1139,7 @@ struct ast *ast_create(sos_t sos, uint64_t query_id)
 	TAILQ_INIT(&ast->schema_list);
 	TAILQ_INIT(&ast->select_list);
 	TAILQ_INIT(&ast->where_list);
+	TAILQ_INIT(&ast->index_list);
 	LIST_INIT(&ast->binop_list);
 	ods_rbt_init(&ast->attr_tree, attr_cmp, NULL);
 	return ast;
