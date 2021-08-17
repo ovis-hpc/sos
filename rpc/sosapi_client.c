@@ -549,6 +549,11 @@ dsos_schema_t dsos_schema_by_uuid(dsos_container_t cont, uuid_t uuid,
 	return schema;
 }
 
+sos_schema_t dsos_schema_schema(dsos_schema_t schema)
+{
+	return schema->schema;
+}
+
 sos_attr_t dsos_schema_attr_by_id(dsos_schema_t schema, int attr_id)
 {
 	if (schema->schema)
@@ -571,6 +576,7 @@ dsos_name_array_t dsos_schema_query(dsos_container_t cont, dsos_res_t *res)
 	dsos_schema_query_res query_res;
 	dsos_client_t client = &cont->sess->clients[0];
 
+	memset(&query_res, 0, sizeof(query_res));
 	pthread_mutex_lock(&client->rpc_lock);
 	rpc_err = schema_query_1(cont->handles[0], &query_res, client->client);
 	pthread_mutex_unlock(&client->rpc_lock);

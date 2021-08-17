@@ -9,6 +9,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/errno.h>
+#include <regex.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -96,9 +97,10 @@ struct cmd_s commands[] = {
 		}
 	},
 	[SHOW_SCHEMA_CMD] = { "show_schema", show_schema, "show_schema [ name NAME-RE ]",
-		1,
+		2,
 		{
 			{ SOS_TYPE_STRING, "name" },
+			{ SOS_TYPE_STRING, "regex" },
 		}
 	},
 	[IMPORT_CMD] = {"import", import_csv, "import schema SCHEMA-NAME from CSV-FILE-NAME",
@@ -461,16 +463,68 @@ int open_container(cmd_t cmd, av_list_t avl)
 
 int show_schema(cmd_t cmd, av_list_t avl)
 {
-    dsos_res_t res;
-    dsos_name_array_t schemas = dsos_schema_query(g_cont, &res);
-    if (schemas) {
-	int i;
-	char *name;
-	for (i = 0; i < schemas->count; i++) {
-	    printf("%s\n", schemas->names[i]);
+	dsos_res_t res;
+	av_t av;
+
+	if (!g_cont) {
+		printf("You cannot query schema before you open a container\n");
+		goto out;
 	}
-    }
-    return 0;
+
+	av = av_find(avl, "name");
+	if (!av) {
+		av = av_find(avl, "regex");
+		if (av)
+			goto regex;
+		dsos_name_array_t schemas = dsos_schema_query(g_cont, &res);
+		if (schemas) {
+			int i;
+			char *name;
+			for (i = 0; i < schemas->count; i++) {
+				printf("%s\n", schemas->names[i]);
+			}
+		}
+		goto out;
+	} else {
+		dsos_schema_t schema = dsos_schema_by_name(g_cont, av->value_str, &res);
+		if (!schema) {
+			printf("The schema '%s' could not b e found.\n", av->value_str);
+			goto out;
+		}
+		sos_schema_print(dsos_schema_schema(schema), stdout);
+	}
+
+	av = av_find(avl, "regex");
+ regex:
+	if (!av) {
+		printf("show_schema [name schema-name] [regex schema-name-re]\n");
+		goto out;
+	}
+
+	regex_t rex;
+	int rc = regcomp(&rex, av->value_str, REG_EXTENDED | REG_NOSUB);
+	if (rc) {
+		printf("The regular expression '%s' is invalid.\n", av->value_str);
+		goto out_1;
+	}
+	
+	dsos_name_array_t schemas = dsos_schema_query(g_cont, &res);
+	if (schemas) {
+		int i;
+		char *name;
+		for (i = 0; i < schemas->count; i++) {
+			int rc = regexec(&rex, schemas->names[i], 0, NULL, 0);
+			if (!rc) {
+				dsos_schema_t schema = dsos_schema_by_name(g_cont, schemas->names[i], &res);
+				if (schema)
+					sos_schema_print(dsos_schema_schema(schema), stdout);
+			}
+		}
+	}
+ out_1:
+	regfree(&rex);
+ out:
+	return 0;
 }
 
 int create_schema(cmd_t cmd, av_list_t avl)
@@ -512,17 +566,16 @@ int create_schema(cmd_t cmd, av_list_t avl)
 	size_t tot_bytes = 0;
 	for (bytes = fread(nbuf, 1, read_size, fp);
 	     bytes >= read_size;
-	     bytes = fread(nbuf, 1, read_size, fp))
-		{
-			tot_bytes += read_size;
-			buf = realloc(buf, buf_size + read_size);
-			if (!buf) {
-				printf("Memory allocation failure.\n");
-				goto err;
-			}
-			buf_size += read_size;
-			nbuf = &buf[tot_bytes];
+	     bytes = fread(nbuf, 1, read_size, fp)) {
+		tot_bytes += read_size;
+		buf = realloc(buf, buf_size + read_size);
+		if (!buf) {
+			printf("Memory allocation failure.\n");
+			goto err;
 		}
+		buf_size += read_size;
+		nbuf = &buf[tot_bytes];
+	}
 	template = buf;
 	int rc = dsosql_create_schema(g_cont, schema, template);
 	free(buf);

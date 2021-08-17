@@ -87,6 +87,7 @@ union dsos_schema_attr_res switch (int error) {
         void;
 };
 
+
 typedef string dsos_name<>;
 
 union dsos_schema_query_res switch (int error) {

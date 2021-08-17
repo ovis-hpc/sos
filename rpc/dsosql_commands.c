@@ -848,8 +848,7 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 	int rec_count;
 	int rc = dsos_query_select(query, select_clause);
 	if (rc) {
-		printf("Error %d returned by select clause '%s'\n", rc, select_clause);
-		printf("%s\n", dsos_last_errmsg());
+		printf("Error %d: \"%s\"\n", rc, dsos_last_errmsg());
 		return rc;
 	}
 	schema = dsos_query_schema(query);

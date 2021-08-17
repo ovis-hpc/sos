@@ -56,6 +56,7 @@ extern dsos_schema_t dsos_schema_by_uuid(dsos_container_t cont, uuid_t uuid, dso
 extern dsos_name_array_t dsos_schema_query(dsos_container_t cont, dsos_res_t *res);
 extern sos_attr_t dsos_schema_attr_by_id(dsos_schema_t schema, int attr_id);
 extern sos_attr_t dsos_schema_attr_by_name(dsos_schema_t schema, const char *name);
+extern sos_schema_t dsos_schema_schema(dsos_schema_t);
 extern void dsos_transaction_begin(dsos_container_t cont, dsos_res_t *res);
 extern void dsos_transaction_end(dsos_container_t cont, dsos_res_t *res);
 extern void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj, dsos_res_t *res);
