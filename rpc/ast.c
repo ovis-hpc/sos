@@ -353,8 +353,8 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 		if (attr_type != SOS_TYPE_BYTE_ARRAY &&
 		    /* TODO: Array support? */
 		    attr_type != SOS_TYPE_STRING) {
-			limits->min_v = sos_attr_max(limits->attr);
-			limits->max_v = sos_attr_min(limits->attr);
+			limits->min_v = NULL;
+			limits->max_v = NULL;
 		} else {
 			/* Variable length strings don't have a bounded min/max */
 			limits->min_v = value_term->value;
@@ -417,18 +417,18 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 	switch (op) {
 	case ASTT_LT:
 	case ASTT_LE:
-		if (sos_value_cmp(value_term->value, limits->max_v) > 0)
+		if (NULL == limits->max_v || sos_value_cmp(value_term->value, limits->max_v) > 0)
 			limits->max_v = value_term->value;
 		break;
 	case ASTT_EQ:
-		if (sos_value_cmp(value_term->value, limits->min_v) < 0)
+		if (NULL == limits->min_v || sos_value_cmp(value_term->value, limits->min_v) < 0)
 			limits->min_v = value_term->value;
-		if (sos_value_cmp(value_term->value, limits->max_v) > 0)
+		if (NULL == limits->max_v || sos_value_cmp(value_term->value, limits->max_v) > 0)
 			limits->max_v = value_term->value;
 		break;
 	case ASTT_GE:
 	case ASTT_GT:
-		if (sos_value_cmp(value_term->value, limits->min_v) < 0)
+		if (NULL == limits->min_v || sos_value_cmp(value_term->value, limits->min_v) < 0)
 			limits->min_v = value_term->value;
 		break;
 	case ASTT_NE:
@@ -1021,19 +1021,23 @@ static int limit_check(struct ast *ast, sos_obj_t obj)
 		if (!limits)
 			continue;
 		assert(limits->join_idx == idx);
-		v = sos_value_init(&v_, obj, limits->attr);
-		assert(v);
-		int rc = sos_value_cmp(v, limits->max_v);
-		if (rc >= 0) {
-			if (rc == 0) {
-				ast->succ_key[idx] = AST_KEY_MAX;
-			} else if (idx == 0) {
-				ast->succ_key[idx] = AST_KEY_NONE;
-			} else if (ast->succ_key[idx-1] != AST_KEY_MORE) {
-				ast->succ_key[idx] = AST_KEY_NONE;
+		if (limits->max_v) {
+			v = sos_value_init(&v_, obj, limits->attr);
+			assert(v);
+			int rc = sos_value_cmp(v, limits->max_v);
+			if (rc >= 0) {
+				if (rc == 0) {
+					ast->succ_key[idx] = AST_KEY_MAX;
+				} else if (idx == 0) {
+					ast->succ_key[idx] = AST_KEY_NONE;
+				} else if (ast->succ_key[idx-1] != AST_KEY_MORE) {
+					ast->succ_key[idx] = AST_KEY_NONE;
+				}
 			}
+			sos_value_put(v);
+		} else {
+			ast->succ_key[idx] = AST_KEY_MORE;
 		}
-		sos_value_put(v);
 	}
 	for (idx = 0; idx < ast->key_count; idx++) {
 		if (ast->succ_key[idx] == AST_KEY_NONE)
@@ -1048,7 +1052,7 @@ static int limit_check(struct ast *ast, sos_obj_t obj)
  */
 enum ast_eval_e ast_eval_limits(struct ast *ast, sos_obj_t obj)
 {
-	int idx;
+	int idx, rc;
 	struct ast_attr_limits *limits;
 	struct sos_value_s v_;
 	sos_value_t v;
@@ -1066,12 +1070,17 @@ enum ast_eval_e ast_eval_limits(struct ast *ast, sos_obj_t obj)
 		assert(limits->join_idx == idx);
 		v = sos_value_init(&v_, obj, limits->attr);
 		assert(v);
-		int rc = sos_value_cmp(v, limits->min_v);
-		if (rc < 0 && idx < ast->key_count - 1)
-			return AST_EVAL_NOMATCH;
-		rc = sos_value_cmp(v, limits->max_v);
-		if (rc > 0)
-			return AST_EVAL_NOMATCH;
+
+		if (limits->min_v) {
+			rc = sos_value_cmp(v, limits->min_v);
+			if (rc < 0 && idx < ast->key_count - 1)
+				return AST_EVAL_NOMATCH;
+		}
+		if (limits->max_v) {
+			rc = sos_value_cmp(v, limits->max_v);
+			if (rc > 0)
+				return AST_EVAL_NOMATCH;
+		}
 	}
 	return AST_EVAL_MATCH;
 }
@@ -1352,7 +1361,10 @@ int ast_start_key(struct ast *ast, sos_key_t key)
 		rbn = ods_rbt_find(&ast->attr_tree, sos_attr_name(attr));
 		if (rbn) {
 			limits = container_of(rbn, struct ast_attr_limits, rbn);
-			key_comp = __sos_set_key_comp(key_comp, limits->min_v, &comp_len);
+			if (limits->min_v)
+				key_comp = __sos_set_key_comp(key_comp, limits->min_v, &comp_len);
+			else
+				key_comp = __sos_set_key_comp(key_comp, sos_attr_min(attr), &comp_len);
 		} else {
 			key_comp = __sos_set_key_comp_to_min(key_comp, attr, &comp_len);
 		}

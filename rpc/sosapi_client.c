@@ -5,36 +5,74 @@
 #include <errno.h>
 #include <assert.h>
 #include <time.h>
+#include <semaphore.h>
 #include "sosapi.h"
 #include "sosapi_common.h"
 #include "dsos.h"
 
+typedef struct dsos_completion_s {
+	pthread_mutex_t lock;
+	pthread_cond_t cond;
+	int count;		/* when this goes to zero, the condition variable is signaled */
+} *dsos_completion_t;
+
+
+struct dsos_client_s;
+typedef struct dsos_client_s *dsos_client_t;
 typedef struct dsos_client_request_s {
-	TAILQ_ENTRY(dsos_client_request_s) link;
-	dsos_container_id cont_id;
+	TAILQ_ENTRY(dsos_client_request_s) c_link;
+	LIST_ENTRY(dsos_client_request_s) r_link;
+	dsos_client_t client;
+	enum clnt_stat rpc_err;
+	dsos_completion_t completion;
+
 	enum dsos_client_request_type_e {
 		REQ_TRANSACTION_BEGIN = 1,
 		REQ_OBJ_CREATE = 2,
-	} type;
+		REQ_QUERY_SELECT = 3,
+		REQ_QUERY_NEXT = 4,
+	} kind;
+
 	union {
-		struct transaction_begin_s {
+		struct transaction_begin_rqst_s {
 			dsos_container_id cont_id;
 		} transaction_begin;
-		struct create_s {
+
+		struct create_rqst_s {
+			dsos_container_id cont_id;
 			dsos_obj_entry *obj_entry;
 		} obj_create;
-	} request;
+
+		struct query_select_rqst_s {
+			dsos_container_id cont_id;
+			dsos_query_id query_id;
+			dsos_query sql_str;
+			dsos_query_select_res res;
+		} select;
+
+		struct query_next_rqst_s {
+			dsos_container_id cont_id;
+			dsos_query_t query;
+			dsos_query_id query_id;
+			dsos_query_next_res res;
+		} next;
+	};
 } *dsos_client_request_t;
 
-typedef struct dsos_client_s {
+struct dsos_client_s {
 	CLIENT *client;
 	pthread_mutex_t rpc_lock;
 	int client_id;
 	int shutdown;
-	pthread_t thread;
+	pthread_t flush_thread;
+	pthread_t request_thread;
 	int queue_depth;
 	double obj_count;
 	double request_count;
+	/* General request queue */
+	TAILQ_HEAD(client_request_s, dsos_client_request_s) request_q;
+	pthread_mutex_t request_q_lock;
+	sem_t request_sem;
 	/* Requests queued here between x_start and x_end */
 	pthread_mutex_t queue_lock;
 	pthread_cond_t queue_cond;
@@ -43,7 +81,7 @@ typedef struct dsos_client_s {
 	pthread_mutex_t flush_lock;
 	pthread_cond_t flush_cond;
  	TAILQ_HEAD(client_req_flush_q, dsos_client_request_s) flush_q;
-} *dsos_client_t;
+};
 
 struct dsos_session_s {
 	int client_count;	/* Number of clients */
@@ -127,6 +165,15 @@ static inline void dsos_res_init(dsos_container_t cont, dsos_res_t *res) {
 	res->any_err = 0;
 }
 
+void submit_request(dsos_client_t client, dsos_client_request_t request)
+{
+	__sync_fetch_and_add(&request->completion->count, 1);
+	pthread_mutex_lock(&client->request_q_lock);
+	TAILQ_INSERT_TAIL(&client->request_q, request, c_link);
+	pthread_mutex_unlock(&client->request_q_lock);
+	sem_post(&client->request_sem);
+}
+
 static int handle_transaction_begin(dsos_client_t client, dsos_client_request_t rqst)
 {
 	int rres;
@@ -134,7 +181,7 @@ static int handle_transaction_begin(dsos_client_t client, dsos_client_request_t 
 
 	// fprintf(stderr, "Beginning transaction on client %d\n", client->client_id);
 	pthread_mutex_lock(&client->rpc_lock);
-	rpc_err = transaction_begin_1(rqst->cont_id, &rres, client->client);
+	rpc_err = transaction_begin_1(rqst->transaction_begin.cont_id, &rres, client->client);
 	pthread_mutex_unlock(&client->rpc_lock);
 	if (rpc_err != RPC_SUCCESS) {
 		fprintf(stderr, "transaction_begin_1 failed on client %d with RPC error %d\n",
@@ -154,7 +201,7 @@ static int handle_obj_create(dsos_client_t client, dsos_client_request_t rqst)
 
 	// fprintf(stderr, "Creating object on client %d\n", client->client_id);
 	pthread_mutex_lock(&client->rpc_lock);
-	enum clnt_stat rpc_err = obj_create_1(rqst->request.obj_create.obj_entry, &create_res, client->client);
+	enum clnt_stat rpc_err = obj_create_1(rqst->obj_create.obj_entry, &create_res, client->client);
 	pthread_mutex_unlock(&client->rpc_lock);
 	if (rpc_err != RPC_SUCCESS) {
 		fprintf(stderr, "obj_create_1 failed with RPC error %d\n", rpc_err);
@@ -162,7 +209,7 @@ static int handle_obj_create(dsos_client_t client, dsos_client_request_t rqst)
 	}
 	if (create_res.error)
 		fprintf(stderr, "obj_create_1 returned error %d\n", create_res.error);
-	dsos_obj_entry *obj_e = rqst->request.obj_create.obj_entry;
+	dsos_obj_entry *obj_e = rqst->obj_create.obj_entry;
 	while (obj_e) {
 		dsos_obj_entry *next_obj_e = obj_e->next;
 		free(obj_e->value.dsos_obj_value_val);
@@ -176,7 +223,7 @@ static int handle_obj_create(dsos_client_t client, dsos_client_request_t rqst)
 /*
  * Processes the flush queue for a DSOS RPC client
  */
-void *client_proc_fn(void *arg)
+void *flush_proc_fn(void *arg)
 {
 	dsos_client_t client = arg;
 	dsos_client_request_t rqst;
@@ -200,16 +247,16 @@ next:
 	while (!TAILQ_EMPTY(&client->flush_q)) {
 		dsos_container_id cont_id;
 		rqst = TAILQ_FIRST(&client->flush_q);
-		TAILQ_REMOVE(&client->flush_q, rqst, link);
+		TAILQ_REMOVE(&client->flush_q, rqst, c_link);
 		client->queue_depth -= 1;
 
-		switch (rqst->type) {
+		switch (rqst->kind) {
 		case REQ_OBJ_CREATE:
-			cont_id = rqst->request.obj_create.obj_entry->cont_id;
+			cont_id = rqst->obj_create.obj_entry->cont_id;
 			handle_obj_create(client, rqst);
 			break;
 		case REQ_TRANSACTION_BEGIN:
-			cont_id = rqst->request.transaction_begin.cont_id;
+			cont_id = rqst->transaction_begin.cont_id;
 			handle_transaction_begin(client, rqst);
 			break;
 		default:
@@ -243,6 +290,87 @@ next:
 	return NULL;
 }
 
+static int process_request(dsos_client_t client, dsos_client_request_t rqst)
+{
+	const char *op_name;
+	const char *err_msg;
+	switch (rqst->kind) {
+	case REQ_QUERY_SELECT:
+		memset(&rqst->select.res, 0, sizeof(rqst->select.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err = query_select_1(rqst->select.cont_id,
+						rqst->select.query_id,
+						rqst->select.sql_str,
+						&rqst->select.res,
+						client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "query_select_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->select.res.error) {
+			g_last_err = rqst->select.res.error;
+			err_msg =  rqst->select.res.dsos_query_select_res_u.error_msg;
+			goto op_err;
+		}
+		break;
+	case REQ_QUERY_NEXT:
+		memset(&rqst->next.res, 0, sizeof(rqst->next.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err = query_next_1(rqst->next.cont_id,
+					     rqst->next.query_id, &rqst->next.res,
+					     client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "query_next_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->next.res.error) {
+			g_last_err = rqst->next.res.error;
+			err_msg = rqst->next.res.dsos_query_next_res_u.error_msg;
+			goto op_err;
+		}
+		break;
+	default:
+		return ENOSYS;
+	}
+	return 0;
+ rpc_err:
+	snprintf(g_last_errmsg, sizeof(g_last_errmsg),
+		 "%s: failed on client %d with "
+		 "RPC error %d\n", op_name,
+		 client->client_id, rqst->rpc_err);
+	g_last_err = RPC_ERROR(rqst->rpc_err);
+	return RPC_ERROR(rqst->rpc_err);
+ op_err:
+	snprintf(g_last_errmsg, sizeof(g_last_errmsg), "%s: %s", op_name, err_msg);
+	return g_last_err;
+}
+
+static void *request_proc_fn(void *arg)
+{
+	dsos_client_t client = arg;
+	dsos_client_request_t rqst;
+	int rc;
+next:
+	sem_wait(&client->request_sem);
+	pthread_mutex_lock(&client->request_q_lock);
+	while (!TAILQ_EMPTY(&client->request_q)) {
+		rqst = TAILQ_FIRST(&client->request_q);
+		TAILQ_REMOVE(&client->request_q, rqst, c_link);
+		pthread_mutex_unlock(&client->request_q_lock);
+		/* Process request */
+		rc = process_request(client, rqst);
+		if (rc) {
+			printf("Merrr %d\n", rc);
+		}
+		if (0 == __sync_sub_and_fetch(&rqst->completion->count, 1))
+			pthread_cond_broadcast(&rqst->completion->cond);
+		pthread_mutex_lock(&client->request_q_lock);
+	}
+	pthread_mutex_unlock(&client->request_q_lock);
+	goto next;
+	return NULL;
+}
+
 void dsos_session_close(dsos_session_t sess)
 {
 	dsos_client_t client;
@@ -255,11 +383,12 @@ void dsos_session_close(dsos_session_t sess)
 	for (client_id = 0; client_id < sess->client_count; client_id ++) {
 		client = &sess->clients[client_id];
 		void *dontcare;
-		pthread_join(client->thread, &dontcare);
+		pthread_join(client->flush_thread, &dontcare);
 		auth_destroy(client->client->cl_auth);
 		clnt_destroy(client->client);
 	}
 }
+
 dsos_session_t dsos_session_open(const char *config_file)
 {
 	dsos_session_t session;
@@ -310,19 +439,26 @@ dsos_session_t dsos_session_open(const char *config_file)
 		client->request_count = 0;
 		client->queue_depth = 0;
 		client->obj_count = 0;
+		TAILQ_INIT(&client->request_q);
+		pthread_mutex_init(&client->request_q_lock, NULL);
+		sem_init(&client->request_sem, 0, 0);
 		TAILQ_INIT(&client->queue_q);
 		TAILQ_INIT(&client->flush_q);
 		pthread_mutex_init(&client->queue_lock, NULL);
 		pthread_cond_init(&client->queue_cond, NULL);
 		pthread_mutex_init(&client->queue_lock, NULL);
 		pthread_cond_init(&client->flush_cond, NULL);
-		int rc = pthread_create(&client->thread, NULL, client_proc_fn, client);
+		int rc = pthread_create(&client->flush_thread, NULL, flush_proc_fn, client);
+		if (rc) {
+			return NULL;
+		}
+		rc = pthread_create(&client->request_thread, NULL, request_proc_fn, client);
 		if (rc) {
 			return NULL;
 		}
 		char thread_name[16];
 		sprintf(thread_name, "client:%d", i);
-		pthread_setname_np(client->thread, thread_name);
+		pthread_setname_np(client->flush_thread, thread_name);
 	}
 
 	session->next_client = 0;
@@ -609,11 +745,10 @@ void dsos_transaction_begin(dsos_container_t cont, dsos_res_t *res)
 		if (!rqst)
 			goto enomem;
 		client = &cont->sess->clients[client_id];
-		rqst->cont_id = cont->handles[client_id];
-		rqst->request.transaction_begin.cont_id = rqst->cont_id;
-		rqst->type = REQ_TRANSACTION_BEGIN;
+		rqst->transaction_begin.cont_id = cont->handles[client_id];
+		rqst->kind = REQ_TRANSACTION_BEGIN;
 		pthread_mutex_lock(&client->queue_lock);
-		TAILQ_INSERT_TAIL(&client->queue_q, rqst, link);
+		TAILQ_INSERT_TAIL(&client->queue_q, rqst, c_link);
 		client->queue_depth += 1;
 		client->request_count += 1.0;
 		pthread_mutex_unlock(&client->queue_lock);
@@ -642,8 +777,8 @@ void dsos_transaction_end(dsos_container_t cont, dsos_res_t *res)
 		pthread_mutex_lock(&client->flush_lock);
 		while (!TAILQ_EMPTY(&client->queue_q)) {
 			rqst = TAILQ_FIRST(&client->queue_q);
-			TAILQ_REMOVE(&client->queue_q, rqst, link);
-			TAILQ_INSERT_TAIL(&client->flush_q, rqst, link);
+			TAILQ_REMOVE(&client->queue_q, rqst, c_link);
+			TAILQ_INSERT_TAIL(&client->flush_q, rqst, c_link);
 			// fprintf(stderr, "%s: moved rqst %p to flush_q on client %d\n", __func__, rqst, i);
 		}
 		pthread_mutex_unlock(&client->flush_lock);
@@ -688,15 +823,15 @@ void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj,
 	 * this object to the object list for that request
 	 */
 	client->obj_count += 1.0;
-	if (rqst && rqst->type == REQ_OBJ_CREATE && rqst->cont_id == cont_id) {
-		obj_e->next = rqst->request.obj_create.obj_entry;
-		rqst->request.obj_create.obj_entry = obj_e;
+	if (rqst && rqst->kind == REQ_OBJ_CREATE && rqst->obj_create.cont_id == cont_id) {
+		obj_e->next = rqst->obj_create.obj_entry;
+		rqst->obj_create.obj_entry = obj_e;
 	} else {
 		rqst = malloc(sizeof *rqst);
-		rqst->cont_id = cont->handles[client_id];
-		rqst->type = REQ_OBJ_CREATE;
-		rqst->request.obj_create.obj_entry = obj_e;
-		TAILQ_INSERT_TAIL(&client->queue_q, rqst, link);
+		rqst->obj_create.cont_id = cont->handles[client_id];
+		rqst->kind = REQ_OBJ_CREATE;
+		rqst->obj_create.obj_entry = obj_e;
+		TAILQ_INSERT_TAIL(&client->queue_q, rqst, c_link);
 		client->request_count += 1.0;
 	}
 	pthread_mutex_unlock(&client->queue_lock);
@@ -1061,92 +1196,174 @@ void dsos_query_destroy(dsos_query_t query)
 
 int dsos_query_select(dsos_query_t query, const char *clause)
 {
-	dsos_query_select_res res;
 	int client_id;
-	enum clnt_stat rpc_err;
+	dsos_client_request_t request;
+	LIST_HEAD(request_list, dsos_client_request_s) req_list = LIST_HEAD_INITIALIZER(req_list);
+	dsos_completion_t completion = malloc(sizeof *completion);
+	if (!completion)
+		return ENOMEM;
+	completion->count = 0;
+	pthread_mutex_init(&completion->lock, NULL);
+	pthread_cond_init(&completion->cond, NULL);
 	for (client_id = 0; client_id < query->cont->sess->client_count; client_id++) {
 		dsos_client_t client = &query->cont->sess->clients[client_id];
-		memset(&res, 0, sizeof(res));
-		pthread_mutex_lock(&client->rpc_lock);
-		rpc_err = query_select_1(query->cont->handles[client_id],
-					 query->handles[client_id],
-					 (char *)clause, &res, client->client);
-		pthread_mutex_unlock(&client->rpc_lock);
-		if (rpc_err != RPC_SUCCESS) {
-			fprintf(stderr,
-				"query_select_1 failed on client %d with "
-				"RPC error %d\n",
-				client_id, rpc_err);
-			return RPC_ERROR(rpc_err);
+		request = malloc(sizeof *request);
+		if (!request)
+			goto err_0;
+		request->completion = completion;
+		request->client = client;
+		request->kind = REQ_QUERY_SELECT;
+		request->select.cont_id = query->cont->handles[client_id];
+		request->select.query_id = query->handles[client_id];
+		request->select.sql_str = (char *)clause;
+		LIST_INSERT_HEAD(&req_list, request, r_link);
+	}
+	LIST_FOREACH(request, &req_list, r_link) {
+		submit_request(request->client, request);
+	}
+	pthread_mutex_lock(&completion->lock);
+	while (completion->count)
+		pthread_cond_wait(&completion->cond, &completion->lock);
+	pthread_mutex_unlock(&completion->lock);
+
+	dsos_res_t res;
+	dsos_res_init(query->cont, &res);
+	enum dsos_error derr;
+	struct dsos_query_select_res *sres;
+
+	while (!LIST_EMPTY(&req_list)) {
+		request = LIST_FIRST(&req_list);
+		LIST_REMOVE(request, r_link);
+		sres = &request->select.res;
+		if (request->rpc_err) {
+			res.any_err = RPC_ERROR(request->rpc_err);
+			res.res[request->client->client_id] = res.any_err;
+		} else {
+			derr = sres->error;
+			if (derr == 0 && query->schema == NULL) {
+				query->schema =
+					dsos_schema_from_spec(sres->dsos_query_select_res_u.select.spec);
+				if (!query->schema)
+					derr = DSOS_ERR_SCHEMA;
+				query->key_attr =
+					sos_schema_attr_by_id(query->schema,
+							      sres->dsos_query_select_res_u.select.key_attr_id);
+				if (!query->key_attr)
+					derr = DSOS_ERR_ATTR;
+			}
 		}
-		if (res.error) {
-			fprintf(stderr, "%s: %s\n", __func__,
-				res.dsos_query_select_res_u.error_msg);
-			g_last_err = res.error;
-			snprintf(g_last_errmsg, sizeof(g_last_errmsg), res.dsos_query_select_res_u.error_msg);
-			return res.error;
-		}
-		if (query->schema == NULL) {
-			query->schema =
-				dsos_schema_from_spec(res.dsos_query_select_res_u.select.spec);
-			if (!query->schema)
-				return DSOS_ERR_SCHEMA;
-			query->key_attr = sos_schema_attr_by_id(query->schema,
-								res.dsos_query_select_res_u.select.key_attr_id);
-			if (!query->key_attr)
-				return DSOS_ERR_ATTR;
-		}
+		res.res[request->client->client_id] = derr;
+		xdr_free((xdrproc_t)xdr_dsos_query_select_res, (char *)&request->select.res);
+		free(request);
 	}
 	query->state = DSOS_QUERY_SELECT;
+	free(completion);
 	return 0;
+
+err_0:
+	free(completion);
+	while (!LIST_EMPTY(&req_list)) {
+		request = LIST_FIRST(&req_list);
+		LIST_REMOVE(request, r_link);
+		free(request);
+	}
+	return ENOMEM;
 }
 
 static int query_obj_add(dsos_query_t query, int client_id)
 {
-	dsos_container_id cont_id = query->cont->handles[client_id];
-	dsos_query_id query_id = query->handles[client_id];
 	enum clnt_stat rpc_err;
-	dsos_query_next_res next_res;
+	dsos_query_next_res *next_res;
 	dsos_obj_entry *obj_e;
-	int count = 0;
-	dsos_client_t client = &query->cont->sess->clients[client_id];
+	int cid, count = 0;
+	dsos_client_request_t request;
+	LIST_HEAD(request_list, dsos_client_request_s) req_list = LIST_HEAD_INITIALIZER(req_list);
+	dsos_completion_t completion = malloc(sizeof *completion);
+	if (!completion)
+		return ENOMEM;
+	completion->count = 0;
+	pthread_mutex_init(&completion->lock, NULL);
+	pthread_cond_init(&completion->cond, NULL);
 
-	memset(&next_res, 0, sizeof(next_res));
-	pthread_mutex_lock(&client->rpc_lock);
-	rpc_err = query_next_1(cont_id, query_id, &next_res, client->client);
-	pthread_mutex_unlock(&client->rpc_lock);
-	if (rpc_err != RPC_SUCCESS)
-		return RPC_ERROR(rpc_err);
-	if (next_res.error)
-		return next_res.error;
+	if (client_id >= 0)
+		cid = client_id;
+	else
+		cid = 0;
+	for (; cid < query->cont->handle_count; cid++) {
+		dsos_container_id cont_id = query->cont->handles[cid];
+		dsos_client_t client = &query->cont->sess->clients[cid];
+		dsos_query_id query_id = query->handles[cid];
 
-	/* Build the objects from the list */
-	obj_e = next_res.dsos_query_next_res_u.result.obj_list;
-	while (obj_e) {
-		dsos_obj_entry *next_obj_e = obj_e->next;
+		request = malloc(sizeof *request);
+		if (!request)
+			goto err_0;
 
-		dsos_obj_ref_t obj_ref = malloc(sizeof *obj_ref);
-		assert(obj_ref);
-		obj_ref->client_id = client_id;
-		sos_obj_t obj = sos_obj_new_with_data(
-					query->schema,
-					obj_e->value.dsos_obj_value_val,
-					obj_e->value.dsos_obj_value_len);
-		assert(obj);
-		obj_ref->obj = obj;
-		sos_value_init(&obj_ref->key_value, obj, query->key_attr);
-		ods_rbn_init(&obj_ref->rbn, &obj_ref->key_value);
-		ods_rbt_ins(&query->obj_tree, &obj_ref->rbn);
-		query->counts[client_id] += 1;
-		count += 1;
-		free(obj_e->value.dsos_obj_value_val);
-		free(obj_e);
-
-		obj_e = next_obj_e;
+		request->completion = completion;
+		request->client = client;
+		request->kind = REQ_QUERY_NEXT;
+		request->next.cont_id = cont_id;
+		request->next.query = query;
+		request->next.query_id = query_id;
+		LIST_INSERT_HEAD(&req_list, request, r_link);
+		if (client_id >= 0)
+			break;
 	}
-	if (!count)
-		return ENOENT;
+
+	LIST_FOREACH(request, &req_list, r_link) {
+		submit_request(request->client, request);
+	}
+	pthread_mutex_lock(&completion->lock);
+	while (completion->count)
+		pthread_cond_wait(&completion->cond, &completion->lock);
+	pthread_mutex_unlock(&completion->lock);
+
+	dsos_res_t res;
+	dsos_res_init(query->cont, &res);
+	enum dsos_error derr;
+
+	while (!LIST_EMPTY(&req_list)) {
+		request = LIST_FIRST(&req_list);
+		LIST_REMOVE(request, r_link);
+		next_res = &request->next.res;
+
+		/* Build the objects from the list */
+		obj_e = next_res->dsos_query_next_res_u.result.obj_list;
+		while (obj_e) {
+			dsos_obj_entry *next_obj_e = obj_e->next;
+
+			dsos_obj_ref_t obj_ref = malloc(sizeof *obj_ref);
+			assert(obj_ref);
+			obj_ref->client_id = request->client->client_id;
+			sos_obj_t obj = sos_obj_new_with_data(
+							      request->next.query->schema,
+							      obj_e->value.dsos_obj_value_val,
+							      obj_e->value.dsos_obj_value_len);
+			assert(obj);
+			obj_ref->obj = obj;
+			sos_value_init(&obj_ref->key_value, obj, query->key_attr);
+			ods_rbn_init(&obj_ref->rbn, &obj_ref->key_value);
+			ods_rbt_ins(&query->obj_tree, &obj_ref->rbn);
+			query->counts[obj_ref->client_id] += 1;
+			count += 1;
+			// free(obj_e->value.dsos_obj_value_val);
+			// free(obj_e);
+			obj_e = next_obj_e;
+		}
+		xdr_free((xdrproc_t)xdr_dsos_query_next_res, (char *)&request->next.res);
+		free(request);
+		if (!count)
+			continue;
+	}
+	free(completion);
 	return 0;
+err_0:
+	free(completion);
+	while (!LIST_EMPTY(&req_list)) {
+		request = LIST_FIRST(&req_list);
+		LIST_REMOVE(request, r_link);
+		free(request);
+	}
+	return ENOMEM;
 }
 
 static sos_obj_t query_obj(dsos_query_t query, struct ods_rbn *rbn)
@@ -1193,11 +1410,9 @@ sos_obj_t dsos_query_next(dsos_query_t query)
 		break;
 	case DSOS_QUERY_SELECT:
 		query->state = DSOS_QUERY_EMPTY;
-		for (client_id = 0; client_id < query->cont->sess->client_count; client_id++) {
-			rc = query_obj_add(query, client_id);
-			if (!rc)
-				query->state = DSOS_QUERY_NEXT;
-		}
+		rc = query_obj_add(query, -1);
+		if (!rc)
+			query->state = DSOS_QUERY_NEXT;
 		break;
 	case DSOS_QUERY_INIT:
 		errno = EINVAL;

@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <sys/errno.h>
 #include <regex.h>
+#include <getopt.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -133,6 +134,21 @@ av_t av_find(av_list_t avl, const char *name)
 	return NULL;
 }
 
+void av_free_args(av_list_t avl)
+{
+	av_t av;
+	if (!avl)
+		return;
+	while (!LIST_EMPTY(&avl->head)) {
+		av = LIST_FIRST(&avl->head);
+		LIST_REMOVE(av, link);
+		free(av->name);
+		free(av->value_str);
+		free(av);
+	}
+	free(avl);
+}
+
 av_list_t av_parse_args(cmd_t cmd, char *args_)
 {
 	char *args = strdup(args_);
@@ -149,6 +165,7 @@ av_list_t av_parse_args(cmd_t cmd, char *args_)
 		av->name = strdup("");
 		av->value_str = strdup(rl_line_buffer);
 		LIST_INSERT_HEAD(&avlist->head, av, link);
+		free(args);
 		return avlist;
 	}
 	for (token = strtok(args, " ="); token && token[0] != '\0'; token = strtok(NULL, " =")) {
@@ -170,7 +187,7 @@ av_list_t av_parse_args(cmd_t cmd, char *args_)
 			value = strtok(NULL, " =");
 			if (!value) {
 				printf("The token '%s' expects a value.\n", token);
-				return NULL;
+				goto err;
 			}
 			av->value_str = strdup(value);
 			switch (arg->type) {
@@ -193,7 +210,12 @@ av_list_t av_parse_args(cmd_t cmd, char *args_)
 		}
 
 	}
+	free(args);
 	return avlist;
+ err:
+	free(args);
+	av_free_args(avlist);
+	return NULL;
 }
 
 /* Forward declarations. */
@@ -233,7 +255,9 @@ int execute_line(char *line)
 	word = line + i;
 
 	av_list_t avl = av_parse_args(cmd, word);
-	return cmd->cmd_fn(cmd, avl);
+	int rc = cmd->cmd_fn(cmd, avl);
+	av_free_args(avl);
+	return rc;
 }
 
 cmd_t find_command(char *name)
@@ -649,18 +673,81 @@ void update_history(void)
 		printf("warning: write_history returned %d\n", rc);
 }
 
+void usage(int argc, char *argv[])
+{
+	fprintf(stderr, "dsosql: [-a attach-file -o open-file -h history-file]\n");
+	fprintf(stderr, "        --attach  PATH The name of the cluster configuration file\n");
+	fprintf(stderr, "        --open    NAME The name of the container to open\n");
+	fprintf(stderr, "        --history PATH The desired location of the history file\n");
+	exit(1);
+}
+
+static struct option long_opts[] = {
+	{ "attach",	required_argument, 0, 'a' },
+	{ "open",	required_argument, 0, 'o' },
+	{ "history",	required_argument, 0, 'h' }
+};
+
+#define HISTORY_PATH	"DSOSQL_HISTORY_PATH"
+#define HISTORY_FILE	"DSOSQL_HISTORY_FILE"
+
 int main(int argc, char *argv[])
 {
+	char *h_path;
+	char *h_file;
 	int rc;
 	char *line, *s;
 	struct passwd *pw = getpwuid(getuid());
 	progname = argv[0];
 	atexit(update_history);
 	initialize_readline(); /* Bind our completer. */
-	snprintf(history_path, sizeof(history_path), "%s/.dsosql_history", pw->pw_dir);
+
+
+	h_path = getenv(HISTORY_PATH);
+	if (!h_path)
+		h_path = pw->pw_dir;
+	h_file = getenv(HISTORY_FILE);
+	if (!h_file)
+		h_file = ".dsosql_history";
+
+
+	int opt_idx = 0;
+	int opt;
+	char *attach_file = NULL;
+	char *open_file = NULL;
+	while ((opt = getopt_long(argc, argv, "a:o:h:", long_opts, &opt_idx)) > 0) {
+		switch (opt) {
+		case 'a':
+			attach_file = strdup(optarg);
+			break;
+		case 'o':
+			open_file = strdup(optarg);
+			break;
+		case 'h':
+			snprintf(history_path, sizeof(history_path), optarg);
+			break;
+		default:
+			usage(argc, argv);
+		}
+	}
+	if (history_path[0] == '\0')
+		snprintf(history_path, sizeof(history_path), "%s/%s", h_path, h_file);
 	rc = read_history(history_path);
 	if (rc)
 		printf("warning: read_history returned %d\n", rc);
+
+	if (attach_file) {
+		snprintf(history_path, sizeof(history_path), "attach path %s", attach_file);
+		execute_line(history_path);
+	}
+	if (open_file) {
+		if (!attach_file) {
+			printf("The -o option must be specified with -a option\n");
+			usage(argc, argv);
+		}
+		snprintf(history_path, sizeof(history_path), "open path %s", open_file);
+		execute_line(history_path);
+	}
 	/* Loop reading and executing lines until the user quits. */
 	for (; done == 0;) {
 		line = readline("dsosql: ");

@@ -3,10 +3,7 @@
 #include <sos/sos.h>
 #include <ods/ods_rbt.h>
 
-
 #define RPC_ERROR(_err_)	(_err_ + 1024)
-
-
 
 extern sos_schema_t dsos_schema_from_spec(struct dsos_schema_spec *spec);
 extern struct dsos_schema_spec * dsos_spec_from_schema(sos_schema_t schema);
