@@ -90,6 +90,7 @@ _gss_authenticate(rqst, msg, no_dispatch)
 	struct rpc_msg *msg;
 	bool_t *no_dispatch;
 {
+	extern enum auth_stat _svcauth_des(struct svc_req *rqst, struct rpc_msg *msg);
 	int cred_flavor;
 	struct authsvc *asp;
 	enum auth_stat dummy;

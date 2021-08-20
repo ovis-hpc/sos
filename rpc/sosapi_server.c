@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <sys/queue.h>
+#include <syslog.h>
 #include "dsos.h"
 #include "sosapi.h"          /* Created by rpcgen */
 #include "sosapi_common.h"
@@ -105,6 +106,31 @@ int64_t uuid_comparator(void *a, const void *b, void *arg)
 
 static struct ods_rbt client_tree = ODS_RBT_INITIALIZER( handle_comparator );
 
+static bool_t authenticate_request(struct svc_req *rqstp, const char *op)
+{
+	struct authsys_parms *sys_cred;
+	struct authdes_parms *des_cred;
+
+	switch(rqstp->rq_cred.oa_flavor) {
+	case AUTH_SYS:
+		sys_cred = (struct authsys_parms *) rqstp->rq_clntcred;
+		syslog(LOG_INFO, "DSOS AUTH_SYS[%s]: node %s, uid %d, gid %d\n",
+		       op,
+		       sys_cred->aup_machname,
+		       sys_cred->aup_uid,
+		       sys_cred->aup_gid);
+		break;
+	case AUTH_DES:
+		des_cred = (struct authdes_parms *) rqstp->rq_clntcred;
+		syslog(LOG_ERR, "%s: des_cred %p\n", __func__, des_cred);
+		break;
+	default:
+		svcerr_weakauth(rqstp->rq_xprt);
+		return FALSE;
+	}
+	return TRUE;
+}
+
 static void session_close(struct dsos_session *client)
 {
 	struct ods_rbn *rbn;
@@ -153,6 +179,8 @@ void idle_client_cleanup(const SVCXPRT *handle, const bool_t b)
 bool_t
 open_1_svc(char *path, int perm, int mode, dsos_open_res *res,  struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	sos_t sos = sos_container_open(path, perm, mode);
 	if (!sos) {
 		res->error = errno;
@@ -207,6 +235,8 @@ bool_t close_1_svc(uint64_t handle, int *res, struct svc_req *req)
 	*res = ENOENT;
 	struct ods_rbn *rbn;
 	struct dsos_session *client;
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	pthread_mutex_lock(&client_tree_lock);
 	rbn = ods_rbt_find(&client_tree, &handle);
 	if (!rbn)
@@ -221,6 +251,8 @@ out:
 
 bool_t commit_1_svc(uint64_t handle, int *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	*res = ENOENT;
 	struct ods_rbn *rbn;
 	struct dsos_session *client;
@@ -239,6 +271,8 @@ out:
 
 bool_t transaction_begin_1_svc(dsos_container_id cont, int *res, struct svc_req *rqstp)
 {
+	if (!authenticate_request(rqstp, __func__))
+		return FALSE;
 	*res = ENOENT;
 	struct ods_rbn *rbn;
 	struct dsos_session *client;
@@ -261,6 +295,8 @@ out:
 
 bool_t transaction_end_1_svc(dsos_container_id cont, int *res, struct svc_req *rqstp)
 {
+	if (!authenticate_request(rqstp, __func__))
+		return FALSE;
 	*res = ENOENT;
 	struct ods_rbn *rbn;
 	struct dsos_session *client;
@@ -373,6 +409,8 @@ err_0:
 }
 bool_t schema_create_1_svc(dsos_container_id cont_id, dsos_schema_spec spec, dsos_schema_res *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	sos_schema_t schema;
 	int rc;
@@ -413,6 +451,8 @@ out_0:
 
 bool_t schema_find_by_id_1_svc(dsos_container_id cont_id, dsos_schema_id schema_id, dsos_schema_res *res, struct svc_req *rqstp)
 {
+	if (!authenticate_request(rqstp, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	struct ods_rbn *rbn;
 	struct dsos_schema *dschema;
@@ -439,6 +479,8 @@ out_0:
 
 bool_t schema_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_schema_res *res, struct svc_req *rqstp)
 {
+	if (!authenticate_request(rqstp, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	struct ods_rbn *rbn;
 	struct dsos_schema *dschema;
@@ -477,6 +519,8 @@ out_0:
 
 bool_t schema_find_by_uuid_1_svc(dsos_container_id cont_id, char *uuid, dsos_schema_res *res, struct svc_req *rqstp)
 {
+	if (!authenticate_request(rqstp, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	struct ods_rbn *rbn;
 	struct dsos_schema *dschema;
@@ -515,6 +559,8 @@ out_0:
 
 bool_t schema_query_1_svc(dsos_container_id cont_id, dsos_schema_query_res *res, struct svc_req *rqstp)
 {
+	if (!authenticate_request(rqstp, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	int count, array_size;
 	sos_schema_t schema;
@@ -543,6 +589,8 @@ out_0:
 
 bool_t obj_create_1_svc(dsos_obj_link obj_list, dsos_create_res *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	struct dsos_schema *schema;
 	dsos_obj_entry *obj_e;
@@ -586,6 +634,8 @@ out_0:
 
 bool_t obj_delete_1_svc(dsos_container_id cont, dsos_obj_id obj, int *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	*res = ENOTSUP;
 	return TRUE;
 }
@@ -593,6 +643,8 @@ bool_t obj_delete_1_svc(dsos_container_id cont, dsos_obj_id obj, int *res, struc
 bool_t iter_create_1_svc(dsos_container_id cont_id, dsos_schema_id schema_id, dsos_attr_name attr_name,
 			dsos_iter_res *res, struct svc_req *rqstp)
 {
+	if (!authenticate_request(rqstp, __func__))
+		return FALSE;
 	sos_iter_t iter;
 	struct dsos_iter *diter;
 	struct dsos_session *client;
@@ -651,6 +703,8 @@ out_0:
 
 bool_t iter_delete_1_svc(dsos_container_id cont, dsos_iter_id iter_id, int *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	struct dsos_iter *diter;
 
@@ -716,6 +770,8 @@ err_0:
 
 bool_t iter_begin_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_list_res *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	struct dsos_iter *diter;
 	int rc;
@@ -748,11 +804,15 @@ out_0:
 
 bool_t iter_end_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	return TRUE;
 }
 
 bool_t iter_next_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_list_res *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	struct dsos_iter *diter;
 	int rc;
@@ -785,23 +845,33 @@ out_0:
 
 bool_t iter_prev_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	return TRUE;
 }
 bool_t iter_find_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	return TRUE;
 }
 bool_t iter_find_glb_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	return TRUE;
 }
 bool_t iter_find_lub_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
 {
+	if (!authenticate_request(req, __func__))
+		return FALSE;
 	return TRUE;
 }
 
 bool_t query_create_1_svc(dsos_container_id cont_id, dsos_query_options opts, dsos_query_create_res *res, struct svc_req *rqst)
 {
+	if (!authenticate_request(rqst, __func__))
+		return FALSE;
 	struct dsos_query *query;
 	struct dsos_session *client;
 
@@ -834,6 +904,8 @@ out_0:
 
 bool_t query_select_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_query query_str, dsos_query_select_res *res, struct svc_req *rqst)
 {
+	if (!authenticate_request(rqst, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	struct dsos_query *query;
 	int rc;
@@ -943,6 +1015,8 @@ struct ast_term *query_find_term(struct dsos_query *query, sos_attr_t filt_attr)
 
 bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_query_next_res *res, struct svc_req *rqst)
 {
+	if (!authenticate_request(rqst, __func__))
+		return FALSE;
 	struct dsos_session *client;
 	struct dsos_query *query;
 	int rc;
@@ -1011,6 +1085,8 @@ empty:
 
 bool_t query_delete_1_svc(dsos_container_id cont_id, dsos_query_id query_id, int *res, struct svc_req *rqst)
 {
+	if (!authenticate_request(rqst, __func__))
+		return FALSE;
 	return TRUE;
 }
 

@@ -29,6 +29,43 @@ if test -z "$ENABLE_DSOS_TRUE"; then
    AS_IF([test "x$BISON" = "xno"], [AC_MSG_ERROR([You need to install bison to build DSOS])])
 fi
 
+AC_CHECK_HEADER([gssapi/gssapi.h], [HAVE_GSSAPI_H=yes], [HAVE_GSSAPI_H=no])
+
+AC_ARG_ENABLE(gssapi,
+	[AC_HELP_STRING([--disable-gssapi], [Disable GSSAPI support @<:@default=no@:>@])],
+      [],[enable_gssapi=yes])
+AM_CONDITIONAL(GSS, test "x$enable_gssapi" = xyes)
+
+if test "x$enable_gssapi" = xyes; then
+	if test "x$HAVE_GSSAPI_H" = xno; then
+		AC_MSG_ERROR([gssapi.h not found. Use --disable-gssapi, or install GSS-API.])
+	fi
+	AC_CHECK_TOOL([KRB5_CONFIG], [krb5-config], [no])
+	if test "x$KRB5_CONFIG" = xno; then
+		AC_MSG_ERROR([krb5-config tool not found. Use --disable-gssapi, or install Kerberos.])
+	fi
+	GSSAPI_CFLAGS=`${KRB5_CONFIG} --cflags gssapi`
+	GSSAPI_LIBS=`${KRB5_CONFIG} --libs gssapi`
+	AC_SUBST([GSSAPI_CFLAGS])
+	AC_SUBST([GSSAPI_LIBS])
+fi
+
+AC_ARG_ENABLE(authdes,
+	[AC_HELP_STRING([--enable-authdes], [Enable AUTH_DES support @<:@default=no@:>@])],
+      [],[enable_authdes=no])
+AM_CONDITIONAL(AUTHDES, test "x$enable_authdes" = xyes)
+if test "x$enable_authdes" != xno; then
+	AC_DEFINE(AUTHDES_SUPPORT, 1, [Define if AUTH_DES is support])
+fi
+
+AC_ARG_ENABLE(ipv6,
+	[AC_HELP_STRING([--disable-ipv6], [Disable IPv6 support @<:@default=no@:>@])],
+	[],[enable_ipv6=yes])
+AM_CONDITIONAL(INET6, test "x$disable_ipv6" != xno)
+if test "x$enable_ipv6" != xno; then
+	AC_DEFINE(INET6, 1, [Define to 1 if IPv6 is available])
+fi
+
 dnl this will add document options. Please see m4/options.m4.
 OPTION_DOC
 

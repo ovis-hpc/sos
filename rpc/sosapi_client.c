@@ -430,6 +430,12 @@ dsos_session_t dsos_session_open(const char *config_file)
 		struct timeval timeout = {
 			600, 0
 		};
+		clnt->cl_auth = authsys_create_default();
+#ifdef __not_yet__
+		char servername[MAXNETNAMELEN];
+		host2netname(servername, session->hosts[i], NULL);
+		clnt->cl_auth = authdes_seccreate(servername, 60, session->hosts[i], NULL);
+#endif
 		clnt_control(clnt, CLSET_TIMEOUT, (char *)&timeout);
 		dsos_client_t client = &session->clients[i];
 		pthread_mutex_init(&client->rpc_lock, NULL);
