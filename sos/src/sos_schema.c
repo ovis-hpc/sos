@@ -195,6 +195,7 @@ void __sos_schema_free(sos_schema_t schema)
 		free(attr->idx_type);
 		if (attr->idx_args)
 			free(attr->idx_args);
+		free(attr->ext_ptr);
 		free(attr);
 	}
 	/* Free the attribute dictionary */
