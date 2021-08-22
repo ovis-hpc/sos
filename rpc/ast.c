@@ -284,7 +284,6 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 		break;
 	case ASTT_NAME:	/* Attribute */
 		term = calloc(1, sizeof(*term));
-		term->value = calloc(1, sizeof(*term->value));
 		term->kind = ASTV_ATTR;
 		term->attr = calloc(1, sizeof(*term->attr));
 		err = parse_attr(ast, token_str, term->attr);
@@ -296,7 +295,6 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 	case ASTT_DQSTRING:
 	case ASTT_SQSTRING:	/* String value */
 		term = calloc(1, sizeof(*term));
-		term->value = calloc(1, sizeof(*term->value));
 		term->kind = ASTV_CONST;
 		term->value = sos_value_init_const(&term->value_,
 						   SOS_TYPE_CHAR_ARRAY,
@@ -305,14 +303,12 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 		break;
 	case ASTT_INTEGER:
 		term = calloc(1, sizeof(*term));
-		term->value = calloc(1, sizeof(*term->value));
 		term->kind = ASTV_CONST;
 		term->value = sos_value_init_const(&term->value_, SOS_TYPE_INT64,
 						   strtol(token_str, NULL, 0));
 		break;
 	case ASTT_FLOAT:
 		term = calloc(1, sizeof(*term));
-		term->value = calloc(1, sizeof(*term->value));
 		term->kind = ASTV_CONST;
 		term->value = sos_value_init_const(
 						   &term->value_,
@@ -1152,6 +1148,71 @@ struct ast *ast_create(sos_t sos, uint64_t query_id)
 	LIST_INIT(&ast->binop_list);
 	ods_rbt_init(&ast->attr_tree, attr_cmp, NULL);
 	return ast;
+}
+
+static void ast_term_destroy(struct ast *ast, struct ast_term *term)
+{
+	sos_value_t lhs, rhs;
+
+	switch (term->kind) {
+	case ASTV_ATTR:
+		sos_value_put(term->value);
+		free(term->attr);
+		free(term);
+		break;
+	case ASTV_CONST:
+		sos_value_put(term->value);
+		free(term);
+		break;
+	case ASTV_BINOP:
+		ast_term_destroy(ast, term->binop->lhs);
+		ast_term_destroy(ast, term->binop->rhs);
+		sos_value_put(term->value);
+		free(term->binop);
+		break;
+	}
+}
+
+
+void ast_destroy(struct ast *ast)
+{
+	regfree(&ast->dqstring_re);
+	regfree(&ast->sqstring_re);
+	regfree(&ast->float_re);
+	regfree(&ast->int_re);
+
+	ast_term_destroy(ast, ast->where);
+
+	while (!TAILQ_EMPTY(&ast->schema_list)) {
+		struct ast_schema_entry_s *se = TAILQ_FIRST(&ast->schema_list);
+		TAILQ_REMOVE(&ast->schema_list, se, link);
+		while (!LIST_EMPTY(&se->join_list)) {
+			struct ast_attr_entry_s *ae = LIST_FIRST(&se->join_list);
+			LIST_REMOVE(ae, join_link);
+			free((void *)ae->name);
+			free(ae);
+		}
+		free((char *)se->name);
+		free(se);
+	}
+	while (!TAILQ_EMPTY(&ast->select_list)) {
+		struct ast_attr_entry_s *ae = TAILQ_FIRST(&ast->select_list);
+		TAILQ_REMOVE(&ast->select_list, ae, link);
+		free((void *)ae->name);
+		free(ae);
+	}
+	while (!TAILQ_EMPTY(&ast->where_list)) {
+		struct ast_attr_entry_s *ae = TAILQ_FIRST(&ast->where_list);
+		TAILQ_REMOVE(&ast->where_list, ae, link);
+		free((void *)ae->name);
+		free(ae);
+	}
+	while (!TAILQ_EMPTY(&ast->index_list)) {
+		struct ast_attr_entry_s *ae = TAILQ_FIRST(&ast->index_list);
+		TAILQ_REMOVE(&ast->index_list, ae, link);
+		free((void *)ae->name);
+		free(ae);
+	}
 }
 
 typedef int (*ast_binop_find_fn_t)(struct ast_term *binop, const void *arg);

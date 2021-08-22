@@ -170,6 +170,7 @@ enum ast_eval_e {
 };
 
 extern struct ast *ast_create(sos_t sos, uint64_t query_id);
+extern void ast_destroy(struct ast *);
 extern int ast_parse(struct ast *ast, char *expr);
 extern enum ast_eval_e ast_eval(struct ast *ast, sos_obj_t obj);
 extern enum ast_eval_e ast_eval_limits(struct ast *ast, sos_obj_t obj);
