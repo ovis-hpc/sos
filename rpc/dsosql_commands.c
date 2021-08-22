@@ -882,5 +882,12 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 		rec_count += 1;
 	}
 	table_footer(stdout, rec_count, 0);
+	while (!TAILQ_EMPTY(&col_list)) {
+		col = TAILQ_FIRST(&col_list);
+		TAILQ_REMOVE(&col_list, col, entry);
+		free((char *)col->name);
+		free(col);
+	}
+	dsos_query_destroy(query);
 	return 0;
 }
