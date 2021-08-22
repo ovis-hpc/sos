@@ -17,31 +17,25 @@ sos_schema_t dsos_schema_from_spec(struct dsos_schema_spec *spec)
 	schema = sos_schema_new(spec->name);
 	if (!schema)
 		return NULL;
-	for (attr_id = 0; attr_id < spec->attrs.attrs_len; attr_id += 1)
-	{
+	for (attr_id = 0; attr_id < spec->attrs.attrs_len; attr_id += 1) {
 		dsos_schema_spec_attr *attr = &spec->attrs.attrs_val[attr_id];
 		char *join_list[256];
-		if (attr->type == SOS_TYPE_JOIN)
-		{
+		if (attr->type == SOS_TYPE_JOIN) {
 			int i;
 			assert(attr->size < 256);
-			for (i = 0; i < attr->size; i++)
-			{
+			for (i = 0; i < attr->size; i++) {
 				join_list[i] = attr->join_list.join_list_val[i].name;
 			}
 		}
 		rc = sos_schema_attr_add(schema, attr->name, attr->type,
-								 attr->size, join_list);
-		if (rc)
-		{
+					 attr->size, join_list);
+		if (rc) {
 			errno = rc;
 			goto err_1;
 		}
-		if (attr->indexed)
-		{
+		if (attr->indexed) {
 			rc = sos_schema_index_add(schema, attr->name);
-			if (rc)
-			{
+			if (rc) {
 				errno = rc;
 				goto err_1;
 			}
@@ -49,12 +43,11 @@ sos_schema_t dsos_schema_from_spec(struct dsos_schema_spec *spec)
 			if (!idx_type || idx_type[0] == '\0')
 				idx_type = "BXTREE";
 			rc = sos_schema_index_modify(schema,
-										 attr->name,
-										 idx_type,
-										 attr->key_type,
-										 attr->idx_args);
-			if (rc)
-			{
+						     attr->name,
+						     idx_type,
+						     attr->key_type,
+						     attr->idx_args);
+			if (rc) {
 				errno = rc;
 				goto err_1;
 			}

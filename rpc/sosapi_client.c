@@ -1,4 +1,3 @@
-
 #define _GNU_SOURCE
 #include <sys/queue.h>
 #include <sos/sos.h>
@@ -6,6 +5,7 @@
 #include <assert.h>
 #include <time.h>
 #include <semaphore.h>
+#include <stdarg.h>
 #include "sosapi.h"
 #include "sosapi_common.h"
 #include "dsos.h"
@@ -16,7 +16,6 @@ typedef struct dsos_completion_s {
 	int count;		/* when this goes to zero, the condition variable is signaled */
 } *dsos_completion_t;
 
-
 struct dsos_client_s;
 typedef struct dsos_client_s *dsos_client_t;
 typedef struct dsos_client_request_s {
@@ -24,13 +23,16 @@ typedef struct dsos_client_request_s {
 	LIST_ENTRY(dsos_client_request_s) r_link;
 	dsos_client_t client;
 	enum clnt_stat rpc_err;
-	dsos_completion_t completion;
+	dsos_completion_t completion; /* shared among multiple requests */
 
 	enum dsos_client_request_type_e {
-		REQ_TRANSACTION_BEGIN = 1,
-		REQ_OBJ_CREATE = 2,
-		REQ_QUERY_SELECT = 3,
-		REQ_QUERY_NEXT = 4,
+		REQ_CONTAINER_OPEN = 1,
+		REQ_TRANSACTION_BEGIN,
+		REQ_OBJ_CREATE,
+		REQ_QUERY_CREATE,
+		REQ_QUERY_SELECT,
+		REQ_QUERY_NEXT,
+		REQ_QUERY_DESTROY
 	} kind;
 
 	union {
@@ -38,24 +40,41 @@ typedef struct dsos_client_request_s {
 			dsos_container_id cont_id;
 		} transaction_begin;
 
+		struct open_rqst_s {
+			dsos_container_t cont;
+			char *name;
+			sos_perm_t perm;
+			int mode;
+			dsos_open_res res;
+		} open;
+
 		struct create_rqst_s {
 			dsos_container_id cont_id;
 			dsos_obj_entry *obj_entry;
 		} obj_create;
 
+		struct query_create_rqst_s {
+			dsos_query_t query;
+			dsos_query_options opts;
+			dsos_query_create_res res;
+		} query_create;
+
 		struct query_select_rqst_s {
-			dsos_container_id cont_id;
-			dsos_query_id query_id;
+			dsos_query_t query;
 			dsos_query sql_str;
 			dsos_query_select_res res;
-		} select;
+		} query_select;
 
 		struct query_next_rqst_s {
-			dsos_container_id cont_id;
 			dsos_query_t query;
-			dsos_query_id query_id;
+			dsos_query_options opts;
 			dsos_query_next_res res;
-		} next;
+		} query_next;
+
+		struct query_destroy_rqst_s {
+			dsos_query_t query;
+			dsos_query_destroy_res res;
+		} query_destroy;
 	};
 } *dsos_client_request_t;
 
@@ -142,6 +161,7 @@ struct dsos_query_s {
 	int *counts;				/* Objects in tree from each client */
 	sos_schema_t schema;		/* The schema for objects on this iterator */
 	sos_attr_t key_attr;		/* The attribute that is the key */
+	pthread_mutex_t obj_tree_lock;
 	struct ods_rbt obj_tree;	/* RBT of objects indexed by key_attr */
 };
 
@@ -157,9 +177,9 @@ const int dsos_last_err(void) {
 	return g_last_err;
 }
 
-static inline void dsos_res_init(dsos_container_t cont, dsos_res_t *res) {
+static inline void dsos_res_init(dsos_session_t sess, dsos_res_t *res) {
 	int i;
-	res->count = cont->handle_count;
+	res->count = sess->client_count;
 	for (i = 0; i < res->count; i++)
 		res->res[i] = 0;
 	res->any_err = 0;
@@ -172,6 +192,120 @@ void submit_request(dsos_client_t client, dsos_client_request_t request)
 	TAILQ_INSERT_TAIL(&client->request_q, request, c_link);
 	pthread_mutex_unlock(&client->request_q_lock);
 	sem_post(&client->request_sem);
+}
+
+LIST_HEAD(dsos_request_list_s, dsos_client_request_s);
+
+typedef int (*dsos_request_completion_fn_t)
+(dsos_client_t client, dsos_client_request_t request, dsos_res_t *res);
+
+static void format_request_va(dsos_client_request_t request, va_list ap)
+{
+	switch (request->kind) {
+	case REQ_CONTAINER_OPEN:
+		memset(&request->open.res, 0, sizeof(request->open.res));
+		request->open.cont = va_arg(ap, dsos_container_t);
+		request->open.name = va_arg(ap, char *);
+		request->open.perm = va_arg(ap, sos_perm_t);
+		request->open.mode = va_arg(ap, int);
+		break;
+	case REQ_QUERY_CREATE:
+		memset(&request->query_create.res, 0, sizeof(request->query_create.res));
+		memset(&request->query_create.opts, 0, sizeof(request->query_create.opts));
+		request->query_create.query = va_arg(ap, dsos_query_t);
+		break;
+	case REQ_QUERY_SELECT:
+		memset(&request->query_select.res, 0, sizeof(request->query_select.res));
+		request->query_select.query = va_arg(ap, dsos_query_t);
+		request->query_select.sql_str = va_arg(ap, char *);
+		break;
+	case REQ_QUERY_NEXT:
+		memset(&request->query_next.res, 0, sizeof(request->query_next.res));
+		request->query_next.query = va_arg(ap, dsos_query_t);
+		break;
+	case REQ_QUERY_DESTROY:
+		memset(&request->query_destroy.res, 0, sizeof(request->query_destroy.res));
+		request->query_destroy.query = va_arg(ap, dsos_query_t);
+		break;
+	case REQ_TRANSACTION_BEGIN:
+	case REQ_OBJ_CREATE:
+		assert(0 == "unsupported");
+	}
+	return;
+}
+
+int submit_wait(dsos_session_t sess,
+		dsos_request_completion_fn_t complete_fn, dsos_res_t *pres,
+		enum dsos_client_request_type_e kind, ...)
+{
+	int client_id;
+	va_list ap;
+	struct dsos_request_list_s request_list;
+	dsos_client_request_t request;
+
+	/* All clients share the same completion */
+	dsos_completion_t completion = malloc(sizeof *completion);
+	if (!completion)
+		return ENOMEM;
+
+	completion->count = 0;
+	pthread_mutex_init(&completion->lock, NULL);
+	pthread_cond_init(&completion->cond, NULL);
+
+	LIST_INIT(&request_list);
+
+	for (client_id = 0; client_id < sess->client_count; client_id++) {
+		dsos_client_t client = &sess->clients[client_id];
+
+		request = malloc(sizeof *request);
+		if (!request)
+			goto err_0;
+
+		request->completion = completion;
+		request->client = client;
+		request->kind = kind;
+
+		va_start(ap, kind);
+		format_request_va(request, ap);
+		va_end(ap);
+
+		LIST_INSERT_HEAD(&request_list, request, r_link);
+	}
+	va_end(ap);
+
+	LIST_FOREACH(request, &request_list, r_link) {
+		__sync_fetch_and_add(&request->completion->count, 1);
+		pthread_mutex_lock(&request->client->request_q_lock);
+		TAILQ_INSERT_TAIL(&request->client->request_q, request, c_link);
+		pthread_mutex_unlock(&request->client->request_q_lock);
+		sem_post(&request->client->request_sem);
+	}
+
+	pthread_mutex_lock(&completion->lock);
+	while (completion->count)
+		pthread_cond_wait(&completion->cond, &completion->lock);
+	pthread_mutex_unlock(&completion->lock);
+	free(completion);
+
+	int rc = 0;
+	dsos_res_init(sess, pres);
+	while (!LIST_EMPTY(&request_list)) {
+		request = LIST_FIRST(&request_list);
+		LIST_REMOVE(request, r_link);
+
+		complete_fn(request->client, request, pres);
+
+		free(request);
+	}
+	return rc;
+ err_0:
+	free(completion);
+	while (!LIST_EMPTY(&request_list)) {
+		request = LIST_FIRST(&request_list);
+		LIST_REMOVE(request, r_link);
+		free(request);
+	}
+	return ENOMEM;
 }
 
 static int handle_transaction_begin(dsos_client_t client, dsos_client_request_t rqst)
@@ -281,7 +415,6 @@ next:
 				fprintf(stderr, "transaction_begin_1 failed on client %d with error %d\n",
 					client->client_id, rres);
 			}
-			// fprintf(stderr, "Ending transaction on client %d\n", client->client_id);
 		}
 	}
 	pthread_mutex_unlock(&client->flush_lock);
@@ -290,45 +423,99 @@ next:
 	return NULL;
 }
 
-static int process_request(dsos_client_t client, dsos_client_request_t rqst)
+static int send_request(dsos_client_t client, dsos_client_request_t rqst)
 {
 	const char *op_name;
 	const char *err_msg;
 	switch (rqst->kind) {
 	case REQ_QUERY_SELECT:
-		memset(&rqst->select.res, 0, sizeof(rqst->select.res));
+		memset(&rqst->query_select.res, 0, sizeof(rqst->query_select.res));
 		pthread_mutex_lock(&client->rpc_lock);
-		rqst->rpc_err = query_select_1(rqst->select.cont_id,
-						rqst->select.query_id,
-						rqst->select.sql_str,
-						&rqst->select.res,
-						client->client);
+		rqst->rpc_err =
+			query_select_1(rqst->query_select.query->cont->handles[client->client_id],
+				       rqst->query_select.query->handles[client->client_id],
+				       rqst->query_select.sql_str,
+				       &rqst->query_select.res,
+				       client->client);
 		pthread_mutex_unlock(&client->rpc_lock);
 		op_name = "query_select_1";
 		if (rqst->rpc_err != RPC_SUCCESS)
 			goto rpc_err;
-		if (rqst->select.res.error) {
-			g_last_err = rqst->select.res.error;
-			err_msg =  rqst->select.res.dsos_query_select_res_u.error_msg;
+		if (rqst->query_select.res.error) {
+			g_last_err = rqst->query_select.res.error;
+			err_msg =  rqst->query_select.res.dsos_query_select_res_u.error_msg;
 			goto op_err;
 		}
 		break;
 	case REQ_QUERY_NEXT:
-		memset(&rqst->next.res, 0, sizeof(rqst->next.res));
+		memset(&rqst->query_next.res, 0, sizeof(rqst->query_next.res));
 		pthread_mutex_lock(&client->rpc_lock);
-		rqst->rpc_err = query_next_1(rqst->next.cont_id,
-					     rqst->next.query_id, &rqst->next.res,
+		rqst->rpc_err = query_next_1(rqst->query_next.query->cont->handles[client->client_id],
+					     rqst->query_next.query->handles[client->client_id],
+					     &rqst->query_next.res,
 					     client->client);
 		pthread_mutex_unlock(&client->rpc_lock);
 		op_name = "query_next_1";
 		if (rqst->rpc_err != RPC_SUCCESS)
 			goto rpc_err;
-		if (rqst->next.res.error) {
-			g_last_err = rqst->next.res.error;
-			err_msg = rqst->next.res.dsos_query_next_res_u.error_msg;
+		if (rqst->query_next.res.error) {
+			g_last_err = rqst->query_next.res.error;
+			err_msg = rqst->query_next.res.dsos_query_next_res_u.error_msg;
 			goto op_err;
 		}
 		break;
+	case REQ_CONTAINER_OPEN:
+		memset(&rqst->open.res, 0, sizeof(rqst->open.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err = open_1(rqst->open.name, rqst->open.perm, rqst->open.mode,
+				       &rqst->open.res, client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "open_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->open.res.error) {
+			g_last_err = rqst->open.res.error;
+			err_msg = rqst->open.res.dsos_open_res_u.error_msg;
+			goto op_err;
+		}
+		break;
+	case REQ_QUERY_CREATE:
+		memset(&rqst->query_create.res, 0, sizeof(rqst->query_create.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err =
+			query_create_1(rqst->query_create.query->cont->handles[client->client_id],
+				       rqst->query_create.opts,
+				       &rqst->query_create.res,
+				       client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "query_create_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->query_create.res.error) {
+			g_last_err = rqst->query_create.res.error;
+			err_msg = rqst->query_create.res.dsos_query_create_res_u.error_msg;
+			goto op_err;
+		}
+		break;
+	case REQ_QUERY_DESTROY:
+		memset(&rqst->query_destroy.res, 0, sizeof(rqst->query_destroy.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err =
+			query_destroy_1(rqst->query_destroy.query->cont->handles[client->client_id],
+				       rqst->query_destroy.query->handles[client->client_id],
+				       &rqst->query_destroy.res,
+				       client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "query_destroy_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->query_destroy.res.error) {
+			g_last_err = rqst->query_destroy.res.error;
+			err_msg = rqst->query_destroy.res.dsos_query_destroy_res_u.error_msg;
+			goto op_err;
+		}
+		break;
+	case REQ_TRANSACTION_BEGIN:
 	default:
 		return ENOSYS;
 	}
@@ -357,8 +544,8 @@ next:
 		rqst = TAILQ_FIRST(&client->request_q);
 		TAILQ_REMOVE(&client->request_q, rqst, c_link);
 		pthread_mutex_unlock(&client->request_q_lock);
-		/* Process request */
-		rc = process_request(client, rqst);
+		/* send the request to the client */
+		rc = send_request(client, rqst);
 		if (rc) {
 			printf("Merrr %d\n", rc);
 		}
@@ -480,6 +667,27 @@ void dsos_container_commit(dsos_container_t cont)
 	;
 }
 
+static int
+open_complete_fn(dsos_client_t client,
+		   dsos_client_request_t request,
+		   dsos_res_t *res)
+{
+	enum dsos_error derr;
+	struct dsos_open_res *ores = &request->open.res;
+	dsos_container_t cont = request->open.cont;
+
+	if (request->rpc_err) {
+		res->any_err = RPC_ERROR(request->rpc_err);
+		res->res[request->client->client_id] = res->any_err;
+	} else if (request->open.res.error) {
+		res->any_err = request->open.res.error;
+		res->res[request->client->client_id] = res->any_err;
+	} else {
+		cont->handles[client->client_id] = request->open.res.dsos_open_res_u.cont;
+	}
+	return 0;
+}
+
 dsos_container_t
 dsos_container_open(
 		dsos_session_t sess,
@@ -487,63 +695,36 @@ dsos_container_open(
 		sos_perm_t perm,
 		int mode)
 {
-	int i;
-	enum clnt_stat rpc_err;
 	dsos_container_t cont = calloc(1, sizeof *cont + sess->client_count * sizeof(int *));
 	if (!cont)
 		return NULL;
+
 	cont->sess = sess;
 	cont->handle_count = sess->client_count;
 	cont->path = strdup(path);
 	if (!cont->path)
 		goto err_0;
 
-	dsos_open_res open_res;
-	for (i = 0; i < cont->handle_count; i++) {
-		/* Open/Create the container */
-		dsos_client_t client = &sess->clients[i];
-		pthread_mutex_lock(&client->rpc_lock);
-		rpc_err = open_1((char *)path, SOS_PERM_RW | SOS_PERM_CREAT, 0660, &open_res, client->client);
-		pthread_mutex_unlock(&client->rpc_lock);
-		if (rpc_err != RPC_SUCCESS) {
-			fprintf(stderr, "open_1 failed with RPC error %d\n", rpc_err);
-			goto err_1;
-		}
-		if (open_res.error) {
-			fprintf(stderr, "open_1 failed on client %d with error %d\n", i, open_res.error);
-			goto err_1;
-		}
-		cont->handles[i] = open_res.dsos_open_res_u.cont;
-		assert(cont->handles[i]);
+	dsos_res_t res;
+	int rc = submit_wait(sess, open_complete_fn, &res,
+			     REQ_CONTAINER_OPEN, cont, path, perm, mode);
+	if (rc) {
+		errno = rc;
+		return NULL;
 	}
 	return cont;
-err_1:
-	for (i = 0; i < sess->client_count; i++) {
-		int rc;
-		if (cont->handles[i]) {
-			dsos_client_t client = &sess->clients[i];
-			pthread_mutex_lock(&client->rpc_lock);
-			rpc_err = close_1(cont->handles[i], &rc, client->client);
-			pthread_mutex_unlock(&client->rpc_lock);
-		}
-	}
-	free(cont->path);
-err_0:
-	free(cont);
+ err_0:
 	return NULL;
 }
 
 static inline dsos_schema_t dsos_schema_alloc(dsos_container_t cont)
 {
-	dsos_schema_t s = malloc(sizeof(*s) + (cont->handle_count * sizeof(s->handles[0])));
+	dsos_schema_t s;
+	size_t size = sizeof(*s) + (cont->handle_count * sizeof(s->handles[0]));
+	s = calloc(1, size);
 	if (s)
 		s->cont = cont;
 	return s;
-}
-
-static inline void dsos_schema_free(dsos_schema_t s)
-{
-	free(s);
 }
 
 dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dsos_res_t *res)
@@ -551,12 +732,13 @@ dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dso
 	int i;
 	enum clnt_stat rpc_err;
 	dsos_schema_t dschema = dsos_schema_alloc(cont);
-	dsos_res_init(cont, res);
+	dsos_res_init(cont->sess, res);
 	dsos_schema_spec *spec = dsos_spec_from_schema(schema);
 	if (!spec) {
 		res->any_err = errno;
 		return NULL;
 	}
+	// TODO: handle create error
 	dsos_schema_res schema_res = {};
 	for (i = 0; i < cont->handle_count; i++) {
 		dsos_client_t client = &cont->sess->clients[i];
@@ -583,10 +765,8 @@ dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dso
 		dschema->handles[i] = schema_res.dsos_schema_res_u.spec->id;
 		xdr_free((xdrproc_t)xdr_dsos_schema_res, (char *)&schema_res);
 	}
-	if (res->any_err) {
-		dsos_schema_free(dschema);
+	if (res->any_err)
 		dschema = NULL;
-	}
 	dsos_spec_free(spec);
 	return dschema;
 }
@@ -598,7 +778,7 @@ dsos_schema_t dsos_schema_by_name(dsos_container_t cont, const char *name,
 	enum clnt_stat rpc_err;
 	dsos_schema_res schema_res = {};
 	dsos_schema_t schema;
-	dsos_res_init(cont, res);
+	dsos_res_init(cont->sess, res);
 
 	schema = dsos_schema_alloc(cont);
 	if (!schema) {
@@ -648,7 +828,7 @@ dsos_schema_t dsos_schema_by_uuid(dsos_container_t cont, uuid_t uuid,
 	enum clnt_stat rpc_err;
 	dsos_schema_res schema_res = {};
 	dsos_schema_t schema;
-	dsos_res_init(cont, res);
+	dsos_res_init(cont->sess, res);
 
 	schema = dsos_schema_alloc(cont);
 	if (!schema) {
@@ -713,7 +893,7 @@ dsos_name_array_t dsos_schema_query(dsos_container_t cont, dsos_res_t *res)
 {
 	int i;
 	enum clnt_stat rpc_err;
-	dsos_res_init(cont, res);
+	dsos_res_init(cont->sess, res);
 	dsos_name_array_t names = NULL;
 	dsos_schema_query_res query_res;
 	dsos_client_t client = &cont->sess->clients[0];
@@ -745,7 +925,7 @@ void dsos_transaction_begin(dsos_container_t cont, dsos_res_t *res)
 {
 	int client_id;
 	dsos_client_t client;
-	dsos_res_init(cont, res);
+	dsos_res_init(cont->sess, res);
 	for (client_id = 0; client_id < cont->handle_count; client_id++) {
 		dsos_client_request_t rqst = malloc(sizeof *rqst);
 		if (!rqst)
@@ -774,7 +954,7 @@ void dsos_transaction_end(dsos_container_t cont, dsos_res_t *res)
 	dsos_client_t client;
 	int i;
 	dsos_client_request_t rqst;
-	dsos_res_init(cont, res);
+	dsos_res_init(cont->sess, res);
 
 	for (i = 0; i < cont->handle_count; i++) {
 		/* Move all requests to the flush_q */
@@ -805,7 +985,7 @@ void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj,
 	dsos_client_t client;
 	int client_id;
 	dsos_container_id cont_id;
-	dsos_res_init(cont, res);
+	dsos_res_init(cont->sess, res);
 
 	client_id = __sync_fetch_and_add(&cont->sess->next_client, 1) % cont->sess->client_count;
 	client = &cont->sess->clients[client_id];
@@ -1085,12 +1265,33 @@ int dsos_attr_value_max(dsos_container_t cont, sos_attr_t attr)
 /*
  * Query
  */
+static int
+query_create_complete_fn(dsos_client_t client,
+		   dsos_client_request_t request,
+		   dsos_res_t *res)
+{
+	enum dsos_error derr;
+	struct dsos_query_create_res *cres = &request->query_create.res;
+	dsos_query_t query = request->query_create.query;
+	if (request->rpc_err) {
+		res->any_err = RPC_ERROR(request->rpc_err);
+		res->res[client->client_id] = res->any_err;
+	} else if (request->query_create.res.error) {
+		derr = cres->error;
+		res->any_err = cres->error;
+		res->res[client->client_id] = res->any_err;
+	} else {
+		request->query_create.query->handles[client->client_id] =
+			request->query_create.res.dsos_query_create_res_u.query_id;
+	}
+	res->res[client->client_id] = derr;
+	xdr_free((xdrproc_t)xdr_dsos_query_create_res, (char *)&request->query_create.res);
+	return 0;
+}
+
 dsos_query_t dsos_query_create(dsos_container_t cont)
 {
-	dsos_query_options opts;
-	enum clnt_stat rpc_err;
-	int i, res;
-	dsos_query_create_res create_res;
+	dsos_res_t res;
 	dsos_query_t query;
 
 	query = calloc(1, sizeof *query);
@@ -1107,43 +1308,18 @@ dsos_query_t dsos_query_create(dsos_container_t cont)
 		errno = ENOMEM;
 		goto err_1;
 	}
+	pthread_mutex_init(&query->obj_tree_lock, NULL);
 	ods_rbt_init(&query->obj_tree, key_comparator, NULL);
-	for (i = 0; i < cont->handle_count; i++) {
-		dsos_client_t client = &cont->sess->clients[i];
-		memset(&create_res, 0, sizeof(create_res));
-		memset(&opts, 0, sizeof(opts));
-		pthread_mutex_lock(&client->rpc_lock);
-		rpc_err = query_create_1(cont->handles[i], opts,
-					 &create_res, client->client);
-		pthread_mutex_unlock(&client->rpc_lock);
-		if (rpc_err != RPC_SUCCESS) {
-			fprintf(stderr,
-				"query_create_1 failed on client %d with RPC"
-				" error %d\n",
-				i, rpc_err);
-			errno = ENETDOWN;
-			goto err_2;
-		}
-		if (create_res.error) {
-			fprintf(stderr,
-				"query_create_1 failed on client %d with "
-				"error %d\n",
-				i, create_res.error);
-			errno = create_res.error;
-			goto err_2;
-		}
-		query->handles[i] = create_res.dsos_query_create_res_u.query_id;
-	}
-	query->state = DSOS_QUERY_INIT;
+
+	int rc = submit_wait(cont->sess, query_create_complete_fn, &res,
+			 REQ_QUERY_CREATE, query);
+
+	if (!rc)
+		query->state = DSOS_QUERY_INIT;
+	else
+		goto err_2;
 	return query;
 err_2:
-	for (; i > 0; i--) {
-		dsos_client_t client = &cont->sess->clients[i];
-		pthread_mutex_lock(&client->rpc_lock);
-		rpc_err = query_delete_1(cont->handles[i-1], query->handles[i-1],
-					&res, client->client);
-		pthread_mutex_unlock(&client->rpc_lock);
-	}
 	free(query->counts);
 err_1:
 	free(query->handles);
@@ -1171,205 +1347,123 @@ static void reset_query_obj_tree(dsos_query_t query)
 	}
 }
 
+
+static int
+query_destroy_complete_fn(dsos_client_t client,
+			  dsos_client_request_t request,
+			  dsos_res_t *res)
+{
+	enum dsos_error derr = 0;
+	struct dsos_query_destroy_res *dres = &request->query_destroy.res;
+
+	if (request->rpc_err) {
+		res->any_err = RPC_ERROR(request->rpc_err);
+		res->res[client->client_id] = res->any_err;
+	} else if (dres->error) {
+		res->any_err = dres->error;
+		res->res[client->client_id] = res->any_err;
+	} else {
+		res->res[client->client_id] = 0;
+	}
+
+	xdr_free((xdrproc_t)xdr_dsos_query_destroy_res, (char *)dres);
+	return 0;
+}
+
 void dsos_query_destroy(dsos_query_t query)
 {
-	int i, res;
-	enum clnt_stat rpc_err;
-
-	for (i = 0; i < query->cont->handle_count; i++) {
-		dsos_client_t client = &query->cont->sess->clients[i];
-		pthread_mutex_lock(&client->rpc_lock);
-		rpc_err = query_delete_1(query->cont->handles[i], query->handles[i],
-					&res, client->client);
-		pthread_mutex_unlock(&client->rpc_lock);
-		if (rpc_err != RPC_SUCCESS) {
-			fprintf(stderr,
-				"query_delete_1 failed on client %d "
-				"with RPC error %d\n",
-				i, rpc_err);
-		}
-		if (res) {
-			fprintf(stderr,
-				"query_delete_1 failed on client %d with error %d\n",
-				i, res);
-		}
-	}
+	dsos_res_t res;
+	int rc = submit_wait(query->cont->sess, query_destroy_complete_fn, &res,
+			     REQ_QUERY_DESTROY, query);
 	reset_query_obj_tree(query);
+	sos_schema_free(query->schema);
 	free(query->handles);
 	free(query->counts);
 	free(query);
 }
 
-int dsos_query_select(dsos_query_t query, const char *clause)
+static int
+query_select_complete_fn(dsos_client_t client,
+		   dsos_client_request_t request,
+		   dsos_res_t *res)
 {
-	int client_id;
-	dsos_client_request_t request;
-	LIST_HEAD(request_list, dsos_client_request_s) req_list = LIST_HEAD_INITIALIZER(req_list);
-	dsos_completion_t completion = malloc(sizeof *completion);
-	if (!completion)
-		return ENOMEM;
-	completion->count = 0;
-	pthread_mutex_init(&completion->lock, NULL);
-	pthread_cond_init(&completion->cond, NULL);
-	for (client_id = 0; client_id < query->cont->sess->client_count; client_id++) {
-		dsos_client_t client = &query->cont->sess->clients[client_id];
-		request = malloc(sizeof *request);
-		if (!request)
-			goto err_0;
-		request->completion = completion;
-		request->client = client;
-		request->kind = REQ_QUERY_SELECT;
-		request->select.cont_id = query->cont->handles[client_id];
-		request->select.query_id = query->handles[client_id];
-		request->select.sql_str = (char *)clause;
-		LIST_INSERT_HEAD(&req_list, request, r_link);
-	}
-	LIST_FOREACH(request, &req_list, r_link) {
-		submit_request(request->client, request);
-	}
-	pthread_mutex_lock(&completion->lock);
-	while (completion->count)
-		pthread_cond_wait(&completion->cond, &completion->lock);
-	pthread_mutex_unlock(&completion->lock);
-
-	dsos_res_t res;
-	dsos_res_init(query->cont, &res);
 	enum dsos_error derr;
-	struct dsos_query_select_res *sres;
+	struct dsos_query_select_res *sres = &request->query_select.res;
 
-	while (!LIST_EMPTY(&req_list)) {
-		request = LIST_FIRST(&req_list);
-		LIST_REMOVE(request, r_link);
-		sres = &request->select.res;
-		if (request->rpc_err) {
-			res.any_err = RPC_ERROR(request->rpc_err);
-			res.res[request->client->client_id] = res.any_err;
-		} else {
-			derr = sres->error;
-			if (derr == 0 && query->schema == NULL) {
-				query->schema =
-					dsos_schema_from_spec(sres->dsos_query_select_res_u.select.spec);
-				if (!query->schema)
-					derr = DSOS_ERR_SCHEMA;
-				query->key_attr =
-					sos_schema_attr_by_id(query->schema,
-							      sres->dsos_query_select_res_u.select.key_attr_id);
-				if (!query->key_attr)
-					derr = DSOS_ERR_ATTR;
-			}
+	if (request->rpc_err) {
+		res->any_err = RPC_ERROR(request->rpc_err);
+		res->res[client->client_id] = res->any_err;
+	} else {
+		derr = sres->error;
+		if (derr == 0 && request->query_select.query->schema == NULL) {
+			request->query_select.query->schema =
+				dsos_schema_from_spec(sres->dsos_query_select_res_u.select.spec);
+			if (!request->query_select.query->schema)
+				derr = DSOS_ERR_SCHEMA;
+			request->query_select.query->key_attr =
+				sos_schema_attr_by_id(request->query_select.query->schema,
+						      sres->dsos_query_select_res_u.select.key_attr_id);
+			if (!request->query_select.query->key_attr)
+				derr = DSOS_ERR_ATTR;
 		}
-		res.res[request->client->client_id] = derr;
-		xdr_free((xdrproc_t)xdr_dsos_query_select_res, (char *)&request->select.res);
-		free(request);
 	}
-	query->state = DSOS_QUERY_SELECT;
-	free(completion);
+	res->res[client->client_id] = derr;
+	xdr_free((xdrproc_t)xdr_dsos_query_select_res, (char *)&request->query_select.res);
 	return 0;
-
-err_0:
-	free(completion);
-	while (!LIST_EMPTY(&req_list)) {
-		request = LIST_FIRST(&req_list);
-		LIST_REMOVE(request, r_link);
-		free(request);
-	}
-	return ENOMEM;
 }
 
+int dsos_query_select(dsos_query_t query, const char *clause)
+{
+	dsos_res_t res;
+	int rc = submit_wait(query->cont->sess, query_select_complete_fn, &res,
+			     REQ_QUERY_SELECT, query, clause);
+	if (rc)
+		return rc;
+	if (res.any_err == 0)
+		query->state = DSOS_QUERY_SELECT;
+	return res.any_err;
+}
+
+
+static int
+query_next_complete_fn(dsos_client_t client,
+		       dsos_client_request_t request,
+		       dsos_res_t *res)
+{
+	dsos_obj_entry *obj_e;
+
+	/* Build the objects from the list */
+	obj_e = request->query_next.res.dsos_query_next_res_u.result.obj_list;
+	while (obj_e) {
+		dsos_obj_entry *next_obj_e = obj_e->next;
+		dsos_obj_ref_t obj_ref = malloc(sizeof *obj_ref);
+		assert(obj_ref);
+		obj_ref->client_id = request->client->client_id;
+		sos_obj_t obj = sos_obj_new_with_data(
+						      request->query_next.query->schema,
+						      obj_e->value.dsos_obj_value_val,
+						      obj_e->value.dsos_obj_value_len);
+		assert(obj);
+		obj_ref->obj = obj;
+		sos_value_init(&obj_ref->key_value, obj, request->query_next.query->key_attr);
+		ods_rbn_init(&obj_ref->rbn, &obj_ref->key_value);
+		pthread_mutex_lock(&request->query_next.query->obj_tree_lock);
+		ods_rbt_ins(&request->query_next.query->obj_tree, &obj_ref->rbn);
+		pthread_mutex_unlock(&request->query_next.query->obj_tree_lock);
+		request->query_next.query->counts[obj_ref->client_id] += 1;
+		obj_e = next_obj_e;
+	}
+	xdr_free((xdrproc_t)xdr_dsos_query_next_res, (char *)&request->query_next.res);
+	return 0;
+}
+
+// TODO: need api to submit to only a subset of the clients
 static int query_obj_add(dsos_query_t query, int client_id)
 {
-	enum clnt_stat rpc_err;
-	dsos_query_next_res *next_res;
-	dsos_obj_entry *obj_e;
-	int cid, count = 0;
-	dsos_client_request_t request;
-	LIST_HEAD(request_list, dsos_client_request_s) req_list = LIST_HEAD_INITIALIZER(req_list);
-	dsos_completion_t completion = malloc(sizeof *completion);
-	if (!completion)
-		return ENOMEM;
-	completion->count = 0;
-	pthread_mutex_init(&completion->lock, NULL);
-	pthread_cond_init(&completion->cond, NULL);
-
-	if (client_id >= 0)
-		cid = client_id;
-	else
-		cid = 0;
-	for (; cid < query->cont->handle_count; cid++) {
-		dsos_container_id cont_id = query->cont->handles[cid];
-		dsos_client_t client = &query->cont->sess->clients[cid];
-		dsos_query_id query_id = query->handles[cid];
-
-		request = malloc(sizeof *request);
-		if (!request)
-			goto err_0;
-
-		request->completion = completion;
-		request->client = client;
-		request->kind = REQ_QUERY_NEXT;
-		request->next.cont_id = cont_id;
-		request->next.query = query;
-		request->next.query_id = query_id;
-		LIST_INSERT_HEAD(&req_list, request, r_link);
-		if (client_id >= 0)
-			break;
-	}
-
-	LIST_FOREACH(request, &req_list, r_link) {
-		submit_request(request->client, request);
-	}
-	pthread_mutex_lock(&completion->lock);
-	while (completion->count)
-		pthread_cond_wait(&completion->cond, &completion->lock);
-	pthread_mutex_unlock(&completion->lock);
-
 	dsos_res_t res;
-	dsos_res_init(query->cont, &res);
-	enum dsos_error derr;
-
-	while (!LIST_EMPTY(&req_list)) {
-		request = LIST_FIRST(&req_list);
-		LIST_REMOVE(request, r_link);
-		next_res = &request->next.res;
-
-		/* Build the objects from the list */
-		obj_e = next_res->dsos_query_next_res_u.result.obj_list;
-		while (obj_e) {
-			dsos_obj_entry *next_obj_e = obj_e->next;
-
-			dsos_obj_ref_t obj_ref = malloc(sizeof *obj_ref);
-			assert(obj_ref);
-			obj_ref->client_id = request->client->client_id;
-			sos_obj_t obj = sos_obj_new_with_data(
-							      request->next.query->schema,
-							      obj_e->value.dsos_obj_value_val,
-							      obj_e->value.dsos_obj_value_len);
-			assert(obj);
-			obj_ref->obj = obj;
-			sos_value_init(&obj_ref->key_value, obj, query->key_attr);
-			ods_rbn_init(&obj_ref->rbn, &obj_ref->key_value);
-			ods_rbt_ins(&query->obj_tree, &obj_ref->rbn);
-			query->counts[obj_ref->client_id] += 1;
-			count += 1;
-			// free(obj_e->value.dsos_obj_value_val);
-			// free(obj_e);
-			obj_e = next_obj_e;
-		}
-		xdr_free((xdrproc_t)xdr_dsos_query_next_res, (char *)&request->next.res);
-		free(request);
-		if (!count)
-			continue;
-	}
-	free(completion);
-	return 0;
-err_0:
-	free(completion);
-	while (!LIST_EMPTY(&req_list)) {
-		request = LIST_FIRST(&req_list);
-		LIST_REMOVE(request, r_link);
-		free(request);
-	}
-	return ENOMEM;
+	int rc = submit_wait(query->cont->sess, query_next_complete_fn, &res,
+			     REQ_QUERY_NEXT, query);
+	return res.any_err;
 }
 
 static sos_obj_t query_obj(dsos_query_t query, struct ods_rbn *rbn)
@@ -1430,6 +1524,12 @@ sos_obj_t dsos_query_next(dsos_query_t query)
 	return query_obj_min(query);
 }
 
+/**
+ * @brief Return the temporary schema for the \c query
+ *
+ * @param query The query handle
+ * @return sos_schema_t The temporary SOS schema
+ */
 sos_schema_t dsos_query_schema(dsos_query_t query)
 {
 	return query->schema;

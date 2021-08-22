@@ -179,17 +179,22 @@ void idle_client_cleanup(const SVCXPRT *handle, const bool_t b)
 bool_t
 open_1_svc(char *path, int perm, int mode, dsos_open_res *res,  struct svc_req *req)
 {
+	char err_msg[256];
 	if (!authenticate_request(req, __func__))
 		return FALSE;
 	sos_t sos = sos_container_open(path, perm, mode);
 	if (!sos) {
 		res->error = errno;
+		snprintf(err_msg, sizeof(err_msg), "Error %d opening the container", errno);
+		res->dsos_open_res_u.error_msg = strdup(err_msg);
 		return TRUE;
 	}
 	struct dsos_session *client = malloc(sizeof *client);
 	if (!client) {
+		res->error = errno;
+		snprintf(err_msg, sizeof(err_msg), "Error %d opening the container", errno);
+		res->dsos_open_res_u.error_msg = strdup(err_msg);
 		sos_container_close(sos, SOS_COMMIT_ASYNC);
-		res->error = ENOMEM;
 		return TRUE;
 	}
 	client->handle = get_next_handle();
@@ -931,8 +936,10 @@ bool_t query_select_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dso
 	if (rc) {
 		res->dsos_query_select_res_u.error_msg = strdup(query->ast->error_msg);
 	} else {
-		sos_attr_t res_key_attr = sos_schema_attr_by_name(query->ast->result_schema,
-								  sos_attr_name(query->ast->iter_attr_e->sos_attr));
+		sos_attr_t res_key_attr =
+			sos_schema_attr_by_name(query->ast->result_schema,
+						sos_attr_name(query->
+							      ast->iter_attr_e->sos_attr));
 		res->dsos_query_select_res_u.select.key_attr_id = sos_attr_id(res_key_attr);
 		res->dsos_query_select_res_u.select.spec = dsos_spec_from_schema(query->ast->result_schema);
 	}
@@ -1083,10 +1090,38 @@ empty:
 	return TRUE;
 }
 
-bool_t query_delete_1_svc(dsos_container_id cont_id, dsos_query_id query_id, int *res, struct svc_req *rqst)
+bool_t query_destroy_1_svc(dsos_container_id cont_id, dsos_query_id query_id,
+			   dsos_query_destroy_res *res, struct svc_req *rqst)
 {
+	struct dsos_session *client;
+	struct dsos_query *query;
+	int rc;
+	char err_msg[256];
+
+	memset(res, 0, sizeof(*res));
 	if (!authenticate_request(rqst, __func__))
 		return FALSE;
+
+	client = get_client(cont_id);
+	if (!client) {
+		sprintf(err_msg, "Invalid container id %ld", cont_id);
+		res->error = DSOS_ERR_CLIENT;
+		res->dsos_query_destroy_res_u.error_msg = strdup(err_msg);
+		goto out_0;
+	}
+	query = get_query(client, query_id);
+	if (!query) {
+		sprintf(err_msg, "Invalid query id %ld", query_id);
+		res->error = DSOS_ERR_QUERY_ID;
+		res->dsos_query_destroy_res_u.error_msg = strdup(err_msg);
+		goto out_0;
+	}
+	pthread_mutex_lock(&client->query_tree_lock);
+	ods_rbt_del(&client->query_tree, &query->rbn);
+	pthread_mutex_unlock(&client->query_tree_lock);
+
+	ast_destroy(query->ast);
+ out_0:
 	return TRUE;
 }
 

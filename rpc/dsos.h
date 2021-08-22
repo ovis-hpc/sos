@@ -72,6 +72,7 @@ extern int dsos_iter_find(dsos_iter_t iter, sos_key_t key);
 extern int dsos_attr_value_min(dsos_container_t cont, sos_attr_t attr);
 extern int dsos_attr_value_max(dsos_container_t cont, sos_attr_t attr);
 extern dsos_query_t dsos_query_create(dsos_container_t cont);
+extern void dsos_query_destroy(dsos_query_t query);
 extern int dsos_query_select(dsos_query_t query, const char *clause);
 extern sos_obj_t dsos_query_next(dsos_query_t query);
 extern sos_schema_t dsos_query_schema(dsos_query_t query);

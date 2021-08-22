@@ -3,7 +3,7 @@ union dsos_open_res switch (int error) {
     case 0:
         dsos_container_id cont;
     default:
-        void;
+	string error_msg<>;
 };
 
 typedef unsigned long dsos_obj_id;
@@ -106,7 +106,7 @@ union dsos_query_create_res switch (int error) {
     case 0:
         dsos_query_id query_id;
     default:
-        void;
+        string error_msg<>;
 };
 
 typedef string dsos_query_error<>;
@@ -150,6 +150,13 @@ union dsos_query_option_value switch (int query_option_type) {
 };
 typedef dsos_query_option_value dsos_query_options<>;
 
+union dsos_query_destroy_res switch (int error) {
+    case 0:
+    	void;
+    default:
+        dsos_query_error error_msg;
+};
+
 program SOSDB {
     version SOSVERS {
         /* Container operations */
@@ -185,6 +192,6 @@ program SOSDB {
         dsos_query_create_res QUERY_CREATE(dsos_container_id, dsos_query_options) = 60;
         dsos_query_select_res QUERY_SELECT(dsos_container_id, dsos_query_id, dsos_query) = 61;
         dsos_query_next_res QUERY_NEXT(dsos_container_id, dsos_query_id) = 62;
-        int QUERY_DELETE(dsos_container_id, dsos_query_id) = 63;
+        dsos_query_destroy_res QUERY_DESTROY(dsos_container_id, dsos_query_id) = 63;
     } = 1;
 } = 40009862;
