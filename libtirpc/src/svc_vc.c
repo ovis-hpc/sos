@@ -29,7 +29,7 @@
 
 
 /*
- * svc_vc.c, Server side for Connection Oriented based RPC. 
+ * svc_vc.c, Server side for Connection Oriented based RPC.
  *
  * Actually implements two flavors of transporter -
  * a tcp rendezvouser (a listner and connection establisher)
@@ -300,6 +300,7 @@ makefd_xprt(fd, sendsize, recvsize)
 	xdrrec_create(&(cd->xdrs), sendsize, recvsize,
 	    xprt, read_vc, write_vc);
 	xprt->xp_p1 = cd;
+	xprt->xp_p2 = NULL;
 	xprt->xp_p3 = ext;
 	xprt->xp_verf.oa_base = cd->verf_body;
 	svc_vc_ops(xprt);  /* truely deals with calls */
@@ -396,7 +397,7 @@ svc_vc_destroy(xprt)
 	SVCXPRT *xprt;
 {
 	assert(xprt != NULL);
-	
+
 	xprt_unregister(xprt);
 	__svc_vc_dodestroy(xprt);
 }
@@ -449,6 +450,21 @@ svc_vc_control(xprt, rq, in)
 	const u_int rq;
 	void *in;
 {
+	struct svc_rderrhandler *inp, *outp;
+	switch (rq) {
+		case SVCSET_RDERRHANDLER:
+	 		inp = (struct svc_rderrhandler *)in;
+			 if (xprt->xp_p2 == NULL)
+				outp = malloc(sizeof *inp);
+			else
+				outp = xprt->xp_p2;
+			*outp = *inp;
+			xprt->xp_p2 = outp;
+			break;
+		default:
+			break;
+	}
+
 	return (FALSE);
 }
 
@@ -544,6 +560,13 @@ read_vc(xprtp, buf, len)
 
 fatal_err:
 	((struct cf_conn *)(xprt->xp_p1))->strm_stat = XPRT_DIED;
+	if (xprt->xp_p2) {
+		struct svc_rderrhandler *rderr =
+			(struct svc_rderrhandler *)xprt->xp_p2;
+		rderr->rderr_fn(xprt, rderr->rderr_arg);
+		free(rderr);
+		xprt->xp_p2 = NULL;
+	}
 	return (-1);
 }
 
@@ -569,7 +592,7 @@ write_vc(xprtp, buf, len)
 
 	if (cd->nonblock)
 		gettimeofday(&tv0, NULL);
-	
+
 	for (cnt = len; cnt > 0; cnt -= i, buf += i) {
 		i = write(xprt->xp_fd, buf, (size_t)cnt);
 		if (i  < 0) {
@@ -659,7 +682,7 @@ svc_vc_getargs(xprt, xdr_args, args_ptr)
 	if (!SVCAUTH_UNWRAP(&SVC_XP_AUTH(xprt),
 			    &(((struct cf_conn *)(xprt->xp_p1))->xdrs),
 			    xdr_args, args_ptr)) {
-		return FALSE;  
+		return FALSE;
 	}
 	return TRUE;
 }

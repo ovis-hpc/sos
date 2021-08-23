@@ -14,7 +14,7 @@ json_lexer.c: json_lexer.l json.h json_parser.h
 	$(LEX) -o $@ $<
 
 AM_CFLAGS = -Wno-unused-variable \
-	-I/usr/include/tirpc \
+	-I$(top_srcdir)/libtirpc/tirpc \
 	-I$(srcdir)/../include \
 	-I$(top_srcdir)/ods/include \
 	-I$(top_srcdir)/sos/include \

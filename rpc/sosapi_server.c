@@ -131,8 +131,16 @@ static bool_t authenticate_request(struct svc_req *rqstp, const char *op)
 	return TRUE;
 }
 
+static void query_destroy(struct dsos_session *client, struct dsos_query *query);
+
 static void session_close(struct dsos_session *client)
 {
+	/* Remove the client from the client tree */
+	pthread_mutex_lock(&client_tree_lock);
+	ods_rbt_del(&client_tree, &client->rbn);
+	pthread_mutex_unlock(&client_tree_lock);
+
+	/* Clean up any open iterators */
 	struct ods_rbn *rbn;
 	rbn = ods_rbt_min(&client->iter_tree);
 	while (rbn) {
@@ -143,6 +151,7 @@ static void session_close(struct dsos_session *client)
 		rbn = ods_rbt_min(&client->iter_tree);
 	}
 
+	/* Free any cached schema */
 	rbn = ods_rbt_min(&client->schema_id_tree);
 	while (rbn) {
 		struct dsos_schema *schema = container_of(rbn, struct dsos_schema, id_rbn);
@@ -154,26 +163,24 @@ static void session_close(struct dsos_session *client)
 		rbn = ods_rbt_min(&client->schema_id_tree);
 	}
 
-	// TODO: Object Tree -- not sure we'll do this
-
+	/* Free up any query */
+	rbn = ods_rbt_min(&client->query_tree);
+	while (rbn) {
+		struct dsos_query *query = container_of(rbn, struct dsos_query, rbn);
+		query_destroy(client, query);
+	}
 	/* Close the container */
 	sos_container_close(client->sos, SOS_COMMIT_SYNC);
-	ods_rbt_del(&client_tree, &client->rbn);
+
 	free(client);
 }
 
-void idle_client_cleanup(const SVCXPRT *handle, const bool_t b)
+static void rderr_handler(SVCXPRT *xprt, void *arg)
 {
-	struct ods_rbn *rbn = ods_rbt_min(&client_tree);
-	while (rbn) {
-		struct ods_rbn *next = ods_rbn_succ(rbn);
-		struct dsos_session *client = container_of(rbn, struct dsos_session, rbn);
-		if (client->xprt == handle) {
-			session_close(client);
-			ods_rbt_del(&client_tree, rbn);
-		}
-		rbn = next;
-	}
+	struct dsos_session *client = arg;
+	syslog(LOG_INFO, "DSOS CLIENT DISCONNECT: xprt %p, client %p\n",
+		xprt, client);
+	session_close(client);
 }
 
 bool_t
@@ -232,6 +239,10 @@ open_1_svc(char *path, int perm, int mode, dsos_open_res *res,  struct svc_req *
 		}
 	}
 #endif
+	struct svc_rderrhandler rderr;
+	rderr.rderr_fn = rderr_handler;
+	rderr.rderr_arg = client;
+	SVC_CONTROL(req->rq_xprt, SVCSET_RDERRHANDLER, &rderr);
 	return TRUE;
 }
 
@@ -244,15 +255,17 @@ bool_t close_1_svc(uint64_t handle, int *res, struct svc_req *req)
 		return FALSE;
 	pthread_mutex_lock(&client_tree_lock);
 	rbn = ods_rbt_find(&client_tree, &handle);
+	pthread_mutex_unlock(&client_tree_lock);
 	if (!rbn)
 		goto out;
 	client = container_of(rbn, struct dsos_session, rbn);
 	session_close(client);
+	/* Remove the client from the client tree */
 	*res = 0;
 out:
-	pthread_mutex_unlock(&client_tree_lock);
 	return TRUE;
 }
+	/* Clean up any open iterators */
 
 bool_t commit_1_svc(uint64_t handle, int *res, struct svc_req *req)
 {
@@ -976,6 +989,7 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 			rc = sos_iter_next(iter);
 			continue;
 		case AST_EVAL_EMPTY:
+			sos_obj_put(obj);
 			rc = ENOENT;
 			continue;
 		case AST_EVAL_MATCH:
@@ -1088,6 +1102,17 @@ empty:
 	return TRUE;
 }
 
+static void query_destroy(struct dsos_session *client, struct dsos_query *query)
+{
+
+ 	pthread_mutex_lock(&client->query_tree_lock);
+	ods_rbt_del(&client->query_tree, &query->rbn);
+	pthread_mutex_unlock(&client->query_tree_lock);
+
+	ast_destroy(query->ast);
+	free(query);
+}
+
 bool_t query_destroy_1_svc(dsos_container_id cont_id, dsos_query_id query_id,
 			   dsos_query_destroy_res *res, struct svc_req *rqst)
 {
@@ -1114,11 +1139,8 @@ bool_t query_destroy_1_svc(dsos_container_id cont_id, dsos_query_id query_id,
 		res->dsos_query_destroy_res_u.error_msg = strdup(err_msg);
 		goto out_0;
 	}
-	pthread_mutex_lock(&client->query_tree_lock);
-	ods_rbt_del(&client->query_tree, &query->rbn);
-	pthread_mutex_unlock(&client->query_tree_lock);
 
-	ast_destroy(query->ast);
+	query_destroy(client, query);
  out_0:
 	return TRUE;
 }

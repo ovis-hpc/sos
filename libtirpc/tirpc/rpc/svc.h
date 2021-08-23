@@ -70,6 +70,7 @@
 #define SVCSET_VERSQUIET	2
 #define SVCGET_CONNMAXREC	3
 #define SVCSET_CONNMAXREC	4
+#define SVCSET_RDERRHANDLER	5
 
 /*
  * Operations for rpc_control().
@@ -187,6 +188,13 @@ struct svc_req {
 
 #define SVC_CONTROL(xprt, rq, in)			\
 	(*(xprt)->xp_ops2->xp_control)((xprt), (rq), (in))
+
+/* Argument to SVC_CONTROL as SVCSET_RDERRHANDLER argument */
+typedef void (*svc_rderr_cb)(SVCXPRT *xprt, void *cb_arg);
+struct svc_rderrhandler {
+	svc_rderr_cb rderr_fn;
+	void *rderr_arg;
+};
 
 /*
  * Service registration

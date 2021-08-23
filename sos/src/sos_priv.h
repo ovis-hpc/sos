@@ -68,7 +68,6 @@
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
 #include <ods/ods_rbt.h>
-#define _SOS_REF_TRACK_ 1
 #include "sos_ref.h"
 
 #define SOS_ISCHEMA_BYTE_ARRAY "35190552-9177-11eb-941e-0cc47a6e9146"

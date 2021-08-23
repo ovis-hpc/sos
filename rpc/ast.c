@@ -945,33 +945,48 @@ int ast_parse(struct ast *ast, char *expr)
 static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_obj_t obj)
 {
 	sos_value_t lhs, rhs;
+	int true_n_false;
 	if (term->kind != ASTV_BINOP) {
-		if (term->kind == ASTV_ATTR)
+		if (term->kind == ASTV_ATTR) {
 			term->value =
 				sos_value_init(&term->value_,
 					       obj, term->attr->attr);
+		}
 		return term->value;
 	}
 
 	lhs = ast_term_visit(ast, term->binop->lhs, obj);
-
 	switch (term->binop->op) {
 	case ASTT_OR:
-		if (sos_value_true(lhs))
+		if (sos_value_true(lhs) && lhs->obj) {
+			sos_value_put(lhs);
 			return sos_value_init_const(&term->value_, SOS_TYPE_INT32, (1 == 1));
+		}
 		rhs = ast_term_visit(ast, term->binop->rhs, obj);
-		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, sos_value_true(rhs));
+		true_n_false = sos_value_true(rhs);
+		if (rhs->obj)
+			sos_value_put(rhs);
+		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, true_n_false);
 	case ASTT_AND:
-		if (!sos_value_true(lhs))
+		if (!sos_value_true(lhs) && lhs->obj) {
+			sos_value_put(lhs);
 			return sos_value_init_const(&term->value_, SOS_TYPE_INT32, 0);
+		}
 		rhs = ast_term_visit(ast, term->binop->rhs, obj);
-		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, sos_value_true(rhs));
+		true_n_false = sos_value_true(rhs);
+		if (rhs->obj)
+			sos_value_put(rhs);
+		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, true_n_false);
 	default:
 		rhs = ast_term_visit(ast, term->binop->rhs, obj);
 		break;
 	}
 
 	int rc = sos_value_cmp(lhs, rhs);
+	if (lhs->obj)
+		sos_value_put(lhs);
+	if (rhs->obj)
+		sos_value_put(rhs);
 	switch (term->binop->op) {
 	case ASTT_LT:
 		rc = (rc < 0);
@@ -1156,7 +1171,7 @@ static void ast_term_destroy(struct ast *ast, struct ast_term *term)
 
 	switch (term->kind) {
 	case ASTV_ATTR:
-		sos_value_put(term->value);
+		assert(NULL == term->value->obj);
 		free(term->attr);
 		free(term);
 		break;
@@ -1169,6 +1184,7 @@ static void ast_term_destroy(struct ast *ast, struct ast_term *term)
 		ast_term_destroy(ast, term->binop->rhs);
 		sos_value_put(term->value);
 		free(term->binop);
+		free(term);
 		break;
 	}
 }
@@ -1223,6 +1239,7 @@ void ast_destroy(struct ast *ast)
 		free((void *)ae->name);
 		free(ae);
 	}
+	free(ast);
 }
 
 typedef int (*ast_binop_find_fn_t)(struct ast_term *binop, const void *arg);

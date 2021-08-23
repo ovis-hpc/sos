@@ -221,8 +221,6 @@ int ods_idx_stat(ods_idx_t idx, ods_idx_stat_t stat)
 
 void ods_idx_close(ods_idx_t idx, int flags)
 {
-	if (!idx)
-		return;
 	if (0 == ods_atomic_dec(&idx->ref_count)) {
 		ods_ldebug("%s index is closing.\n", ods_path(idx->ods));
 		idx->idx_class->prv->close(idx);
@@ -551,7 +549,10 @@ static void __attribute__ ((destructor)) ods_idx_term(void)
 	struct ods_rbn *ods_rbn;
 	while ((ods_rbn = ods_rbt_min(&dylib_tree))) {
 		ods_rbt_del(&dylib_tree, ods_rbn);
+		struct ods_idx_class *idx_class =
+			container_of(ods_rbn, struct ods_idx_class, rb_node);
 		free(ods_rbn->key);
+		free(idx_class);
 	}
 }
 

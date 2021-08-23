@@ -1270,7 +1270,7 @@ query_create_complete_fn(dsos_client_t client,
 		   dsos_client_request_t request,
 		   dsos_res_t *res)
 {
-	enum dsos_error derr;
+	enum dsos_error derr = 0;
 	struct dsos_query_create_res *cres = &request->query_create.res;
 	dsos_query_t query = request->query_create.query;
 	if (request->rpc_err) {
@@ -1387,7 +1387,7 @@ query_select_complete_fn(dsos_client_t client,
 		   dsos_client_request_t request,
 		   dsos_res_t *res)
 {
-	enum dsos_error derr;
+	enum dsos_error derr = 0;
 	struct dsos_query_select_res *sres = &request->query_select.res;
 
 	if (request->rpc_err) {
