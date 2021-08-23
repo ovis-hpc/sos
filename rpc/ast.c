@@ -1181,6 +1181,16 @@ void ast_destroy(struct ast *ast)
 	regfree(&ast->float_re);
 	regfree(&ast->int_re);
 
+	while (!ods_rbt_empty(&ast->attr_tree)) {
+		struct ods_rbn *rbn = ods_rbt_min(&ast->attr_tree);
+		ods_rbt_del(&ast->attr_tree, rbn);
+		struct ast_attr_limits *limits = container_of(rbn, struct ast_attr_limits, rbn);
+		free((char *)limits->name);
+		free(limits);
+	}
+	sos_iter_free(ast->sos_iter);
+	free(ast->iter_attr_name);
+	sos_schema_free(ast->result_schema);
 	ast_term_destroy(ast, ast->where);
 
 	while (!TAILQ_EMPTY(&ast->schema_list)) {

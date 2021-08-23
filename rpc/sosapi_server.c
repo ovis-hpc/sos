@@ -956,8 +956,6 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 {
 	enum ast_eval_e eval;
 	sos_iter_t iter = ast->sos_iter;
-	struct dsos_schema *dschema = cache_schema(client, ast->result_schema);
-	dsos_schema_id schema_id = dschema->handle;
 	int count = QUERY_OBJECT_COUNT;
 	struct dsos_obj_entry *entry = NULL;
 	result->error = DSOS_ERR_QUERY_EMPTY;
@@ -999,7 +997,7 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 		result->dsos_query_next_res_u.result.format = 0;
 		entry->next = NULL;
 		entry->cont_id = client->handle;
-		entry->schema_id = schema_id;
+		entry->schema_id = 0;
 		count --;
 		void *obj_data = sos_obj_ptr(result_obj);
 		entry->value.dsos_obj_value_len = sos_obj_size(result_obj);
