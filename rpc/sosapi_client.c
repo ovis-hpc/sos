@@ -297,7 +297,7 @@ int submit_wait(dsos_session_t sess,
 
 		free(request);
 	}
-	return rc;
+	return pres->any_err;
  err_0:
 	free(completion);
 	while (!LIST_EMPTY(&request_list)) {
@@ -546,9 +546,8 @@ next:
 		pthread_mutex_unlock(&client->request_q_lock);
 		/* send the request to the client */
 		rc = send_request(client, rqst);
-		if (rc) {
-			printf("Merrr %d\n", rc);
-		}
+		if (IS_RPC_ERROR(rc))
+			printf("Error %d sending RPC. Msg is '%s'\n", rc, dsos_last_errmsg());
 		if (0 == __sync_sub_and_fetch(&rqst->completion->count, 1))
 			pthread_cond_broadcast(&rqst->completion->cond);
 		pthread_mutex_lock(&client->request_q_lock);
