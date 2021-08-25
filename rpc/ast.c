@@ -1169,6 +1169,9 @@ static void ast_term_destroy(struct ast *ast, struct ast_term *term)
 {
 	sos_value_t lhs, rhs;
 
+	if (!term)
+		return;
+
 	switch (term->kind) {
 	case ASTV_ATTR:
 		assert(NULL == term->value->obj);
