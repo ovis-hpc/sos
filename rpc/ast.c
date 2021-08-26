@@ -1174,7 +1174,6 @@ static void ast_term_destroy(struct ast *ast, struct ast_term *term)
 
 	switch (term->kind) {
 	case ASTV_ATTR:
-		assert(NULL == term->value->obj);
 		free(term->attr);
 		free(term);
 		break;
