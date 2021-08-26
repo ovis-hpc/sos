@@ -234,7 +234,20 @@ static void format_request_va(dsos_client_request_t request, va_list ap)
 	return;
 }
 
-int submit_wait(dsos_session_t sess,
+/**
+ * @brief Submit a request to DSOS servers and wait for the result
+ *
+ * @param sess The session handle
+ * @param client_mask A bitmask of servers to which requests will be submitted,
+ *             -1 means all servers in the session
+ * @param complete_fn The function to call when all servers have responded
+ * @param pres A pointer to the dsos_res_t result structure
+ * @param kind The type of the request
+ * @param ... Request dependent parameters
+ * @return 0 Success
+ * @return ENOMEM There was insufficient memory to submit the request
+ */
+int submit_wait(dsos_session_t sess, uint64_t client_mask,
 		dsos_request_completion_fn_t complete_fn, dsos_res_t *pres,
 		enum dsos_client_request_type_e kind, ...)
 {
@@ -255,6 +268,8 @@ int submit_wait(dsos_session_t sess,
 	LIST_INIT(&request_list);
 
 	for (client_id = 0; client_id < sess->client_count; client_id++) {
+		if (0 == ((1L << client_id) & client_mask))
+			continue;
 		dsos_client_t client = &sess->clients[client_id];
 
 		request = malloc(sizeof *request);
@@ -705,7 +720,7 @@ dsos_container_open(
 		goto err_0;
 
 	dsos_res_t res;
-	int rc = submit_wait(sess, open_complete_fn, &res,
+	int rc = submit_wait(sess, -1, open_complete_fn,&res,
 			     REQ_CONTAINER_OPEN, cont, path, perm, mode);
 	if (rc) {
 		errno = rc;
@@ -1310,7 +1325,7 @@ dsos_query_t dsos_query_create(dsos_container_t cont)
 	pthread_mutex_init(&query->obj_tree_lock, NULL);
 	ods_rbt_init(&query->obj_tree, key_comparator, NULL);
 
-	int rc = submit_wait(cont->sess, query_create_complete_fn, &res,
+	int rc = submit_wait(cont->sess, -1, query_create_complete_fn, &res,
 			 REQ_QUERY_CREATE, query);
 
 	if (!rc)
@@ -1372,7 +1387,7 @@ query_destroy_complete_fn(dsos_client_t client,
 void dsos_query_destroy(dsos_query_t query)
 {
 	dsos_res_t res;
-	int rc = submit_wait(query->cont->sess, query_destroy_complete_fn, &res,
+	int rc = submit_wait(query->cont->sess, -1, query_destroy_complete_fn, &res,
 			     REQ_QUERY_DESTROY, query);
 	reset_query_obj_tree(query);
 	sos_schema_free(query->schema);
@@ -1414,7 +1429,7 @@ query_select_complete_fn(dsos_client_t client,
 int dsos_query_select(dsos_query_t query, const char *clause)
 {
 	dsos_res_t res;
-	int rc = submit_wait(query->cont->sess, query_select_complete_fn, &res,
+	int rc = submit_wait(query->cont->sess, -1, query_select_complete_fn, &res,
 			     REQ_QUERY_SELECT, query, clause);
 	if (rc)
 		return rc;
@@ -1456,11 +1471,10 @@ query_next_complete_fn(dsos_client_t client,
 	return 0;
 }
 
-// TODO: need api to submit to only a subset of the clients
-static int query_obj_add(dsos_query_t query, int client_id)
+static int query_obj_add(dsos_query_t query, uint64_t client_mask)
 {
 	dsos_res_t res;
-	int rc = submit_wait(query->cont->sess, query_next_complete_fn, &res,
+	int rc = submit_wait(query->cont->sess, client_mask, query_next_complete_fn, &res,
 			     REQ_QUERY_NEXT, query);
 	return res.any_err;
 }
@@ -1484,7 +1498,7 @@ static sos_obj_t query_obj(dsos_query_t query, struct ods_rbn *rbn)
 	 */
 	query->counts[ref->client_id] -= 1;
 	if (0 == query->counts[ref->client_id]) {
-		rc = query_obj_add(query, ref->client_id);
+		rc = query_obj_add(query, 1L << ref->client_id);
 		if (rc) {
 			errno = ENOENT;
 			/* This client is exausted, -1 means empty */
