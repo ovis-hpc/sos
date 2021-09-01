@@ -45,9 +45,10 @@ static struct ast_key_word_s key_words[] = {
 	{ "where", ASTT_WHERE },
 };
 
-static void ast_enomem(struct ast *ast)
+static void ast_enomem(struct ast *ast, int pos)
 {
 	ast->result = ASTP_ENOMEM;
+	ast->pos = pos;
 	snprintf(ast->error_msg, sizeof(ast->error_msg), "Insufficient memory");
 }
 
@@ -240,13 +241,13 @@ static enum ast_parse_e parse_attr(struct ast *ast, const char *name, struct ast
 {
 	ast_attr_entry_t ae = calloc(1, sizeof *ae);
 	if (!ae) {
-		ast_enomem(ast);
+		ast_enomem(ast, 0);
 		return ast->result;
 	}
 	ae->value_attr = value_attr;
 	ae->name = strdup(name);
 	if (!ae->name) {
-		ast_enomem(ast);
+		ast_enomem(ast, 0);
 		free(ae);
 		return ast->result;
 	}
@@ -301,6 +302,7 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 				break;
 			default:
 				ast->result = ASTP_UNBALANCED_PAREN;
+				ast->pos = *ppos;
 				snprintf(ast->error_msg, sizeof(ast->error_msg), "Expected ')' but got '%s'", token_str);
 				ast_term_destroy(ast, term);
 				term = NULL;
@@ -312,13 +314,13 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 	case ASTT_NAME:	/* Attribute */
 		term = calloc(1, sizeof(*term));
 		if (!term) {
-			ast_enomem(ast);
+			ast_enomem(ast, *ppos);
 			break;
 		}
 		term->kind = ASTV_ATTR;
 		term->attr = calloc(1, sizeof(*term->attr));
 		if (!term->attr) {
-			ast_enomem(ast);
+			ast_enomem(ast, *ppos);
 			free(term);
 			term = NULL;
 			break;
@@ -335,7 +337,7 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 	case ASTT_SQSTRING:	/* String value */
 		term = calloc(1, sizeof(*term));
 		if (!term) {
-			ast_enomem(ast);
+			ast_enomem(ast, *ppos);
 			break;
 		}
 		term->kind = ASTV_CONST;
@@ -347,7 +349,7 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 	case ASTT_INTEGER:
 		term = calloc(1, sizeof(*term));
 		if (!term) {
-			ast_enomem(ast);
+			ast_enomem(ast, *ppos);
 			break;
 		}
 		term->kind = ASTV_CONST;
@@ -357,7 +359,7 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 	case ASTT_FLOAT:
 		term = calloc(1, sizeof(*term));
 		if (!term) {
-			ast_enomem(ast);
+			ast_enomem(ast, *ppos);
 			break;
 		}
 		term->kind = ASTV_CONST;
@@ -368,6 +370,7 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 		break;
 	default:
 		ast->result = ASTP_ERROR;
+		ast->pos = *ppos;
 		term = NULL;
 	}
 	return term;
@@ -511,6 +514,7 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 			return term;
 		} else {
 			ast->result = ASTP_SYNTAX;
+			ast->pos = next_pos;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
 				"Unexpected token '%s'", token_str);
 			ast_term_destroy(ast, binop->lhs);
@@ -521,6 +525,7 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 	*ppos = next_pos;
 	if (!is_comparator(binop->op)) {
 		ast->result = ASTP_SYNTAX;
+		ast->pos = *ppos;
 		snprintf(ast->error_msg, sizeof(ast->error_msg),
 			"Expected 'and', 'or', '<', '<=', '==', '>=', or '>' but got '%s'", token_str);
 		ast_term_destroy(ast, binop->lhs);
@@ -599,6 +604,7 @@ int ast_parse_order_by_clause(struct ast *ast, const char *expr, int *ppos)
 	token = ast_lex(ast, expr, ppos, &token_str);
 	if (token != ASTT_NAME) {
 		ast->result = ASTP_ERROR;
+		ast->pos = *ppos;
 		snprintf(ast->error_msg, sizeof(ast->error_msg),
 			 "Expected attribute name but found '%s'", token_str);
 		goto out;
@@ -994,9 +1000,10 @@ int ast_parse(struct ast *ast, char *expr)
 		default:
 			rc = EINVAL;
 			ast->result = ASTP_ERROR;
+			ast->pos = pos;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
-					"Expected 'select', 'from', 'where', or 'order_by', but found '%s'",
-					token_str);
+				"Expected 'select', 'from', 'where', or 'order_by', but found '%s'",
+				token_str);
 		}
 	}
 	if (!rc) {

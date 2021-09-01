@@ -141,7 +141,6 @@ struct ast {
 	/* !0 if there may be successor matching recods in the
             index. Indexed by the key order */
 	enum ast_succ_e succ_key[AST_MAX_JOIN_KEYS];
-	// int more;		/* !0 if any succ_key is 0 */
 
 	uint64_t query_id;
 	struct ast_term *where;
