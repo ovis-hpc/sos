@@ -168,6 +168,7 @@ static void session_close(struct dsos_session *client)
 	while (rbn) {
 		struct dsos_query *query = container_of(rbn, struct dsos_query, rbn);
 		query_destroy(client, query);
+		rbn = ods_rbt_min(&client->query_tree);
 	}
 	/* Close the container */
 	sos_container_close(client->sos, SOS_COMMIT_SYNC);

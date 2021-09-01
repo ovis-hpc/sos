@@ -5,6 +5,7 @@
 #include <inttypes.h>
 
 enum ast_token_e {
+	ASTT_ERR = -1,	    /* Invalid token */
 	ASTT_LPAREN = 1,    /* '(' */
 	ASTT_RPAREN,	    /* ')' */
 	ASTT_ASTERISK,	    /* '*' */
@@ -31,7 +32,6 @@ enum ast_token_e {
 	ASTT_WHERE,         /* 'where' */
 	ASTT_NAME,          /* An alphanumeric name that doesn't match
 			     * any of the above */
-	ASTT_ERR = 255	    /* Invalid token */
 };
 
 enum ast_parse_e {
@@ -42,6 +42,7 @@ enum ast_parse_e {
 	ASTP_BAD_ATTR_NAME,
 	ASTP_BAD_ATTR_TYPE,
 	ASTP_SYNTAX,
+	ASTP_ENOMEM
 };
 
 typedef struct ast_attr_entry_s *ast_attr_entry_t;

@@ -1,4 +1,5 @@
 /* -*- c-basic-offset: 8 -*- */
+#define _GNU_SOURCE
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
@@ -208,7 +209,6 @@ av_list_t av_parse_args(cmd_t cmd, char *args_)
 				break;
 			}
 		}
-
 	}
 	free(args);
 	return avlist;
@@ -531,7 +531,7 @@ int show_schema(cmd_t cmd, av_list_t avl)
 		printf("The regular expression '%s' is invalid.\n", av->value_str);
 		goto out_1;
 	}
-	
+
 	dsos_name_array_t schemas = dsos_schema_query(g_cont, &res);
 	if (schemas) {
 		int i;
@@ -737,16 +737,22 @@ int main(int argc, char *argv[])
 		printf("warning: read_history returned %d\n", rc);
 
 	if (attach_file) {
+		printf("Attaching to cluster %s ...", attach_file);
+		fflush(stdout);
 		snprintf(history_path, sizeof(history_path), "attach path %s", attach_file);
 		execute_line(history_path);
+		printf(" OK\n");
 	}
 	if (open_file) {
 		if (!attach_file) {
 			printf("The -o option must be specified with -a option\n");
 			usage(argc, argv);
 		}
+		printf("Opening the container %s ...", open_file);
+		fflush(stdout);
 		snprintf(history_path, sizeof(history_path), "open path %s", open_file);
 		execute_line(history_path);
+		printf(" OK\n");
 	}
 	/* Loop reading and executing lines until the user quits. */
 	for (; done == 0;) {

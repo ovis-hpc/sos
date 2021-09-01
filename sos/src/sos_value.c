@@ -153,6 +153,10 @@ static int TIMESTAMP_cmp(sos_value_t a, sos_value_t b, size_t size)
 		return -1;
 	if (a->data->prim.timestamp_.tv.tv_sec > b->data->prim.timestamp_.tv.tv_sec)
 		return 1;
+	if (a->data->prim.timestamp_.tv.tv_usec < b->data->prim.timestamp_.tv.tv_usec)
+		return -1;
+	if (a->data->prim.timestamp_.tv.tv_usec > b->data->prim.timestamp_.tv.tv_usec)
+		return 1;
 	return 0;
 }
 

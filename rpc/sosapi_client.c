@@ -1284,21 +1284,20 @@ query_create_complete_fn(dsos_client_t client,
 		   dsos_client_request_t request,
 		   dsos_res_t *res)
 {
-	enum dsos_error derr = 0;
 	struct dsos_query_create_res *cres = &request->query_create.res;
 	dsos_query_t query = request->query_create.query;
 	if (request->rpc_err) {
-		res->any_err = RPC_ERROR(request->rpc_err);
-		res->res[client->client_id] = res->any_err;
+		if (!res->any_err)
+			res->any_err = RPC_ERROR(request->rpc_err);
+		res->res[client->client_id] = RPC_ERROR(request->rpc_err);
 	} else if (request->query_create.res.error) {
-		derr = cres->error;
-		res->any_err = cres->error;
-		res->res[client->client_id] = res->any_err;
+		if (!res->any_err)
+			res->any_err = cres->error;
+		res->res[client->client_id] = cres->error;
 	} else {
 		request->query_create.query->handles[client->client_id] =
 			request->query_create.res.dsos_query_create_res_u.query_id;
 	}
-	res->res[client->client_id] = derr;
 	xdr_free((xdrproc_t)xdr_dsos_query_create_res, (char *)&request->query_create.res);
 	return 0;
 }
@@ -1421,6 +1420,8 @@ query_select_complete_fn(dsos_client_t client,
 				derr = DSOS_ERR_ATTR;
 		}
 	}
+	if (!res->any_err)
+		res->any_err = derr;
 	res->res[client->client_id] = derr;
 	xdr_free((xdrproc_t)xdr_dsos_query_select_res, (char *)&request->query_select.res);
 	return 0;
