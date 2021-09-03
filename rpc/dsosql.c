@@ -693,6 +693,7 @@ static struct option long_opts[] = {
 
 int main(int argc, char *argv[])
 {
+	char command[PATH_MAX];
 	char *h_path;
 	char *h_file;
 	int rc;
@@ -739,8 +740,8 @@ int main(int argc, char *argv[])
 	if (attach_file) {
 		printf("Attaching to cluster %s ...", attach_file);
 		fflush(stdout);
-		snprintf(history_path, sizeof(history_path), "attach path %s", attach_file);
-		execute_line(history_path);
+		snprintf(command, sizeof(command), "attach path %s", attach_file);
+		execute_line(command);
 		printf(" OK\n");
 	}
 	if (open_file) {
@@ -750,8 +751,8 @@ int main(int argc, char *argv[])
 		}
 		printf("Opening the container %s ...", open_file);
 		fflush(stdout);
-		snprintf(history_path, sizeof(history_path), "open path %s", open_file);
-		execute_line(history_path);
+		snprintf(command, sizeof(command), "open path %s", open_file);
+		execute_line(command);
 		printf(" OK\n");
 	}
 	/* Loop reading and executing lines until the user quits. */
