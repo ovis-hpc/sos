@@ -991,8 +991,7 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 			continue;
 		case AST_EVAL_EMPTY:
 			sos_obj_put(obj);
-			rc = ENOENT;
-			continue;
+			goto out;
 		case AST_EVAL_MATCH:
 			break;
 		}
@@ -1023,6 +1022,7 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 		if (count)
 			rc = sos_iter_next(iter);
 	}
+out:
 	return 0;
 err_0:
 	return -1;

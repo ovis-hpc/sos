@@ -39,6 +39,7 @@ static int key_word_comparator(const void *a_, const void *b_)
 static struct ast_key_word_s key_words[] = {
 	{ "and", ASTT_AND },
 	{ "from", ASTT_FROM },
+	{ "not", ASTT_NOT },
 	{ "or", ASTT_OR },
 	{ "order_by", ASTT_ORDER_BY },
 	{ "select", ASTT_SELECT },
@@ -173,10 +174,6 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 		*ppos += 1;
 		return ASTT_LT;
 	}
-	if (s[0] == '=' && s[1] == '=') {
-		*ppos += 2;
-		return ASTT_EQ;
-	}
 	if (s[0] == '>') {
 		if (s[1] == '=') {
 			*ppos += 2;
@@ -189,17 +186,11 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 		token_str[1] = '\0';
 		return ASTT_GT;
 	}
-	if (s[0] == '!') {
-		if (s[1] == '=') {
-			*ppos += 2;
-			strncpy(token_str, s, 2);
-			token_str[2] = '\0';
-			return ASTT_NE;
-		}
-		token_str[0] = s[0];
-		token_str[1] = '\0';
-		*ppos += 1;
-		return ASTT_NOT;
+	if (s[0] == '!' && s[1] == '=') {
+		*ppos += 2;
+		strncpy(token_str, s, 2);
+		token_str[2] = '\0';
+		return ASTT_NE;
 	}
 	/* Look for a keyword */
 	if (isalpha(*s)) {
@@ -289,6 +280,7 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 				break;
 			case ASTT_OR:
 			case ASTT_AND:
+			case ASTT_NOT:
 				newb = calloc(1, sizeof(*newb));
 				newb->kind = ASTV_BINOP;
 				newb->binop = calloc(1, sizeof(*newb->binop));
@@ -533,7 +525,18 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 		return NULL;
 	}
 
-	binop->rhs = ast_parse_term(ast, expr, ppos);
+	switch (binop->op) {
+	case ASTT_AND:
+	case ASTT_OR:
+	case ASTT_NOT:
+		/* Has to be a binop */
+		binop->rhs = ast_parse_binop(ast, expr, ppos);
+		break;
+	default:
+		/* Can be any term */
+		binop->rhs = ast_parse_term(ast, expr, ppos);
+		break;
+	}
 	if (!binop->rhs) {
 		ast_term_destroy(ast, binop->lhs);
 		free(binop);
@@ -650,15 +653,30 @@ int ast_parse_where_clause(struct ast *ast, const char *expr, int *ppos)
 		LIST_INSERT_HEAD(&ast->binop_list, newb->binop, entry);
 		newb->binop->lhs = ast->where;
 		newb->binop->op = token;
-		if (token == ASTT_OR || token == ASTT_AND) {
+		switch (token) {
+		case ASTT_OR:
+		case ASTT_AND:
+		case ASTT_NOT:
 			newb->binop->rhs = ast_parse_binop(ast, expr, &next_pos);
-		} else {
+			break;
+		default:
 			newb->binop->rhs = ast_parse_term(ast, expr, &next_pos);
+			break;
 		}
 		if (ast->result)
 			break;
 		*ppos = next_pos;
 		ast->where = newb;
+	}
+	if ((ast->result == 0) && (token == ASTT_ERR)) {
+		/*
+		 * If we exited the loop due to a bad token, report the
+		 * error, but don't squash an earlier error.
+		 */
+		ast->result = ASTP_SYNTAX;
+		ast->pos = *ppos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			"Unexpected token '%s' in where clause.", token_str);
 	}
 	return ast->result;
 }
@@ -1035,8 +1053,9 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 	lhs = ast_term_visit(ast, term->binop->lhs, obj);
 	switch (term->binop->op) {
 	case ASTT_OR:
-		if (sos_value_true(lhs) && lhs->obj) {
-			sos_value_put(lhs);
+		if (sos_value_true(lhs)) {
+			if (lhs->obj)
+				sos_value_put(lhs);
 			return sos_value_init_const(&term->value_, SOS_TYPE_INT32, (1 == 1));
 		}
 		rhs = ast_term_visit(ast, term->binop->rhs, obj);
@@ -1045,8 +1064,9 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 			sos_value_put(rhs);
 		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, true_n_false);
 	case ASTT_AND:
-		if (!sos_value_true(lhs) && lhs->obj) {
-			sos_value_put(lhs);
+		if (!sos_value_true(lhs)) {
+			if (lhs->obj)
+				sos_value_put(lhs);
 			return sos_value_init_const(&term->value_, SOS_TYPE_INT32, 0);
 		}
 		rhs = ast_term_visit(ast, term->binop->rhs, obj);
@@ -1054,6 +1074,17 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 		if (rhs->obj)
 			sos_value_put(rhs);
 		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, true_n_false);
+	case ASTT_NOT:
+		if (!sos_value_true(lhs)) {
+			if (lhs->obj)
+				sos_value_put(lhs);
+			return sos_value_init_const(&term->value_, SOS_TYPE_INT32, 0);
+		}
+		rhs = ast_term_visit(ast, term->binop->rhs, obj);
+		true_n_false = sos_value_true(rhs);
+		if (rhs->obj)
+			sos_value_put(rhs);
+		return sos_value_init_const(&term->value_, SOS_TYPE_INT32, !true_n_false);
 	default:
 		rhs = ast_term_visit(ast, term->binop->rhs, obj);
 		break;
@@ -1082,6 +1113,15 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 		break;
 	case ASTT_NE:
 		rc = (rc != 0);
+		break;
+	case ASTT_AND:
+		rc = (sos_value_true(lhs) && sos_value_true(rhs));
+		break;
+	case ASTT_OR:
+		rc = (sos_value_true(lhs) || sos_value_true(rhs));
+		break;
+	case ASTT_NOT:
+		rc = (sos_value_true(rhs) && !sos_value_true(rhs));
 		break;
 	default:
 		assert(0 == "Invalid comparator");

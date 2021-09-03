@@ -2,6 +2,7 @@
 #define _AST_H_
 #include <regex.h>
 #include <sos/sos.h>
+#include <ods/ods_rbt.h>
 #include <inttypes.h>
 
 enum ast_token_e {
@@ -22,7 +23,7 @@ enum ast_token_e {
 	ASTT_COMMA,         /* ',' */
 	ASTT_OR,	    /* 'or' */
 	ASTT_AND,	    /* 'and' */
-	ASTT_NOT,	    /* '!' */
+	ASTT_NOT,	    /* 'not' */
 	ASTT_EOF,	    /* End of expression */
 	/* KEYWORD */
 	ASTT_SELECT,        /* 'select' */
