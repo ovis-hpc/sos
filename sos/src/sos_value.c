@@ -636,6 +636,7 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 {
 	sos_value_data_t ref_val;
 	if (!obj) {
+		// TODO: What to do about arrays?
 		memset(val, 0, sizeof(*val));
 		val->type = sos_attr_type(attr);
 		val->attr = attr;
@@ -649,9 +650,12 @@ sos_value_t sos_value_init(sos_value_t val, sos_obj_t obj, sos_attr_t attr)
 	val->attr = attr;
 	ref_val = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
 
-	if (sos_attr_is_array(attr))
-		ref_val = (sos_value_data_t)&(obj->obj->as.bytes[ref_val->array_info.offset]);
-
+	if (sos_attr_is_array(attr)) {
+		if (0 == ref_val->array_info.offset)
+			return NULL;
+		else
+			ref_val = (sos_value_data_t)&(obj->obj->as.bytes[ref_val->array_info.offset]);
+	}
 	val->obj = sos_obj_get(obj);
 	val->data = ref_val;
 	return val;

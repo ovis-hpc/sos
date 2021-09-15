@@ -1145,7 +1145,7 @@ char *sos_obj_attr_to_str(sos_obj_t obj, sos_attr_t attr, char *str, size_t len)
  * \param obj The object handle
  * \param attr The attribute handle
  * \param str The input string value to parse
- * \param endptr Receives the point in the str argumeent where parsing stopped.
+ * \param endptr Receives the point in the str argument where parsing stopped.
  *               This parameter may be NULL.
  * \retval 0 The string was successfully parsed and the value set
  * \retval EINVAL The string was incorrectly formatted for this value
@@ -1156,7 +1156,7 @@ int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char 
 	int rc;
 	sos_value_t v;
 	struct sos_value_s v_;
-	size_t sz;
+	size_t count;
 
 	if (!sos_attr_is_array(attr)) {
 		v = sos_value_init(&v_, obj, attr);
@@ -1175,28 +1175,29 @@ int sos_obj_attr_from_str(sos_obj_t obj, sos_attr_t attr, const char *str, char 
 	 * TODO: Make the delimiters a container configuration option
 	 */
 	if (sos_attr_type(attr) == SOS_TYPE_CHAR_ARRAY) {
-		sz = strlen(str);
+		count = strlen(str) + 1;
 	} else {
 		const char *p = str;
 		char *q;
 		const char *delim = ",:_";
-		for (sz = 1, q = strpbrk(p, delim);
+		for (count = 1, q = strpbrk(p, delim);
 		     q; q = strpbrk(p, delim)) {
-			sz += 1;
+			count += 1;
 			p = q + 1;
 		}
 	}
 	rc = ENOMEM;
 	v = sos_value_init(&v_, obj, attr);
-	if (v && sos_array_count(v) < sz) {
-		/* Too short, delete and re-alloc */
-		sos_obj_delete(v->obj);
+	if (v && sos_array_count(v) < count) {
+		/* Too short re-alloc */
 		sos_obj_put(v->obj);
 		v = NULL;
 	}
 	if (!v) {
 		/* The array has not been allocated yet, or was too short */
-		v = sos_array_new(&v_, attr, obj, sz);
+		v = sos_array_new(&v_, attr, obj, count);
+		if (!v)
+			rc = ENOMEM;
 	}
 	if (v) {
 		rc = sos_value_from_str(v, str, endptr);

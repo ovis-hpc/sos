@@ -678,7 +678,13 @@ static int char_array_from_str_fn(sos_value_t v, const char *value, char **endpt
 		}
 		sos_array_count(v) = cnt;
 	}
-	strncpy(sos_array_data(v, char_), value, sos_array_count(v));
+	char *s = sos_array_data(v, char_);
+	if (!s)
+		return ENOMEM;
+	size_t count = sos_array_count(v);
+	if (!count)
+		return EINVAL;
+	strncpy(s, value, count);
 	if (endptr)
 		*endptr = (char *)(value + strlen(value));
 	return 0;
