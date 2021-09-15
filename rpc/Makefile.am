@@ -1,8 +1,10 @@
 AUTOMAKE_OPTIONS=subdir-objects
-SUBDIRS = . python
+SUBDIRS = . # python
 lib_LTLIBRARIES =
 sbin_PROGRAMS =
 bin_PROGRAMS =
+
+nobase_include_HEADERS = dsos.h
 
 sosapi.h sosapi_svc.c sosapi_clnt.c sosapi_xdr.c : sosapi.x
 	rpcgen -N -M $(srcdir)/sosapi.x

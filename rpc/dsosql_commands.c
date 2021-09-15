@@ -633,7 +633,7 @@ int dsosql_import_csv(dsos_container_t cont, FILE* fp, char *schema_name, char *
 	dsos_res_t res;
 
 	/* Get the schema */
-	schema = dsos_schema_by_name(cont, schema_name, &res);
+	schema = dsos_schema_by_name(cont, schema_name);
 	if (!schema) {
 		printf("The schema '%s' was not found.\n", schema_name);
 		return ENOENT;

@@ -505,6 +505,7 @@ bool_t schema_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_sch
 	struct dsos_schema *dschema;
 	sos_schema_t schema;
 
+	memset(res, 0, sizeof(*res));
 	client = get_client(cont_id);
 	if (!client) {
 		res->error = DSOS_ERR_CLIENT;

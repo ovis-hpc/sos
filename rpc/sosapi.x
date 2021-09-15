@@ -76,7 +76,7 @@ union dsos_schema_res switch (int error) {
     case 0:
         dsos_schema_spec *spec;
     default:
-        void;
+        string error_msg<>;
 };
 
 typedef int dsos_schema_attr;
@@ -94,7 +94,7 @@ union dsos_schema_query_res switch (int error) {
     case 0:
         dsos_name names<>;
     default:
-        void;
+        string error_msg<>;
 };
 
 /* Result for API that return a query */

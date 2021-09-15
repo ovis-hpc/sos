@@ -483,6 +483,9 @@ cdef extern from "sos/sos.h":
     const char *sos_attr_name(sos_attr_t attr)
     sos_type_t sos_attr_type(sos_attr_t attr)
     sos_index_t sos_attr_index(sos_attr_t attr)
+    const char *sos_attr_idx_type(sos_attr_t attr)
+    const char *sos_attr_key_type(sos_attr_t attr)
+    const char *sos_attr_idx_args(sos_attr_t attr)
     size_t sos_attr_size(sos_attr_t attr)
     sos_schema_t sos_attr_schema(sos_attr_t attr)
     int sos_attr_join(sos_obj_t obj, sos_attr_t attr)
@@ -739,3 +742,81 @@ cdef extern from "sos/sos.h":
     sos_obj_t sos_filter_obj(sos_filter_t filt)
     int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags)
     sos_iter_flags_t sos_filter_flags_get(sos_filter_t filt)
+
+cdef extern from "dsos.h":
+
+    cdef enum dsos_error:
+        DSOS_ERR_OK,
+        DSOS_ERR_MEMORY,
+        DSOS_ERR_CLIENT,
+        DSOS_ERR_SCHEMA,
+        DSOS_ERR_ATTR,
+        DSOS_ERR_ITER,
+        DSOS_ERR_ITER_EMPTY,
+        DSOS_ERR_QUERY_ID,
+        DSOS_ERR_QUERY_EMPTY,
+        DSOS_ERR_QUERY_BAD_SELECT,
+        DSOS_ERR_PARAMETER,
+        DSOS_ERR_TRANSPORT
+
+    cdef struct dsos_result_s:
+        int count
+        dsos_error any_err
+        dsos_error res[16]
+    ctypedef dsos_result_s dsos_res_t
+
+    cdef struct dsos_container_s:
+        pass
+    cdef struct dsos_session_s:
+        pass
+    cdef struct dsos_schema_s:
+        pass
+    cdef struct dsos_iter_s:
+        pass
+    cdef struct dsos_query_s:
+        pass
+    cdef struct dsos_session_s:
+        pass
+    ctypedef dsos_session_s *dsos_session_t
+    ctypedef dsos_container_s *dsos_container_t
+    ctypedef dsos_schema_s *dsos_schema_t
+    ctypedef dsos_iter_s *dsos_iter_t
+    ctypedef dsos_query_s *dsos_query_t
+    cdef struct dsos_name_array_s:
+        int count
+        char **names
+    ctypedef dsos_name_array_s *dsos_name_array_t
+
+    void dsos_session_close(dsos_session_t sess)
+    dsos_session_t dsos_session_open(const char *config_file)
+    void dsos_container_close(dsos_container_t cont)
+    void dsos_container_commit(dsos_container_t cont)
+    dsos_container_t dsos_container_open(dsos_session_t sess, const char *path, sos_perm_t perm, int mode)
+    dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dsos_res_t *res)
+    dsos_schema_t dsos_schema_by_name(dsos_container_t cont, const char *name)
+    dsos_schema_t dsos_schema_by_uuid(dsos_container_t cont, uuid_t uuid)
+    sos_schema_t dsos_schema_local(dsos_schema_t schema)
+    void dsos_schema_print(dsos_schema_t schema, FILE *fp)
+    int dsos_schema_attr_count(dsos_schema_t schema)
+    sos_attr_t dsos_schema_attr_by_id(dsos_schema_t schema, int attr_id)
+    sos_attr_t dsos_schema_attr_by_name(dsos_schema_t schema, const char *name)
+    void dsos_transaction_begin(dsos_container_t cont, dsos_res_t *res)
+    void dsos_transaction_end(dsos_container_t cont, dsos_res_t *res)
+    void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj, dsos_res_t *res)
+    dsos_iter_t dsos_iter_create(dsos_container_t cont, dsos_schema_t schema, const char *attr_name)
+    sos_obj_t dsos_iter_begin(dsos_iter_t iter)
+    sos_obj_t dsos_iter_end(dsos_iter_t iter)
+    sos_obj_t dsos_iter_next(dsos_iter_t iter)
+    sos_obj_t dsos_iter_prev(dsos_iter_t iter)
+    int dsos_iter_find_glb(dsos_iter_t iter, sos_key_t key)
+    int dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key)
+    int dsos_iter_find(dsos_iter_t iter, sos_key_t key)
+    int dsos_attr_value_min(dsos_container_t cont, sos_attr_t attr)
+    int dsos_attr_value_max(dsos_container_t cont, sos_attr_t attr)
+    dsos_query_t dsos_query_create(dsos_container_t cont)
+    void dsos_query_destroy(dsos_query_t query)
+    int dsos_query_select(dsos_query_t query, const char *clause)
+    sos_obj_t dsos_query_next(dsos_query_t query)
+    sos_schema_t dsos_query_schema(dsos_query_t query)
+    void dsos_name_array_free(dsos_name_array_t name)
+

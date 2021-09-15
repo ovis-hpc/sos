@@ -55,6 +55,7 @@ import binascii
 import uuid
 from sosdb.DataSet import DataSet
 cimport numpy as np
+import pandas as pd
 
 #
 # Initialize the numpy array support. Numpy arrays are used
@@ -184,6 +185,230 @@ cdef class SosObject:
         else:
             raise Exception("Error {0}".format[self.error])
 
+cdef class Session:
+    cdef dsos_session_t c_session
+    def __init__(self, config_file):
+        self.c_session = dsos_session_open(config_file.encode())
+        if self.c_session == NULL:
+            raise ValueError("The cluster defined in {0} " \
+                             "could not be attached.".format(config_file))
+
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660):
+        cdef dsos_container_t c_cont
+        c_cont = dsos_container_open(<dsos_session_t>self.c_session,
+                                     path.encode('utf-8'),
+                                     <sos_perm_t>o_perm, o_mode)
+        if c_cont == NULL:
+            raise ValueError(f"The container {path} could not be opened")
+
+        cont = DsosContainer(self)
+        cont.assign(c_cont)
+        cont.assign_session(self.c_session)
+        return cont
+
+cdef class DsosContainer:
+    cdef object session
+    cdef dsos_container_t c_cont
+    cdef dsos_session_t c_sess
+    cdef object path_
+    cdef sos_perm_t o_perm
+    cdef int o_mode
+
+    cdef assign(self, dsos_container_t c_cont):
+        self.c_cont = c_cont
+        return self
+
+    cdef assign_session(self, dsos_session_t c_sess):
+        self.c_sess = c_sess
+        return self
+
+    def __init__(self, session):
+        self.session = <Session>session
+
+    def path(self):
+        return self.path_
+
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, create=False,
+             backend=SOS_BE_MMOS):
+        """Open the container
+
+        If the container cannot be opened (or created) an Exception
+        is thrown with an error string based on the errno. Note that if
+        the container does not exist and PERM_CREAT is not specified, the
+        exception will indicate File Not Found.
+
+        Positional Parameters:
+
+        - The path to the container
+
+        Keyword Parameters:
+
+        o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RO
+        o_mode - The file creation mode if o_perm includes SOS_PERM_CREAT
+        create - True to create the container if it does not exist
+        backend - One of BE_MMOS (Memory Mapped Object Store) or
+                  BE_LSOS (Log Structured Object Store)
+        """
+        if self.c_cont != NULL:
+            self.abort(EBUSY)
+        self.path_ = path
+        if create:
+            o_perm |= SOS_PERM_CREAT
+        if backend == SOS_BE_LSOS:
+            o_perm |= SOS_BE_LSOS
+        self.o_perm = o_perm | backend
+        self.o_mode = o_mode
+        self.c_cont = dsos_container_open(<dsos_session_t>self.session.c_session,
+                                          path.encode('utf-8'),
+                                          <sos_perm_t>o_perm, o_mode)
+        if self.c_cont == NULL:
+            raise self.abort(errno)
+
+    def create(self, path, o_mode=0660, backend=SOS_BE_MMOS):
+        """Create the container
+
+        This is a convenience method that calls open with
+        o_perm |= SOS_PERM_CREAT. See the open() method for
+        more information.
+
+        Positional Parameters:
+
+        - The path to the container
+
+        Keyword Parameters:
+
+        o_mode - The file creation mode, default is 0660
+        """
+        cdef dsos_container_t c_cont
+        cdef int c_perm = SOS_PERM_CREAT | SOS_PERM_RW
+        cdef int c_mode = o_mode
+        if self.c_cont != NULL:
+            self.abort(EBUSY)
+        self.path_ = path
+        if backend == SOS_BE_LSOS:
+            c_perm |= SOS_BE_LSOS
+        c_cont = dsos_container_open(<dsos_session_t>self.session.c_session,
+                                     path.encode(),
+                                     <sos_perm_t>c_perm, c_mode)
+        if c_cont == NULL:
+            raise self.abort(errno)
+        dsos_container_close(c_cont)
+
+    def close(self):
+        """Close a container
+
+        Closes the container. If the container is not open, an
+        exception is thrown.
+
+        if the 'commit' keyword parameter is set to SOS_COMMIT_ASYNC,
+        the method will not return until all outstanding data has been
+        written to stable storage.
+
+        Keyword Parameters:
+
+        commit - SOS_COMMIT_SYNC or SOS_COMMIT_ASYNC, The default is
+                 SOS_COMMIT_ASYNC.
+
+        """
+        if self.c_cont == NULL:
+            self.abort(EINVAL)
+        dsos_container_close(self.c_cont)
+        self.c_cont = NULL
+
+    def commit(self):
+        """Commit objects in memory to storage
+
+        Commits outstanding data to stable storage. If the 'commit'
+        keyword parameter is set to SOS_COMMIT_SYNC, the method will
+        not return until all oustanding data has been written to
+        storage.
+
+        Keyword Parameters:
+
+        commit - SOS_COMMIT_ASYNC (default) or SOS_COMMIT_SYNC
+        """
+        dsos_container_commit(self.c_cont)
+
+    def schema_by_name(self, name):
+        """Return the named schema
+
+        Positional Parameters:
+
+        - The name of the schema
+
+        Returns:
+
+        A Schema object, or None if the named schema does not exist in
+        the container.
+
+        """
+        cdef dsos_schema_t c_schema = \
+            dsos_schema_by_name(<dsos_container_t>self.c_cont, name.encode())
+        if c_schema != NULL:
+            s = Schema()
+            s.c_schema = dsos_schema_local(c_schema)
+            return s
+
+    def schema_by_uuid(self, uuid_):
+        """Return the Schema with the specified 'id'
+        Every schema has a unique 16B identifier that is stored with
+        every Object of that Schema. See uuid_generate(3).
+
+        Positional Parameters:
+
+        - The unique schema id.
+
+        Returns:
+
+        The Schema with the specified id, or None if no schema with
+        that id exists.
+
+        """
+        cdef dsos_schema_t c_schema = \
+            dsos_schema_by_uuid(<dsos_container_t>self.c_cont, uuid_.bytes)
+        if c_schema != NULL:
+            s = Schema()
+            s.c_schema = dsos_schema_local(c_schema)
+            return s
+        return None
+
+    def query(self, sql, options=None):
+        cdef dsos_query_t c_query = dsos_query_create(self.c_cont)
+        cdef sos_schema_t c_schema
+        cdef sos_obj_t c_obj
+        cdef int c_rc
+        cdef int c_rec_count
+        cdef sos_attr_t c_attr
+        cdef char *c_str = <char *>malloc(1024)
+        c_rc = dsos_query_select(c_query, sql.encode())
+        if c_rc != 0:
+                print(f"Error {c_rc} returned by select clause '{sql}'")
+                return c_rc
+        c_schema = dsos_query_schema(c_query)
+        col_name_list = []
+        col_id_list = []
+        c_attr = sos_schema_attr_first(c_schema)
+        while c_attr != NULL:
+            if sos_attr_type(c_attr) != SOS_TYPE_JOIN:
+                col_name_list.append(sos_attr_name(c_attr))
+                col_id_list.append(sos_attr_id(c_attr))
+            c_attr = sos_schema_attr_next(c_attr)
+
+        c_rec_count = 0
+        c_obj = dsos_query_next(c_query)
+        c_rc = 0
+        while c_obj != NULL:
+            for i in col_id_list:
+                sos_obj_attr_by_id_to_str(c_obj, <int>col_id_list[i], c_str, 1024)
+                print(f"{c_str.decode()} ", end="")
+            print("")
+            sos_obj_put(c_obj)
+            c_rec_count += 1
+            c_obj = dsos_query_next(c_query)
+
+        free(c_str)
+        return 0
+
 cdef class SchemaIter(SosObject):
     """Implements a Schema iterator
 
@@ -205,7 +430,7 @@ cdef class SchemaIter(SosObject):
         if self.c_next_schema == NULL:
             raise StopIteration
         s = Schema()
-        s.assign(self.c_next_schema)
+        s.c_schema = self.c_next_schema # s.assign(self.c_next_schema)
         self.c_next_schema = sos_schema_next(self.c_next_schema)
         return s
 
@@ -552,7 +777,7 @@ cdef class Container(SosObject):
         cdef sos_schema_t c_schema = sos_schema_by_name(self.c_cont, name.encode())
         if c_schema != NULL:
             s = Schema()
-            s.assign(c_schema)
+            s.c_schema = c_schema #  s.assign(c_schema)
             return s
         return None
 
@@ -574,7 +799,7 @@ cdef class Container(SosObject):
         cdef sos_schema_t c_schema = sos_schema_by_uuid(self.c_cont, uuid_.bytes)
         if c_schema != NULL:
             s = Schema()
-            s.assign(c_schema)
+            s.c_schema = c_schema # s.assign(c_schema)
             return s
         return None
 
@@ -840,12 +1065,6 @@ cdef class Schema(SosObject):
         SosObject.__init__(self)
         self.c_schema = NULL
 
-    cdef assign(self, sos_schema_t c_schema):
-        if c_schema == NULL:
-            raise ValueError("schema argument cannot be NULL")
-        self.c_schema = c_schema
-        return self
-
     def attr_iter(self):
         return self.__iter__()
 
@@ -1059,7 +1278,7 @@ cdef class Schema(SosObject):
     def dup(self):
         cdef sos_schema_t c_schema = sos_schema_dup(self.c_schema)
         s = Schema()
-        s.assign(c_schema)
+        s.c_schema = c_schema
         return s
 
     def __getitem__(self, attr_id):
@@ -1799,7 +2018,8 @@ cdef class Attr(SosObject):
     def schema(self):
         """Returns the schema for which this attribute is a member"""
         s = Schema()
-        return s.assign(sos_attr_schema(self.c_attr))
+        s.c_schema = sos_attr_schema(self.c_attr)
+        return s
 
     def attr_id(self):
         """Returns the attribute id"""
@@ -4731,7 +4951,7 @@ cdef class Object(object):
 
     def get_schema(self):
         s = Schema()
-        s.assign(self.c_schema)
+        s.c_schema = self.c_schema
         return s
 
     def as_ndarray(self, name, eltype = np.uint64):
@@ -5464,7 +5684,6 @@ cdef class QueryInputer:
     def to_dataframe(self, Query query, index=None,
                      max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
         """Return the Query data as a DataFrame"""
-        import pandas as pd
         cdef sos_obj_t c_o
         cdef sos_value_s v_
         cdef sos_value_t v
@@ -6081,3 +6300,182 @@ cdef class Query:
             else:
                 return None
         return self.make_row(cursor)
+
+cdef class SqlQuery:
+    DEFAULT_ARRAY_LIMIT = 256
+    cdef Container cont
+    cdef int c_start
+    cdef int c_row_limit
+    cdef int c_col_count
+    cdef int c_row_count
+    cdef int c_max_array
+    cdef object schema
+    cdef object result
+    cdef sos_obj_t *c_objects
+    cdef sos_schema_t c_schema
+    cdef dsos_query_t c_query
+    cdef nda_setter_opt c_res_acc
+
+    def __init__(self, Container cont, int row_limit, int max_array=256):
+        self.cont = cont
+        self.c_row_limit = row_limit
+        self.c_col_count = 0
+        self.c_row_count = 0
+        self.c_max_array = max_array
+        self.c_res_acc = NULL
+        self.c_query = dsos_query_create(<dsos_container_t>self.cont.c_cont)
+        if self.c_query == NULL:
+            raise ValueError("The query could not be created.")
+
+    def select(self, sql, options=None):
+        cdef int c_rc
+        cdef sos_attr_t c_attr
+        cdef int c_col_no
+
+        c_rc = dsos_query_select(<dsos_query_t>self.c_query, sql.encode())
+        if c_rc != 0:
+            raise ValueError(f"Error {c_rc} returned by select clause '{sql}'")
+        self.c_schema = dsos_query_schema(self.c_query)
+        if self.c_schema == NULL:
+            raise ValueError("The select returned no schema")
+
+        self.c_col_count = 0
+        c_col_no = 0
+        c_attr = sos_schema_attr_first(self.c_schema)
+        while c_attr != NULL:
+            if sos_attr_type(c_attr) != SOS_TYPE_JOIN:
+                c_col_no += 1
+            c_attr = sos_schema_attr_next(c_attr)
+        if c_col_no == 0:
+            raise ValueError("The query schema contains no attributes")
+        self.c_col_count = c_col_no
+        self.c_res_acc = <nda_setter_opt>malloc(sizeof(nda_setter_opt_s) * self.c_col_count)
+        if self.c_res_acc == NULL:
+            raise MemoryError("Insufficient memory")
+
+        self.c_objects = <sos_obj_t *>malloc(self.c_row_limit * sizeof(sos_obj_t))
+        if self.c_objects == NULL:
+            raise MemoryError("Insufficient memory")
+
+    def next(self):
+        """Return a dataframe for the next batch of query results"""
+        cdef sos_obj_t c_o
+        cdef sos_value_s v_
+        cdef sos_value_t v
+        cdef int col_no
+        cdef int row_idx
+
+        # read up to c_row_count objects into c_objects
+        self.c_row_count = 0
+        for row_idx in range(0, self.c_row_limit):
+            c_o = dsos_query_next(self.c_query)
+            if c_o == NULL:
+                break
+            self.c_objects[row_idx] = c_o
+        self.c_row_count = row_idx
+        if self.c_row_count == 0:
+            return None
+        self.result = []
+        c_attr = sos_schema_attr_first(self.c_schema)
+        c_col_no = 0
+        while c_attr != NULL:
+            atyp = <int>sos_attr_type(c_attr)
+            if atyp == SOS_TYPE_JOIN:
+                c_attr = sos_schema_attr_next(c_attr)
+                continue
+            self.c_res_acc[c_col_no].attr = c_attr
+            self.c_res_acc[c_col_no].setter_fn = nda_setters[atyp]
+            if atyp == SOS_TYPE_TIMESTAMP:
+                data = np.zeros([ self.c_row_count ], dtype=np.dtype('datetime64[us]'))
+            elif atyp == SOS_TYPE_STRUCT:
+                data = np.zeros([ self.c_row_count, sos_attr_size(self.c_res_acc[c_col_no].attr) ],
+                                dtype=np.dtype(np.uint8))
+            elif atyp == SOS_TYPE_FLOAT:
+                data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.float32))
+            elif atyp == SOS_TYPE_DOUBLE:
+                data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.float64))
+            elif atyp == SOS_TYPE_UINT64:
+                data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.uint64))
+            elif atyp == SOS_TYPE_UINT32:
+                data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.uint32))
+            elif atyp == SOS_TYPE_INT64:
+                data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.int64))
+            elif atyp == SOS_TYPE_INT32:
+                data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.int32))
+            elif atyp == SOS_TYPE_BYTE_ARRAY:
+                data = np.zeros([ self.c_row_count ],
+                                dtype=np.dtype('U{0}'.format(self.c_max_array)))
+            elif atyp == SOS_TYPE_CHAR_ARRAY:
+                data = np.zeros([ self.c_row_count ],
+                                dtype=np.dtype('U{0}'.format(self.c_max_array)))
+            elif atyp == SOS_TYPE_INT16_ARRAY:
+                data = np.zeros([ self.c_row_count, self.c_max_array ],
+                                dtype=np.dtype(np.int16))
+            elif atyp == SOS_TYPE_INT32_ARRAY:
+                data = np.zeros([ self.c_row_count, self.c_max_array ],
+                                dtype=np.dtype(np.int32))
+            elif atyp == SOS_TYPE_INT64_ARRAY:
+                data = np.zeros([ self.c_row_count, self.c_max_array ],
+                                dtype=np.dtype(np.int64))
+            elif atyp == SOS_TYPE_UINT16_ARRAY:
+                data = np.zeros([ self.c_row_count, self.c_max_array ],
+                                dtype=np.dtype(np.uint16))
+            elif atyp == SOS_TYPE_UINT32_ARRAY:
+                data = np.zeros([ self.c_row_count, self.c_max_array ],
+                                dtype=np.dtype(np.uint32))
+            elif atyp == SOS_TYPE_UINT64_ARRAY:
+                data = np.zeros([ self.c_row_count, self.c_max_array ],
+                                dtype=np.dtype(np.uint64))
+            elif atyp == SOS_TYPE_FLOAT_ARRAY:
+                data = np.zeros([ self.c_row_count, self.c_max_array ],
+                                dtype=np.dtype(np.float32))
+            elif atyp == SOS_TYPE_DOUBLE_ARRAY:
+                data = np.zeros([ self.c_row_count, self.c_max_array ],
+                                dtype=np.dtype(np.float64))
+            else:
+                continue
+                # raise ValueError(f"Invalid attribute type {atyp} for DataFrame encoding")
+            self.result.append(data)
+            c_attr = sos_schema_attr_next(c_attr)
+            c_col_no += 1
+
+        for row_idx in range(0, self.c_row_count):
+            for col_no in range(0, self.c_col_count):
+                v = sos_value_init(&v_,
+                                   self.c_objects[row_idx],
+                                   self.c_res_acc[col_no].attr)
+                self.c_res_acc[col_no].setter_fn(self.result[col_no], row_idx, v)
+                sos_value_put(v)
+            sos_obj_put(self.c_objects[row_idx])
+            self.c_objects[row_idx] = NULL
+            self.c_row_count += 1
+        pdres = {}
+        df_idx = None
+        for col_no in range(0, self.c_col_count):
+            col_name = sos_attr_name(self.c_res_acc[col_no].attr).decode()
+            pdres[col_name] = self.result[col_no]
+            if 'timestamp' == col_name:
+                df_idx = pd.DatetimeIndex(self.result[col_no])
+        if df_idx is not None:
+            res = pd.DataFrame(pdres, index=df_idx)
+        else:
+            res = pd.DataFrame(pdres)
+        return res
+
+
+    @property
+    def capacity(self):
+        """Return the row capacity of the result"""
+        return self.c_row_limit
+
+    @property
+    def count(self):
+        """Return the number of rows in the result"""
+        return self.c_row_count
+
+    def __len__(self):
+        """Return the number of rows in the result"""
+        return self.c_row_count
+
+    def __dealloc__(self):
+        free(self.c_res_acc)

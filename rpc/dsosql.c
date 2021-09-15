@@ -500,7 +500,7 @@ int show_schema(cmd_t cmd, av_list_t avl)
 		av = av_find(avl, "regex");
 		if (av)
 			goto regex;
-		dsos_name_array_t schemas = dsos_schema_query(g_cont, &res);
+		dsos_name_array_t schemas = dsos_schema_query(g_cont);
 		if (schemas) {
 			int i;
 			char *name;
@@ -510,12 +510,13 @@ int show_schema(cmd_t cmd, av_list_t avl)
 		}
 		goto out;
 	} else {
-		dsos_schema_t schema = dsos_schema_by_name(g_cont, av->value_str, &res);
+		dsos_schema_t schema = dsos_schema_by_name(g_cont, av->value_str);
 		if (!schema) {
 			printf("The schema '%s' could not b e found.\n", av->value_str);
 			goto out;
 		}
-		sos_schema_print(dsos_schema_schema(schema), stdout);
+		dsos_schema_print(schema, stdout);
+		goto out;
 	}
 
 	av = av_find(avl, "regex");
@@ -532,16 +533,17 @@ int show_schema(cmd_t cmd, av_list_t avl)
 		goto out_1;
 	}
 
-	dsos_name_array_t schemas = dsos_schema_query(g_cont, &res);
+	dsos_name_array_t schemas = dsos_schema_query(g_cont);
 	if (schemas) {
 		int i;
 		char *name;
 		for (i = 0; i < schemas->count; i++) {
 			int rc = regexec(&rex, schemas->names[i], 0, NULL, 0);
 			if (!rc) {
-				dsos_schema_t schema = dsos_schema_by_name(g_cont, schemas->names[i], &res);
+				dsos_schema_t schema =
+					dsos_schema_by_name(g_cont, schemas->names[i]);
 				if (schema)
-					sos_schema_print(dsos_schema_schema(schema), stdout);
+					dsos_schema_print(schema, stdout);
 			}
 		}
 	}
