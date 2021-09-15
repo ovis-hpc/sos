@@ -580,21 +580,25 @@ int ast_parse_from_clause(struct ast *ast, const char *expr, int *ppos)
 	int next_pos = *ppos;
 	TAILQ_INIT(&ast->schema_list);
 
+	/*
+	 * Quoted strings are supported to allow for schema with special
+	 * characters such as '-', '@', etc...
+	 */
 	for (token = ast_lex(ast, expr, &next_pos, &token_str);
-	     token == ASTT_NAME;
+	     token == ASTT_NAME || token == ASTT_DQSTRING || token == ASTT_SQSTRING;
 	     token = ast_lex(ast, expr, &next_pos, &token_str))
-		{
-			struct ast_schema_entry_s *se = calloc(1, sizeof *se);
-			se->name = strdup(token_str);
-			LIST_INIT(&se->join_list);
-			*ppos = next_pos;	/* consume this token */
-			TAILQ_INSERT_TAIL(&ast->schema_list, se, link);
-			/* Check for a ',' indicating another name */
-			token = ast_lex(ast, expr, &next_pos, &token_str);
-			if (token != ASTT_COMMA)
-				/* end of schema name list, do not consume token */
-				break;
-		}
+	{
+		struct ast_schema_entry_s *se = calloc(1, sizeof *se);
+		se->name = strdup(token_str);
+		LIST_INIT(&se->join_list);
+		*ppos = next_pos;	/* consume this token */
+		TAILQ_INSERT_TAIL(&ast->schema_list, se, link);
+		/* Check for a ',' indicating another name */
+		token = ast_lex(ast, expr, &next_pos, &token_str);
+		if (token != ASTT_COMMA)
+			/* end of schema name list, do not consume token */
+			break;
+	}
 	return ast->result;
 }
 
