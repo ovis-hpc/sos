@@ -1530,6 +1530,8 @@ static sos_schema_t __sos_schema_by_name(sos_t sos, const char *name)
 		goto out;
 	}
 	schema = container_of(rbn, struct sos_schema_s, name_rbn);
+	if (!schema)
+		errno = ENOENT;
 out:
 	return schema;
 }

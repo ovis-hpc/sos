@@ -144,6 +144,10 @@ struct dsos_schema_spec *dsos_spec_from_schema(sos_schema_t schema)
 	for (attr_id = 0; attr_id < attr_count; attr_id++)
 	{
 		sos_attr_t attr = sos_schema_attr_by_id(schema, attr_id);
+		if (!attr) {
+			errno = EINVAL;
+			goto err_1;
+		}
 		attr_encode(schema, &attrs[attr_id], attr);
 	}
 	return spec;

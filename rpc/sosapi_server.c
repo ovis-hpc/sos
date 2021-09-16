@@ -498,6 +498,7 @@ out_0:
 
 bool_t schema_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_schema_res *res, struct svc_req *rqstp)
 {
+	char err_msg[256];
 	if (!authenticate_request(rqstp, __func__))
 		return FALSE;
 	struct dsos_session *client;
@@ -509,6 +510,8 @@ bool_t schema_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_sch
 	client = get_client(cont_id);
 	if (!client) {
 		res->error = DSOS_ERR_CLIENT;
+		sprintf(err_msg, "The container %ld does not exist.", cont_id);
+		res->dsos_schema_res_u.error_msg = strdup(err_msg);
 		goto out_0;
 	}
 
@@ -517,20 +520,38 @@ bool_t schema_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_sch
 		res->error = 0;
 		dschema = container_of(rbn, struct dsos_schema, name_rbn);
 		res->dsos_schema_res_u.spec = dsos_schema_spec_dup(dschema->spec);
+		if (!res->dsos_schema_res_u.spec) {
+			res->error = errno ? errno : EINVAL;
+			snprintf(err_msg, sizeof(err_msg),
+				"Error %d duplicating the schema", res->error);
+			res->dsos_schema_res_u.error_msg = strdup(err_msg);
+		}
 		goto out_1;
 	}
 	schema = sos_schema_by_name(client->sos, name);
 	if (!schema) {
 		res->error = errno;
+		snprintf(err_msg, sizeof(err_msg),
+			"The schema '%s' does not exist in container %ld", name, cont_id);
+		res->dsos_schema_res_u.error_msg = strdup(err_msg);
 		goto  out_1;
 	}
 	dschema = cache_schema(client, schema);
 	if (!dschema) {
-		res->error = errno;
-		goto out_1;
+		res->error = errno ? errno : EINVAL;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d encoding the schema", res->error);
+		res->dsos_schema_res_u.error_msg = strdup(err_msg);
+		goto  out_1;
 	}
 	res->error = 0;
 	res->dsos_schema_res_u.spec = dsos_schema_spec_dup(dschema->spec);
+	if (!res->dsos_schema_res_u.spec) {
+		res->error = errno ? errno : EINVAL;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d duplicating the schema", res->error);
+		res->dsos_schema_res_u.error_msg = strdup(err_msg);
+	}
 out_1:
 	put_client(client);
 out_0:
