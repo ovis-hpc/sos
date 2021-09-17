@@ -20,14 +20,11 @@ AC_SUBST([ODS_COMMIT_ID],["$COMMIT_ID"])
 
 dnl Checks for programs
 AC_PROG_CC
-OPTION_DEFAULT_DISABLE([dsos], [ENABLE_DSOS])
-if test -z "$ENABLE_DSOS_TRUE"; then
-   AC_PROG_LEX
-   AS_IF([test "x$LEX" != "xflex"], [AC_MSG_ERROR([You need to install flex to build DSOS])])
-   AC_ARG_VAR([BISON], [bison command])
-   AC_CHECK_PROG([BISON], [bison -y], [bison -y], [no])
-   AS_IF([test "x$BISON" = "xno"], [AC_MSG_ERROR([You need to install bison to build DSOS])])
-fi
+AC_ARG_VAR([BISON], [bison command])
+AC_CHECK_PROG([BISON], [bison -y], [bison -y], [no])
+AS_IF([test "x$BISON" = "xno"], [AC_MSG_ERROR([You need to install bison to build DSOS])])
+AC_PROG_LEX
+AS_IF([test "x$LEX" != "xflex"], [AC_MSG_ERROR([You need to install flex to build SOS])])
 
 AC_CHECK_HEADER([gssapi/gssapi.h], [HAVE_GSSAPI_H=yes], [HAVE_GSSAPI_H=no])
 
