@@ -4,9 +4,11 @@ lib_LTLIBRARIES =
 sbin_PROGRAMS =
 bin_PROGRAMS =
 
+noinst_HEADERS = json.h sosapi_common.h sosapi.x dsosql.h json_parser.c json_lexer.c
 nobase_include_HEADERS = dsos.h
 
-sosapi.h sosapi_svc.c sosapi_clnt.c sosapi_xdr.c : sosapi.x
+BUILT_SOURCES = sosapi.h sosapi_svc.c sosapi_clnt.c sosapi_xdr.c
+sosapi.h sosapi_svc.c sosapi_clnt.c sosapi_xdr.c &: sosapi.x
 	rpcgen -N -M $(srcdir)/sosapi.x
 
 json_parser.c json_parser.h: json_parser.y json.h
