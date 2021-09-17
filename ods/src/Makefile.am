@@ -18,7 +18,7 @@ libods_la_SOURCES = \
     ods_idx.c ods_idx_priv.h \
     ods.c ods_priv.h \
     ods_opt.c \
-    ods_rbt.c ods_rbt.h \
+    ods_rbt.c \
     ods_log.c ods_log.h \
     fnv_hash.h
 libods_la_LIBADD = -ldl -lpthread -luuid -lz
