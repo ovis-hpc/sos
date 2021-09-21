@@ -4,6 +4,11 @@ if ENABLE_DSOS
 SUBDIRS += rpcgen libtirpc rpc
 endif
 
+if ENABLE_PYTHON
+SUBDIRS += sos/python
+endif
+
+
 if ENABLE_DOC
 SUBDIRS += doc man
 endif
