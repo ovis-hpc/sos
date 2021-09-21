@@ -6303,7 +6303,7 @@ cdef class Query:
 
 cdef class SqlQuery:
     DEFAULT_ARRAY_LIMIT = 256
-    cdef Container cont
+    cdef DsosContainer cont
     cdef int c_start
     cdef int c_row_limit
     cdef int c_col_count
@@ -6316,7 +6316,7 @@ cdef class SqlQuery:
     cdef dsos_query_t c_query
     cdef nda_setter_opt c_res_acc
 
-    def __init__(self, Container cont, int row_limit, int max_array=256):
+    def __init__(self, DsosContainer cont, int row_limit, int max_array=256):
         self.cont = cont
         self.c_row_limit = row_limit
         self.c_col_count = 0
