@@ -199,7 +199,6 @@ AC_CONFIG_FILES([
 		libtirpc/man/Makefile
 		libtirpc/doc/Makefile
 		rpc/Makefile
-		rpc/python/Makefile
 		rpm/sosdb.spec
 ])
 

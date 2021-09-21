@@ -4,14 +4,18 @@ lib_LTLIBRARIES =
 sbin_PROGRAMS =
 bin_PROGRAMS =
 
+BUILT_SOURCES = sosapi.h sosapi_svc.c sosapi_clnt.c sosapi_xdr.c json_parser.h json_parser.c json_lexer.c
 noinst_HEADERS = json.h sosapi_common.h sosapi.x dsosql.h json_parser.c json_lexer.c
 nobase_include_HEADERS = dsos.h
 
-BUILT_SOURCES = sosapi.h sosapi_svc.c sosapi_clnt.c sosapi_xdr.c
-sosapi.h sosapi_svc.c sosapi_clnt.c sosapi_xdr.c &: sosapi.x
+xdr-files : FORCE
+	rm -f $(srcdir)/sosapi.h
+FORCE :
+
+sosapi.h : sosapi.x xdr-files
 	rpcgen -N -M $(srcdir)/sosapi.x
 
-json_parser.c json_parser.h: json_parser.y json.h
+json_parser.c json_parser.h : json_parser.y json.h
 	$(BISON) --defines=json_parser.h -o json_parser.c $<
 
 json_lexer.c: json_lexer.l json.h json_parser.h
@@ -51,7 +55,6 @@ dsosql_CFLAGS = $(AM_CFLAGS)
 dsosql_LDADD = libdsos.la -lpthread -luuid -lreadline -lm
 bin_PROGRAMS += dsosql
 
-BUILT_SOURCES = json_parser.h json_parser.c json_lexer.c
 AM_YFLAGS = -d
 
 EXTRA_DIST = json_lexer.l json_parser.y
