@@ -1,9 +1,5 @@
 SUBDIRS = src include
 
-if ENABLE_PYTHON
-SUBDIRS += python
-endif
-
 EXTRA_DIST = sos-configvars.sh.in
 CLEANFILES = sos-configvars.sh
 do_subst=@SOS_SUBST_RULE@
