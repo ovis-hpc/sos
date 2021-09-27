@@ -73,13 +73,13 @@
  */
 typedef struct sos_container_s *sos_t;
 typedef enum sos_perm_e {
-	SOS_PERM_RO = ODS_PERM_RO,
 	SOS_PERM_RD = ODS_PERM_RD,
 	SOS_PERM_WR = ODS_PERM_WR,
 	SOS_PERM_RW = ODS_PERM_RW,
 	SOS_PERM_CREAT = ODS_PERM_CREAT,
 	SOS_BE_MMOS = ODS_BE_MMAP,
-	SOS_BE_LSOS = ODS_BE_LSOS
+	SOS_BE_LSOS = ODS_BE_LSOS,
+	SOS_PERM_USER = 512
 } sos_perm_t;
 
 #define SOS_POS_KEEP_TIME			"POS_KEEP_TIME"
@@ -330,6 +330,7 @@ typedef struct sos_schema_template_attr {
 
 typedef struct sos_schema_template {
 	const char *name;
+	const char *uuid;
 	struct sos_schema_template_attr attrs[];
 } *sos_schema_template_t;
 
@@ -411,6 +412,8 @@ typedef enum sos_part_state_e {
 	SOS_PART_STATE_PRIMARY = 2,
 	/** Partition is undergoing state change  */
 	SOS_PART_STATE_BUSY = 3,
+	/** Detached */
+	SOS_PART_STATE_DETACHED = 4
 } sos_part_state_t;
 
 /** Describes a Partitions storage attributes */
@@ -435,10 +438,12 @@ typedef struct sos_part_s *sos_part_t;
  */
 int sos_part_create(sos_t sos, const char *name, const char *path);	/* deprecated */
 sos_part_t sos_part_open(const char *path, int o_perm, ...);
+int sos_part_chown(sos_part_t part, uid_t uid, gid_t gid);
+int sos_part_chmod(sos_part_t part, int mode);
 sos_perm_t sos_part_be_get(sos_part_t part);
 int sos_part_attach(sos_t sos, const char *name, const char *path);
 int sos_part_detach(sos_part_t part);
-int sos_part_destroy(char *path);
+
 int sos_part_move(sos_part_t part, const char *part_path);
 sos_part_t sos_part_find(sos_t sos, const char *name);	/* deprecated */
 sos_part_t sos_part_by_name(sos_t sos, const char *name);
@@ -451,6 +456,7 @@ sos_part_t sos_part_next(sos_part_iter_t iter);
 const char *sos_part_name(sos_part_t part);
 const char *sos_part_path(sos_part_t part);
 const char *sos_part_desc(sos_part_t part);
+void sos_part_desc_set(sos_part_t part, const char *name);
 uint32_t sos_part_id(sos_part_t part);
 sos_part_state_t sos_part_state(sos_part_t part);
 int sos_part_state_set(sos_part_t part, sos_part_state_t state);
@@ -460,6 +466,9 @@ sos_part_t _sos_part_get(sos_part_t part, const char *func, int line);
 #define sos_part_get(_p_) _sos_part_get(_p_, __func__, __LINE__)
 void sos_part_put(sos_part_t part);
 int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
+uid_t sos_part_uid(sos_part_t part);
+gid_t sos_part_gid(sos_part_t part);
+int sos_part_perm(sos_part_t part);
 
 typedef char sos_obj_ref_str_t[37+32];
 char *sos_obj_ref_to_str(sos_obj_ref_t ref, sos_obj_ref_str_t str);
@@ -532,6 +541,7 @@ sos_obj_t sos_obj_new(sos_schema_t schema);
 sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_size);
 sos_obj_t sos_obj_malloc(sos_schema_t schema);
 int sos_obj_commit(sos_obj_t obj);
+int sos_obj_commit_part(sos_obj_t obj, sos_part_t part);
 sos_schema_t sos_obj_schema(sos_obj_t obj);
 size_t sos_obj_size(sos_obj_t obj);
 int sos_obj_copy(sos_obj_t dst, sos_obj_t src);
@@ -767,14 +777,7 @@ int sos_iter_flags_set(sos_iter_t i, sos_iter_flags_t flags);
 sos_iter_flags_t sos_iter_flags_get(sos_iter_t i);
 uint64_t sos_iter_card(sos_iter_t i);
 uint64_t sos_iter_dups(sos_iter_t i);
-#if 0
-int sos_iter_pos_set(sos_iter_t i, sos_pos_t pos);
-int sos_iter_pos_get(sos_iter_t i, sos_pos_t *pos);
-int sos_iter_pos_put(sos_iter_t i, sos_pos_t pos);
-int sos_pos_from_str(sos_pos_t *pos, const char *str);
-const char *sos_pos_to_str(sos_pos_t pos);
-void sos_pos_str_free(char *pos_str);
-#endif
+
 int sos_iter_next(sos_iter_t iter);
 int sos_iter_prev(sos_iter_t i);
 int sos_iter_begin(sos_iter_t i);
@@ -793,11 +796,7 @@ sos_obj_t sos_filter_next(sos_filter_t filt);
 sos_obj_t sos_filter_prev(sos_filter_t filt);
 sos_obj_t sos_filter_end(sos_filter_t filt);
 int sos_filter_miss_count(sos_filter_t filt);
-#if 0
-int sos_filter_pos_set(sos_filter_t filt, const sos_pos_t pos);
-int sos_filter_pos_get(sos_filter_t filt, sos_pos_t *pos);
-int sos_filter_pos_put(sos_filter_t filt, const sos_pos_t pos);
-#endif
+
 sos_obj_t sos_filter_obj(sos_filter_t filt);
 int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags);
 sos_iter_flags_t sos_filter_flags_get(sos_filter_t filt);

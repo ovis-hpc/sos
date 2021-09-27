@@ -47,11 +47,14 @@ from builtins import str
 import shutil
 import sys
 import argparse
+import os
+import pwd
+import grp
 from sosdb import Sos
 
 def fmt_size(size):
     if size < 1000.0:
-        return "{0:8.1f}".format(size)
+        return "{0:8}B".format(int(size))
     size /= 1000.0
     if size < 1000.0:
         return "{0:8.1f}K".format(size)
@@ -67,91 +70,260 @@ def fmt_size(size):
     size /= 1000.0
     return "{0:8.1f}P".format(size)
 
+class Permission:
+    translate = {
+        0o1   : [ '-', 'x' ],
+        0o2   : [ '-', 'w' ],
+        0o4   : [ '-', 'r' ],
+        0o10  : [ '-', 'x' ],
+        0o20  : [ '-', 'w' ],
+        0o40  : [ '-', 'r' ],
+        0o100 : [ '-', 'x' ],
+        0o200 : [ '-', 'w' ],
+        0o400 : [ '-', 'r' ]
+    }
+    def __init__(self, mask):
+        self.mask = mask
+
+    def __str__(self):
+        s = ''
+        for m in self.translate:
+            if 0 != (m & self.mask):
+                s = self.translate[m][1] + s
+            else:
+                s = self.translate[m][0] + s
+        return s
+
+def print_table(p, hdr=True, ftr=False):
+    if hdr:
+        print("{0:18} {1:10} {2:5} {3:5} {4:12} {5:10} {6:36} {7}".
+                format("Name", "State", "uid", "gid", "Permissions", "Size", "Description", "Path"))
+    if hdr or ftr:
+        print("{0} {1} {2} {3} {4} {5} {6} {7}".
+                format('-'.ljust(18,'-'), '-'.ljust(10,'-'),
+                        '-'.ljust(5, '-'), '-'.ljust(5, '-'), '-'.ljust(12, '-'),
+                        '-'.ljust(10,'-'), '-'.ljust(36,'-'),
+                        '-'.ljust(20,'-')))
+    if ftr:
+        return
+
+    stat = p.stat()
+    uid = p.uid()
+    gid = p.gid()
+    perm = Permission(p.perm())
+    accessed = dt.datetime.fromtimestamp(stat.accessed)
+    modified = dt.datetime.fromtimestamp(stat.modified)
+    print("{0:18} {1:10} {2:5} {3:5} {4:12} {5:10} {6:36} {7}". \
+            format(p.name(), str(p.state()), uid, gid, str(perm),
+                    fmt_size(stat.size), p.desc(), p.path()))
+
+def print_json(p, hdr=True, ftr=False):
+    if ftr:
+        print("]")
+        return
+    if hdr:
+        print("[")
+    else:
+        print(",")
+    stat = p.stat()
+    uid = p.uid()
+    gid = p.gid()
+    perm = p.perm()
+    accessed = dt.datetime.fromtimestamp(stat.accessed)
+    accessed = accessed.strftime("%m/%d/%y %H:%M:%S")
+    modified = dt.datetime.fromtimestamp(stat.modified)
+    modified = modified.strftime("%m/%d/%y %H:%M:%S")
+    print(f'{{ "name": "{p.name()}, "state" : "{str(p.state())}", '
+          f'"uid" : {uid}, "gid" : {gid}, "perm" : {oct(perm)}, '
+          f'"access" : "{accessed}", "modified" : "{modified}", '
+          f'"size" : "{fmt_size(stat.size)}", "path" : "{p.path()}", '
+          f'"description" : "{p.desc()}"}}', end='')
+
+def print_partition(p, hdr=True, ftr=False, fmt='table'):
+
+    if fmt == 'table':
+        print_table(p, hdr, ftr)
+    else:
+        print_json(p, hdr, ftr)
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Manage the partitions in a SOSDB.")
-    parser.add_argument("--path", metavar="DB-PATH", required=True,
-                        help="Specifies the path to the database.")
-    parser.add_argument("--name", metavar="PART-NAME",
+    parser = argparse.ArgumentParser(description="Manage SOSDB partitions.")
+    parser.add_argument("--path", metavar="DB-PATH", required=False,
+                        help="Specifies the path to the partition.")
+    parser.add_argument("--name", metavar="PART-NAME", default=None,
                         help="Specifies the parition name.")
+    parser.add_argument("--mode", metavar="MODE", default=0o660,
+                        help="The file access mode if creating a partition. Default is 0o660.")
+    parser.add_argument("--user", metavar="USER", default=None,
+                        help="The user name or user-id that owns the container");
+    parser.add_argument("--group", metavar="GROUP", default=None,
+                        help="The group name or group-id that owns the container");
+    parser.add_argument("--perm", metavar="PERM", default=None,
+                        help="The access rights allowed for accessing the container's contents");
+    parser.add_argument("--backend", metavar="BACKEND", default='lsos',
+                        help="The desired storage backend, one of: "
+                        "'LSOS' (Log Structured Object Store), or "
+                        "'MMOS' (Memory Mapped Object Store). "
+                        " The default is 'lsos'.")
+    parser.add_argument("--desc", default=None,
+                        help="A description for the partition.")
+    parser.add_argument("--cont", default=None, metavar="PATH",
+                        help="The path to the container if attaching or detaching partitions.\n"
+                            "If specified with --query, a container's attached partitions are queried.")
+    parser.add_argument("--fmt", default='table',
+                        help="The desired query output format: 'table', or 'json'.")
 
     actions = parser.add_mutually_exclusive_group(required=True)
     actions.add_argument("--query", action="store_true",
-                        help="Query a container's partitions.")
+                        help="Query a partition.")
     actions.add_argument("--create", action="store_true",
                          help="Create a new partition. ")
     actions.add_argument("--state", metavar="STATE-NAME",
                          choices=[ 'primary', 'active', 'offline' ],
                          help="Set the state of a partition.")
-    actions.add_argument("--move", action="store_true",
-                         help="Move a partition to a new location.")
-    actions.add_argument("--remove", action="store_true",
-                         help="Remove the partition from the database.")
-    actions.add_argument("--delete", action="store_true",
-                         help="Remove the partition from the database and delete the data.")
-    actions.add_argument("--export", metavar="DB-PATH",
-                         help="Export a partitions contents to another database.")
+    actions.add_argument("--attach", action="store_true",
+                         help="Attach a partition to a container.")
+    actions.add_argument("--detach", action="store_true",
+                         help="Detach a partition from a container.")
+    actions.add_argument("--set", action="store_true",
+                         help="Set user-id, group-id, and permission bits"
+                            "for accessing a partition's contents");
 
-    parser.add_argument("--reindex", action="store_true",
-                         help="Add exported objects to all indices.")
-
-    parser.add_argument("--location", metavar="PART-PATH",
-                        help="Specifies the location of the partition. " \
-                        "Used by the create and move actions.")
     args = parser.parse_args()
-    cont = Sos.Container()
-
-    # Open the database
-    try:
-        cont.open(args.path)
-    except Exception as ex:
-        print("The database '{0}' could not be opened.".format(args.path))
-        sys.exit(1)
 
     #
     # Query the partitions
     #
     if args.query:
         import datetime as dt
-        pi = cont.part_iter()
-        print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
-              format("Name", "State", "Accessed", "Modified", "Size", "Path"))
-        print("{0} {1} {2} {3} {4} {5}". \
-              format('-'.ljust(18,'-'), '-'.ljust(10,'-'),
-                     '-'.ljust(18,'-'), '-'.ljust(18,'-'), '-'.ljust(11,'-'),
-                     '-'.ljust(20,'-')))
-        for p in pi:
-            stat = p.stat()
-            accessed = dt.datetime.fromtimestamp(stat.accessed)
-            modified = dt.datetime.fromtimestamp(stat.modified)
-            print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
-                  format(p.name(), str(p.state()),
-                         accessed.strftime("%m/%d/%y %H:%M:%S"),
-                         modified.strftime("%m/%d/%y %H:%M:%S"),
-                         fmt_size(stat.size), p.path()))
+        if args.cont:
+            # Open the database
+            cont = Sos.Container()
+            try:
+                cont.open(args.cont)
+            except Exception as ex:
+                print("The SOSDB '{0}' could not be opened.".format(args.cont))
+                sys.exit(1)
+        else:
+            cont = None
+        if cont:
+            pi = cont.part_iter()
+            hdr = True
+            for p in pi:
+                print_partition(p, hdr, fmt=args.fmt)
+                hdr = False
+            print_partition(p, hdr=False, ftr=True, fmt=args.fmt)
+            sys.exit(0)
+        p = Sos.Partition()
+        p.open(args.path)
+        print_partition(p, fmt=args.fmt)
         sys.exit(0)
 
-    if args.create or args.state or args.move or args.delete or args.export:
-        if not args.name:
-            print("A partition name must be specified.")
-            syst.exit(1)
-        part = cont.part_by_name(args.name)
-        if args.create:
-            if part is not None:
-                print("The partition name '{0}' already exists.".format(args.name))
-                sys.exit(1)
-        elif not part:
-            print("The partition name '{0}' was not found.".format(args.name))
-            sys.exit(1)
+    def get_uid(args, default):
+        if args.user:
+            if type(args.user) == str:
+                if args.user.isdigit():
+                    uid = int(args.user)
+                else:
+                    pwe = pwd.getpwnam(args.user)
+                    uid = pwe.pw_uid
+            else:
+                uid = int(args.user)
+        else:
+            uid = default
+        return uid
+
+    def get_gid(args, default):
+        if args.group:
+            if type(args.group) == str:
+                if args.group.isdigit():
+                    gid = int(args.group)
+                else:
+                    gr = grp.getgrnam(args.user)
+                    gid = gr.gr_gid
+            else:
+                gid = int(args.group)
+        else:
+            gid = default
+        return gid
+
     #
-    # Create a new partition
+    # Create a partition
     #
     if args.create:
         try:
-            cont.part_create(args.name, args.location)
+            if args.backend.upper() == 'LSOS':
+                backend = Sos.BE_LSOS
+            elif args.backend.upper() == 'MMOS':
+                backend = Sos.BE_MMOS
+            else:
+                print("The storage backend must be 'LSOS' or 'MMOS'.")
+                sys.exit(1)
+            if args.desc:
+                description = args.desc
+            else:
+                description = None
+            if args.user and not args.group:
+                print("The user name (--user) must be specified.")
+                sys.exit(1)
+            part = Sos.Partition()
+            part.open(args.path,
+            o_perm = Sos.PERM_RW | Sos.PERM_CREAT,
+            o_mode = args.mode,
+            desc = description, backend = backend)
+            uid = get_uid(args, os.getuid())
+            gid = get_gid(args, os.getgid())
+            if args.user or args.group:
+                part.chown(uid, gid)
+            perm = 0o660
+            if args.perm:
+                perm = eval(args.perm)
+                part.chmod(perm)
         except Exception as ex:
             print("The partition could not be created.\n{0}".format(ex))
             sys.exit(1)
         sys.exit(0)
+
+    #
+    # Change a partition's ownership and access rights
+    #
+    if args.set:
+        part = Sos.Partition()
+        part.open(args.path)
+        if not part:
+            print("The part name '{0}' was not found.".format(args.name))
+            sys.exit(1)
+        if args.desc:
+            part.desc_set(args.desc)
+        uid = get_uid(args, -1)
+        gid = get_gid(args, -1)
+        if args.user or args.group:
+            part.chown(uid, gid)
+        if args.perm:
+            perm = eval(args.perm)
+            part.chmod(perm)
+
+    #
+    # Check the --cont, --path and --name options
+    #
+    if args.attach or args.detach or args.state:
+        if (args.state or args.attach or args.detach) and not args.name:
+            print("The partition name (--name NAME) must be specified")
+            sys.exit(1)
+        if args.attach and not args.path:
+            print("The partition path (--path PATH) must be specified with --attach")
+            sys.exit(1)
+        if not args.cont:
+            print("The container option (--cont PATH) must be specified.")
+            sys.exit(1)
+        # Open the database
+        cont = Sos.Container()
+        try:
+            cont.open(args.cont)
+        except Exception as ex:
+            print(f"The container '{args.cont}' could not be opened.")
+            sys.exit(1)
+
     #
     # Change the state of a partition
     #
@@ -166,43 +338,35 @@ if __name__ == "__main__":
             print("The state could not be set.\n{0}".format(ex))
             sys.exit(1)
         sys.exit(0)
-    #
-    # Move a partition
-    #
-    if args.move:
-        if not args.location:
-            print("The new location for the partition must be specified.")
-            sys.exit(1)
-        try:
-            part.move(args.location)
-        except Exception as ex:
-            print("The partition could not be moved.\n{0}".format(ex))
-            sys.exit(1)
-        sys.exit(0)
-    #
-    # Delete a partition
-    #
-    if args.remove or args.delete:
-        try:
-            path = part.path() + '/' + part.name()
-            part.delete()
-            if args.delete:
-                shutil.rmtree(path)
-        except Exception as ex:
-            print("The partition could not be moved.\n{0}".format(ex))
-            sys.exit(1)
-        sys.exit(0)
 
     #
-    # Export
+    # Attach a partition to a container
     #
-    if args.export:
+    if args.attach:
+        part = Sos.Partition()
         try:
-            dst_sos = Sos.Container(args.export)
-            count = part.export(dst_sos, reindex=args.reindex)
-            if count < 0:
-                print("Error {0} encountered exporting objects".format(count))
-            else:
-                print("{0} objects exported to the container {1}".format(count, args.export))
-        except Exception as ex:
-            print("The contents of the partitoin could not be exported.\n{0}".format(ex))
+            part.open(args.path)
+        except:
+            print(f"The partition '{args.path}' could not be opened")
+            sys.exit(1)
+        try:
+            part.attach(cont, args.name)
+        except:
+            print(f"The partition '{name}' could not be attached.")
+            sys.exit(1)
+
+    #
+    # Detach a partition from a container
+    #
+    if args.detach:
+        try:
+            part = cont.part_by_name(args.name)
+            if not part:
+                print(f"The partition '{args.name}' was not found in the container")
+                sys.exit(1)
+            part.detach()
+        except:
+            print(f"The partition '{args.path}' could not be detached")
+            sys.exit(1)
+    sys.exit(0)
+

@@ -686,7 +686,9 @@ int dsosql_import_csv(dsos_container_t cont, FILE* fp, char *schema_name, char *
 	records = 0;
 	gettimeofday(&t0, NULL);
 	tr = t0;
-	dsos_transaction_begin(cont, &res);
+	rc = dsos_transaction_begin(cont, NULL);
+	if (rc)
+		return rc;
 	while (1) {
 		char *inp;
 		char buf[4096];
@@ -721,7 +723,7 @@ int dsosql_import_csv(dsos_container_t cont, FILE* fp, char *schema_name, char *
 			}
 			cols++;
 		}
-		dsos_obj_create(cont, schema, obj, &res);
+		dsos_obj_create(cont, schema, obj);
 		sos_obj_put(obj);
 		if (rc) {
 			printf("Error %d adding object to indices.\n", rc);
@@ -729,7 +731,7 @@ int dsosql_import_csv(dsos_container_t cont, FILE* fp, char *schema_name, char *
 		ods_atomic_inc(&records);
 
 		if (records && (0 == (records % 10000))) {
-			dsos_transaction_end(cont, &res);
+			dsos_transaction_end(cont);
 			double ts, tsr;
 			gettimeofday(&t1, NULL);
 			ts = (double)(t1.tv_sec - t0.tv_sec);
@@ -743,11 +745,11 @@ int dsosql_import_csv(dsos_container_t cont, FILE* fp, char *schema_name, char *
 			       );
 			prev_recs = records;
 			tr = t1;
-			dsos_transaction_begin(cont, &res);
+			dsos_transaction_begin(cont, NULL);
 		}
 	}
  out:
-	dsos_transaction_end(cont, &res);
+	dsos_transaction_end(cont);
 	printf("Added %d records.\n", records);
 	return 0;
 }

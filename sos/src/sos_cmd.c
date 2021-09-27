@@ -1263,7 +1263,7 @@ int main(int argc, char **argv)
 
 	sos_perm_t mode;
 	if (!(action & CSV))
-		mode = SOS_PERM_RO;
+		mode = SOS_PERM_RD;
 	else
 		mode = SOS_PERM_RW;
 	sos = sos_container_open(path, mode);

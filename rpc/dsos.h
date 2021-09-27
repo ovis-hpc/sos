@@ -38,6 +38,7 @@ typedef struct dsos_result_s {
 typedef struct dsos_session_s *dsos_session_t;
 typedef struct dsos_container_s *dsos_container_t;
 typedef struct dsos_schema_s *dsos_schema_t;
+typedef struct dsos_part_s *dsos_part_t;
 typedef struct dsos_iter_s *dsos_iter_t;
 typedef struct dsos_query_s *dsos_query_t;
 typedef struct dsos_name_array_s {
@@ -59,9 +60,23 @@ extern int dsos_schema_attr_count(dsos_schema_t schema);
 extern sos_attr_t dsos_schema_attr_by_id(dsos_schema_t schema, int attr_id);
 extern sos_attr_t dsos_schema_attr_by_name(dsos_schema_t schema, const char *name);
 extern void dsos_schema_print(dsos_schema_t schema, FILE *fp);
-extern void dsos_transaction_begin(dsos_container_t cont, dsos_res_t *res);
-extern void dsos_transaction_end(dsos_container_t cont, dsos_res_t *res);
-extern void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj, dsos_res_t *res);
+extern dsos_part_t dsos_part_create(dsos_container_t cont,
+	const char *name, const char *desc, int mode,
+	uid_t uid, gid_t gid, int perm);
+extern dsos_part_t dsos_part_by_name(dsos_container_t cont, const char *name);
+extern dsos_part_t dsos_part_by_uuid(dsos_container_t cont, const uuid_t uuid);
+extern const char *dsos_part_name(dsos_part_t part);
+extern const char *dsos_part_desc(dsos_part_t part);
+extern const char *dsos_part_path(dsos_part_t part);
+extern sos_part_state_t dsos_part_state(dsos_part_t part);
+extern uid_t dsos_part_uid(dsos_part_t part);
+extern gid_t dsos_part_gid(dsos_part_t part);
+extern int dsos_part_perm(dsos_part_t part);
+extern dsos_name_array_t dsos_part_query(dsos_container_t cont);
+
+extern int dsos_transaction_begin(dsos_container_t cont, struct timeval *timeout);
+extern int dsos_transaction_end(dsos_container_t cont);
+extern void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj);
 extern sos_obj_t dsos_obj_new(dsos_schema_t schema);
 extern dsos_iter_t dsos_iter_create(dsos_container_t cont, dsos_schema_t schema, const char *attr_name);
 extern sos_obj_t dsos_iter_begin(dsos_iter_t iter);

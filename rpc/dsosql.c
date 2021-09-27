@@ -54,6 +54,7 @@ int open_session(cmd_t, av_list_t avl);
 int open_container(cmd_t, av_list_t avl);
 int create_schema(cmd_t, av_list_t avl);
 int show_schema(cmd_t, av_list_t avl);
+int show_part(cmd_t, av_list_t avl);
 int show_command(cmd_t, av_list_t avl);
 int quit_command(cmd_t, av_list_t avl);
 int import_csv(cmd_t, av_list_t avl);
@@ -68,6 +69,7 @@ enum dsosql_command_id_e {
 	OPEN_CMD,
 	CREATE_SCHEMA_CMD,
 	SHOW_SCHEMA_CMD,
+	SHOW_PART_CMD,
 	IMPORT_CMD,
 	SELECT_CMD,
 	SHOW_CMD,
@@ -98,7 +100,14 @@ struct cmd_s commands[] = {
 			 { SOS_TYPE_STRING, "from" }
 		}
 	},
-	[SHOW_SCHEMA_CMD] = { "show_schema", show_schema, "show_schema [ name NAME-RE ]",
+	[SHOW_SCHEMA_CMD] = { "show_schema", show_schema, "show_schema [ name NAME ] [ regex REGEX ]",
+		2,
+		{
+			{ SOS_TYPE_STRING, "name" },
+			{ SOS_TYPE_STRING, "regex" },
+		}
+	},
+	[SHOW_PART_CMD] = { "show_part", show_part, "show_part [ name NAME ] [ regex REGEX ]",
 		2,
 		{
 			{ SOS_TYPE_STRING, "name" },
@@ -465,7 +474,7 @@ int open_container(cmd_t cmd, av_list_t avl)
 	av = av_find(avl, "perm");
 	if (av) {
 		if (0 == strcasecmp(av->value_str, "ro"))
-			perm = SOS_PERM_RO;
+			perm = SOS_PERM_RD;
 		else
 			perm = SOS_PERM_RW;
 	} else {
@@ -544,6 +553,128 @@ int show_schema(cmd_t cmd, av_list_t avl)
 					dsos_schema_by_name(g_cont, schemas->names[i]);
 				if (schema)
 					dsos_schema_print(schema, stdout);
+			}
+		}
+	}
+ out_1:
+	regfree(&rex);
+ out:
+	return 0;
+}
+
+const char *mask_to_str(uint32_t mask)
+{
+	static char s_[16];
+	char *s;
+ 	static struct xlat_perm_s {
+		 int bit;
+		 char c;
+	} translate[] = {
+		{ 0001, 'x' },
+        	{ 0002, 'w' },
+		{ 0004, 'r' },
+		{ 0010, 'x' },
+		{ 0020, 'w' },
+		{ 0040, 'r' },
+		{ 0100, 'x' },
+		{ 0200, 'w' },
+		{ 0400, 'r' }
+	};
+	struct xlat_perm_s *x;
+	int i;
+	s = s_;
+	for (i = (sizeof(translate)/sizeof(translate[0])); i; i--) {
+		x = &translate[i];
+		if (0 != (x->bit & mask))
+                	*s = x->c;
+		else
+			*s = '-';
+		s++;
+	}
+	*s = '\0';
+	return s_;
+}
+
+void print_part_hdr()
+{
+	printf("%-24s %-40s %8s %8s %10s\n",
+		"Name", "Description", "UID", "GID", "Permission");
+	printf("------------------------ "
+		"---------------------------------------- "
+		"-------- -------- -------------\n");
+}
+
+void print_part(dsos_part_t part) {
+	printf("%-24s %-40s %8d %8d %10s\n",
+		dsos_part_name(part),
+		dsos_part_desc(part),
+		dsos_part_uid(part),
+		dsos_part_gid(part),
+		mask_to_str(dsos_part_perm(part)));
+}
+
+int show_part(cmd_t cmd, av_list_t avl)
+{
+	dsos_res_t res;
+	av_t av;
+
+	if (!g_cont) {
+		printf("You cannot query partitions before you open a container\n");
+		goto out;
+	}
+
+	av = av_find(avl, "name");
+	if (!av) {
+		av = av_find(avl, "regex");
+		if (av)
+			goto regex;
+		dsos_name_array_t parts = dsos_part_query(g_cont);
+		if (parts) {
+			int i;
+			char *name;
+			for (i = 0; i < parts->count; i++) {
+				printf("%s\n", parts->names[i]);
+			}
+		}
+		goto out;
+	} else {
+		dsos_part_t part = dsos_part_by_name(g_cont, av->value_str);
+		if (!part) {
+			printf("The partition '%s' could not be found.\n", av->value_str);
+			goto out;
+		}
+		print_part_hdr();
+		print_part(part);
+		goto out;
+	}
+
+	av = av_find(avl, "regex");
+ regex:
+	if (!av) {
+		printf("show_part [name NAME] [regex REGEX]\n");
+		goto out;
+	}
+
+	regex_t rex;
+	int rc = regcomp(&rex, av->value_str, REG_EXTENDED | REG_NOSUB);
+	if (rc) {
+		printf("The regular expression '%s' is invalid.\n", av->value_str);
+		goto out_1;
+	}
+
+	dsos_name_array_t parts = dsos_part_query(g_cont);
+	if (parts) {
+		int i;
+		char *name;
+		print_part_hdr();
+		for (i = 0; i < parts->count; i++) {
+			int rc = regexec(&rex, parts->names[i], 0, NULL, 0);
+			if (!rc) {
+				dsos_part_t part =
+					dsos_part_by_name(g_cont, parts->names[i]);
+				if (part) {
+					print_part(part);
+				}
 			}
 		}
 	}

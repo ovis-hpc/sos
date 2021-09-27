@@ -142,6 +142,9 @@ typedef struct sos_part_udata_s {
 	ods_atomic_t ref_count;	/* Containers that are attached to this partition */
 	uint32_t is_primary;	/* !0 if the partition is primary in a container */
 	uint32_t is_busy;	/* !0 if another container is changing this partition */
+	uint64_t user_id;	/* user id (uid_t) */
+	uint64_t group_id;	/* group id (gid_t) */
+	uint32_t perm;		/* Permission bits ala, -rw-rw-rw- */
 } *sos_part_udata_t;
 #define SOS_PART_UDATA(_o_) ODS_PTR(sos_part_udata_t, _o_)
 
@@ -151,9 +154,9 @@ typedef struct sos_part_udata_s {
 struct sos_part_s {
 	struct sos_ref_s ref_count;
 	sos_t sos;
-	ods_obj_t ref_obj;		/* sos_part_ref_s object */
+	ods_obj_t ref_obj;	/* sos_part_ref_s object */
 	ods_obj_t udata_obj;	/* sos_part_udata_s object */
-	ods_t obj_ods;			/* ODS where objects are stored */
+	ods_t obj_ods;		/* ODS where objects are stored */
 	TAILQ_ENTRY(sos_part_s) entry;
 };
 
@@ -350,8 +353,8 @@ struct sos_container_s {
 	 * The schema dictionary - Keeps track of all Object schema
 	 * defined for the Container.
 	 */
-	ods_idx_t schema_idx;	/* Index schema by name */
-	ods_t schema_ods;	/* Contains the schema definitions */
+	ods_idx_t schema_idx;		/* Index schema by name */
+	ods_t schema_ods;		/* Contains the schema definitions */
 	struct ods_rbt schema_name_rbt;	/* In memory schema tree by name */
 	struct ods_rbt schema_id_rbt;	/* In memory schema tree by id */
 	size_t schema_count;
@@ -482,7 +485,7 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema);
 int64_t __sos_schema_name_cmp(void *a, const void *b, void *);
 int64_t __sos_schema_id_cmp(void *a, const void *b, void *);
 void __sos_schema_reset(sos_t sos);
-int __sos_open_partitions(sos_t sos, char *tmp_path);
+int __sos_open_partitions(sos_t sos, char *tmp_path, uid_t uid, gid_t gid, int acc);
 int __sos_make_all_dir(const char *inp_path, mode_t omode);
 sos_part_t __sos_container_part_find(sos_t sos, const char *name);
 #define MAX_JOIN_ATTRS 8

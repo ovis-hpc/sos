@@ -166,6 +166,10 @@ cdef extern from "stdio.h":
     cdef struct FILE:
         pass
 
+cdef extern from "unistd.h":
+    ctypedef long gid_t
+    ctypedef long uid_t
+
 cdef extern from "ods/ods_idx.h":
 
     cdef struct ods_idx_data_s:
@@ -400,13 +404,13 @@ cdef extern from "sos/sos.h":
     ctypedef sos_container_s *sos_t
 
     cdef enum sos_perm_e:
-        SOS_PERM_RO,
         SOS_PERM_RD,
         SOS_PERM_WR,
         SOS_PERM_RW,
         SOS_PERM_CREAT,
         SOS_BE_MMOS,
-        SOS_BE_LSOS
+        SOS_BE_LSOS,
+        SOS_PERM_USER
 
     ctypedef sos_perm_e sos_perm_t
 
@@ -504,7 +508,8 @@ cdef extern from "sos/sos.h":
         SOS_PART_STATE_OFFLINE,
         SOS_PART_STATE_ACTIVE,
         SOS_PART_STATE_PRIMARY,
-        SOS_PART_STATE_BUSY = 3,
+        SOS_PART_STATE_BUSY,
+        SOS_PART_STATE_DETACHED
 
     ctypedef sos_part_state_e sos_part_state_t
 
@@ -523,12 +528,16 @@ cdef extern from "sos/sos.h":
     ctypedef sos_part_s *sos_part_t
 
     sos_part_t sos_part_open(const char *path, int o_perm, int o_mode, const char *desc)
+    int sos_part_chown(sos_part_t part, uid_t uid, gid_t gid)
+    int sos_part_chmod(sos_part_t part, int perm)
     int sos_part_attach(sos_t sos, const char *name, const char *path)
     int sos_part_detach(sos_part_t part)
-    int sos_part_destroy(char *path)
     int sos_part_move(sos_part_t part, const char *part_path)
     sos_part_t sos_part_by_name(sos_t sos, const char *name)
     sos_part_t sos_part_by_path(sos_t sos, const char *path)
+    uid_t sos_part_uid(sos_part_t part)
+    gid_t sos_part_gid(sos_part_t part)
+    int sos_part_perm(sos_part_t part)
 
     sos_part_iter_t sos_part_iter_new(sos_t sos)
     void sos_part_iter_free(sos_part_iter_t iter)
@@ -537,6 +546,7 @@ cdef extern from "sos/sos.h":
     const char *sos_part_name(sos_part_t part)
     const char *sos_part_path(sos_part_t part)
     const char *sos_part_desc(sos_part_t part)
+    void sos_part_desc_set(sos_part_t part, const char *name)
     void sos_part_uuid(sos_part_t part, uuid_t uuid)
     sos_part_state_t sos_part_state(sos_part_t part)
     int sos_part_state_set(sos_part_t part, sos_part_state_t state)
@@ -777,9 +787,12 @@ cdef extern from "dsos.h":
         pass
     cdef struct dsos_session_s:
         pass
+    cdef struct dsos_part_s:
+        pass
     ctypedef dsos_session_s *dsos_session_t
     ctypedef dsos_container_s *dsos_container_t
     ctypedef dsos_schema_s *dsos_schema_t
+    ctypedef dsos_part_s *dsos_part_t
     ctypedef dsos_iter_s *dsos_iter_t
     ctypedef dsos_query_s *dsos_query_t
     cdef struct dsos_name_array_s:
@@ -793,10 +806,29 @@ cdef extern from "dsos.h":
     void dsos_container_commit(dsos_container_t cont)
     dsos_container_t dsos_container_open(dsos_session_t sess, const char *path, sos_perm_t perm, int mode)
     dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dsos_res_t *res)
+    dsos_name_array_t dsos_schema_query(dsos_container_t cont)
     dsos_schema_t dsos_schema_by_name(dsos_container_t cont, const char *name)
     dsos_schema_t dsos_schema_by_uuid(dsos_container_t cont, uuid_t uuid)
     sos_schema_t dsos_schema_local(dsos_schema_t schema)
     void dsos_schema_print(dsos_schema_t schema, FILE *fp)
+
+    dsos_part_t dsos_part_create(dsos_container_t cont,
+    	const char *name, const char *desc, int mode,
+	    uid_t uid, gid_t gid, int perm)
+    dsos_name_array_t dsos_part_query(dsos_container_t cont)
+    dsos_part_t dsos_part_by_name(dsos_container_t cont, const char *name)
+    dsos_part_t dsos_part_by_uuid(dsos_container_t cont, const uuid_t uuid)
+    const char *dsos_part_name(dsos_part_t part)
+    const char *dsos_part_desc(dsos_part_t part)
+    const char *dsos_part_path(dsos_part_t part)
+    sos_part_state_t dsos_part_state(dsos_part_t part)
+    void dsos_part_uuid(dsos_part_t part, uuid_t uuid)
+    uid_t dsos_part_uid(dsos_part_t part)
+    gid_t dsos_part_gid(dsos_part_t part)
+    int dsos_part_perm(dsos_part_t part)
+    dsos_name_array_t dsos_part_query(dsos_container_t cont)
+    void dsos_name_array_free(dsos_name_array_t names)
+
     int dsos_schema_attr_count(dsos_schema_t schema)
     sos_attr_t dsos_schema_attr_by_id(dsos_schema_t schema, int attr_id)
     sos_attr_t dsos_schema_attr_by_name(dsos_schema_t schema, const char *name)

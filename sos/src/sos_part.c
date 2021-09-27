@@ -169,6 +169,8 @@
 #include <errno.h>
 #include <assert.h>
 #include <uuid/uuid.h>
+#include <pwd.h>
+#include <grp.h>
 
 #include <sos/sos.h>
 #include <ods/ods.h>
@@ -179,7 +181,7 @@ static sos_part_t __sos_part_by_name(sos_t sos, const char *name);
 static sos_part_t __sos_part_by_path(sos_t sos, const char *path);
 static sos_part_t __sos_part_first(sos_part_iter_t iter);
 static sos_part_t __sos_part_next(sos_part_iter_t iter);
-static int __refresh_part_list(sos_t sos);
+static int __refresh_part_list(sos_t sos, uid_t uid, gid_t gid, int acc);
 static int __sos_remove_directory(const char *dir);
 static void __sos_part_free(void *free_arg)
 {
@@ -266,7 +268,99 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 	return rc;
 }
 
-static int __part_open(sos_part_t part, const char *path, sos_perm_t o_perm)
+/* Return 1 if the gid is in the group list for uid */
+static int __uid_gid_check(uid_t uid, gid_t gid)
+{
+	struct passwd pwd;
+	struct passwd *result;
+	int rc;
+	long bufsize;
+	char *buf;
+	int i;
+	int access = 0;
+	int n_gids = 0;
+	gid_t *gid_list = NULL;
+
+        bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+        if (bufsize == -1) {
+		/* Can't get it ... guess */
+		bufsize = 16384;
+	}
+
+	buf = malloc(bufsize);
+	if (buf == NULL)
+		goto out_0;
+
+	/* Get the user name */
+	rc = getpwuid_r(uid, &pwd, buf, bufsize, &result);
+	if (result == NULL)
+		goto out_1;
+
+	/*
+	 * Get the number of groups needed, when n_gids == 0,
+	 * output is gid count
+	 */
+	rc = getgrouplist(result->pw_name, result->pw_gid, gid_list, &n_gids);
+
+	/* Allocate the group list */
+retry:
+	gid_list = calloc(n_gids, sizeof(*gid_list));
+	if (!gid_list)
+		goto out_1;
+
+	rc = getgrouplist(result->pw_name, result->pw_gid, gid_list, &n_gids);
+	if (rc < 0) {
+		/* Another process added a group asynchronously */
+		free(gid_list);
+		goto retry;
+	}
+
+	for (i = 0; i < n_gids; i++) {
+		if (gid == gid_list[i]) {
+			access = 1;
+			goto out_1;
+		}
+	}
+
+out_1:
+	free(buf);
+out_0:
+	return access;
+}
+
+/* Returns 1 if the specified user/group has access to the partition */
+static int __access_check(ods_obj_t part_obj, uid_t euid, gid_t egid, int access)
+{
+	int permissions = SOS_PART_UDATA(part_obj)->perm;
+	if (euid == 0)
+		return 1;
+	/* Other */
+	if (07 & permissions) {
+		if ((access & permissions) == access)
+			return 1;
+	}
+	/* Owner */
+	if (0700 & permissions) {
+		if (SOS_PART_UDATA(part_obj)->user_id == euid) {
+			if (((access << 6) & permissions) == (access << 6))
+				return 1;
+		}
+	}
+	/* Group */
+	if (070 & permissions) {
+		if (SOS_PART_UDATA(part_obj)->group_id == egid) {
+			if (((access << 3) & permissions) == (access << 3))
+				return 1;
+		}
+		if (__uid_gid_check(euid, SOS_PART_UDATA(part_obj)->group_id)) {
+			if (((access << 3) & permissions) == (access << 3))
+				return 1;
+		}
+	}
+	return 0;
+}
+
+static int __part_open(sos_part_t part, const char *path, sos_perm_t o_perm, uid_t euid, gid_t egid, int acc)
 {
 	char tmp_path[PATH_MAX];
 	ods_t ods;
@@ -289,6 +383,10 @@ static int __part_open(sos_part_t part, const char *path, sos_perm_t o_perm)
 		goto err_1;
 	}
 
+	if (!__access_check(part_obj, euid, egid, acc)) {
+		rc = EPERM;
+		goto err_1;
+	}
 	part->udata_obj = part_obj;
 	part->obj_ods = ods;
 	return 0;
@@ -307,7 +405,7 @@ static void __part_close(sos_part_t part)
 	part->obj_ods = NULL;
 }
 
-static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj)
+static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj, uid_t euid, gid_t egid, int acc)
 {
 	int rc;
 	sos_part_t part = calloc(1, sizeof *part);
@@ -315,7 +413,7 @@ static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj)
 		return NULL;
 	sos_ref_init(&part->ref_count, "part_list", __sos_part_free, part);
 	rc = __part_open(part, SOS_PART_REF(ref_obj)->path,
-			sos->o_perm & ~SOS_PERM_CREAT);
+			sos->o_perm & ~SOS_PERM_CREAT, euid, egid, acc);
 	if (rc) {
 		errno = rc;
 		return NULL;
@@ -364,7 +462,7 @@ sos_part_t sos_part_open(const char *path, int o_perm, ...)
 	if (!part)
 		return NULL;
 	sos_ref_init(&part->ref_count, "application", __sos_part_free, part);
-	rc = __part_open(part, path, o_perm);
+	rc = __part_open(part, path, o_perm, 0, 0, 06);
 	if (rc) {
 		errno = rc;
 		free(part);
@@ -373,6 +471,23 @@ sos_part_t sos_part_open(const char *path, int o_perm, ...)
 	if (o_perm & SOS_PERM_CREAT)
 		ods_commit(part->obj_ods, ODS_COMMIT_SYNC);
 	return part;
+}
+
+int sos_part_chown(sos_part_t part, uid_t uid, gid_t gid)
+{
+	if (uid >= 0)
+		SOS_PART_UDATA(part->udata_obj)->user_id = uid;
+	if (gid >= 0)
+		SOS_PART_UDATA(part->udata_obj)->group_id = gid;
+	ods_obj_update(part->udata_obj);
+	return 0;
+}
+
+int sos_part_chmod(sos_part_t part, int mode)
+{
+	SOS_PART_UDATA(part->udata_obj)->perm = mode;
+	ods_obj_update(part->udata_obj);
+	return 0;
 }
 
 sos_perm_t sos_part_be_get(sos_part_t part)
@@ -458,7 +573,7 @@ sos_part_t __sos_part_find_by_uuid(sos_t sos, uuid_t uuid)
 }
 
 /**
- * \brief Set the state of a partition
+ * \brief Set the state of an attached partition
  *
  * Partition state transitions are limited by the current state. If
  * the current state is PRIMARY, there are no state changes
@@ -479,10 +594,14 @@ sos_part_t __sos_part_find_by_uuid(sos_t sos, uuid_t uuid)
  * \retval EEXIST The partition is PRIMARY in another container
  * \retval EINVAL The specified state is invalid given the current
  *    state of the partition.
+ * \retval ENOENT The partition is not attached to a container
  */
 int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 {
 	sos_t sos = part->sos;
+	if (!sos)
+		/* A partition must be attached to set it's state */
+		return EINVAL;
 	int rc = 0;
 	sos_part_state_t cur_state;
 
@@ -580,7 +699,7 @@ ods_obj_t __sos_part_ref_next(sos_t sos, ods_obj_t part_obj)
 	return next_obj;
 }
 
-static int __refresh_part_list(sos_t sos)
+static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 {
 	int rc = 0;
 	sos_part_t part;
@@ -603,10 +722,14 @@ static int __refresh_part_list(sos_t sos)
 		if (!new)
 			continue;
 		/* This is a partition we have not seen before */
-		part = __sos_part_open(sos, part_obj);
+		part = __sos_part_open(sos, part_obj, euid, egid, acc);
 		if (!part) {
-			rc = ENOMEM;
-			goto out;
+			if (errno == EPERM) {
+				continue;
+				} else {
+					rc = errno ? errno : ENOMEM;
+					goto out;
+				}
 		}
 		if (SOS_PART_REF(part_obj)->state == SOS_PART_STATE_PRIMARY) {
 			sos->primary_part = part;
@@ -619,16 +742,16 @@ static int __refresh_part_list(sos_t sos)
 	return rc;
 }
 
-static int refresh_part_list(sos_t sos)
+static int refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 {
 	int rc;
 	ods_lock(sos->part_ref_ods, 0, NULL);
-	rc = __refresh_part_list(sos);
+	rc = __refresh_part_list(sos, euid, egid, acc);
 	ods_unlock(sos->part_ref_ods, 0);
 	return rc;
 }
 
-int __sos_open_partitions(sos_t sos, char *tmp_path)
+int __sos_open_partitions(sos_t sos, char *tmp_path, uid_t euid, gid_t egid, int acc)
 {
 	int rc;
 
@@ -640,7 +763,7 @@ int __sos_open_partitions(sos_t sos, char *tmp_path)
 	sos->part_ref_udata = ods_get_user_data(sos->part_ref_ods);
 	if (!sos->part_ref_udata)
 		goto err_1;
-	rc = refresh_part_list(sos);
+	rc = refresh_part_list(sos, euid, egid, acc);
 	return rc;
  err_1:
 	ods_close(sos->part_ref_ods, ODS_COMMIT_ASYNC);
@@ -660,7 +783,7 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 	pthread_mutex_lock(&sos->lock);
 	ods_lock(sos->part_ref_ods, 0, NULL);
 	if (sos->part_gn != SOS_PART_REF_UDATA(sos->part_ref_udata)->gen) {
-		int rc = __refresh_part_list(sos);
+		int rc = __refresh_part_list(sos, 0, 0, 06);
 		if (rc)
 			goto out;
 	}
@@ -775,7 +898,7 @@ int sos_part_attach(sos_t sos, const char *name, const char *path)
 	strncpy(SOS_PART_REF(new_part_ref)->path, path, SOS_PART_PATH_LEN);
 	strncpy(SOS_PART_REF(new_part_ref)->name, name, SOS_PART_NAME_LEN);
 	SOS_PART_REF(new_part_ref)->state = SOS_PART_STATE_OFFLINE;
-	part = __sos_part_open(sos, new_part_ref);
+	part = __sos_part_open(sos, new_part_ref, 0, 0, 06);
 	if (!part)
 		goto err_1;
 
@@ -803,6 +926,7 @@ int sos_part_attach(sos_t sos, const char *name, const char *path)
 	ods_obj_put(new_part_ref);
 	ods_atomic_inc(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
 	ods_atomic_inc(&SOS_PART_UDATA(part->udata_obj)->ref_count);
+	ods_obj_update(part->udata_obj);
 	ods_unlock(sos->part_ref_ods, 0);
 	ods_commit(sos->part_ref_ods, ODS_COMMIT_SYNC);
 	pthread_mutex_unlock(&sos->lock);
@@ -1087,6 +1211,41 @@ void sos_part_uuid(sos_part_t part, uuid_t uuid)
 	uuid_copy(uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 }
 /**
+ * @brief Return the user-id for the partition
+ *
+ * Returns the user id that owns the partition.
+ *
+ * @param part The partition handle
+ * @return The uid_t that owns the container
+ */
+uid_t sos_part_uid(sos_part_t part)
+{
+	return SOS_PART_UDATA(part->udata_obj)->user_id;
+}
+/**
+ * @brief Return the group-id for the partition
+ *
+ * Returns the group id that owns the partition.
+ *
+ * @param part The partition handle
+ * @return The gid_t that owns the container
+ */
+uid_t sos_part_gid(sos_part_t part)
+{
+	return SOS_PART_UDATA(part->udata_obj)->group_id;
+}
+/**
+ * @brief Return the access rights bit mask
+ *
+ * Returns the permission bits for access to the partition.
+ *
+ * @param part The partition handle
+ */
+int sos_part_perm(sos_part_t part)
+{
+	return SOS_PART_UDATA(part->udata_obj)->perm;
+}
+/**
  * \brief Return the partition's path
  * \param part The partition handle
  * \returns Pointer to a string containing the path
@@ -1105,6 +1264,18 @@ const char *sos_part_path(sos_part_t part)
 const char *sos_part_desc(sos_part_t part)
 {
 	return SOS_PART_UDATA(part->udata_obj)->desc;
+}
+/**
+ * @brief Set a partition's description
+ *
+ * @param part The partition handle
+ * @param desc The description string
+ */
+void sos_part_desc_set(sos_part_t part, const char *desc)
+{
+	strncpy(SOS_PART_UDATA(part->udata_obj)->desc,
+		desc, sizeof(SOS_PART_UDATA(part->udata_obj)->desc));
+	ods_obj_update(part->udata_obj);
 }
 /**
  * @brief Return the partition reference count
@@ -1126,45 +1297,9 @@ int sos_part_ref_count(sos_part_t part)
  */
 sos_part_state_t sos_part_state(sos_part_t part)
 {
+	if (!part->sos || !part->udata_obj || !part->ref_obj)
+		return SOS_PART_STATE_DETACHED;
 	return SOS_PART_REF(part->ref_obj)->state;
-}
-
-/**
- * @brief Delete a partition
- *
- * Deletes the paritition at the specified path. All object storage
- * associated with the parition will be freed. The parition must be in
- * the OFFLINE state with only a single container reference to be deleted.
- *
- * @param path The path to the partition
- * @retval 0 The parition was deleted
- * @retval EBUSY The partition is not offline or there are outstanding
- *  	container references
- */
-int sos_part_destroy(char *path)
-{
-	int rc;
-	sos_part_t part = calloc(1, sizeof *part);
-	if (!part)
-		return errno;
-	rc = __part_open(part, path, SOS_PERM_RW);
-	if (rc) {
-		goto err_0;
-		return rc;
-	}
-	if (SOS_PART_UDATA(part->udata_obj)->ref_count > 0) {
-		rc = EBUSY;
-		goto err_1;
-	}
-	__part_close(part);
-	free(part);
-	rc =__sos_remove_directory(path);
-	return rc;
-err_1:
-	__part_close(part);
-err_0:
-	free(part);
-	return rc;
 }
 
 /* Shallow copy a directory and its contents */
@@ -1203,8 +1338,7 @@ static int __sos_copy_directory(const char *src_dir, const char *dst_dir)
 		in_fd = open(path, O_RDONLY);
 		if (in_fd < 0) {
 			rc = errno;
-			sos_error("Error %d opening the source file '%s'\n", errno,
-					path);
+			sos_error("Error %d opening the source file '%s'\n", errno, path);
 			continue;
 		}
 		rc = fstat(in_fd, &sb);
@@ -1317,7 +1451,7 @@ int sos_part_move(sos_part_t part, const char *dest_path)
 			rc, sos_part_path(part));
 	}
 	__part_close(part);
-	rc = __part_open(part, dest_path, sos->o_perm & ~SOS_PERM_CREAT);
+	rc = __part_open(part, dest_path, sos->o_perm & ~SOS_PERM_CREAT, 0, 0, 06);
 	if (!rc)
 		strcpy(SOS_PART_REF(part->ref_obj)->path, dest_path);
 	ods_obj_update(part->ref_obj);

@@ -114,7 +114,7 @@ void ods_unlock(ods_t ods, int lock_id)
 
 int ods_lock_cleanup(const char *path)
 {
-	ods_t ods = ods_open(path, ODS_PERM_RO, 0660);
+	ods_t ods = ods_open(path, ODS_PERM_RD, 0660);
 	if (!ods)
 		return ENOENT;
 	int rc = ods->lock_cleanup(path);
@@ -124,7 +124,7 @@ int ods_lock_cleanup(const char *path)
 
 int ods_lock_info(const char *path, FILE *fp)
 {
-	ods_t ods = ods_open(path, ODS_PERM_RO, 0660);
+	ods_t ods = ods_open(path, ODS_PERM_RD, 0660);
 	if (!ods)
 		return ENOENT;
 	int rc = ods->lock_info(path, fp);
@@ -264,7 +264,7 @@ int ods_stat(ods_t ods, struct stat *sb)
 
 int ods_destroy(const char *path)
 {
-	ods_t ods = ods_open(path, ODS_PERM_RO);
+	ods_t ods = ods_open(path, ODS_PERM_RD);
 	if (!ods)
 		return ENOENT;
 	return ods->destroy(ods);

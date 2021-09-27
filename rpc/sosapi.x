@@ -31,11 +31,13 @@ typedef string dsos_uuid_str<48>;
 typedef string dsos_schema_name<255>;
 typedef string dsos_attr_name<255>;
 typedef unsigned long dsos_schema_id;
+typedef unsigned long dsos_part_id;
 
 /* Type for API that return an object list */
 typedef struct dsos_obj_entry *dsos_obj_link;
 struct dsos_obj_entry {
     dsos_container_id cont_id;
+    dsos_part_id part_id;
     dsos_schema_id schema_id;
     dsos_obj_value value;
     dsos_obj_link next;
@@ -97,6 +99,34 @@ union dsos_schema_query_res switch (int error) {
         string error_msg<>;
 };
 
+union dsos_part_query_res switch (int error) {
+    case 0:
+        dsos_name names<>;
+    default:
+        string error_msg<>;
+};
+
+/* Result for API that return partitions */
+struct dsos_part_spec {
+	string name<>;      /* Unique for the container */
+    string path<>;      /* The path to the partition */
+    string desc<>;      /* Partition description */
+    dsos_part_id id;    /* Session local id, returned on create/find */
+    dsos_uuid uuid;     /* Universally unique id for the partition */
+    long state;         /* Partition state */
+    long user_id;       /* owning user id */
+    long group_id;      /* owning group id */
+    long perm;          /* permission mask */
+};
+
+/* Result for API that return partitions */
+union dsos_part_res switch (int error) {
+    case 0:
+        dsos_part_spec spec<>;
+    default:
+        string error_msg<>;
+};
+
 /* Result for API that return a query */
 typedef string dsos_query<>;
 typedef int dsos_query_result_size;
@@ -118,7 +148,7 @@ union dsos_query_select_res switch (int error) {
     case 0:
     	dsos_query_select_data select;
     default:
-        dsos_query_error error_msg;
+        string error_msg<>;
 };
 
 struct dsos_query_next_result {
@@ -131,7 +161,7 @@ union dsos_query_next_res switch (int error) {
     case 0:
         dsos_query_next_result result;
     default:
-        dsos_query_error error_msg;
+        string error_msg<>;
 };
 
 const QUERY_RESULT_LIMIT = 1;
@@ -154,7 +184,17 @@ union dsos_query_destroy_res switch (int error) {
     case 0:
     	void;
     default:
-        dsos_query_error error_msg;
+        string error_msg<>;
+};
+struct dsos_timeval {
+    long tv_sec;
+    long tv_usec;
+};
+union dsos_transaction_res switch (int error) {
+    case 0:
+        void;
+    default:
+        string error_msg<>;
 };
 
 program SOSDB {
@@ -163,19 +203,22 @@ program SOSDB {
         dsos_open_res OPEN(string, int, int) = 10;
         int CLOSE(dsos_container_id) = 11;
         int COMMIT(dsos_container_id) = 12;
-        int TRANSACTION_BEGIN(dsos_container_id) = 13;
-        int TRANSACTION_END(dsos_container_id) = 14;
+        dsos_transaction_res TRANSACTION_BEGIN(dsos_container_id, dsos_timeval) = 13;
+        dsos_transaction_res TRANSACTION_END(dsos_container_id) = 14;
 
         /* Schema operations */
         dsos_schema_res SCHEMA_CREATE(dsos_container_id, dsos_schema_spec) = 20;
         dsos_schema_res SCHEMA_FIND_BY_ID(dsos_container_id, dsos_schema_id) = 21;
         dsos_schema_res SCHEMA_FIND_BY_NAME(dsos_container_id, string) = 22;
         dsos_schema_res SCHEMA_FIND_BY_UUID(dsos_container_id, string) = 23;
-        dsos_schema_query_res SCHEMA_QUERY(dsos_container_id) = 64;
+        dsos_schema_query_res SCHEMA_QUERY(dsos_container_id) = 24;
 
-        /* Object operations */
-        dsos_create_res OBJ_CREATE(dsos_obj_link) = 30;
-        int OBJ_DELETE(dsos_container_id, dsos_obj_id) = 31;
+        /* Partition Operations */
+        dsos_part_res PART_CREATE(dsos_container_id, dsos_part_spec) = 30;
+        dsos_part_res PART_FIND_BY_ID(dsos_container_id, dsos_part_id) = 31;
+        dsos_part_res PART_FIND_BY_NAME(dsos_container_id, string) = 32;
+        dsos_part_res PART_FIND_BY_UUID(dsos_container_id, string) = 33;
+        dsos_part_query_res PART_QUERY(dsos_container_id) = 34;
 
         /* Iterator operations */
         dsos_iter_res ITER_CREATE(dsos_container_id, dsos_schema_id, dsos_attr_name) = 40;
@@ -187,6 +230,10 @@ program SOSDB {
         dsos_obj_list_res ITER_NEXT(dsos_container_id, dsos_iter_id) = 46;
         dsos_obj_list_res ITER_PREV(dsos_container_id, dsos_iter_id) = 47;
         dsos_obj_list_res ITER_FIND(dsos_container_id, dsos_iter_id) = 48;
+
+        /* Object operations */
+        dsos_create_res OBJ_CREATE(dsos_obj_link) = 50;
+        int OBJ_DELETE(dsos_container_id, dsos_obj_id) = 51;
 
         /* Query operations */
         dsos_query_create_res QUERY_CREATE(dsos_container_id, dsos_query_options) = 60;

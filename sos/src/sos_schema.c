@@ -1384,16 +1384,22 @@ size_t __sos_obj_total_size(sos_obj_t obj)
 	return obj->schema->data->obj_sz + __sos_obj_array_size(obj);
 }
 
-int sos_obj_commit(sos_obj_t obj)
+int sos_obj_commit_part(sos_obj_t obj, sos_part_t part)
 {
 	ods_obj_t ods_obj;
-	sos_part_t part;
+	enum sos_part_state_e state = sos_part_state(part);
 
 	if (obj->obj->ods)
+		/* Object is already committed */
 		return 0;
 
-	part = __sos_primary_obj_part(obj->sos);
-	if (!part)
+	if (!part) {
+		part = __sos_primary_obj_part(obj->sos);
+		if (!part)
+			return ENOSPC;
+	}
+  
+	if (!(state == SOS_PART_STATE_PRIMARY || state == SOS_PART_STATE_ACTIVE))
 		return ENOSPC;
 
 	ods_obj = __sos_obj_new(part->obj_ods, obj->size, &obj->sos->lock);
@@ -1407,6 +1413,21 @@ int sos_obj_commit(sos_obj_t obj)
 	obj->obj_ref.ref.obj = ods_obj_ref(ods_obj);
 	ods_obj_update(ods_obj);
 	return 0;
+}
+
+int sos_obj_commit(sos_obj_t obj)
+{
+	sos_part_t part;
+
+	if (obj->obj->ods)
+		/* Object is already commited */
+		return 0;
+
+	part = __sos_primary_obj_part(obj->sos);
+	if (!part)
+		return ENOSPC;
+
+	return sos_obj_commit_part(obj, part);
 }
 
 void __sos_schema_close(sos_t sos, sos_schema_t schema)

@@ -1,4 +1,4 @@
-# Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
+# Copyright (c) 2020 Open Grid Computing, Inc. All rights reserved.
 # Copyright (c) 2019 NTESS Corporation. All rights reserved.
 # Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
 # license for use of this work by or on behalf of the U.S. Government.
@@ -243,7 +243,7 @@ cdef class DsosContainer:
 
         Keyword Parameters:
 
-        o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RO
+        o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RD
         o_mode - The file creation mode if o_perm includes SOS_PERM_CREAT
         create - True to create the container if it does not exist
         backend - One of BE_MMOS (Memory Mapped Object Store) or
@@ -329,6 +329,17 @@ cdef class DsosContainer:
         """
         dsos_container_commit(self.c_cont)
 
+    def schema_query(self):
+        cdef int i
+        cdef dsos_name_array_t schemas = dsos_schema_query(self.c_cont);
+        names = []
+        for i in range(0, schemas.count):
+            name = schemas.names[i]
+            name = name.encode()
+            names.append(name)
+        dsos_name_array_free(schemas);
+        return names
+
     def schema_by_name(self, name):
         """Return the named schema
 
@@ -372,6 +383,69 @@ cdef class DsosContainer:
             return s
         return None
 
+    def part_query(self):
+        """Query the list of partition names in the container
+
+        Returns the list of names of partitions of which the user has at
+        least read permission.
+
+        Use the part_by_name() interface to get detailed information for
+        each partition.
+        """
+        cdef int i
+        cdef dsos_name_array_t parts = dsos_part_query(self.c_cont);
+        names = []
+        for i in range(0, parts.count):
+            name = parts.names[i]
+            name = name.encode()
+            names.append(name)
+        dsos_name_array_free(parts);
+        return names
+
+    def part_by_name(self, name):
+        """Query the container for a partition
+
+        If the user has read-access to the partition, a DsosPartition
+        object is returned containing the detail informaiton for the
+        partition.
+
+        Parameters:
+            - The name of the partition
+
+        Returns:
+            DsosParition objet or None if the partition does not exist, or
+            for which the does not have read permission
+        """
+        cdef dsos_part_t c_part = \
+            dsos_part_by_name(<dsos_container_t>self.c_cont, name.encode())
+        if c_part != NULL:
+            p = DsosPartition()
+            p.c_part = c_part
+            return p
+        return None
+
+    def part_by_uuid(self, name):
+        """Query the container for a partition by UUID
+
+        If the user has read-access to the partition, a DsosPartition
+        object is returned containing the detail informaiton for the
+        partition.
+
+        Parameters:
+            - The Universally Unique ID (UUID) of the partition
+
+        Returns:
+            DsosParition objet or None if the partition does not exist, or
+            for which the does not have read permission
+        """
+        cdef dsos_part_t c_part = \
+            dsos_part_by_uuid(<dsos_container_t>self.c_cont, uuid.bytes)
+        if c_part != NULL:
+            p = DsosPartition()
+            p.c_part = c_part
+            return p
+        return None
+
     def query(self, sql, options=None):
         cdef dsos_query_t c_query = dsos_query_create(self.c_cont)
         cdef sos_schema_t c_schema
@@ -408,6 +482,41 @@ cdef class DsosContainer:
 
         free(c_str)
         return 0
+
+cdef class DsosPartition:
+    cdef dsos_part_t c_part
+    def __init__(self):
+        self.c_part = NULL
+
+    def name(self):
+        """Return the partition name"""
+        return dsos_part_name(self.c_part)
+
+    def desc(self):
+        """Return the parition description"""
+        return dsos_part_desc(self.c_part)
+
+    def path(self):
+        """Return the path to the paritition"""
+        return dsos_part_path(self.c_part)
+
+    def uuid(self):
+        """Returns the parition UUID"""
+        cdef uuid_t c_uuid
+        dsos_part_uuid(self.c_part, c_uuid)
+        return uuid.UUID(bytes=c_uuid)
+
+    def uid(self):
+        """Returns the partition user-id"""
+        return dsos_part_uid(self.c_part)
+
+    def gid(self):
+        """Returns the partition group-id"""
+        return dsos_part_gid(self.c_part)
+
+    def perm(self):
+        """Returns the partition's permission bits"""
+        return dsos_part_perm(self.c_part)
 
 cdef class SchemaIter(SosObject):
     """Implements a Schema iterator
@@ -547,7 +656,7 @@ cdef class Container(SosObject):
 
         Keyword Parameters:
 
-        o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RO
+        o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RD
         o_mode - The file creation mode if o_perm includes SOS_PERM_CREAT
         create - True to create the container if it does not exist
         backend - One of BE_MMOS (Memory Mapped Object Store) or
@@ -701,7 +810,7 @@ cdef class Container(SosObject):
             self.abort(c_rc)
 
     def part_attach(self, name, path=None):
-        """Attach an existing partitionto the container
+        """Attach a partition to the container
 
         Positional Parameters:
         - The name to give the new partition in the container
@@ -832,6 +941,8 @@ cdef class PartState(object):
             return "PRIMARY"
         elif self.c_state == SOS_PART_STATE_BUSY:
             return "BUSY"
+        elif self.c_state == SOS_PART_STATE_DETACHED:
+            return "DETACHED"
         raise ValueError("{0} is an invalid partition state".format(self.c_state))
 
 cdef class PartStat(object):
@@ -890,6 +1001,30 @@ cdef class Partition(SosObject):
         sos_part_uuid(self.c_part, c_uuid)
         return uuid.UUID(bytes=c_uuid)
 
+    def desc_set(self, desc):
+        """Set the paritition's description."""
+        sos_part_desc_set(self.c_part, desc.encode())
+
+    def chown(self, uid, gid):
+        """Change the user-id and group-id for the partition"""
+        sos_part_chown(self.c_part, <int>uid, <int>gid)
+
+    def chmod(self, perm):
+        """Change the access permissions to the container"""
+        sos_part_chmod(self.c_part, <int>perm)
+
+    def uid(self):
+        """Return the container's user-id"""
+        return sos_part_uid(self.c_part)
+
+    def gid(self):
+        """Return the container's group-id"""
+        return sos_part_gid(self.c_part)
+
+    def perm(self):
+        """Return the container's access rights"""
+        return sos_part_perm(self.c_part)
+
     def state(self):
         """Returns the partition state"""
         return PartState(sos_part_state(self.c_part))
@@ -901,7 +1036,7 @@ cdef class Partition(SosObject):
     def attach(self, Container cont, name):
         """Attach partition to a container
 
-        Adds the partion as \c name to the container \c cont. The
+        Adds the partition as \c name to the container \c cont. The
         partition state is OFFLINE once attached. The schema in the
         container must define all objects stored in the partition.
 
@@ -919,6 +1054,13 @@ cdef class Partition(SosObject):
         self.c_part =  sos_part_by_name(cont.c_cont, name.encode())
         if self.c_part == NULL:
             self.abort(errno)
+
+    def detach(self):
+        """Detach partition from the container"""
+        cdef int c_rc = sos_part_detach(self.c_part)
+        self.c_part = NULL;
+        if c_rc != 0:
+            self.abort(c_rc)
 
     def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, desc="", backend=SOS_BE_MMOS):
         """Open the partition at path
@@ -947,28 +1089,6 @@ cdef class Partition(SosObject):
         if c_part == NULL:
             self.abort(errno)
         self.c_part = c_part;
-
-    def detach(self):
-        """Detach partition from the container"""
-        cdef int c_rc = sos_part_detach(self.c_part)
-        self.c_part = NULL;
-        if c_rc != 0:
-            self.abort(c_rc)
-
-    def destroy(self, path):
-        """Destroy a partition"""
-        cdef int c_rc
-        if self.c_part != NULL:
-            self.abort(EBUSY)
-        c_rc = sos_part_destroy(path.encode())
-        if c_rc != 0:
-            self.abort(c_rc)
-
-    def move(self, new_path):
-        """Move the paritition to a different location"""
-        cdef int rc = sos_part_move(self.c_part, new_path.encode())
-        if rc != 0:
-            self.abort(rc)
 
     def state_set(self, new_state):
         """Set the partition state"""
@@ -1087,14 +1207,16 @@ cdef class Schema(SosObject):
         object as follows:
 
         {
-            "name" : <attribute-name-str>,
-            "type" : <type-str>,
-            "index" : <index-dict>
+            "name" : "<attr-name>"",
+            "type" : "<attr-type>",
+            "index" : { "type": "<idx-type>", },
+            "join_attrs" : [ "<attr-name>", "<attr-name>", ... ]
         }
 
         For example:
 
         [
+            { "uuid" : ""}
             { "name" : "timestamp", "type" : "timestamp", "index" : {} },
             { "name" : "component_id", "type" : "uint64" },
             { "name" : "flits", "type" : "double" },
@@ -1931,10 +2053,12 @@ TYPE_LONG_DOUBLE_ARRAY = SOS_TYPE_LONG_DOUBLE_ARRAY
 TYPE_OBJ_ARRAY = SOS_TYPE_OBJ_ARRAY
 
 PERM_RW = SOS_PERM_RW
-PERM_RO = SOS_PERM_RO
+PERM_RD = SOS_PERM_RD
+PERM_WR = SOS_PERM_WR
 PERM_CREAT = SOS_PERM_CREAT
 BE_LSOS = SOS_BE_LSOS
 BE_MMOS = SOS_BE_MMOS
+PERM_USER = SOS_PERM_USER
 
 VERS_MAJOR = SOS_VERS_MAJOR
 VERS_MINOR = SOS_VERS_MINOR

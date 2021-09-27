@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <sys/queue.h>
 #include <syslog.h>
+#include <unistd.h>
 #include "dsos.h"
 #include "sosapi.h"          /* Created by rpcgen */
 #include "sosapi_common.h"
@@ -36,6 +37,10 @@ struct dsos_session {
 	struct ods_rbt schema_id_tree;
 	struct ods_rbt schema_name_tree;
 	struct ods_rbt schema_uuid_tree;
+	pthread_mutex_t part_tree_lock;
+	struct ods_rbt part_id_tree;
+	struct ods_rbt part_name_tree;
+	struct ods_rbt part_uuid_tree;
 	pthread_mutex_t iter_tree_lock;
 	struct ods_rbt iter_tree;
 	pthread_mutex_t query_tree_lock;
@@ -64,6 +69,15 @@ struct dsos_schema {
 	struct ods_rbn id_rbn;
 	struct ods_rbn name_rbn;
 	struct ods_rbn uuid_rbn;
+};
+
+struct dsos_part {
+	uint64_t handle;
+	sos_part_t part;
+	struct ods_rbn id_rbn;
+	struct ods_rbn name_rbn;
+	struct ods_rbn uuid_rbn;
+	dsos_part_spec spec;
 };
 
 struct dsos_query {
@@ -121,8 +135,7 @@ static bool_t authenticate_request(struct svc_req *rqstp, const char *op)
 		       sys_cred->aup_gid);
 		break;
 	case AUTH_DES:
-		des_cred = (struct authdes_parms *) rqstp->rq_clntcred;
-		syslog(LOG_ERR, "%s: des_cred %p\n", __func__, des_cred);
+		assert(0 == "unsupported authentication");
 		break;
 	default:
 		svcerr_weakauth(rqstp->rq_xprt);
@@ -187,10 +200,38 @@ static void rderr_handler(SVCXPRT *xprt, void *arg)
 bool_t
 open_1_svc(char *path, int perm, int mode, dsos_open_res *res,  struct svc_req *req)
 {
+	struct authsys_parms *sys_cred;
+	uid_t euid;
+	gid_t egid;
+	int acc = 0;
 	char err_msg[256];
+	sos_t sos;
+
 	if (!authenticate_request(req, __func__))
 		return FALSE;
-	sos_t sos = sos_container_open(path, perm, mode);
+
+	switch(req->rq_cred.oa_flavor) {
+	case AUTH_SYS:
+		sys_cred = (struct authsys_parms *) req->rq_clntcred;
+		euid = sys_cred->aup_uid;
+		egid = sys_cred->aup_gid;
+		syslog(LOG_INFO, "DSOS OPEN(path %s, uid %d, gid %d)\n",
+		       path, euid, egid);
+		break;
+	default:
+		svcerr_weakauth(req->rq_xprt);
+		return FALSE;
+	}
+	if (perm & SOS_PERM_RD)
+		acc |= 0x04;
+	if (perm & SOS_PERM_WR)
+		acc |= 0x02;
+	if (euid != 0 || egid != 0) {
+		perm |= SOS_PERM_USER;
+		sos = sos_container_open(path, perm, euid, egid, perm);
+	} else {
+		sos = sos_container_open(path, perm, mode);
+	}
 	if (!sos) {
 		res->error = errno;
 		snprintf(err_msg, sizeof(err_msg), "Error %d opening the container", errno);
@@ -214,6 +255,10 @@ open_1_svc(char *path, int perm, int mode, dsos_open_res *res,  struct svc_req *
 	ods_rbt_init(&client->schema_id_tree, handle_comparator, NULL);
 	ods_rbt_init(&client->schema_uuid_tree, uuid_comparator, NULL);
 	ods_rbt_init(&client->schema_name_tree, name_comparator, NULL);
+	pthread_mutex_init(&client->part_tree_lock, NULL);
+	ods_rbt_init(&client->part_id_tree, handle_comparator, NULL);
+	ods_rbt_init(&client->part_uuid_tree, uuid_comparator, NULL);
+	ods_rbt_init(&client->part_name_tree, name_comparator, NULL);
 	pthread_mutex_init(&client->iter_tree_lock, NULL);
 	ods_rbt_init(&client->iter_tree, handle_comparator, NULL);
 	pthread_mutex_init(&client->query_tree_lock, NULL);
@@ -288,11 +333,11 @@ out:
 	return TRUE;
 }
 
-bool_t transaction_begin_1_svc(dsos_container_id cont, int *res, struct svc_req *rqstp)
+bool_t transaction_begin_1_svc(dsos_container_id cont, dsos_timeval tv, dsos_transaction_res *res, struct svc_req *rqstp)
 {
 	if (!authenticate_request(rqstp, __func__))
 		return FALSE;
-	*res = ENOENT;
+	res->error = 0;
 	struct ods_rbn *rbn;
 	struct dsos_session *client;
 	pthread_mutex_lock(&client_tree_lock);
@@ -301,22 +346,22 @@ bool_t transaction_begin_1_svc(dsos_container_id cont, int *res, struct svc_req 
 		goto out;
 	client = container_of(rbn, struct dsos_session, rbn);
 	if (client->x_start_time.tv_sec) {
-		*res = EBUSY;
+		res->error = EBUSY;
+		res->dsos_transaction_res_u.error_msg = NULL;
 		goto out;
 	}
 	clock_gettime(CLOCK_REALTIME, &client->x_start_time);
 	client->x_end_time = ZERO_TIME;
-	*res = 0;
 out:
 	pthread_mutex_unlock(&client_tree_lock);
 	return TRUE;
 }
 
-bool_t transaction_end_1_svc(dsos_container_id cont, int *res, struct svc_req *rqstp)
+bool_t transaction_end_1_svc(dsos_container_id cont, dsos_transaction_res *res, struct svc_req *rqstp)
 {
 	if (!authenticate_request(rqstp, __func__))
 		return FALSE;
-	*res = ENOENT;
+	res->error = 0;
 	struct ods_rbn *rbn;
 	struct dsos_session *client;
 	pthread_mutex_lock(&client_tree_lock);
@@ -325,13 +370,13 @@ bool_t transaction_end_1_svc(dsos_container_id cont, int *res, struct svc_req *r
 		goto out;
 	client = container_of(rbn, struct dsos_session, rbn);
 	if (client->x_end_time.tv_sec) {
-		*res = EINVAL;
+		res->error = EINVAL;
+		res->dsos_transaction_res_u.error_msg = NULL;
 		goto out;
 	}
 	client->x_start_time = ZERO_TIME;
 	sos_container_commit(client->sos, SOS_COMMIT_SYNC);
 	clock_gettime(CLOCK_REALTIME, &client->x_end_time);
-	*res = 0;
 out:
 	pthread_mutex_unlock(&client_tree_lock);
 	return TRUE;
@@ -365,7 +410,21 @@ static struct dsos_schema *get_schema(struct dsos_session *client, dsos_schema_i
 }
 static void put_schema(struct dsos_schema *schema) {}
 
-static struct dsos_iter *get_iter(struct dsos_session *client, dsos_iter_id iter_handle)
+static struct dsos_part *get_part(struct dsos_session *client, dsos_part_id part_handle)
+{
+	struct ods_rbn *part_rbn;
+	struct dsos_part *part = NULL;
+
+	pthread_mutex_lock(&client->part_tree_lock);
+	part_rbn = ods_rbt_find(&client->part_id_tree, &part_handle);
+	if (part_rbn)
+		part = container_of(part_rbn, struct dsos_part, id_rbn);
+	pthread_mutex_unlock(&client->part_tree_lock);
+	return part;
+}
+static void put_part(struct dsos_part *part) {}
+
+ static struct dsos_iter *get_iter(struct dsos_session *client, dsos_iter_id iter_handle)
 {
 	struct dsos_iter *iter = NULL;
 	struct ods_rbn *iter_rbn;
@@ -628,6 +687,158 @@ out_0:
 	return TRUE;
 }
 
+static struct dsos_part *
+cache_part(struct dsos_session *client, sos_part_t part)
+{
+	struct dsos_part *dpart;
+	const char *name = sos_part_name(part);
+	uuid_t uuid;
+	sos_part_uuid(part, uuid);
+	/* See if it's already cached */
+	pthread_mutex_lock(&client->part_tree_lock);
+	struct ods_rbn *rbn = ods_rbt_find(&client->part_name_tree, name);
+	pthread_mutex_unlock(&client->part_tree_lock);
+	if (rbn)
+ 		return container_of(rbn, struct dsos_part, name_rbn);
+	dpart = malloc(sizeof *dpart);
+	if (!dpart)
+		return NULL;
+	dpart->part = part;
+	dpart->handle = get_next_handle();
+	pthread_mutex_lock(&client->part_tree_lock);
+	/* Id tree */
+	ods_rbn_init(&dpart->id_rbn, &dpart->handle);
+	ods_rbt_ins(&client->part_id_tree, &dpart->id_rbn);
+	/* Name tree */
+	ods_rbn_init(&dpart->name_rbn, (char *)name);
+	ods_rbt_ins(&client->part_name_tree, &dpart->name_rbn);
+	/* UUID tree */
+	ods_rbn_init(&dpart->uuid_rbn, uuid);
+	ods_rbt_ins(&client->part_uuid_tree, &dpart->uuid_rbn);
+	pthread_mutex_unlock(&client->part_tree_lock);
+
+	return dpart;
+}
+
+bool_t part_create_1_svc(dsos_container_id cont_id, dsos_part_spec spec, dsos_part_res *res, struct svc_req *rqst)
+{
+	if (!authenticate_request(rqst, __func__))
+		return FALSE;
+	return TRUE;
+}
+bool_t part_find_by_id_1_svc(dsos_container_id cont_id, dsos_part_id part_id, dsos_part_res *res, struct svc_req *rqst)
+{
+	if (!authenticate_request(rqst, __func__))
+		return FALSE;
+	return TRUE;
+}
+bool_t part_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_part_res *res, struct svc_req *rqst)
+{
+	char err_msg[256];
+	if (!authenticate_request(rqst, __func__))
+		return FALSE;
+	struct dsos_session *client;
+	struct ods_rbn *rbn;
+	struct dsos_part *dpart;
+	sos_part_t part;
+
+	memset(res, 0, sizeof(*res));
+	client = get_client(cont_id);
+	if (!client) {
+		res->error = DSOS_ERR_CLIENT;
+		sprintf(err_msg, "The container %ld does not exist.", cont_id);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto out_0;
+	}
+
+	rbn = ods_rbt_find(&client->part_name_tree, name);
+	if (rbn) {
+		res->error = 0;
+		dpart = container_of(rbn, struct dsos_part, name_rbn);
+		goto out_1;
+	}
+	part = sos_part_by_name(client->sos, name);
+	if (!part) {
+		res->error = errno ? errno : ENOENT;
+		snprintf(err_msg, sizeof(err_msg),
+			"The partition '%s' does not exist in container %ld", name, cont_id);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto  out_1;
+	}
+	dpart = cache_part(client, part);
+	if (!dpart) {
+		res->error = errno ? errno : EINVAL;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d caching the partition", res->error);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto  out_1;
+	}
+	res->dsos_part_res_u.spec.spec_val = calloc(1, sizeof (struct dsos_part_spec));
+	if (!res->dsos_part_res_u.spec.spec_val) {
+		res->error = errno ? errno : ENOMEM;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d encoding the partition", res->error);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto  out_1;
+	}
+	int rc = dsos_part_spec_from_part(&res->dsos_part_res_u.spec.spec_val[0], part);
+	if (rc) {
+		res->error = errno ? errno : ENOMEM;
+		free(res->dsos_part_res_u.spec.spec_val);
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d encoding the partition", res->error);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto  out_1;
+	}
+	res->dsos_part_res_u.spec.spec_val[0].id = dpart->handle;
+	res->dsos_part_res_u.spec.spec_len = 1;
+	res->error = 0;
+out_1:
+	put_client(client);
+out_0:
+	return TRUE;
+}
+
+bool_t part_find_by_uuid_1_svc(dsos_container_id cont_id, char *uuid, dsos_part_res *res, struct svc_req *rqst)
+{
+	if (!authenticate_request(rqst, __func__))
+		return FALSE;
+	return TRUE;
+}
+
+bool_t part_query_1_svc(dsos_container_id cont_id, dsos_part_query_res *res, struct svc_req *rqst)
+{
+	struct dsos_session *client;
+	int count, array_size;
+	sos_part_t part;
+
+	if (!authenticate_request(rqst, __func__))
+		return FALSE;
+
+	client = get_client(cont_id);
+	if (!client) {
+		res->error = DSOS_ERR_CLIENT;
+		goto out_0;
+	}
+
+	array_size = 0;
+	sos_part_iter_t iter = sos_part_iter_new(client->sos);
+	for (part = sos_part_first(iter); part; part = sos_part_next(iter))
+		array_size += 1;
+
+	res->dsos_part_query_res_u.names.names_val = calloc(array_size, sizeof(char *));
+	res->dsos_part_query_res_u.names.names_len = array_size;
+	res->error = 0;
+	count = 0;
+	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
+		res->dsos_part_query_res_u.names.names_val[count] = strdup(sos_part_name(part));
+		count += 1;
+	}
+	sos_part_iter_free(iter);
+out_0:
+	return TRUE;
+}
+
 bool_t obj_create_1_svc(dsos_obj_link obj_list, dsos_create_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
@@ -657,7 +868,11 @@ bool_t obj_create_1_svc(dsos_obj_link obj_list, dsos_create_res *res, struct svc
 			res->error = errno;
 			goto out_2;
 		}
-		sos_obj_commit(obj);
+		struct dsos_part *part = NULL;
+		if (obj_e->part_id >= 0)
+			part = get_part(client, obj_e->part_id);
+		sos_obj_commit_part(obj, part->part);
+		put_part(part);
 		sos_obj_index(obj);
 		sos_obj_put(obj);
 		obj_e = obj_e->next;

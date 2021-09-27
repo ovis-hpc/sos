@@ -232,7 +232,7 @@ int main(int argc, char **argv)
 	if (optind < argc)
 		part_name = strdup(argv[optind]);
 
-	sos = sos_container_open(path, SOS_PERM_RO);
+	sos = sos_container_open(path, SOS_PERM_RD);
 	if (!sos) {
 		printf("Error %d opening the container %s.\n",
 		       errno, argv[1]);

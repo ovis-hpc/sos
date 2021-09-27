@@ -198,3 +198,52 @@ struct dsos_schema_spec *dsos_schema_spec_dup(dsos_schema_spec *src_spec)
 	}
 	return dst_spec;
 }
+
+int dsos_part_spec_from_part(dsos_part_spec *spec, sos_part_t part) {
+	spec->path = spec->name = spec->desc = NULL;
+	spec->path = strdup(sos_part_path(part));
+	if (!spec->path)
+		goto enomem;
+	spec->name = strdup(sos_part_name(part));
+	if (!spec->name)
+		goto enomem;
+	spec->desc = strdup(sos_part_desc(part));
+	if (!spec->desc)
+		goto enomem;
+	sos_part_uuid(part, spec->uuid);
+	spec->state = sos_part_state(part);
+	spec->user_id = sos_part_uid(part);
+	spec->group_id = sos_part_gid(part);
+	spec->perm = sos_part_perm(part);
+	return 0;
+enomem:
+	free(spec->path);
+	free(spec->name);
+	free(spec->desc);
+	return ENOMEM;
+}
+
+dsos_part_spec *dsos_part_spec_dup(dsos_part_spec *src)
+{
+	dsos_part_spec *dst = calloc(1, sizeof *dst);
+	dst->path = strdup(src->path);
+	if (!dst->path)
+		goto enomem;
+	dst->name = strdup(src->name);
+	if (!dst->name)
+		goto enomem;
+	dst->desc = strdup(src->desc);
+	if (!dst->desc)
+		goto enomem;
+	uuid_copy(dst->uuid, src->uuid);
+	dst->user_id = src->user_id;
+	dst->group_id = src->group_id;
+	dst->perm = src->perm;
+	return dst;
+enomem:
+	free(dst->path);
+	free(dst->name);
+	free(dst->desc);
+	errno = ENOMEM;
+	return NULL;
+}

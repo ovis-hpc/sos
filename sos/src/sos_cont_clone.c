@@ -102,7 +102,7 @@ int main(int argc, char **argv)
 	if (!cont_path || !clone_path)
 		usage(argc, argv);
 
-	sos = sos_container_open(cont_path, SOS_PERM_RO);
+	sos = sos_container_open(cont_path, SOS_PERM_RD);
 	if (!sos) {
 		printf("The container at %s could not be opened, error %m\n", cont_path);
 		exit(1);

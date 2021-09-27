@@ -88,7 +88,6 @@ typedef struct ods_obj_s *ods_obj_t;
 extern int ods_destroy(const char *path);
 
 typedef enum ods_perm_e {
-	ODS_PERM_RO = 0x00,
 	ODS_PERM_RD = 0x01,
 	ODS_PERM_WR = 0x02,
 	ODS_PERM_RW = ODS_PERM_RD | ODS_PERM_WR,

@@ -783,21 +783,30 @@ static int is_supported_version(uint64_t v1, uint64_t v2)
  * \brief Open a Container
  *
  * Open a SOS container. If successfull, the <tt>c</tt> parameter will
- * contain a valid sos_t handle on exit.
+ * contain a valid \c sos_t handle on exit.
  *
- * if \c o_perm includes SOS_PERM_CREAT, the Container will be created.
- * The \c o_flags and \c o_mode parameters accept the same values and
- * have the same meaning as the corresponding parameters to the \c open()
- * system call.
-
- * Containers are logically maintained in a Unix filesystem
- * namespace. The specified \c path_arg must be unique for the Container and
- * all sub-directories in the path up to, but not including the
- * basename() must exist.
+ * \param path_arg	Pathname to the Container. If SOS_PERM_CREAT is
+ * 			specified all sub-directories in the path will be
+ *			create.
+ * \param o_perm	The requested access permissions as follows:
+ *	SOS_PERM_RD	Read-only access
+ * 	SOS_PERM_WR	Write-only access
+ * 	SOS_PERM_RW	Read-write access
+ * 	SOS_PERM_CREAT	Create the container if it does not already exist.
+ *			If this flag is specified, the \c o_mode parameter
+ * 			must immediately follow with the desired file
+ *			permission bits. See the open() system call.
+ * 	SOS_PERM_USER	Open the container as a specific user/group. This
+ * 			flag cannot be used with the SOS_PERM_CREAT flag.
+ *			If specified, the \c o_uid, and \c o_gid parameters
+ *			must follow the \c o_perm parameter. This flag is
+ *			useful for limiting object visibility and cannot be
+ *			used with the SOS_PERM_CREAT flag.
+ * 	SOS_BE_MMAP	Use the Memory Mapped Object Store back-end
+ * 	SOS_BE_LSOS	Use the Log Structured Obect Store back end
+ * \param o_mode	Optional file mode argument if SOS_PERM_CREAT is
+ *			specified in \c o_perm. See the open() system call.
  *
- * \param path_arg	Pathname for the Container
- * \param o_perm	The requested read/write permissions
- * \param o_mode	Optional file mode argument if SOS_PERM_CREAT is used. See open().
  * \retval !NULL	The sos_t handle for the container.
  * \retval NULL		An error occured, consult errno for the reason.
  */
@@ -813,11 +822,24 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	int o_mode;
 	int need_part = 0;
 	va_list ap;
+	uid_t euid = 0;
+	gid_t egid = 0;
+
+	va_start(ap, o_perm);
+	if (o_perm & SOS_PERM_CREAT) {
+		if (o_perm & SOS_PERM_USER) {
+			errno = EINVAL;
+			return NULL;
+		}
+		o_mode = va_arg(ap, int);
+	}
+	if (o_perm & SOS_PERM_USER) {
+		euid = va_arg(ap, uid_t);
+		egid = va_arg(ap, gid_t);
+	}
+	va_end(ap);
 
 	(void)sos_container_lock_cleanup(path_arg);
-	va_start(ap, o_perm);
-	o_mode = va_arg(ap, int);
-	va_end(ap);
 
 	if (strlen(path_arg) >= SOS_PART_PATH_LEN) {
 		errno = E2BIG;
@@ -924,7 +946,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 		goto err;
 	}
 
-	/* Open the index on the index objects */
+	/* Open the index of index objects */
 	sprintf(tmp_path, "%s/.__index_idx", path);
 	sos->idx_idx = ods_idx_open(tmp_path, sos->o_perm);
 	if (!sos->idx_idx) {
@@ -987,7 +1009,12 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	/*
 	 * Open the partitions
 	 */
-	rc = __sos_open_partitions(sos, tmp_path);
+	int acc = 0;
+	if (o_perm & SOS_PERM_RD)
+		acc = 06;
+	if (o_perm & SOS_PERM_WR)
+		acc |= 04;
+	rc = __sos_open_partitions(sos, tmp_path, euid, egid, acc);
 	if (rc) {
 		errno = rc;
 		goto err;
