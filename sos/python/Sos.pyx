@@ -500,12 +500,6 @@ cdef class DsosPartition:
         """Return the path to the paritition"""
         return dsos_part_path(self.c_part)
 
-    def uuid(self):
-        """Returns the parition UUID"""
-        cdef uuid_t c_uuid
-        dsos_part_uuid(self.c_part, c_uuid)
-        return uuid.UUID(bytes=c_uuid)
-
     def uid(self):
         """Returns the partition user-id"""
         return dsos_part_uid(self.c_part)
