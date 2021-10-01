@@ -763,7 +763,7 @@ bool_t part_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_part_
 		snprintf(err_msg, sizeof(err_msg),
 			"The partition '%s' does not exist in container %ld", name, cont_id);
 		res->dsos_part_res_u.error_msg = strdup(err_msg);
-		goto  out_1;
+		goto out_1;
 	}
 	dpart = cache_part(client, part);
 	if (!dpart) {
@@ -789,6 +789,8 @@ bool_t part_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_part_
 			"Error %d encoding the partition", res->error);
 		res->dsos_part_res_u.error_msg = strdup(err_msg);
 		goto  out_1;
+	} else {
+		sos_part_put(part);
 	}
 	res->dsos_part_res_u.spec.spec_val[0].id = dpart->handle;
 	res->dsos_part_res_u.spec.spec_len = 1;
@@ -823,15 +825,17 @@ bool_t part_query_1_svc(dsos_container_id cont_id, dsos_part_query_res *res, str
 
 	array_size = 0;
 	sos_part_iter_t iter = sos_part_iter_new(client->sos);
-	for (part = sos_part_first(iter); part; part = sos_part_next(iter))
+	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
+		sos_part_put(part);
 		array_size += 1;
-
+	}
 	res->dsos_part_query_res_u.names.names_val = calloc(array_size, sizeof(char *));
 	res->dsos_part_query_res_u.names.names_len = array_size;
 	res->error = 0;
 	count = 0;
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
 		res->dsos_part_query_res_u.names.names_val[count] = strdup(sos_part_name(part));
+		sos_part_put(part);
 		count += 1;
 	}
 	sos_part_iter_free(iter);

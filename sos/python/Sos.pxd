@@ -822,7 +822,6 @@ cdef extern from "dsos.h":
     const char *dsos_part_desc(dsos_part_t part)
     const char *dsos_part_path(dsos_part_t part)
     sos_part_state_t dsos_part_state(dsos_part_t part)
-    void dsos_part_uuid(dsos_part_t part, uuid_t uuid)
     uid_t dsos_part_uid(dsos_part_t part)
     gid_t dsos_part_gid(dsos_part_t part)
     int dsos_part_perm(dsos_part_t part)
