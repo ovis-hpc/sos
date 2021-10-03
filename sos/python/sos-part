@@ -155,11 +155,11 @@ if __name__ == "__main__":
     parser.add_argument("--mode", metavar="MODE", default=0o660,
                         help="The file access mode if creating a partition. Default is 0o660.")
     parser.add_argument("--user", metavar="USER", default=None,
-                        help="The user name or user-id that owns the container");
+                        help="The user name or user-id that owns the container")
     parser.add_argument("--group", metavar="GROUP", default=None,
-                        help="The group name or group-id that owns the container");
+                        help="The group name or group-id that owns the container")
     parser.add_argument("--perm", metavar="PERM", default=None,
-                        help="The access rights allowed for accessing the container's contents");
+                        help="The access rights allowed for accessing the container's contents")
     parser.add_argument("--backend", metavar="BACKEND", default='lsos',
                         help="The desired storage backend, one of: "
                         "'LSOS' (Log Structured Object Store), or "
@@ -289,7 +289,11 @@ if __name__ == "__main__":
     #
     if args.set:
         part = Sos.Partition()
-        part.open(args.path)
+        try:
+            part.open(args.path)
+        except Exception as e:
+            print("The partition could not be opened.")
+            sys.exit(1)
         if not part:
             print("The part name '{0}' was not found.".format(args.name))
             sys.exit(1)

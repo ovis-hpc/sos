@@ -1035,6 +1035,12 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 		sos_part_t part = sos_part_by_name(sos, "default");
 		if (!part)
 			goto err;
+		rc = sos_part_chown(part, euid, egid);
+		if (rc)
+			goto err;
+		rc = sos_part_chmod(part, o_mode);
+		if (rc)
+			goto err;
 		rc = sos_part_state_set(part, SOS_PART_STATE_PRIMARY);
 		sos_part_put(part);
 		if (rc)

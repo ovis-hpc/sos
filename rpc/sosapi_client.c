@@ -72,6 +72,13 @@ typedef struct dsos_client_request_s {
 			dsos_schema_res res;
 		} schema_by_uuid;
 
+		struct part_create_req_s {
+			dsos_container_t cont;
+			dsos_part_spec spec;
+			dsos_part_t part;
+			dsos_part_res res;
+		} part_create;
+
 		struct part_query_req_s {
 			dsos_container_t cont;
 			dsos_part_query_res res;
@@ -293,9 +300,15 @@ static void format_request_va(dsos_client_request_t request, va_list ap)
 		request->schema_by_uuid.schema = va_arg(ap, dsos_schema_t);
 		break;
 	case REQ_PART_CREATE:
-		memset(&request->part_query, 0, sizeof(request->part_query));
-		request->part_query.cont = va_arg(ap, dsos_container_t);
-		request->part_query.names = va_arg(ap, dsos_name_array_t *);
+		memset(&request->part_create, 0, sizeof(request->part_create));
+		request->part_create.cont = va_arg(ap, dsos_container_t);
+		request->part_create.part = va_arg(ap, dsos_part_t);
+		request->part_create.spec.name = va_arg(ap, char *);
+		request->part_create.spec.path = va_arg(ap, char *);
+		request->part_create.spec.desc = va_arg(ap, char *);
+		request->part_create.spec.user_id = va_arg(ap, uid_t);
+		request->part_create.spec.group_id = va_arg(ap, gid_t);
+		request->part_create.spec.perm = va_arg(ap, long);
 		break;
 	case REQ_PART_QUERY:
 		memset(&request->part_query, 0, sizeof(request->part_query));
@@ -587,6 +600,24 @@ static int send_request(dsos_client_t client, dsos_client_request_t rqst)
 		if (rqst->schema_by_uuid.res.error) {
 			g_last_err = rqst->schema_by_uuid.res.error;
 			err_msg =  rqst->schema_by_uuid.res.dsos_schema_res_u.error_msg;
+			goto op_err;
+		}
+		break;
+	case REQ_PART_CREATE:
+		memset(&rqst->part_create.res, 0, sizeof(rqst->part_create.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err =
+			part_create_1(rqst->part_create.cont->handles[client->client_id],
+					rqst->part_create.spec,
+					&rqst->part_create.res,
+					client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "part_create_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->part_create.res.error) {
+			g_last_err = rqst->part_create.res.error;
+			err_msg =  rqst->part_create.res.dsos_part_res_u.error_msg;
 			goto op_err;
 		}
 		break;
@@ -1223,52 +1254,71 @@ static inline dsos_part_t dsos_part_alloc(dsos_container_t cont)
 	return p;
 }
 
-extern dsos_part_t dsos_part_create(dsos_container_t cont,
-	const char *name, const char *desc, int mode,
-	uid_t uid, gid_t gid, int perm)
+static int
+part_create_complete_fn(dsos_client_t client,
+			dsos_client_request_t request,
+			dsos_res_t *res)
 {
-#if 0
-	int i;
-	enum clnt_stat rpc_err;
-	dsos_schema_t dschema = dsos_schema_alloc(cont);
-	dsos_res_init(cont->sess, res);
-	dsos_schema_spec *spec = dsos_spec_from_schema(schema);
-	if (!spec) {
-		res->any_err = errno;
+	enum dsos_error derr = 0;
+	struct dsos_part_res *pres = &request->part_create.res;
+	dsos_part_t part = request->part_create.part;
+
+	if (request->rpc_err) {
+		derr = RPC_ERROR(request->rpc_err);
+	} else {
+		derr = pres->error;
+	}
+	if (!res->any_err)
+		res->any_err = derr;
+	res->res[client->client_id] = derr;
+	if (!derr) {
+		if (!part->spec) {
+			part->spec =
+				dsos_part_spec_dup(&pres->dsos_part_res_u.spec);
+			if (!part->spec) {
+				res->res[client->client_id] = ENOMEM;
+				if (!res->any_err)
+					res->any_err = ENOMEM;
+				goto out;
+			}
+		}
+		part->handles[client->client_id] =
+			pres->dsos_part_res_u.spec.id;
+	}
+out:
+	if (!request->rpc_err)
+		xdr_free((xdrproc_t)xdr_dsos_part_res, (char *)pres);
+	return 0;
+}
+
+void dsos_part_free(dsos_part_t part)
+{
+	free(part->spec->path);
+	free(part->spec->name);
+	free(part->spec->desc);
+	free(part->spec);
+	free(part);
+}
+
+dsos_part_t dsos_part_create(dsos_container_t cont,
+				const char *name,
+				const char *path,
+				const char *desc,
+				uid_t uid, gid_t gid, int perm)
+{
+	dsos_res_t res;
+	int rc;
+	dsos_part_t part = dsos_part_alloc(cont);
+	if (!part)
 		return NULL;
-	}
-	// TODO: handle create error
-	dsos_schema_res schema_res = {};
-	for (i = 0; i < cont->handle_count; i++) {
-		dsos_client_t client = &cont->sess->clients[i];
-		pthread_mutex_lock(&client->rpc_lock);
-		rpc_err = schema_create_1(cont->handles[i], *spec, &schema_res, client->client);
-		pthread_mutex_unlock(&client->rpc_lock);
-		if (rpc_err != RPC_SUCCESS) {
-			fprintf(stderr, "schema_create_1 failed on client %d with RPC error %d\n",
-				i, rpc_err);
-			res->any_err = DSOS_ERR_CLIENT;
-			break;
-		}
-		if (schema_res.error) {
-			fprintf(stderr, "schema_create_1 failed on client %d with error %d\n",
-				i, rpc_err);
-			res->any_err = schema_res.error;
-			xdr_free((xdrproc_t)xdr_dsos_schema_res, (char *)&schema_res);
-			break;
-		}
-		if (i == 0) {
-			dschema->schema = dsos_schema_from_spec(schema_res.dsos_schema_res_u.spec);
-			assert(dschema->schema);
-		}
-		dschema->handles[i] = schema_res.dsos_schema_res_u.spec->id;
-		xdr_free((xdrproc_t)xdr_dsos_schema_res, (char *)&schema_res);
-	}
-	if (res->any_err)
-		dschema = NULL;
-	dsos_spec_free(spec);
-	return dschema;
-#endif
+	dsos_res_init(cont->sess, &res);
+	rc = submit_wait(cont->sess, -1, part_create_complete_fn, &res,
+			 REQ_PART_CREATE, cont, part, name, path, desc, uid, gid, perm);
+	if (rc)
+		goto err_0;
+	return part;
+err_0:
+	free(part);
 	return NULL;
 }
 
@@ -1292,9 +1342,9 @@ part_by_name_complete_fn(dsos_client_t client,
 	if (!derr) {
 		if (!request->part_by_name.part->spec)
 			request->part_by_name.part->spec =
-				dsos_part_spec_dup(request->part_by_name.res.dsos_part_res_u.spec.spec_val);
+				dsos_part_spec_dup(&request->part_by_name.res.dsos_part_res_u.spec);
 		request->part_by_name.part->handles[client->client_id] =
-			request->part_by_name.res.dsos_part_res_u.spec.spec_val->id;
+			request->part_by_name.res.dsos_part_res_u.spec.id;
 	}
 	xdr_free((xdrproc_t)xdr_dsos_part_res, (char *)&request->part_by_name.res);
 	return 0;

@@ -247,3 +247,26 @@ enomem:
 	errno = ENOMEM;
 	return NULL;
 }
+
+int dsos_part_spec_copy(dsos_part_spec *dst, dsos_part_spec *src)
+{
+	dst->path = strdup(src->path);
+	if (!dst->path)
+		goto enomem;
+	dst->name = strdup(src->name);
+	if (!dst->name)
+		goto enomem;
+	dst->desc = strdup(src->desc);
+	if (!dst->desc)
+		goto enomem;
+	uuid_copy(dst->uuid, src->uuid);
+	dst->user_id = src->user_id;
+	dst->group_id = src->group_id;
+	dst->perm = src->perm;
+	return 0;
+enomem:
+	free(dst->path);
+	free(dst->name);
+	free(dst->desc);
+	return ENOMEM;
+}

@@ -253,7 +253,6 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 		goto err_0;
 	}
 	ods_obj_t udata = ods_get_user_data(ods);
-	uuid_generate(SOS_PART_UDATA(udata)->uuid);
 	SOS_PART_UDATA(udata)->signature = SOS_PART_SIGNATURE;
 	strncpy(SOS_PART_UDATA(udata)->desc, part_desc, SOS_PART_DESC_LEN);
 	uuid_generate(uuid);
@@ -434,7 +433,7 @@ static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj, uid_t euid, gid_
  * @param o_perm The SOS access permissions. If SOS_PERM_CREAT is included,
  *               the parameters o_mode and desc are expected
  * @param o_mode The file creation mode, see open(3)
- * @param desc A pointer to a character string description for the partition.
+ * @param desc   A pointer to a character string description for the partition.
  * @return sos_part_t
  */
 sos_part_t sos_part_open(const char *path, int o_perm, ...)
@@ -726,10 +725,10 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 		if (!part) {
 			if (errno == EPERM) {
 				continue;
-				} else {
-					rc = errno ? errno : ENOMEM;
-					goto out;
-				}
+			} else {
+				rc = errno ? errno : ENOMEM;
+				goto out;
+			}
 		}
 		if (SOS_PART_REF(part_obj)->state == SOS_PART_STATE_PRIMARY) {
 			sos->primary_part = part;

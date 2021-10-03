@@ -61,8 +61,9 @@ extern sos_attr_t dsos_schema_attr_by_id(dsos_schema_t schema, int attr_id);
 extern sos_attr_t dsos_schema_attr_by_name(dsos_schema_t schema, const char *name);
 extern void dsos_schema_print(dsos_schema_t schema, FILE *fp);
 extern dsos_part_t dsos_part_create(dsos_container_t cont,
-	const char *name, const char *desc, int mode,
-	uid_t uid, gid_t gid, int perm);
+			const char *name, const char *path, const char *desc,
+			uid_t uid, gid_t gid, int perm);
+void dsos_part_free(dsos_part_t part);
 extern dsos_part_t dsos_part_by_name(dsos_container_t cont, const char *name);
 extern dsos_part_t dsos_part_by_uuid(dsos_container_t cont, const uuid_t uuid);
 extern const char *dsos_part_name(dsos_part_t part);

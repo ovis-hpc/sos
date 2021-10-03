@@ -481,7 +481,6 @@ int ods_close(ods_t ods, int flags)
 			"close is leaking resources.\n",
 			__func__, ods->path, ods->obj_count);
 		ods->info(ods, __ods_log_fp, ODS_INFO_ALL);
-		return EBUSY;
 	}
 
 	/* Remove the ODS from the open list */

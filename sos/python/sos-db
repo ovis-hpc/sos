@@ -71,8 +71,9 @@ if __name__ == "__main__":
                         help="Create a new SOS database. " \
                         "The --path parameter specifies the path to the new " \
                         "database.")
-    parser.add_argument("--mode", metavar="FILE-CREATION-MASK",
-                        help="The permissions to assign to SOS database files.")
+    parser.add_argument("--mode", metavar="PERM", default=0o660,
+                        help="The permissions to assign to SOS database files. "
+                        "Specified as an octal number, e.g. 0o666")
     parser.add_argument("--query", action="store_true",
                         help="Query a container's storage information")
     parser.add_argument("--verbose", action="store_true",
@@ -89,7 +90,7 @@ if __name__ == "__main__":
         try:
             # Create the database
             if args.mode:
-                cont.open(args.path, Sos.PERM_CREAT, o_mode=oct(args.mode))
+                cont.open(args.path, Sos.PERM_CREAT, o_mode=eval(args.mode))
             else:
                 cont.open(args.path, Sos.PERM_CREAT)
         except Exception as ex:

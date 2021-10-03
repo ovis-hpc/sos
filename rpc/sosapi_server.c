@@ -176,6 +176,17 @@ static void session_close(struct dsos_session *client)
 		rbn = ods_rbt_min(&client->schema_id_tree);
 	}
 
+	/* Free any cached partitions */
+	rbn = ods_rbt_min(&client->part_id_tree);
+	while (rbn) {
+		struct dsos_part *part = container_of(rbn, struct dsos_part, id_rbn);
+		ods_rbt_del(&client->part_id_tree, &part->id_rbn);
+		ods_rbt_del(&client->part_name_tree, &part->name_rbn);
+		ods_rbt_del(&client->part_uuid_tree, &part->uuid_rbn);
+		sos_part_put(part->part);
+		rbn = ods_rbt_min(&client->part_id_tree);
+	}
+
 	/* Free up any query */
 	rbn = ods_rbt_min(&client->query_tree);
 	while (rbn) {
@@ -555,7 +566,8 @@ out_0:
 	return TRUE;
 }
 
-bool_t schema_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_schema_res *res, struct svc_req *rqstp)
+bool_t schema_find_by_name_1_svc(dsos_container_id cont_id, char *name,
+				dsos_schema_res *res, struct svc_req *rqstp)
 {
 	char err_msg[256];
 	if (!authenticate_request(rqstp, __func__))
@@ -703,8 +715,16 @@ cache_part(struct dsos_session *client, sos_part_t part)
 	dpart = malloc(sizeof *dpart);
 	if (!dpart)
 		return NULL;
-	dpart->part = part;
+	int rc = dsos_part_spec_from_part(&dpart->spec, part);
+	if (rc) {
+		errno = rc;
+		free(dpart);
+		return NULL;
+	}
+	dpart->part = sos_part_get(part);
 	dpart->handle = get_next_handle();
+	dpart->spec.id = dpart->handle;
+
 	pthread_mutex_lock(&client->part_tree_lock);
 	/* Id tree */
 	ods_rbn_init(&dpart->id_rbn, &dpart->handle);
@@ -720,10 +740,145 @@ cache_part(struct dsos_session *client, sos_part_t part)
 	return dpart;
 }
 
+static const char *perm_mask_to_str(uint32_t mask)
+{
+	static char s_[16];
+	char *s;
+ 	static struct xlat_perm_s {
+		 int bit;
+		 char c;
+	} translate[] = {
+		{ 0001, 'x' },
+        	{ 0002, 'w' },
+		{ 0004, 'r' },
+		{ 0010, 'x' },
+		{ 0020, 'w' },
+		{ 0040, 'r' },
+		{ 0100, 'x' },
+		{ 0200, 'w' },
+		{ 0400, 'r' }
+	};
+	struct xlat_perm_s *x;
+	int i;
+	s = s_;
+	for (i = (sizeof(translate)/sizeof(translate[0])); i; i--) {
+		x = &translate[i];
+		if (0 != (x->bit & mask))
+                	*s = x->c;
+		else
+			*s = '-';
+		s++;
+	}
+	*s = '\0';
+	return s_;
+}
+
 bool_t part_create_1_svc(dsos_container_id cont_id, dsos_part_spec spec, dsos_part_res *res, struct svc_req *rqst)
 {
+	char err_msg[256];
+	struct dsos_session *client;
+	struct dsos_part *dpart;
+	sos_part_t part;
+	int rc;
+
 	if (!authenticate_request(rqst, __func__))
 		return FALSE;
+
+	/* Attach the partition to the container */
+	memset(res, 0, sizeof(*res));
+	client = get_client(cont_id);
+	if (!client) {
+		res->error = DSOS_ERR_CLIENT;
+		sprintf(err_msg, "The container %ld does not exist.", cont_id);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto out_0;
+	}
+	/* Create the partition */
+	part = sos_part_open(spec.path,
+			SOS_PERM_RW | SOS_PERM_CREAT,
+			spec.perm, spec.desc);
+	if (!part) {
+		res->error = errno ? errno : EACCES;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d creating the partition %s", errno, spec.path);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto out_1;
+	}
+	/* Apply the uid/gid from the request */
+	rc = sos_part_chown(part, spec.user_id, spec.group_id);
+	if (rc) {
+		res->error = rc;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d changing the owner/group to %ld:%ld on partition %s",
+			rc, spec.user_id, spec.group_id, spec.name);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto out_2;
+	}
+	/* Apply the permissions from the request */
+	rc = sos_part_chmod(part, spec.perm);
+	if (rc) {
+		res->error = rc;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d changing the permissions to %s on partition '%s'",
+			rc, perm_mask_to_str(spec.perm), spec.name);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto out_2;
+	}
+	/* Attach the partition to the container */
+	rc = sos_part_attach(client->sos, spec.name, spec.path);
+	if (rc) {
+		res->error = rc;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d attaching the partition %s to the container as %s",
+			rc, spec.path, spec.name);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto out_2;
+	}
+	/* Put our naked partition handle and look up the one from the container */
+	sos_part_put(part);
+	part = sos_part_by_name(client->sos, spec.name);
+	if (!part) {
+		res->error = errno;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d looking up the partition '%s' in the container",
+			rc, spec.name);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto out_2;
+	}
+	/* Make the partition active */
+	rc = sos_part_state_set(part, SOS_PART_STATE_ACTIVE);
+	if (rc) {
+		res->error = rc;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d setting the partition state to ACTIVE on the partition %s",
+			rc, spec.name);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto out_2;
+	}
+	/* Create and cache the DSOS partition */
+	dpart = cache_part(client, part);
+	if (!dpart) {
+		res->error = errno ? errno : EINVAL;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d caching the partition", res->error);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto  out_2;
+	}
+	rc = dsos_part_spec_from_part(&res->dsos_part_res_u.spec, part);
+	if (rc) {
+		res->error = errno ? errno : ENOMEM;
+		snprintf(err_msg, sizeof(err_msg),
+			"Error %d encoding the partition", res->error);
+		res->dsos_part_res_u.error_msg = strdup(err_msg);
+		goto  out_2;
+	}
+	res->dsos_part_res_u.spec.id = dpart->handle;
+	res->error = 0;
+out_2:
+	sos_part_put(part);
+out_1:
+	put_client(client);
+out_0:
 	return TRUE;
 }
 bool_t part_find_by_id_1_svc(dsos_container_id cont_id, dsos_part_id part_id, dsos_part_res *res, struct svc_req *rqst)
@@ -741,6 +896,7 @@ bool_t part_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_part_
 	struct ods_rbn *rbn;
 	struct dsos_part *dpart;
 	sos_part_t part;
+	int rc;
 
 	memset(res, 0, sizeof(*res));
 	client = get_client(cont_id);
@@ -755,43 +911,36 @@ bool_t part_find_by_name_1_svc(dsos_container_id cont_id, char *name, dsos_part_
 	if (rbn) {
 		res->error = 0;
 		dpart = container_of(rbn, struct dsos_part, name_rbn);
-		goto out_1;
+		goto copy_spec;
 	}
 	part = sos_part_by_name(client->sos, name);
 	if (!part) {
 		res->error = errno ? errno : ENOENT;
 		snprintf(err_msg, sizeof(err_msg),
-			"The partition '%s' does not exist in container %ld", name, cont_id);
+			"The partition '%s' does not exist in container %ld",
+			name, cont_id);
 		res->dsos_part_res_u.error_msg = strdup(err_msg);
-		goto  out_1;
+		goto out_1;
 	}
 	dpart = cache_part(client, part);
+	sos_part_put(part);	/* cache part takes it's own reference */
 	if (!dpart) {
 		res->error = errno ? errno : EINVAL;
 		snprintf(err_msg, sizeof(err_msg),
 			"Error %d caching the partition", res->error);
 		res->dsos_part_res_u.error_msg = strdup(err_msg);
-		goto  out_1;
+		goto out_1;
 	}
-	res->dsos_part_res_u.spec.spec_val = calloc(1, sizeof (struct dsos_part_spec));
-	if (!res->dsos_part_res_u.spec.spec_val) {
-		res->error = errno ? errno : ENOMEM;
-		snprintf(err_msg, sizeof(err_msg),
-			"Error %d encoding the partition", res->error);
-		res->dsos_part_res_u.error_msg = strdup(err_msg);
-		goto  out_1;
-	}
-	int rc = dsos_part_spec_from_part(&res->dsos_part_res_u.spec.spec_val[0], part);
+copy_spec:
+	rc = dsos_part_spec_copy(&res->dsos_part_res_u.spec, &dpart->spec);
 	if (rc) {
 		res->error = errno ? errno : ENOMEM;
-		free(res->dsos_part_res_u.spec.spec_val);
 		snprintf(err_msg, sizeof(err_msg),
 			"Error %d encoding the partition", res->error);
 		res->dsos_part_res_u.error_msg = strdup(err_msg);
-		goto  out_1;
+		goto out_1;
 	}
-	res->dsos_part_res_u.spec.spec_val[0].id = dpart->handle;
-	res->dsos_part_res_u.spec.spec_len = 1;
+	res->dsos_part_res_u.spec.id = dpart->handle;
 	res->error = 0;
 out_1:
 	put_client(client);
@@ -823,15 +972,17 @@ bool_t part_query_1_svc(dsos_container_id cont_id, dsos_part_query_res *res, str
 
 	array_size = 0;
 	sos_part_iter_t iter = sos_part_iter_new(client->sos);
-	for (part = sos_part_first(iter); part; part = sos_part_next(iter))
+	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
+		sos_part_put(part);
 		array_size += 1;
-
+	}
 	res->dsos_part_query_res_u.names.names_val = calloc(array_size, sizeof(char *));
 	res->dsos_part_query_res_u.names.names_len = array_size;
 	res->error = 0;
 	count = 0;
 	for (part = sos_part_first(iter); part; part = sos_part_next(iter)) {
 		res->dsos_part_query_res_u.names.names_val[count] = strdup(sos_part_name(part));
+		sos_part_put(part);
 		count += 1;
 	}
 	sos_part_iter_free(iter);

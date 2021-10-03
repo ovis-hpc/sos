@@ -12,5 +12,6 @@ extern struct dsos_schema_spec *dsos_schema_spec_dup(dsos_schema_spec *src_spec)
 extern void dsos_spec_free(struct dsos_schema_spec *spec);
 extern int dsos_part_spec_from_part(dsos_part_spec *spec, sos_part_t part);
 extern dsos_part_spec *dsos_part_spec_dup(dsos_part_spec *spec);
+extern int dsos_part_spec_copy(dsos_part_spec *dst, dsos_part_spec *src);
 
 #endif

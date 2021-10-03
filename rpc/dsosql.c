@@ -17,6 +17,7 @@
 #include <readline/history.h>
 
 #include <pwd.h>
+#include <grp.h>
 
 #include "dsos.h"
 #include "dsosql.h"
@@ -54,6 +55,7 @@ int open_session(cmd_t, av_list_t avl);
 int open_container(cmd_t, av_list_t avl);
 int create_schema(cmd_t, av_list_t avl);
 int show_schema(cmd_t, av_list_t avl);
+int create_part(cmd_t, av_list_t avl);
 int show_part(cmd_t, av_list_t avl);
 int show_command(cmd_t, av_list_t avl);
 int quit_command(cmd_t, av_list_t avl);
@@ -69,6 +71,7 @@ enum dsosql_command_id_e {
 	OPEN_CMD,
 	CREATE_SCHEMA_CMD,
 	SHOW_SCHEMA_CMD,
+	CREATE_PART_CMD,
 	SHOW_PART_CMD,
 	IMPORT_CMD,
 	SELECT_CMD,
@@ -93,7 +96,7 @@ struct cmd_s commands[] = {
 		      { SOS_TYPE_UINT32, "mode"}
 	      }
 	},
-	[CREATE_SCHEMA_CMD] = { "create_schema", create_schema, "create_schema name SCHEMA-NAME from FILE-NAME",
+	[CREATE_SCHEMA_CMD] = { "create_schema", create_schema, "create_schema name NAME from PATH",
 		2,
 		{
 			 { SOS_TYPE_STRING, "name" },
@@ -105,6 +108,18 @@ struct cmd_s commands[] = {
 		{
 			{ SOS_TYPE_STRING, "name" },
 			{ SOS_TYPE_STRING, "regex" },
+		}
+	},
+	[CREATE_PART_CMD] = { "create_part", create_part,
+				"create_part name NAME path PATH desc STRING perm OCTAL uid UID gid GID",
+		6,
+		{
+			{ SOS_TYPE_STRING, "name" },
+			{ SOS_TYPE_STRING, "desc" },
+			{ SOS_TYPE_STRING, "path" },
+			{ SOS_TYPE_STRING, "perm" },
+			{ SOS_TYPE_STRING, "user" },
+			{ SOS_TYPE_STRING, "group" },
 		}
 	},
 	[SHOW_PART_CMD] = { "show_part", show_part, "show_part [ name NAME ] [ regex REGEX ]",
@@ -159,6 +174,77 @@ void av_free_args(av_list_t avl)
 	free(avl);
 }
 
+/*
+ * Parse a string into a seriese of tokens. The delimeters are:
+ * whitespace, and '='. Single and double quoted strings may include
+ * the delimiter characters.
+ *
+ * The only error returned is unterminated-string
+ */
+static char *next_token(char *line, int *ppos, int *perr)
+{
+	int pos = *ppos;
+	*perr = 0;
+	char *token;
+
+	/* Skip any initial whitespace */
+	while (isspace(line[pos]))
+		pos++;
+
+	/* Check for end-of-string */
+	if (line[pos] == '\0')
+		return NULL;
+
+	/* Set start of token */
+	token = &line[pos];
+
+	/* Check for dbl-quoted string */
+	if (token[0] == '"') {
+		token++;	/* skip starting quote */
+		pos++;
+		while (line[pos] != '\0' && line[pos] != '"')
+			pos++;
+		if (line[pos] == '\0') {
+			/* Unterminated string */
+			*perr = 1;
+			return NULL;
+		}
+		line[pos] = '\0';	/* terminate token and snip closing quote */
+		pos += 1;
+		*ppos = pos;
+		return token;
+	}
+	/* Check for single-quoted string */
+	if (token[0] == '\'') {
+		token++;	/* skip starting quote */
+		pos++;
+		while (line[pos] != '\0' && line[pos] != '\'')
+			pos++;
+		if (line[pos] == '\0') {
+			/* Unterminated string */
+			*perr = 1;
+			return NULL;
+		}
+		line[pos] = '\0';	/* terminate token and snip closing quote */
+		pos += 1;
+		*ppos = pos;
+		return token;
+	}
+	/* Skip to end of token */
+	while (line[pos] != '\0'
+		&& line[pos] != '='
+		&& !isspace(line[pos]))
+		pos ++;
+	*ppos = pos;
+	if (line[pos] == '\0')
+		/* End of line, return token */
+		return token;
+	/* terminate token */
+	*ppos = *ppos + 1;
+	line[pos] = '\0';
+	return token;
+}
+
 av_list_t av_parse_args(cmd_t cmd, char *args_)
 {
 	char *args = strdup(args_);
@@ -178,7 +264,9 @@ av_list_t av_parse_args(cmd_t cmd, char *args_)
 		free(args);
 		return avlist;
 	}
-	for (token = strtok(args, " ="); token && token[0] != '\0'; token = strtok(NULL, " =")) {
+	int pos = 0;
+	int err = 0;
+	for (token = next_token(args, &pos, &err); NULL != token && err == 0; token = next_token(args, &pos, &err)) {
 		/* Find this 'token' in the argument list */
 		for (arg_id = 0; arg_id < cmd->args_count; arg_id++) {
 			cmd_arg_t arg = &cmd->args[arg_id];
@@ -194,7 +282,7 @@ av_list_t av_parse_args(cmd_t cmd, char *args_)
 				av->value_str = strdup(token);
 				break;
 			}
-			value = strtok(NULL, " =");
+			value = next_token(args, &pos, &err);
 			if (!value) {
 				printf("The token '%s' expects a value.\n", token);
 				goto err;
@@ -562,7 +650,7 @@ int show_schema(cmd_t cmd, av_list_t avl)
 	return 0;
 }
 
-const char *mask_to_str(uint32_t mask)
+static const char *mask_to_str(uint32_t mask)
 {
 	static char s_[16];
 	char *s;
@@ -604,7 +692,8 @@ void print_part_hdr()
 		"-------- -------- -------------\n");
 }
 
-void print_part(dsos_part_t part) {
+void print_part(dsos_part_t part)
+{
 	printf("%-24s %-40s %8d %8d %10s\n",
 		dsos_part_name(part),
 		dsos_part_desc(part),
@@ -684,6 +773,95 @@ int show_part(cmd_t cmd, av_list_t avl)
 	return 0;
 }
 
+int create_part(cmd_t cmd, av_list_t avl)
+{
+	av_t av;
+	dsos_res_t res;
+	char *name;
+	char *desc;
+	char *path;
+	uid_t uid;
+	gid_t gid;
+	int perm;
+
+	if (!g_cont) {
+		printf("You cannot create a partition until you open a container\n");
+		goto err;
+	}
+	av = av_find(avl, "name");
+	if (!av) {
+		printf("The 'name' parameter is required.\n");
+		goto err;
+	}
+	name = av->value_str;
+
+	av = av_find(avl, "desc");
+	if (!av) {
+		printf("The 'desc' parameter is required.\n");
+		goto err;
+	}
+	desc = av->value_str;
+
+	av = av_find(avl, "path");
+	if (!av) {
+		printf("The 'path' parameter is required.\n");
+		goto err;
+	}
+	path = av->value_str;
+
+	struct passwd *pwd;
+	av = av_find(avl, "user");
+	if (!av) {
+		uid = getuid();
+	} else {
+		if (isalpha(av->value_str[0])) {
+			pwd = getpwnam(av->value_str);
+			if (!pwd) {
+				printf("The user name %s was not found\n", av->value_str);
+				goto err;
+			}
+			uid = pwd->pw_uid;
+		} else {
+			uid = strtol(av->value_str, NULL, 0);
+		}
+	}
+
+	struct group *grp;
+	av = av_find(avl, "group");
+	if (!av) {
+		gid = getgid();
+	} else {
+		if (isalpha(av->value_str[0])) {
+			grp = getgrnam(av->value_str);
+			if (!grp) {
+				printf("The group name '%s' was not found\n", av->value_str);
+				goto err;
+			} else {
+				gid = grp->gr_gid;
+			}
+		} else {
+			gid = strtol(av->value_str, NULL, 0);
+		}
+	}
+
+	av = av_find(avl, "perm");
+	if (!av) {
+		perm = 0660;
+	} else {
+		perm = strtol(av->value_str, NULL, 0);
+	}
+	if (perm == 0) {
+		printf("The 'perm' value cannot be 0.\n");
+		goto err;
+	}
+	dsos_part_t part = dsos_part_create(g_cont, name, path, desc, uid, gid, perm);
+	if (!part)
+		printf("Error %d creating the partition. Message: %s\n",
+			dsos_last_err(), dsos_last_errmsg());
+err:
+	return 0;
+}
+
 int create_schema(cmd_t cmd, av_list_t avl)
 {
 	char *template;
@@ -699,7 +877,7 @@ int create_schema(cmd_t cmd, av_list_t avl)
 		return 0;
 	}
 	if (!g_cont) {
-		printf("You cannot create a schema you open a container\n");
+		printf("You cannot create a schema until you open a container\n");
 		goto err;
 	}
 	av = av_find(avl, "name");

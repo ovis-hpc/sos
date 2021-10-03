@@ -472,7 +472,8 @@ ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock);
 void __sos_schema_free(sos_schema_t schema);
 void __sos_part_primary_set(sos_t sos, ods_obj_t part_obj);
 sos_part_t __sos_primary_obj_part(sos_t sos);
-int __sos_part_create(const char *part_path, const char *part_desc, sos_perm_t o_perm, int o_mode);
+int __sos_part_create(const char *part_path, const char *part_desc,
+	sos_perm_t o_perm, int o_mode);
 sos_part_iter_t __sos_part_iter_new(sos_t sos);
 ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj);
 void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj);

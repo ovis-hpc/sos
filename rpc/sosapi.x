@@ -122,7 +122,7 @@ struct dsos_part_spec {
 /* Result for API that return partitions */
 union dsos_part_res switch (int error) {
     case 0:
-        dsos_part_spec spec<>;
+        dsos_part_spec spec;
     default:
         string error_msg<>;
 };
