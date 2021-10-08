@@ -1387,7 +1387,7 @@ size_t __sos_obj_total_size(sos_obj_t obj)
 int sos_obj_commit_part(sos_obj_t obj, sos_part_t part)
 {
 	ods_obj_t ods_obj;
-	enum sos_part_state_e state = sos_part_state(part);
+	enum sos_part_state_e state;
 
 	if (obj->obj->ods)
 		/* Object is already committed */
@@ -1398,7 +1398,7 @@ int sos_obj_commit_part(sos_obj_t obj, sos_part_t part)
 		if (!part)
 			return ENOSPC;
 	}
-  
+   	state = sos_part_state(part);
 	if (!(state == SOS_PART_STATE_PRIMARY || state == SOS_PART_STATE_ACTIVE))
 		return ENOSPC;
 

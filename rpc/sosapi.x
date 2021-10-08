@@ -10,11 +10,11 @@ typedef unsigned long dsos_obj_id;
 typedef unsigned char dsos_obj_value<>;
 
 /* Result for API that return objects */
-union dsos_create_res switch (int error) {
+union dsos_obj_create_res switch (int error) {
     case 0:
         dsos_obj_id obj_id;   /* object handle(s) unique for this session */
     default:
-        void;
+        string error_msg<>;
 };
 
 /* Result for API that return an iterator */
@@ -232,7 +232,7 @@ program SOSDB {
         dsos_obj_list_res ITER_FIND(dsos_container_id, dsos_iter_id) = 48;
 
         /* Object operations */
-        dsos_create_res OBJ_CREATE(dsos_obj_link) = 50;
+        dsos_obj_create_res OBJ_CREATE(dsos_obj_link) = 50;
         int OBJ_DELETE(dsos_container_id, dsos_obj_id) = 51;
 
         /* Query operations */

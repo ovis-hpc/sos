@@ -723,7 +723,7 @@ int dsosql_import_csv(dsos_container_t cont, FILE* fp, char *schema_name, char *
 			}
 			cols++;
 		}
-		dsos_obj_create(cont, schema, obj);
+		dsos_obj_create(cont, NULL, schema, obj);
 		sos_obj_put(obj);
 		if (rc) {
 			printf("Error %d adding object to indices.\n", rc);

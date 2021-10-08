@@ -90,7 +90,7 @@ if __name__ == "__main__":
         try:
             # Create the database
             if args.mode:
-                cont.open(args.path, Sos.PERM_CREAT, o_mode=eval(args.mode))
+                cont.open(args.path, Sos.PERM_CREAT, o_mode=args.mode)
             else:
                 cont.open(args.path, Sos.PERM_CREAT)
         except Exception as ex:

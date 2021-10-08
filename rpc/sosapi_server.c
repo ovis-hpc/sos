@@ -95,7 +95,8 @@ struct dsos_query {
 
 static uint64_t next_handle = 1;
 static inline uint64_t get_next_handle() {
-	return __sync_add_and_fetch(&next_handle, 1);
+	uint64_t maybe = __sync_add_and_fetch(&next_handle, 1);
+	return maybe ? maybe : __sync_add_and_fetch(&next_handle, 1);
 }
 pthread_mutex_t client_tree_lock = PTHREAD_MUTEX_INITIALIZER;
 int64_t handle_comparator(void *a, const void *b, void *arg)
@@ -990,7 +991,7 @@ out_0:
 	return TRUE;
 }
 
-bool_t obj_create_1_svc(dsos_obj_link obj_list, dsos_create_res *res, struct svc_req *req)
+bool_t obj_create_1_svc(dsos_obj_link obj_list, dsos_obj_create_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
@@ -1011,24 +1012,25 @@ bool_t obj_create_1_svc(dsos_obj_link obj_list, dsos_create_res *res, struct svc
 			goto out_1;
 		}
 		clock_gettime(CLOCK_REALTIME, &client->acc_time);
-		sos_obj_t obj = sos_obj_new_with_data(
-						schema->schema,
-						obj_e->value.dsos_obj_value_val,
-						obj_e->value.dsos_obj_value_len);
+		sos_obj_t obj =
+			sos_obj_new_with_data(
+				schema->schema,
+				obj_e->value.dsos_obj_value_val,
+				obj_e->value.dsos_obj_value_len);
 		if (!obj) {
 			res->error = errno;
 			goto out_2;
 		}
 		struct dsos_part *part = NULL;
-		if (obj_e->part_id >= 0)
+		if (obj_e->part_id)
 			part = get_part(client, obj_e->part_id);
-		sos_obj_commit_part(obj, part->part);
+		sos_obj_commit_part(obj, part ? part->part : NULL);
 		put_part(part);
 		sos_obj_index(obj);
 		sos_obj_put(obj);
 		obj_e = obj_e->next;
 		res->error = 0;
-		res->dsos_create_res_u.obj_id = 0; // object->handle;
+		res->dsos_obj_create_res_u.obj_id = 0; // object->handle;
 	}
 out_2:
 	put_schema(schema);

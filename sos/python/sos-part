@@ -268,16 +268,16 @@ if __name__ == "__main__":
                 sys.exit(1)
             part = Sos.Partition()
             part.open(args.path,
-            o_perm = Sos.PERM_RW | Sos.PERM_CREAT,
-            o_mode = args.mode,
-            desc = description, backend = backend)
+                o_perm = Sos.PERM_RW | Sos.PERM_CREAT,
+                o_mode = args.mode,
+                desc = description, backend = backend)
             uid = get_uid(args, os.getuid())
             gid = get_gid(args, os.getgid())
             if args.user or args.group:
                 part.chown(uid, gid)
             perm = 0o660
             if args.perm:
-                perm = eval(args.perm)
+                perm = args.perm
                 part.chmod(perm)
         except Exception as ex:
             print("The partition could not be created.\n{0}".format(ex))

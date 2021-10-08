@@ -19,11 +19,12 @@ typedef struct dsos_completion_s {
 struct dsos_client_s;
 typedef struct dsos_client_s *dsos_client_t;
 typedef struct dsos_client_request_s {
-	TAILQ_ENTRY(dsos_client_request_s) c_link;
-	LIST_ENTRY(dsos_client_request_s) r_link;
+	LIST_ENTRY(dsos_client_request_s) w_link;	/* submit_wait list link */
+	TAILQ_ENTRY(dsos_client_request_s) r_link;	/* request_q link */
+	TAILQ_ENTRY(dsos_client_request_s) x_link;	/* x_queue link */
 	dsos_client_t client;
 	enum clnt_stat rpc_err;
-	dsos_completion_t completion; /* shared among multiple requests */
+	dsos_completion_t completion;			/* shared between multiple requests */
 
 	enum dsos_client_request_type_e {
 		REQ_CONTAINER_OPEN = 1,
@@ -110,9 +111,10 @@ typedef struct dsos_client_request_s {
 			dsos_transaction_res res;
 		} transaction_end;
 
-		struct create_rqst_s {
+		struct obj_create_rqst_s {
 			dsos_container_id cont_id;
 			dsos_obj_entry *obj_entry;
+			dsos_obj_create_res res;
 		} obj_create;
 
 		struct query_create_rqst_s {
@@ -145,23 +147,21 @@ struct dsos_client_s {
 	pthread_mutex_t rpc_lock;
 	int client_id;
 	int shutdown;
-	pthread_t flush_thread;
 	pthread_t request_thread;
 	int queue_depth;
 	double obj_count;
 	double request_count;
+	/* Transaction timestamps */
+	struct timespec x_start;
+	struct timespec x_end;
 	/* General request queue */
 	TAILQ_HEAD(client_request_s, dsos_client_request_s) request_q;
 	pthread_mutex_t request_q_lock;
 	sem_t request_sem;
 	/* Requests queued here between x_start and x_end */
-	pthread_mutex_t queue_lock;
-	pthread_cond_t queue_cond;
-	TAILQ_HEAD(client_req_queue_q, dsos_client_request_s) queue_q;
-	/* Requests flushed from here between x_end and x_start */
-	pthread_mutex_t flush_lock;
-	pthread_cond_t flush_cond;
- 	TAILQ_HEAD(client_req_flush_q, dsos_client_request_s) flush_q;
+	pthread_mutex_t x_queue_lock;
+	pthread_cond_t x_queue_cond;
+	TAILQ_HEAD(client_x_queue_q, dsos_client_request_s) x_queue;
 };
 
 struct dsos_session_s {
@@ -174,6 +174,7 @@ struct dsos_session_s {
 		DISCONNECTED,
 		ERROR
 	} state;
+	pthread_mutex_t lock;	/* Mutex across entire session */
 };
 
 struct dsos_container_s {
@@ -262,12 +263,12 @@ void submit_request(dsos_client_t client, dsos_client_request_t request)
 {
 	__sync_fetch_and_add(&request->completion->count, 1);
 	pthread_mutex_lock(&client->request_q_lock);
-	TAILQ_INSERT_TAIL(&client->request_q, request, c_link);
+	TAILQ_INSERT_TAIL(&client->request_q, request, r_link);
 	pthread_mutex_unlock(&client->request_q_lock);
 	sem_post(&client->request_sem);
 }
 
-LIST_HEAD(dsos_request_list_s, dsos_client_request_s);
+LIST_HEAD(dsos_wait_list_s, dsos_client_request_s);
 
 typedef int (*dsos_request_completion_fn_t)
 (dsos_client_t client, dsos_client_request_t request, dsos_res_t *res);
@@ -379,7 +380,7 @@ int submit_wait(dsos_session_t sess, uint64_t client_mask,
 {
 	int client_id;
 	va_list ap;
-	struct dsos_request_list_s request_list;
+	struct dsos_wait_list_s wait_list;
 	dsos_client_request_t request;
 
 	/* All clients share the same completion */
@@ -391,7 +392,7 @@ int submit_wait(dsos_session_t sess, uint64_t client_mask,
 	pthread_mutex_init(&completion->lock, NULL);
 	pthread_cond_init(&completion->cond, NULL);
 
-	LIST_INIT(&request_list);
+	LIST_INIT(&wait_list);
 
 	for (client_id = 0; client_id < sess->client_count; client_id++) {
 		if (0 == ((1L << client_id) & client_mask))
@@ -410,14 +411,14 @@ int submit_wait(dsos_session_t sess, uint64_t client_mask,
 		format_request_va(request, ap);
 		va_end(ap);
 
-		LIST_INSERT_HEAD(&request_list, request, r_link);
+		LIST_INSERT_HEAD(&wait_list, request, w_link);
 	}
 	va_end(ap);
 
-	LIST_FOREACH(request, &request_list, r_link) {
+	LIST_FOREACH(request, &wait_list, w_link) {
 		__sync_fetch_and_add(&request->completion->count, 1);
 		pthread_mutex_lock(&request->client->request_q_lock);
-		TAILQ_INSERT_TAIL(&request->client->request_q, request, c_link);
+		TAILQ_INSERT_TAIL(&request->client->request_q, request, r_link);
 		pthread_mutex_unlock(&request->client->request_q_lock);
 		sem_post(&request->client->request_sem);
 	}
@@ -430,9 +431,9 @@ int submit_wait(dsos_session_t sess, uint64_t client_mask,
 
 	int rc = 0;
 	dsos_res_init(sess, pres);
-	while (!LIST_EMPTY(&request_list)) {
-		request = LIST_FIRST(&request_list);
-		LIST_REMOVE(request, r_link);
+	while (!LIST_EMPTY(&wait_list)) {
+		request = LIST_FIRST(&wait_list);
+		LIST_REMOVE(request, w_link);
 
 		complete_fn(request->client, request, pres);
 
@@ -441,9 +442,9 @@ int submit_wait(dsos_session_t sess, uint64_t client_mask,
 	return pres->any_err;
  err_0:
 	free(completion);
-	while (!LIST_EMPTY(&request_list)) {
-		request = LIST_FIRST(&request_list);
-		LIST_REMOVE(request, r_link);
+	while (!LIST_EMPTY(&wait_list)) {
+		request = LIST_FIRST(&wait_list);
+		LIST_REMOVE(request, w_link);
 		free(request);
 	}
 	return ENOMEM;
@@ -472,7 +473,6 @@ static int handle_obj_create(dsos_client_t client, dsos_client_request_t rqst)
 	free(rqst);
 	return create_res.error;
 }
-#endif
 
 /*
  * Processes the flush queue for a DSOS RPC client
@@ -498,11 +498,10 @@ next:
 				rc, client->client_id);
 	}
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-#if 0
 	while (!TAILQ_EMPTY(&client->flush_q)) {
 		dsos_container_id cont_id;
 		rqst = TAILQ_FIRST(&client->flush_q);
-		TAILQ_REMOVE(&client->flush_q, rqst, c_link);
+		TAILQ_REMOVE(&client->flush_q, rqst, r_link);
 		client->queue_depth -= 1;
 
 		switch (rqst->kind) {
@@ -538,18 +537,73 @@ next:
 			}
 		}
 	}
-#endif
 	pthread_mutex_unlock(&client->flush_lock);
 	goto next;
 
 	return NULL;
 }
+#endif
 
 static int send_request(dsos_client_t client, dsos_client_request_t rqst)
 {
 	const char *op_name;
 	const char *err_msg;
 	switch (rqst->kind) {
+	case REQ_OBJ_CREATE:
+		memset(&rqst->obj_create.res, 0, sizeof(rqst->obj_create.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err =
+			obj_create_1(
+				rqst->obj_create.obj_entry,
+				&rqst->obj_create.res,
+				client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "obj_create_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->obj_create.res.error) {
+			g_last_err = rqst->obj_create.res.error;
+			err_msg = rqst->obj_create.res.dsos_obj_create_res_u.error_msg;
+			goto op_err;
+		}
+		break;
+	case REQ_TRANSACTION_BEGIN:
+		memset(&rqst->transaction_begin.res, 0, sizeof(rqst->transaction_begin.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err =
+			transaction_begin_1(
+				rqst->transaction_begin.cont->handles[client->client_id],
+				rqst->transaction_begin.timeout,
+				&rqst->transaction_begin.res,
+				client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "transaction_begin_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->transaction_begin.res.error) {
+			g_last_err = rqst->transaction_begin.res.error;
+			err_msg = rqst->transaction_begin.res.dsos_transaction_res_u.error_msg;
+			goto op_err;
+		}
+		break;
+	case REQ_TRANSACTION_END:
+		memset(&rqst->transaction_end.res, 0, sizeof(rqst->transaction_end.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err =
+			transaction_end_1(
+				rqst->transaction_end.cont->handles[client->client_id],
+				&rqst->transaction_end.res,
+				client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "transaction_end_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->transaction_end.res.error) {
+			g_last_err = rqst->transaction_end.res.error;
+			err_msg = rqst->transaction_end.res.dsos_transaction_res_u.error_msg;
+			goto op_err;
+		}
+		break;
 	case REQ_SCHEMA_BY_NAME:
 		memset(&rqst->schema_by_name.res, 0, sizeof(rqst->schema_by_name.res));
 		pthread_mutex_lock(&client->rpc_lock);
@@ -761,25 +815,6 @@ static int send_request(dsos_client_t client, dsos_client_request_t rqst)
 			goto op_err;
 		}
 		break;
-	case REQ_TRANSACTION_BEGIN:
-		memset(&rqst->transaction_begin.res, 0, sizeof(rqst->transaction_begin.res));
-		pthread_mutex_lock(&client->rpc_lock);
-		rqst->rpc_err =
-			transaction_begin_1(
-				rqst->transaction_begin.cont->handles[client->client_id],
-				rqst->transaction_begin.timeout,
-				&rqst->transaction_begin.res,
-				client->client);
-		pthread_mutex_unlock(&client->rpc_lock);
-		op_name = "transaction_begin_1";
-		if (rqst->rpc_err != RPC_SUCCESS)
-			goto rpc_err;
-		if (rqst->transaction_begin.res.error) {
-			g_last_err = rqst->transaction_begin.res.error;
-			err_msg = rqst->transaction_begin.res.dsos_transaction_res_u.error_msg;
-			goto op_err;
-		}
-		break;
 	default:
 		assert(0 == "Invalid request");
 	}
@@ -806,7 +841,7 @@ next:
 	pthread_mutex_lock(&client->request_q_lock);
 	while (!TAILQ_EMPTY(&client->request_q)) {
 		rqst = TAILQ_FIRST(&client->request_q);
-		TAILQ_REMOVE(&client->request_q, rqst, c_link);
+		TAILQ_REMOVE(&client->request_q, rqst, r_link);
 		pthread_mutex_unlock(&client->request_q_lock);
 		/* send the request to the client */
 		rc = send_request(client, rqst);
@@ -833,7 +868,7 @@ void dsos_session_close(dsos_session_t sess)
 	for (client_id = 0; client_id < sess->client_count; client_id ++) {
 		client = &sess->clients[client_id];
 		void *dontcare;
-		pthread_join(client->flush_thread, &dontcare);
+		pthread_join(client->request_thread, &dontcare);
 		auth_destroy(client->client->cl_auth);
 		clnt_destroy(client->client);
 	}
@@ -845,6 +880,7 @@ dsos_session_t dsos_session_open(const char *config_file)
 	char hostname[256];
 	char *s;
 	int i;
+	int rc;
 	int host_count;
 	FILE* f = fopen(config_file, "r");
 	if (!f)
@@ -898,23 +934,15 @@ dsos_session_t dsos_session_open(const char *config_file)
 		TAILQ_INIT(&client->request_q);
 		pthread_mutex_init(&client->request_q_lock, NULL);
 		sem_init(&client->request_sem, 0, 0);
-		TAILQ_INIT(&client->queue_q);
-		TAILQ_INIT(&client->flush_q);
-		pthread_mutex_init(&client->queue_lock, NULL);
-		pthread_cond_init(&client->queue_cond, NULL);
-		pthread_mutex_init(&client->queue_lock, NULL);
-		pthread_cond_init(&client->flush_cond, NULL);
-		int rc = pthread_create(&client->flush_thread, NULL, flush_proc_fn, client);
-		if (rc) {
-			return NULL;
-		}
+		TAILQ_INIT(&client->x_queue);
+		pthread_mutex_init(&client->x_queue_lock, NULL);
+		pthread_cond_init(&client->x_queue_cond, NULL);
 		rc = pthread_create(&client->request_thread, NULL, request_proc_fn, client);
-		if (rc) {
+		if (rc)
 			return NULL;
-		}
 		char thread_name[16];
 		sprintf(thread_name, "client:%d", i);
-		pthread_setname_np(client->flush_thread, thread_name);
+		pthread_setname_np(client->request_thread, thread_name);
 	}
 
 	session->next_client = 0;
@@ -961,7 +989,7 @@ dsos_container_open(
 	dsos_container_t cont = calloc(1, sizeof *cont + sess->client_count * sizeof(int *));
 	if (!cont)
 		return NULL;
-
+	pthread_mutex_init(&sess->lock, NULL);
 	cont->sess = sess;
 	cont->handle_count = sess->client_count;
 	cont->path = strdup(path);
@@ -1519,23 +1547,17 @@ sos_part_state_t dsos_part_state(dsos_part_t part)
 	return part->spec->state;
 }
 
-static int
-transaction_begin_complete_fn(dsos_client_t client,
-		   dsos_client_request_t request,
-		   dsos_res_t *res)
+/*
+ * Returns TRUE if the timespec is not zero
+ */
+static int x_active(struct timespec *ts)
 {
-	enum dsos_error derr;
-	struct dsos_transaction_res *tres =
-		&request->transaction_begin.res;
+	return ts->tv_sec || ts->tv_nsec;
+}
 
-	if (request->rpc_err) {
-		res->any_err = RPC_ERROR(request->rpc_err);
-		res->res[request->client->client_id] = res->any_err;
-	} else if (request->open.res.error) {
-		res->any_err = request->open.res.error;
-		res->res[request->client->client_id] = res->any_err;
-	}
-	return 0;
+static void x_clear(struct timespec *ts)
+{
+	ts->tv_sec = ts->tv_nsec = 0;
 }
 
 /**
@@ -1545,11 +1567,7 @@ transaction_begin_complete_fn(dsos_client_t client,
  * When a trnasaction is open, another client attempting to begin
  * a transaction will block and wait. This allows for reader/writer
  * and writer/writer clients on the same machine to maintain a
- * consistent view of the data n the container.
- *
- * The SOS MMOS backend does not require the use of transactions as the
- * virtual memory hardware maintains consistency across clients on the
- * same machine.
+ * consistent view of the data in the container.
  *
  * In all cases, DSOS maintains data consistency between storage
  * servers.
@@ -1567,27 +1585,31 @@ transaction_begin_complete_fn(dsos_client_t client,
  */
 int dsos_transaction_begin(dsos_container_t cont, struct timeval *timeout)
 {
-	dsos_timeval tv;
-	dsos_res_t res;
-	if (timeout) {
-		tv.tv_sec = timeout->tv_sec;
-		tv.tv_usec = timeout->tv_usec;
-	} else {
-		tv.tv_sec = 0;
-		tv.tv_usec = 0;
+	int client_id;
+	int rc = 0;
+	dsos_session_t sess = cont->sess;
+	struct timespec now;
+	(void)clock_gettime(CLOCK_REALTIME, &now);
+
+	pthread_mutex_lock(&sess->lock);
+	/* Check if any client is in a transaction and error if so */
+	for (client_id = 0; client_id < sess->client_count; client_id++) {
+		if (x_active(&sess->clients[client_id].x_start)) {
+			rc = EBUSY;
+			goto out;
+		}
 	}
-	dsos_res_init(cont->sess, &res);
-	int rc =
-		submit_wait(cont->sess, -1,
-			transaction_begin_complete_fn, &res,
-			    REQ_TRANSACTION_BEGIN, cont, tv);
-	if (rc)
-		return rc;
-	return res.any_err;
+	/* Start the transaction on each client */
+	for (client_id = 0; client_id < sess->client_count; client_id++) {
+		sess->clients[client_id].x_start = now;
+	}
+out:
+	pthread_mutex_unlock(&sess->lock);
+	return rc;
 }
 
 static int
-transaction_end_complete_fn(dsos_client_t client,
+transaction_begin_complete_fn(dsos_client_t client,
 		   dsos_client_request_t request,
 		   dsos_res_t *res)
 {
@@ -1598,75 +1620,135 @@ transaction_end_complete_fn(dsos_client_t client,
 	if (request->rpc_err) {
 		res->any_err = RPC_ERROR(request->rpc_err);
 		res->res[request->client->client_id] = res->any_err;
-	} else if (request->open.res.error) {
-		res->any_err = request->open.res.error;
+	} else if (request->transaction_begin.res.error) {
+		res->any_err = request->transaction_begin.res.error;
 		res->res[request->client->client_id] = res->any_err;
 	}
 	return 0;
 }
 
+
+static int
+transaction_end_complete_fn(dsos_client_t client,
+		   dsos_client_request_t request,
+		   dsos_res_t *res)
+{
+	enum dsos_error derr;
+	struct dsos_transaction_res *tres =
+		&request->transaction_end.res;
+
+	if (request->rpc_err) {
+		res->any_err = RPC_ERROR(request->rpc_err);
+		res->res[request->client->client_id] = res->any_err;
+	} else if (request->transaction_end.res.error) {
+		res->any_err = request->transaction_end.res.error;
+		res->res[request->client->client_id] = res->any_err;
+	}
+	return 0;
+}
+
+/**
+ * @brief dsos_transaction_end
+ *
+ * Submits all queued requests and returns when all requests have completed.
+ *
+ * @param cont
+ * @return int
+ */
 int dsos_transaction_end(dsos_container_t cont)
 {
 	dsos_res_t res;
-	dsos_res_init(cont->sess, &res);
-	int rc =
-		submit_wait(cont->sess, -1,
+	dsos_session_t sess = cont->sess;
+	dsos_client_t client;
+	dsos_client_request_t rqst;
+	int client_id;
+	int rc;
+	struct timespec x_end;
+
+	pthread_mutex_lock(&sess->lock);
+
+	/* Tell the server that we're starting a transaction */
+	dsos_res_init(sess, &res);
+	rc = submit_wait(cont->sess, -1, transaction_begin_complete_fn, &res,
+			REQ_TRANSACTION_BEGIN, cont);
+	if (rc)
+		goto out;
+	/* Move all the queued requests to the request queue */
+	for (client_id = 0; client_id < sess->client_count; client_id++) {
+		client = &sess->clients[client_id];
+		pthread_mutex_lock(&client->request_q_lock);
+		while (!TAILQ_EMPTY(&client->x_queue)) {
+			rqst = TAILQ_FIRST(&client->x_queue);
+			TAILQ_REMOVE(&client->x_queue, rqst, x_link);
+			TAILQ_INSERT_TAIL(&client->request_q, rqst, r_link);
+		}
+		pthread_mutex_unlock(&client->request_q_lock);
+	}
+	/*
+	 * Tell the client threads to flush their request queues and wait
+	 * for the result
+	 */
+	dsos_res_init(sess, &res);
+	rc = submit_wait(cont->sess, -1,
 			transaction_end_complete_fn, &res,
 			    REQ_TRANSACTION_END, cont);
-	if (rc)
-		return rc;
-	return res.any_err;
-}
-
-#if 0
-void dsos_transaction_end(dsos_container_t cont, dsos_res_t *res)
-{
-	dsos_client_t client;
-	int i;
-	dsos_client_request_t rqst;
-	dsos_res_init(cont->sess, res);
-
-	for (i = 0; i < cont->handle_count; i++) {
-		/* Move all requests to the flush_q */
-		client = &cont->sess->clients[i];
-		pthread_mutex_lock(&client->queue_lock);
-		pthread_mutex_lock(&client->flush_lock);
-		while (!TAILQ_EMPTY(&client->queue_q)) {
-			rqst = TAILQ_FIRST(&client->queue_q);
-			TAILQ_REMOVE(&client->queue_q, rqst, c_link);
-			TAILQ_INSERT_TAIL(&client->flush_q, rqst, c_link);
-			// fprintf(stderr, "%s: moved rqst %p to flush_q on client %d\n", __func__, rqst, i);
-		}
-		pthread_mutex_unlock(&client->flush_lock);
-		pthread_mutex_unlock(&client->queue_lock);
-		/* Kick the client thread */
-		pthread_cond_signal(&client->flush_cond);
+	(void)clock_gettime(CLOCK_REALTIME, &x_end);
+	for (client_id = 0; client_id < sess->client_count; client_id++) {
+		client = &sess->clients[client_id];
+		client->x_end = x_end;
+		x_clear(&client->x_start);
 	}
+out:
+	pthread_mutex_unlock(&sess->lock);
+	return rc;
 }
-#endif
 
 sos_obj_t dsos_obj_new(dsos_schema_t schema)
 {
 	return sos_obj_malloc(schema->schema);
 }
 
-void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj)
+/**
+ * @brief Create a DSOS object
+ *
+ * This creates an instance of the local sos_obj_t on the
+ * cluster. The caller must have previously started a
+ * transaction to call this function.
+ *
+ * When the caller calls dsos_transaction_end() all outstanding
+ * object creates will be flushed to the storage servers.
+ *
+ * @param cont	  The container handle
+ * @param part	  The partition handle. If NULL, the object will be created
+ * 		  in the primary partition
+ * @param schema  The object schema
+ * @param obj	  The local SOS object
+ * @return ENOMEM	There was insufficent local memory to create the object
+ * @return 0		The object is queued for creation
+ */
+int dsos_obj_create(dsos_container_t cont, dsos_part_t part, dsos_schema_t schema, sos_obj_t obj)
 {
-#if 0
 	dsos_obj_entry *obj_e;
 	dsos_client_t client;
 	int client_id;
+	int rc = 0;
 	dsos_container_id cont_id;
-	dsos_res_init(cont->sess, res);
+	dsos_part_id part_id;
 
 	client_id = __sync_fetch_and_add(&cont->sess->next_client, 1) % cont->sess->client_count;
 	client = &cont->sess->clients[client_id];
 	cont_id = cont->handles[client_id];
+	if (part) {
+		part_id = part->handles[client_id];
+	} else {
+		part_id = -1;
+	}
 	obj_e = malloc(sizeof *obj_e);
 	if (!obj_e)
 		goto enomem;
 
-	obj_e->cont_id = cont->handles[client_id];
+	obj_e->cont_id = cont_id;
+	obj_e->part_id = part_id;
 	obj_e->schema_id = schema->handles[client_id];
 	size_t obj_sz = sos_obj_size(obj);
 	obj_e->value.dsos_obj_value_len = obj_sz;
@@ -1674,8 +1756,8 @@ void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj)
 	memcpy(obj_e->value.dsos_obj_value_val, sos_obj_ptr(obj), obj_sz);
 	obj_e->next = NULL;
 
-	pthread_mutex_lock(&client->queue_lock);
-	dsos_client_request_t rqst = TAILQ_LAST(&client->queue_q, client_req_queue_q);
+	pthread_mutex_lock(&client->x_queue_lock);
+	dsos_client_request_t rqst = TAILQ_LAST(&client->x_queue, client_x_queue_q);
 	/*
 	 * If there is already an obj create request on the queue, add
 	 * this object to the object list for that request
@@ -1685,22 +1767,28 @@ void dsos_obj_create(dsos_container_t cont, dsos_schema_t schema, sos_obj_t obj)
 		obj_e->next = rqst->obj_create.obj_entry;
 		rqst->obj_create.obj_entry = obj_e;
 	} else {
+		dsos_completion_t completion = malloc(sizeof *completion);
+		if (!completion)
+			goto enomem;
+		completion->count = 0;
+		pthread_mutex_init(&completion->lock, NULL);
+		pthread_cond_init(&completion->cond, NULL);
+
 		rqst = malloc(sizeof *rqst);
+		if (!rqst) {
+			free(completion);
+			goto enomem;
+		}
+		rqst->completion = completion;
 		rqst->obj_create.cont_id = cont->handles[client_id];
 		rqst->kind = REQ_OBJ_CREATE;
 		rqst->obj_create.obj_entry = obj_e;
-		TAILQ_INSERT_TAIL(&client->queue_q, rqst, c_link);
+		TAILQ_INSERT_TAIL(&client->x_queue, rqst, x_link);
 		client->request_count += 1.0;
 	}
-	pthread_mutex_unlock(&client->queue_lock);
-	pthread_cond_broadcast(&client->queue_cond);
-	return;
-
+	pthread_mutex_unlock(&client->x_queue_lock);
 enomem:
-	res->any_err = errno;
-	res->res[client_id] = errno;
-#endif
-	return;
+	return rc;
 }
 
 static int64_t key_comparator(void *a, const void *b, void *arg)

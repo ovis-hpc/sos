@@ -822,8 +822,8 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	int o_mode;
 	int need_part = 0;
 	va_list ap;
-	uid_t euid = 0;
-	gid_t egid = 0;
+	uid_t euid = geteuid();
+	gid_t egid = getegid();
 
 	va_start(ap, o_perm);
 	if (o_perm & SOS_PERM_CREAT) {

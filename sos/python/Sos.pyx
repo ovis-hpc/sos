@@ -970,6 +970,8 @@ cdef class Partition(SosObject):
 
     def __init__(self):
         self.c_part = NULL
+        self.path_ = None
+        self.desc_ = None
 
     cdef assign(self, sos_part_t c_part):
         self.c_part = c_part
@@ -1056,7 +1058,7 @@ cdef class Partition(SosObject):
         if c_rc != 0:
             self.abort(c_rc)
 
-    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, desc="", backend=SOS_BE_MMOS):
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, desc=None, backend=SOS_BE_MMOS):
         """Open the partition at path
 
         Positional Arguments:
@@ -1074,12 +1076,15 @@ cdef class Partition(SosObject):
         cdef int c_mode
         cdef sos_part_t c_part
         self.path_ = path
-        self.desc_ = desc
+        if desc is None:
+            self.desc_ = "".encode()
+        else:
+            self.desc_ = desc.encode()
         c_mode = o_mode
         c_perm = o_perm
         if backend == BE_LSOS:
             c_perm |= SOS_BE_LSOS
-        c_part = sos_part_open(path.encode(), c_perm, o_mode, desc.encode())
+        c_part = sos_part_open(path.encode(), c_perm, o_mode, self.desc_)
         if c_part == NULL:
             self.abort(errno)
         self.c_part = c_part;
@@ -1403,6 +1408,11 @@ cdef class Schema(SosObject):
         elif type(attr_id) == str:
             return Attr(self, attr_name=attr_id)
         raise ValueError("The index must be a string or an integer.")
+
+    def index_add(self, attr):
+        rc = sos_schema_index_add(self.c_schema, attr['name'].encode())
+        if rc != 0:
+            self.abort(rc)
 
     def __str__(self):
         cdef int i
