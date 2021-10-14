@@ -654,12 +654,12 @@ static const char *mask_to_str(uint32_t mask)
 {
 	static char s_[16];
 	char *s;
- 	static struct xlat_perm_s {
+	static struct xlat_perm_s {
 		 int bit;
 		 char c;
 	} translate[] = {
 		{ 0001, 'x' },
-        	{ 0002, 'w' },
+		{ 0002, 'w' },
 		{ 0004, 'r' },
 		{ 0010, 'x' },
 		{ 0020, 'w' },
@@ -674,7 +674,7 @@ static const char *mask_to_str(uint32_t mask)
 	for (i = (sizeof(translate)/sizeof(translate[0])); i; i--) {
 		x = &translate[i];
 		if (0 != (x->bit & mask))
-                	*s = x->c;
+			*s = x->c;
 		else
 			*s = '-';
 		s++;
