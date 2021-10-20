@@ -704,21 +704,23 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_BYTE_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		val->data = malloc(count);
+		size = sizeof(val->data->array) + count;
+		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, count);
 		break;
 	case SOS_TYPE_STRING:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		val->data = malloc(count);
+		size = sizeof(val->data->array) + count;
+		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, count);
 		break;
 	case SOS_TYPE_INT16_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		size = count * sizeof(int16_t);
+		size = sizeof(val->data->array) + count * sizeof(int16_t);
 		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, size);
@@ -726,7 +728,7 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_INT32_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		size = count * sizeof(int32_t);
+		size = sizeof(val->data->array) + count * sizeof(int32_t);
 		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, size);
@@ -734,7 +736,7 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_INT64_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		size = count * sizeof(int64_t);
+		size = sizeof(val->data->array) + count * sizeof(int64_t);
 		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, size);
@@ -742,7 +744,7 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_UINT16_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		size = count * sizeof(uint16_t);
+		size = sizeof(val->data->array) + count * sizeof(uint16_t);
 		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, size);
@@ -750,7 +752,7 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_UINT32_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		size = count * sizeof(uint32_t);
+		size = sizeof(val->data->array) + count * sizeof(uint32_t);
 		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, size);
@@ -758,7 +760,7 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_UINT64_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		size = count * sizeof(uint64_t);
+		size = sizeof(val->data->array) + count * sizeof(uint64_t);
 		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, size);
@@ -766,7 +768,7 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_FLOAT_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		size = count * sizeof(float);
+		size = sizeof(val->data->array) + count * sizeof(float);
 		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, size);
@@ -774,7 +776,7 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_DOUBLE_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		size = count * sizeof(double);
+		size = sizeof(val->data->array) + count * sizeof(double);
 		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, size);
@@ -782,7 +784,7 @@ sos_value_t sos_value_init_const(sos_value_t val, sos_type_t type, ...)
 	case SOS_TYPE_LONG_DOUBLE_ARRAY:
 		count = va_arg(ap, int);
 		data =  va_arg(ap, char *);
-		size = count * sizeof(long double);
+		size = sizeof(val->data->array) + count * sizeof(long double);
 		val->data = malloc(size);
 		val->data->array.count = count;
 		memcpy(val->data->array.data.byte_, data, size);
