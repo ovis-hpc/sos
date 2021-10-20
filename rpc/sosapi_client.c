@@ -1187,10 +1187,10 @@ schema_query_complete_fn(dsos_client_t client,
 		names = calloc(1, sizeof(*names));
 		if (!names)
 			goto out;
-		names->names = calloc(1, sizeof(char *));
+		names->count = qres->dsos_schema_query_res_u.names.names_len;
+		names->names = calloc(names->count, sizeof(char *));
 		if (!names->names)
 			goto out;
-		names->count = qres->dsos_schema_query_res_u.names.names_len;
 		for (i = 0; i < names->count; i++) {
 			names->names[i] =
 				strdup(qres->dsos_schema_query_res_u.names.names_val[i]);
