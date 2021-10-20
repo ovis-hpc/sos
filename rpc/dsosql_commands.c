@@ -848,6 +848,10 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 	sos_obj_t obj;
 	struct col_s *col;
 	int rec_count;
+	if (!query) {
+		printf("%s\n", dsos_last_errmsg());
+		return dsos_last_err();
+	}
 	int rc = dsos_query_select(query, select_clause);
 	if (rc) {
 		printf("Error %d: \"%s\"\n", rc, dsos_last_errmsg());

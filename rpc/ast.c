@@ -1094,6 +1094,19 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 		break;
 	}
 
+	/* If the lhs and rhs are 'strings', normalize the '\0' */
+	if (SOS_TYPE_STRING == lhs->type) {
+		if (lhs->obj) {
+			char *s = sos_array_data(lhs, char_);
+			size_t slen = sos_array_count(lhs);
+			if (s[slen-1] != '\0' && NULL == rhs->obj) {
+				size_t tlen = sos_array_count(rhs);
+				char *t = sos_array_data(rhs, char_);
+				if (t[tlen-1] == '\0')
+					rhs->data->array.count -= 1;
+			}
+		}
+	}
 	int rc = sos_value_cmp(lhs, rhs);
 	if (lhs->obj)
 		sos_value_put(lhs);
