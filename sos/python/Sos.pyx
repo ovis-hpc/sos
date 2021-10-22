@@ -1397,7 +1397,8 @@ cdef class Schema(SosObject):
         """Returns the unique schema id encoded as a byte array"""
         cdef uuid_t c_uuid
         sos_schema_uuid(self.c_schema, c_uuid)
-        return uuid.UUID(bytes=c_uuid)
+        pyobj = c_uuid
+        return uuid.UUID(bytes=pyobj[0:16])
 
     def name(self):
         """Returns the name of the schema"""
