@@ -473,7 +473,7 @@ static char *obj_array_to_str_fn(sos_value_t v, char *str, size_t len)
 				break;
 		}
 		sos_obj_ref_str_t ref_str;
-		count = snprintf(p, len, sos_obj_ref_to_str(v->data->array.data.ref_[i], ref_str));
+		count = snprintf(p, len, "%s", sos_obj_ref_to_str(v->data->array.data.ref_[i], ref_str));
 		if (count > len)
 			break;
 		p += count; len -= count;

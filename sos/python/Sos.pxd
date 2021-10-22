@@ -241,7 +241,7 @@ cdef extern from "ods/ods.h":
         ods_obj_type_u as
 
 cdef extern from "uuid/uuid.h":
-    ctypedef char uuid_t[16];
+    ctypedef unsigned char uuid_t[16];
     void uuid_unparse(uuid_t, char *)
 
 cdef extern from "sos/sos.h":

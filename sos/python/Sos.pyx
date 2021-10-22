@@ -1201,31 +1201,29 @@ cdef class Schema(SosObject):
     def from_template(self, name, template):
         """Create a schema from a template specification
 
-        The template parameter is a python array of attribute
-        definitions. An attribute definition is a Python dictionary
-        object as follows:
+        The template parameter defines a SOS schema. The format is
+        as follows:
 
         {
-            "name" : "<attr-name>"",
+          "name" : "<schema-name>",
+          "uuid" : "<uuid>",
+          "attrs" : [ <attr-def ]
+        }
+
+        The <schema-name> must be unique within the container. The
+        <uuid> is a globally unique identifier for the schema. The
+        uuidgen command can be used to generate these values. Each
+        <attr-def> is a dictionary defining a SOS schema attribute as
+        follows:
+
+        {
+            "name" : "<attr-name>",
             "type" : "<attr-type>",
             "index" : { "type": "<idx-type>", },
             "join_attrs" : [ "<attr-name>", "<attr-name>", ... ]
         }
 
-        For example:
-
-        [
-            { "uuid" : ""}
-            { "name" : "timestamp", "type" : "timestamp", "index" : {} },
-            { "name" : "component_id", "type" : "uint64" },
-            { "name" : "flits", "type" : "double" },
-            { "name" : "stalls", "type" : "double" },
-            { "name" : "comp_time", "type" : "join",
-              "join_attrs" : [ "component_id", "timestamp" ],
-              "index" : {} }
-        ]
-
-        The name entry specifies the name of the attribute in the
+        The <attr-name> entry specifies the name of the attribute in the
         schema and must be unique within the schema.  The valid type
         names are as follows:
             - "INT16"
@@ -1266,6 +1264,23 @@ cdef class Schema(SosObject):
         dictionary object argument to the index attribute specifies
         optional features of the index. If it is empty, i.e. {}, the
         defaults are used for the index.
+
+        An example template:
+
+        {
+          "name" : "papi-flits-stalls",
+          "uuid" : "579be18a-a4c5-4dca-b541-5d813e8c15b3",
+          "attrs" : [
+            { "name" : "timestamp", "type" : "timestamp", "index" : {} },
+            { "name" : "component_id", "type" : "uint64" },
+            { "name" : "flits", "type" : "double" },
+            { "name" : "stalls", "type" : "double" },
+            { "name" : "comp_time", "type" : "join",
+              "join_attrs" : [ "component_id", "timestamp" ],
+              "index" : {}
+            }
+          ]
+        }
 
         Positional Arguments:
         -- The schema name

@@ -941,7 +941,7 @@ dsos_session_t dsos_session_open(const char *config_file)
 		if (rc)
 			return NULL;
 		char thread_name[16];
-		sprintf(thread_name, "client:%d", i);
+		snprintf(thread_name, sizeof(thread_name), "client:%d", i);
 		pthread_setname_np(client->request_thread, thread_name);
 	}
 
@@ -1200,7 +1200,7 @@ schema_query_complete_fn(dsos_client_t client,
 			 dsos_res_t *res)
 {
 	int i;
-	dsos_name_array_t names;
+	dsos_name_array_t names = NULL;
 	enum dsos_error derr = 0;
 	struct dsos_schema_query_res *qres =
 			&request->schema_query.res;
@@ -1452,7 +1452,7 @@ part_query_complete_fn(dsos_client_t client,
 			dsos_res_t *res)
 {
 	int i;
-	dsos_name_array_t names;
+	dsos_name_array_t names = NULL;
 	enum dsos_error derr = 0;
 	struct dsos_part_query_res *qres =
 			&request->part_query.res;

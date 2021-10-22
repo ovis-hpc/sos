@@ -1036,7 +1036,7 @@ int main(int argc, char *argv[])
 			open_file = strdup(optarg);
 			break;
 		case 'h':
-			snprintf(history_path, sizeof(history_path), optarg);
+			snprintf(history_path, sizeof(history_path), "%s", optarg);
 			break;
 		default:
 			usage(argc, argv);
