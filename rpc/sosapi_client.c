@@ -1627,7 +1627,6 @@ transaction_begin_complete_fn(dsos_client_t client,
 	return 0;
 }
 
-
 static int
 transaction_end_complete_fn(dsos_client_t client,
 		   dsos_client_request_t request,

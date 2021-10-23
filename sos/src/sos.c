@@ -742,6 +742,7 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 		part = TAILQ_FIRST(&sos->part_list);
 		TAILQ_REMOVE(&sos->part_list, part, entry);
 		sos_ref_put(&part->ref_count, "part_list");
+		sos_ref_put(&part->ref_count, "__sos_part_open");
 	}
 	if (sos->part_ref_udata)
 		ods_obj_put(sos->part_ref_udata);

@@ -243,6 +243,7 @@ cdef extern from "ods/ods.h":
 cdef extern from "uuid/uuid.h":
     ctypedef unsigned char uuid_t[16];
     void uuid_unparse(uuid_t, char *)
+    void uuid_parse(char *, uuid_t)
 
 cdef extern from "sos/sos.h":
 
@@ -457,6 +458,7 @@ cdef extern from "sos/sos.h":
     sos_config_t sos_config_next(sos_config_iter_t iter)
     void sos_config_print(const char *path, FILE *fp)
 
+    sos_schema_t sos_schema_create(const char *name, uuid_t uuid)
     sos_schema_t sos_schema_new(const char *name)
     void sos_schema_free(sos_schema_t schema)
     sos_schema_t sos_schema_dup(sos_schema_t schema)

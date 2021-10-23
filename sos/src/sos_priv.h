@@ -158,6 +158,7 @@ struct sos_part_s {
 	ods_obj_t udata_obj;	/* sos_part_udata_s object */
 	ods_t obj_ods;		/* ODS where objects are stored */
 	TAILQ_ENTRY(sos_part_s) entry;
+	struct ods_rbn rbn;	/* Key is ref_obj->path */
 };
 
 struct sos_part_iter_s {

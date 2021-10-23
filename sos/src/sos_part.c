@@ -171,11 +171,20 @@
 #include <uuid/uuid.h>
 #include <pwd.h>
 #include <grp.h>
+#include <pthread.h>
 
 #include <sos/sos.h>
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
+
+int64_t part_comparator(void *a, const void *b, void *arg)
+{
+	return strcmp(a, b);
+}
+
+struct ods_rbt part_tree = ODS_RBT_INITIALIZER(part_comparator);
+pthread_mutex_t part_tree_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static sos_part_t __sos_part_by_name(sos_t sos, const char *name);
 static sos_part_t __sos_part_by_path(sos_t sos, const char *path);
@@ -407,19 +416,41 @@ static void __part_close(sos_part_t part)
 static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj, uid_t euid, gid_t egid, int acc)
 {
 	int rc;
-	sos_part_t part = calloc(1, sizeof *part);
+	sos_part_t part;
+
+	/* See if this partition is already open */
+	pthread_mutex_lock(&part_tree_lock);
+	struct ods_rbn *rbn = ods_rbt_find(&part_tree, SOS_PART_REF(ref_obj)->path);
+	if (rbn) {
+		part = container_of(rbn, struct sos_part_s, rbn);
+		if (!__access_check(part->udata_obj, euid, egid, acc)) {
+			rc = EPERM;
+			part = NULL;
+			goto out;
+		}
+		sos_ref_get(&part->ref_count, __func__);
+		goto out;
+	}
+	part  = calloc(1, sizeof *part);
 	if (!part)
-		return NULL;
+		goto out;
 	sos_ref_init(&part->ref_count, "part_list", __sos_part_free, part);
 	rc = __part_open(part, SOS_PART_REF(ref_obj)->path,
 			sos->o_perm & ~SOS_PERM_CREAT, euid, egid, acc);
 	if (rc) {
+		free(part);
+		part = NULL;
 		errno = rc;
-		return NULL;
+		goto out;
 	}
 	part->ref_obj = ods_obj_get(ref_obj);
 	part->sos = sos;
 	TAILQ_INSERT_TAIL(&sos->part_list, part, entry);
+	ods_rbn_init(&part->rbn, SOS_PART_REF(ref_obj)->path);
+	sos_ref_get(&part->ref_count, __func__);
+	ods_rbt_ins(&part_tree, &part->rbn);
+out:
+	pthread_mutex_unlock(&part_tree_lock);
 	return part;
 }
 
@@ -470,6 +501,17 @@ sos_part_t sos_part_open(const char *path, int o_perm, ...)
 	if (o_perm & SOS_PERM_CREAT)
 		ods_commit(part->obj_ods, ODS_COMMIT_SYNC);
 	return part;
+}
+
+void sos_part_close(sos_part_t part)
+{
+	if (!part)
+		return;
+	if (part->sos)
+		return;		/* It will get closed when container closes */
+	ods_obj_put(part->ref_obj);
+	ods_obj_put(part->udata_obj);
+	ods_close(part->obj_ods, ODS_COMMIT_SYNC);
 }
 
 int sos_part_chown(sos_part_t part, uid_t uid, gid_t gid)
@@ -720,7 +762,6 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 		}
 		if (!new)
 			continue;
-		/* This is a partition we have not seen before */
 		part = __sos_part_open(sos, part_obj, euid, egid, acc);
 		if (!part) {
 			if (errno == EPERM) {
@@ -862,7 +903,7 @@ void sos_part_iter_free(sos_part_iter_t iter)
  */
 int sos_part_attach(sos_t sos, const char *name, const char *path)
 {
-	sos_part_t part;
+	sos_part_t part = NULL;
 	ods_ref_t head_ref, tail_ref;
 	ods_obj_t new_part_ref;
 	int rc;
@@ -928,6 +969,7 @@ err_1:
 err_0:
 	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
+	sos_part_put(part);
 	return rc;
 }
 

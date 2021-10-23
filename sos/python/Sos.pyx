@@ -1198,7 +1198,7 @@ cdef class Schema(SosObject):
         self.c_next_attr = sos_schema_attr_next(self.c_next_attr)
         return a
 
-    def from_template(self, name, template):
+    def from_template(self, template):
         """Create a schema from a template specification
 
         The template parameter defines a SOS schema. The format is
@@ -1223,7 +1223,7 @@ cdef class Schema(SosObject):
             "join_attrs" : [ "<attr-name>", "<attr-name>", ... ]
         }
 
-        The <attr-name> entry specifies the name of the attribute in the
+        The name entry specifies the name of the attribute in the
         schema and must be unique within the schema.  The valid type
         names are as follows:
             - "INT16"
@@ -1293,11 +1293,24 @@ cdef class Schema(SosObject):
         cdef const char *idx_args = NULL
         cdef int join_count
         cdef char **join_args
+        cdef uuid_t uuid
 
-        self.c_schema = sos_schema_new(name.encode())
+        if 'name' not in template:
+            raise ValueError("'name' is missing from the template")
+        if 'uuid' not in template:
+            raise ValueError("'uuid' is missing from the template")
+        if 'attrs' not in template:
+            raise ValueError("'attrs' is missing from the template")
+
+        uuid_str = template['uuid']
+        uuid_parse(uuid_str.encode(), uuid)
+        schema_name = template['name']
+        attrs = template['attrs']
+
+        self.c_schema = sos_schema_create(schema_name.encode(), uuid)
         if self.c_schema == NULL:
             self.abort(ENOMEM)
-        for attr in template:
+        for attr in attrs:
             if 'name' not in attr:
                 raise ValueError("The 'name' is missing from the attribute")
 

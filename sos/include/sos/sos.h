@@ -330,7 +330,7 @@ typedef struct sos_schema_template_attr {
 
 typedef struct sos_schema_template {
 	const char *name;
-	const char *uuid;
+	const unsigned char *uuid;
 	struct sos_schema_template_attr attrs[];
 } *sos_schema_template_t;
 
@@ -340,6 +340,7 @@ typedef struct sos_schema_template {
 /** \defgroup schema_funcs Schema Functions
  * @{
  */
+sos_schema_t sos_schema_create(const char *name, const uuid_t uuid);
 sos_schema_t sos_schema_new(const char *name);
 void sos_schema_free(sos_schema_t schema);
 sos_schema_t sos_schema_dup(sos_schema_t schema);
@@ -438,6 +439,7 @@ typedef struct sos_part_s *sos_part_t;
  */
 int sos_part_create(sos_t sos, const char *name, const char *path);	/* deprecated */
 sos_part_t sos_part_open(const char *path, int o_perm, ...);
+void sos_part_close(sos_part_t part);
 int sos_part_chown(sos_part_t part, uid_t uid, gid_t gid);
 int sos_part_chmod(sos_part_t part, int mode);
 sos_perm_t sos_part_be_get(sos_part_t part);

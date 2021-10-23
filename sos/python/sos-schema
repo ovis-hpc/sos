@@ -60,7 +60,7 @@ def export_schema(cont, s, dirname):
         # Link the file to path/name
         os.symlink(fname, lname)
     except OSError as e:
-        print(e.msg())
+        print(e)
 
     f.write("{\n")
     f.write(f'  "name" : "{s.name()}",\n')
@@ -73,9 +73,10 @@ def export_schema(cont, s, dirname):
         acomma = True
         f.write('    {\n')
         f.write(f'      "name" : "{a.name()}",\n')
-        f.write(f'      "type" : "{a.type_name()}",\n')
+        f.write(f'      "type" : "{a.type_name()}"')
         jcomma = False
         if a.type() == Sos.TYPE_JOIN:
+            f.write(',\n')
             f.write(f'      "join_attrs" : [')
             idl = a.join_list()
             jcomma = False
@@ -85,13 +86,24 @@ def export_schema(cont, s, dirname):
                 jattr = s.attr_by_id(i)
                 jcomma = True
                 f.write(f'"{jattr.name()}"')
-            f.write('],\n')
-        if a.is_indexed:
-            f.write('      "index" : {}\n')
+            f.write(']')
+        if a.is_indexed():
+            f.write(',\n      "index" : {}\n')
+        else:
+            f.write('\n')
         f.write('    }')
     f.write('\n  ]\n')
     f.write("}\n")
     f.close()
+
+def import_schema(cont, dirname):
+    for root, dirs, files in os.walk(dirname):
+        for name in files:
+            fname = root + '/' + name
+            if os.path.islink(fname):
+                continue
+            print(f"Importing {name}")
+            add_schema(cont, fname)
 
 def query_schema(cont, schema_name, verbose=False):
     count = 0
@@ -137,7 +149,7 @@ def add_schema(cont, path):
         fp = open(path, 'r')
         spec = json.load(fp)
         schema = Sos.Schema()
-        schema.from_template(spec['name'], spec['attrs'])
+        schema.from_template(spec)
         schema.add(cont)
     except Exception as ex:
         print(str(ex))
@@ -160,6 +172,9 @@ if __name__ == "__main__":
                          help="Export the schema specifed by --schema in JSON format"
                          "to a file in directory at DIR. If --schema is not specified, "
                          "all schema will be exported.")
+    actions.add_argument("-i", "--import", metavar="DIR", dest="import_dir",
+                         help="Import schema from files contained "
+                         "in DIR. See the --add option to import only a single schema.")
     args = parser.parse_args()
 
     try:
@@ -174,6 +189,9 @@ if __name__ == "__main__":
 
     if args.add:
         add_schema(cont, args.add)
+
+    if args.import_dir:
+        import_schema(cont, args.import_dir)
 
     if args.export:
         if args.schema:

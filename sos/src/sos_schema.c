@@ -136,8 +136,31 @@ static uint32_t type_sizes[] = {
 /** \defgroup schema_funcs Schema Functions
  * @{
  */
+
+static sos_schema_t __sos_schema_new(const char *name, const uuid_t uuid)
+{
+	sos_schema_t schema;
+
+	if (strlen(name) >= SOS_SCHEMA_NAME_LEN)
+		return NULL;
+	schema = calloc(1, sizeof(*schema));
+	if (schema) {
+		schema->data = &schema->data_;
+		strcpy(schema->data->name, name);
+		TAILQ_INIT(&schema->attr_list);
+		TAILQ_INIT(&schema->idx_attr_list);
+		schema->ref_count = 1;
+		uuid_copy(schema->data->uuid, uuid);
+	}
+	return schema;
+}
+
 /**
  * \brief Create a schema
+ *
+ * This interface is deprecated because it creates a UUID on
+ * behalf of the caller instead of accepting one as a parameter.
+ * See the \c sos_schema_create() interface for more information.
  *
  * A schema defines a SOS object. Every object in a SOS database is
  * associated with a schema via an internal schema_id.
@@ -160,20 +183,37 @@ static uint32_t type_sizes[] = {
  */
 sos_schema_t sos_schema_new(const char *name)
 {
-	sos_schema_t schema;
+	uuid_t uuid;
+	uuid_generate(uuid);
+	return __sos_schema_new(name, uuid);
+}
 
-	if (strlen(name) >= SOS_SCHEMA_NAME_LEN)
-		return NULL;
-	schema = calloc(1, sizeof(*schema));
-	if (schema) {
-		schema->data = &schema->data_;
-		strcpy(schema->data->name, name);
-		TAILQ_INIT(&schema->attr_list);
-		TAILQ_INIT(&schema->idx_attr_list);
-		schema->ref_count = 1;
-		uuid_generate(schema->data->uuid);
-	}
-	return schema;
+/**
+ * \brief Create a schema
+ *
+ * A schema defines a SOS object. Every object in a SOS database is
+ * associated with a schema via the schema UUID.
+ *
+ * After a schema is created it must be associated with one or more
+ * containers. See the sos_schema_add() function to add a schema to a
+ * container so that objects of that type can subsequently be created
+ * in the container. Once a schema has been added, it can be looked up
+ * with the sos_schema_by_name() and sos_schema_by_uuid() functions.
+ *
+ * Objects are created with the sos_obj_new() function. This function
+ * takes a schema-handle as its argument. The schema-UUID is saved
+ * internally with the object data. An object is therefore
+ * self-describing.
+ *
+ * \param name	The name of the schema. This name must be unique
+ * within the container.
+ * \param uuid  The UUID to assign to the schema.
+ * \returns	A pointer to the new schema or a NULL pointer if there
+ * is an error. The errno variable is set to provide detail on the error.
+ */
+sos_schema_t sos_schema_create(const char *name, const uuid_t uuid)
+{
+	return __sos_schema_new(name, uuid);
 }
 
 void sos_schema_free(sos_schema_t schema)
@@ -218,6 +258,7 @@ void __sos_schema_free(sos_schema_t schema)
  *
  *     struct sos_schema_template employee = {
  *         .name = "employee",
+ * 	   .uuid = "35190552-9177-11eb-941e-0cc47a6e9146",
  *         .attrs = {
  *              {
  *                  .name = "First",
@@ -243,7 +284,7 @@ void __sos_schema_free(sos_schema_t schema)
 sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 {
 	int i, rc;
-	sos_schema_t schema = sos_schema_new(t->name);
+	sos_schema_t schema = sos_schema_create(t->name, t->uuid);
 	if (!schema)
 		goto err;
 	for (i = 0; 1; i++) {
