@@ -799,14 +799,6 @@ sos_part_t __sos_primary_obj_part(sos_t sos)
 	return part;
 }
 
-struct export_obj_iter_args_s {
-	sos_t src_sos;
-	sos_t dst_sos;
-	sos_part_t src_part;
-	ods_idx_t exp_idx;
-	int64_t export_count;
-};
-
 #pragma pack(4)
 union exp_obj_u {
 	struct ods_idx_data_s idx_data;
@@ -1496,6 +1488,7 @@ struct part_obj_iter_args_s {
 
 static int __part_obj_iter_cb(ods_t ods, ods_ref_t obj_ref, void *arg)
 {
+	sos_obj_t sos_obj = NULL;
 	ods_obj_t ods_obj = ods_ref_as_obj(ods, obj_ref);
 	if (!ods_obj) {
 		sos_error("Object reference %p could not be instantiated as a partition\n", (void *)obj_ref);
@@ -1503,19 +1496,23 @@ static int __part_obj_iter_cb(ods_t ods, ods_ref_t obj_ref, void *arg)
 	}
 	struct part_obj_iter_args_s *oi_args = arg;
 	sos_obj_ref_t ref;
-	sos_obj_t sos_obj;
 	sos_part_t part = oi_args->part;
 	sos_obj_data_t sos_obj_data = ods_obj->as.ptr;
-	sos_schema_t schema = sos_schema_by_uuid(part->sos, sos_obj_data->schema_uuid);
-	if (!schema) {
-		sos_warn("Object at %p is missing a valid schema id.\n", (void *)obj_ref);
-		/* This is a garbage object that should not be here */
-		return 0;
+	if (part->sos) {
+		/* Partition is attached, instantiate the SOS object */
+		sos_schema_t schema = sos_schema_by_uuid(part->sos, sos_obj_data->schema_uuid);
+		if (!schema) {
+			sos_warn("Object at %p is missing a valid schema id.\n", (void *)obj_ref);
+			/* This is a garbage object that should not be here */
+			return 0;
+		}
+		uuid_copy(ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
+		ref.ref.obj = obj_ref;
+		sos_obj = __sos_init_obj(part->sos, schema, ods_obj, ref);
+		if (!sos_obj)
+			sos_warn("SOS object could not be instantiated in attached partition.");
 	}
-	uuid_copy(ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
-	ref.ref.obj = obj_ref;
-	sos_obj = __sos_init_obj(part->sos, schema, ods_obj, ref);
-	return oi_args->fn(oi_args->part, sos_obj, oi_args->arg);
+	return oi_args->fn(oi_args->part, ods_obj, sos_obj, oi_args->arg);
 }
 
 void sos_part_obj_iter_pos_init(sos_part_obj_iter_pos_t pos)

@@ -97,14 +97,14 @@ const char *pretty_file_size(off_t size)
 	return NULL;		/* NB: can't happen */
 }
 
-static int print_obj_cb(sos_part_t part, sos_obj_t obj, void *arg)
+static int print_obj_cb(sos_part_t part, ods_obj_t ods_obj, sos_obj_t sos_obj, void *arg)
 {
-	sos_schema_t schema = sos_obj_schema(obj);
+	sos_schema_t schema = sos_obj_schema(sos_obj);
 	sos_obj_ref_str_t ref_str;
-	sos_obj_ref_t ref = sos_obj_ref(obj);
+	sos_obj_ref_t ref = sos_obj_ref(sos_obj);
 	sos_obj_ref_to_str(ref, ref_str);
 	printf("%s %-16s\n", ref_str, sos_schema_name(schema));
-	sos_obj_put(obj);
+	sos_obj_put(sos_obj);
 	return 0;
 }
 

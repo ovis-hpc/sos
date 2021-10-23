@@ -484,13 +484,14 @@ int sos_obj_ref_from_str(sos_obj_ref_t ref, const char *value, char **endptr);
  * This callback function owns a reference on the provided object.
  *
  * \param sos	The container handle
- * \param obj	The object handle
+ * \param ods_obj	The ODS object handle
+ * \param sos_obj	The SOS object handle
  * \param sz	The size of the object
  * \param arg	The 'arg' passed into sos_part_obj_iter()
  * \retval 0	Continue iterating
  * \retval !0	Stop iterating
  */
-typedef int (*sos_part_obj_iter_fn_t)(sos_part_t part, sos_obj_t obj, void *arg);
+typedef int (*sos_part_obj_iter_fn_t)(sos_part_t part, ods_obj_t ods_obj, sos_obj_t sos_obj, void *arg);
 typedef struct sos_part_obj_iter_pos_s {
 	struct ods_obj_iter_pos_s pos;
 } *sos_part_obj_iter_pos_t;
