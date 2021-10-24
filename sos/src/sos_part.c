@@ -903,6 +903,7 @@ void sos_part_iter_free(sos_part_iter_t iter)
  */
 int sos_part_attach(sos_t sos, const char *name, const char *path)
 {
+	char path_[PATH_MAX];
 	sos_part_t part = NULL;
 	ods_ref_t head_ref, tail_ref;
 	ods_obj_t new_part_ref;
@@ -919,6 +920,20 @@ int sos_part_attach(sos_t sos, const char *name, const char *path)
 		goto err_0;
 	}
 
+	/*
+	 * Make the path absolute, relative paths are not allowed
+	 * because it would make the partition inaccessible from
+	 * other directories
+	 */
+	if (NULL == realpath(path, path_)) {
+		rc = ENAMETOOLONG;
+		goto err_0;
+	}
+	path = path_;
+	if (strlen(path) >= SOS_PART_PATH_LEN || strlen(name) >= SOS_PART_NAME_LEN) {
+		rc = ENAMETOOLONG;
+		goto err_0;
+	}
 	head_ref = SOS_PART_REF_UDATA(sos->part_ref_udata)->head;
 	tail_ref = SOS_PART_REF_UDATA(sos->part_ref_udata)->tail;
 
