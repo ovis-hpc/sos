@@ -152,14 +152,12 @@ if __name__ == "__main__":
                         help="Specifies the path to the partition.")
     parser.add_argument("--name", metavar="PART-NAME", default=None,
                         help="Specifies the parition name.")
-    parser.add_argument("--mode", metavar="MODE", default=0o660,
-                        help="The file access mode if creating a partition. Default is 0o660.")
+    parser.add_argument("--mode", metavar="MODE", default=None,
+                        help="The file access mode if creating a partition")
     parser.add_argument("--user", metavar="USER", default=None,
                         help="The user name or user-id that owns the container")
     parser.add_argument("--group", metavar="GROUP", default=None,
                         help="The group name or group-id that owns the container")
-    parser.add_argument("--perm", metavar="PERM", default=None,
-                        help="The access rights allowed for accessing the container's contents")
     parser.add_argument("--backend", metavar="BACKEND", default='lsos',
                         help="The desired storage backend, one of: "
                         "'LSOS' (Log Structured Object Store), or "
@@ -267,18 +265,19 @@ if __name__ == "__main__":
                 print("The user name (--user) must be specified.")
                 sys.exit(1)
             part = Sos.Partition()
+            if args.mode:
+                mode = int(args.mode, base=0)
+            else:
+                mode = 0o660
             part.open(args.path,
                 o_perm = Sos.PERM_RW | Sos.PERM_CREAT,
-                o_mode = args.mode,
+                o_mode = mode,
                 desc = description, backend = backend)
             uid = get_uid(args, os.getuid())
             gid = get_gid(args, os.getgid())
             if args.user or args.group:
                 part.chown(uid, gid)
-            perm = 0o660
-            if args.perm:
-                perm = args.perm
-                part.chmod(perm)
+            part.chmod(mode)
         except Exception as ex:
             print("The partition could not be created.\n{0}".format(ex))
             sys.exit(1)
@@ -303,9 +302,8 @@ if __name__ == "__main__":
         gid = get_gid(args, -1)
         if args.user or args.group:
             part.chown(uid, gid)
-        if args.perm:
-            perm = eval(args.perm)
-            part.chmod(perm)
+        if args.mode:
+            part.chmod(int(args.mode, base=0))
 
     #
     # Check the --cont, --path and --name options
