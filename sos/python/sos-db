@@ -94,13 +94,16 @@ if __name__ == "__main__":
             else:
                 cont.open(args.path, Sos.PERM_CREAT)
         except Exception as ex:
-            print("The database could not be created.")
-            print(ex)
+            print(f"The container {args.path} could not be created.")
             sys.exit(1)
 
     if args.query:
         import datetime as dt
-        cont.open(args.path)
+        try:
+            cont.open(args.path)
+        except Exception as e:
+            print(f"The container {args.path} could not be opened.")
+
         pi = cont.part_iter()
         print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
               format("Name", "State", "Accessed", "Modified", "Size", "Path"))

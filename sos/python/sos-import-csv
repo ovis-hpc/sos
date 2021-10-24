@@ -150,7 +150,7 @@ if __name__ == "__main__":
     try:
         cont.open(args.path)
     except Exception as ex:
-        print("The database '{0}' could not be opened.".format(args.path))
+        print(f"The container '{args.path}' could not be opened.")
         sys.exit(1)
 
     mf = open(args.map, 'r')

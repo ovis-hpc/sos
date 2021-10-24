@@ -144,7 +144,7 @@ if __name__ == "__main__":
         cont = Sos.Container()
         cont.open(args.path)
     except Exception as ex:
-        print("The container '{0}' could not be opened.".format(args.path))
+        print(f"The container '{args.path}' could not be opened.")
         sys.exit(1)
 
     schemas = {}
@@ -183,5 +183,5 @@ if __name__ == "__main__":
     curses.nocbreak()
     stdscr.keypad(False)
     curses.endwin()
-    
+
 

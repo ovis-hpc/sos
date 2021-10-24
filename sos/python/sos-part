@@ -200,7 +200,7 @@ if __name__ == "__main__":
             try:
                 cont.open(args.cont)
             except Exception as ex:
-                print("The SOSDB '{0}' could not be opened.".format(args.cont))
+                print(f" The container '{args.cont}' could not be opened.")
                 sys.exit(1)
         else:
             cont = None

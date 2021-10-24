@@ -181,7 +181,7 @@ if __name__ == "__main__":
         cont = Sos.Container()
         cont.open(args.path)
     except:
-        print("The container {0} could not be opened.".format(args.path))
+        print(f"The container {args.path} could not be opened.")
         sys.exit(1)
 
     if args.query:
