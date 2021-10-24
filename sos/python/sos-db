@@ -103,6 +103,7 @@ if __name__ == "__main__":
             cont.open(args.path)
         except Exception as e:
             print(f"The container {args.path} could not be opened.")
+            sys.exit(1)
 
         pi = cont.part_iter()
         print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
