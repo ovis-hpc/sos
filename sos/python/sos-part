@@ -212,8 +212,12 @@ if __name__ == "__main__":
                 hdr = False
             print_partition(p, hdr=False, ftr=True, fmt=args.fmt)
             sys.exit(0)
-        p = Sos.Partition()
-        p.open(args.path)
+        try:
+            p = Sos.Partition()
+            p.open(args.path)
+        except Exception as e:
+            print(f"The partition '{args.path}' could not be opened.")
+            sys.exit(1)
         print_partition(p, fmt=args.fmt)
         sys.exit(0)
 
@@ -269,10 +273,15 @@ if __name__ == "__main__":
                 mode = int(args.mode, base=0)
             else:
                 mode = 0o660
-            part.open(args.path,
-                o_perm = Sos.PERM_RW | Sos.PERM_CREAT,
-                o_mode = mode,
-                desc = description, backend = backend)
+            try:
+                part.open(args.path,
+                    o_perm = Sos.PERM_RW | Sos.PERM_CREAT,
+                    o_mode = mode,
+                    desc = description, backend = backend)
+            except Exception as e:
+                print(f"The partition '{args.path}' could not be opened.\n")
+                sys.exit(1)
+
             uid = get_uid(args, os.getuid())
             gid = get_gid(args, os.getgid())
             if args.user or args.group:
