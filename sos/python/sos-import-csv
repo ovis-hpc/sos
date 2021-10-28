@@ -158,6 +158,10 @@ if __name__ == "__main__":
     spec = {}
 
     schema = cont.schema_by_name(args.schema)
+    if schema is None:
+        print(f"The schema {args.schema} is not present in the container")
+        sys.exit(1)
+
     print("Importing from CSV file {0} into {1} using map {2}".format(args.csv, args.path, args.map))
 
     try:
@@ -169,13 +173,22 @@ if __name__ == "__main__":
     input_process = []
     for spec in mapspec:
 
+        if 'target' not in spec:
+            print("The 'target' key is missing from the map file")
+            sys.exit(1)
         target = spec['target']
+
+        if 'source' not in spec:
+            print("The 'source' key is missing from the map file")
+            sys.exit(1)
         source = spec['source']
 
         if type(target) == int:
             attr = schema.attr_by_id(target)
         else:
             attr = schema.attr_by_name(target)
+        if attr is None:
+            print(f"The attribute '{target}' is not present in the schema")
 
         if 'value' in source:
             input_process.append([ assign_value, attr, make_cast(attr), source['value'] ])

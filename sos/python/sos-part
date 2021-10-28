@@ -185,7 +185,7 @@ if __name__ == "__main__":
                          help="Detach a partition from a container.")
     actions.add_argument("--set", action="store_true",
                          help="Set user-id, group-id, and permission bits"
-                            "for accessing a partition's contents");
+                            "for accessing a partition's contents")
 
     args = parser.parse_args()
 
@@ -279,7 +279,7 @@ if __name__ == "__main__":
                     o_mode = mode,
                     desc = description, backend = backend)
             except Exception as e:
-                print(f"The partition '{args.path}' could not be opened.\n")
+                print(f"The partition '{args.path}' could not be created.")
                 sys.exit(1)
 
             uid = get_uid(args, os.getuid())
@@ -288,7 +288,7 @@ if __name__ == "__main__":
                 part.chown(uid, gid)
             part.chmod(mode)
         except Exception as ex:
-            print("The partition could not be created.\n{0}".format(ex))
+            print("An error was encountered creating the partition.\n{0}".format(ex))
             sys.exit(1)
         sys.exit(0)
 
@@ -300,10 +300,7 @@ if __name__ == "__main__":
         try:
             part.open(args.path)
         except Exception as e:
-            print("The partition could not be opened.")
-            sys.exit(1)
-        if not part:
-            print("The part name '{0}' was not found.".format(args.name))
+            print(f"The partition '{args.path}' could not be opened.")
             sys.exit(1)
         if args.desc:
             part.desc_set(args.desc)
@@ -341,12 +338,12 @@ if __name__ == "__main__":
     if args.state:
         part = cont.part_by_name(args.name)
         if not part:
-            print("The part name '{0}' was not found.".format(args.name))
+            print(f"The part name '{args.name}' was not found.")
             sys.exit(1)
         try:
             part.state_set(args.state)
         except Exception as ex:
-            print("The state could not be set.\n{0}".format(ex))
+            print(f"The state '{args.state}' could not be set.")
             sys.exit(1)
         sys.exit(0)
 
@@ -363,7 +360,7 @@ if __name__ == "__main__":
         try:
             part.attach(cont, args.name)
         except:
-            print(f"The partition '{name}' could not be attached.")
+            print(f"The partition '{args.name}' could not be attached.")
             sys.exit(1)
 
     #
