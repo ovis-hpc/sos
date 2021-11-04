@@ -105,12 +105,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	sos_part_t part = sos_part_by_name(sos, name);
-	if (!part) {
-		printf("The partition %s is not attached\n", name);
-		exit(1);
-	}
-	rc = sos_part_detach(part);
+	rc = sos_part_detach(sos, name);
 	if (rc) {
 		printf("Error %d detaching the partition from the container\n", rc);
 		exit(1);

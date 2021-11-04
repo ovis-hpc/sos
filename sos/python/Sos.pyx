@@ -820,6 +820,12 @@ cdef class Container(SosObject):
         if c_rc != 0:
             self.abort(c_rc)
 
+    def part_detach(self, name):
+        """Detach partition from the container"""
+        cdef int c_rc = sos_part_detach(self.c_cont, name.encode())
+        if c_rc != 0:
+            self.abort(c_rc)
+
     def part_by_name(self, name):
         """Return the named partition
 
@@ -1050,13 +1056,6 @@ cdef class Partition(SosObject):
         self.c_part =  sos_part_by_name(cont.c_cont, name.encode())
         if self.c_part == NULL:
             self.abort(errno)
-
-    def detach(self):
-        """Detach partition from the container"""
-        cdef int c_rc = sos_part_detach(self.c_part)
-        self.c_part = NULL;
-        if c_rc != 0:
-            self.abort(c_rc)
 
     def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, desc=None, backend=SOS_BE_MMOS):
         """Open the partition at path

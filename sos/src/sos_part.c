@@ -68,63 +68,107 @@
  * - \ref sos_part_move Move a partition to another storage location
  * - \ref sos_part_delete Destroy a partition
  *
- * There must be at least one partition in the container in the
- * 'primary' state in order for objects to be allocated and stored. A
- * partition is created with the sos_part_create command.
- * For example:
+ * The most common use cases for partitions are: partitioning object
+ * data by date, partitioning object data by user, or both:
  *
- *      sos_part_create -C theContainer -s primary "today"
+ * First let's create a container:
  *
- * Use the sos_part_query command to see the new partition
+ *      $ sos-db --path theContainer --create
+ *      $ sos-db --path theContainer --query
  *
- *      sos_part_query -C theContainer
- *      Partition Name       RefCount Status           Size     Modified         Accessed         Path
- *      -------------------- -------- ---------------- -------- ---------------- ---------------- ----------------
- *      today                       2 PRIMARY               65K 2017/04/11 11:47 2017/04/11 11:47 /btrfs/test_data/theContainer
+ *      $ sos-db --path myContainer --query
+ *      Name               State      Accessed           Modified           Size       Path
+ *      ------------------ ---------- ------------------ ------------------ ----------- --------------------                                                                                  *      default            PRIMARY    11/04/21 10:34:25  11/04/21 10:34:03       0.1MB /primaryStorage/myContainer/default
  *
- * Let's create another partition to contain tomorrow's data:
+ * We can also use the sos-part command to query the partition and get more detail:
  *
- *      sos_part_create -C theContainer -s primary "tomorrow"
- *      sos_part_query -C theContainer -v
- *      Partition Name       RefCount Status           Size     Modified         Accessed         Path
- *      -------------------- -------- ---------------- -------- ---------------- ---------------- ----------------
- *      today                       2 PRIMARY               65K 2017/04/11 11:51 2017/04/11 11:51 /btrfs/test_data/theContainer
- *      tomorrow                    3 OFFLINE                                                     /btrfs/test_data/theContainer
+ *      $ sos-part --cont myContainer --query
+ *      Name               State      uid   gid   Permissions  Size       Description                          Path
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
+ *      default            PRIMARY    12345 12345 rw-rw-r--        65.5K  default container partition          /primaryStorage/myContainer/default
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
+ *
+ * A default partition is created to accept new data, but let's add two new
+ * new partitions for storing data by date:
+ *
+ *      $ sos-part --create --path /primaryStorage/partitions/today --mode 0o666
+ *      $ sos-part --create --path /primaryStorage/partitions/tomorrow --mode 0o666
+ *
+ * These partitions are not associated with a container yet, we have to attach them
+ * to myContainer:
+ *
+ *      $ sos-part --query --cont myContainer
+ *      Name               State      uid   gid   Permissions  Size       Description                          Path
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
+ *      default            PRIMARY    12345 12345 rw-rw-r--        65.5K  default container partition          /primaryStorage/myContainer/default
+ *      today              OFFLINE        0     0 rw-rw-rw-         245B  today's data                         /primaryStorage/partitions/today
+ *      tomorrow           OFFLINE        0     0 rw-rw-rw-         254B  tomorrow's data                      /primaryStorage/partitions/tomorrow
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
+ *
+ * To cause new data to flow into 'today', we need to set it's state to primary:
+ *
+ *      $ sos-part --state primary --name today --cont myContainer
+ *      $ sos-part --query --cont myContainer
+ *      Name               State      uid   gid   Permissions  Size       Description                          Path
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
+ *      default            ACTIVE     62538 62538 rw-rw-r--        65.5K  default container partition          /primaryStorage/myContainer/default
+ *      today              PRIMARY        0     0 rw-rw-rw-         331B  today's data                         /primaryStorage/partitions/today
+ *      tomorrow           OFFLINE        0     0 rw-rw-rw-         254B  tomorrow's data                      /primaryStorage/partitions/tomorrow
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
  *
  * A typical use case for partitions is to group objects together by
  * date and then migrate older partitions to another container on
  * secondary storage.
  *
- * At midnight the administrator starts storing data in tomorrow's partition as follows:readdir
+ * At midnight the administrator starts storing data in tomorrow's partition as follows:
  *
- *      sos_part_modify -C theContainer -s primary "tomorrow"
- *      sos_part_query -C theContainer -v
- *      Partition Name       RefCount Status           Size     Modified         Accessed         Path
- *      -------------------- -------- ---------------- -------- ---------------- ---------------- ----------------
- *      today                       2 PRIMARY               65K 2017/04/11 11:51 2017/04/11 11:51 /btrfs/test_data/theContainer
- *      tomorrow                    3 OFFLINE                                                     /btrfs/test_data/theContainer
+ *      $ sos-part --state primary --name tomorrow --cont myContainer
+ *      $ sos-part --query --cont myContainer
+ *      Name               State      uid   gid   Permissions  Size       Description                          Path
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
+ *      default            ACTIVE     12345 12345 rw-rw-r--        65.5K  default container partition          /primaryStorage/myContainer/default
+ *      today              ACTIVE         0     0 rw-rw-rw-         331B  today's data                         /primaryStorage/partitions/today
+ *      tomorrow           PRIMARY        0     0 rw-rw-rw-         254B  tomorrow's data                      /primaryStorage/partitions/tomorrow
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
  *
  * New object allocations will immediately start flowing into the new
- * primary partition. Objects in the original partition are still
- * accessible and indexed.
+ * primary partition called 'tomorrow'. Objects in the original partition
+ * are still accessible.
  *
  * The administrator then wants to migrate the data from the today
- * partition to another container in secondary storage. First create
- * the container to contain 'backups'.
+ * partition to another container in secondary storage. This can be
+ * accomplished as follows:
  *
- *      sos_cmd -C /secondary/backupContainer -c
- *      sos_part_create -C theContainer -s primary "backup"
+ * Detach the 'today' partition from the container and move it to
+ * secondary storage:
  *
- * Then export the contents of the today partition to the backup:
+ *      $ sos-part --detach --cont myContainer --name today
+ *      $ sos-part --query --cont myContainer
+ *      Name               State      uid   gid   Permissions  Size       Description                          Path
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
+ *      default            ACTIVE     12345 12345 rw-rw-r--        65.5K  default container partition          /primaryStorage/myContainer/default
+ *      tomorrow           PRIMARY        0     0 rw-rw-rw-         254B  tomorrow's data                      /primaryStorage/partitions/tomorrow
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
  *
- *      sos_part_export -C theContainer -E /secondary/backupContainer today
+ * The partition is no longer attached to myContainer; move it to secondary storage:
  *
- * All objects in the today partition are now in the
- * /secondary/backupContainer. They are also still in theContainer in
- * the today partition. To remove the today partition, delete the partition as follows:
+ *      $ export NAME=$(date +%s)
+ *      $ mv /primaryStorage/partitions/today /secondaryStorage/partitions/$NAME
  *
- *      sos_part_modify -C theContainer -s offline today
- *      sos_part_delete -C theContainer today
+ * Create a new container to attacgh the partition to:
+ *
+ *      $ sos-db --path /secondarStorage/backupContainer --create
+ *      $ sos-part --attach --cont /secondaryStorage/backupContainer --name $NAME
+ *      $ sos-part --state active --cont /secondaryStorage/backupContainer --name $NAME
+ *      $ sos-part --query --cont /secondaryStorage/backupContainer
+ *      Name               State      uid   gid   Permissions  Size       Description                          Path
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
+ *      default            PRIMARY    12345 12345 rw-rw-r--        65.5K  default container partition          /secodaryStorage/backupContainer/default
+ *      1636055168         ACTIVE         0     0 rw-rw-rw-         254B  today's data                         /secondaryStorage/partitions/1636055168
+ *      ------------------ ---------- ----- ----- ------------ ---------- ------------------------------------ --------------------
+ *
+ * All objects in the today partition are now available to be queried
+ * from the backupContainer.
  *
  * There are API for manipulating Partitions from a program. In
  * general, only management applications should call these
@@ -368,7 +412,8 @@ static int __access_check(ods_obj_t part_obj, uid_t euid, gid_t egid, int access
 	return 0;
 }
 
-static int __part_open(sos_part_t part, const char *path, sos_perm_t o_perm, uid_t euid, gid_t egid, int acc)
+static int __part_open(sos_part_t part, const char *path,
+		       sos_perm_t o_perm, uid_t euid, gid_t egid, int acc)
 {
 	char tmp_path[PATH_MAX];
 	ods_t ods;
@@ -405,7 +450,7 @@ err_0:
 	return rc;
 }
 
-static void __part_close(sos_part_t part)
+void __part_close(sos_part_t part)
 {
 	ods_obj_put(part->udata_obj);
 	part->udata_obj = NULL;
@@ -413,7 +458,8 @@ static void __part_close(sos_part_t part)
 	part->obj_ods = NULL;
 }
 
-static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj, uid_t euid, gid_t egid, int acc)
+static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj,
+				  uid_t euid, gid_t egid, int acc)
 {
 	int rc;
 	sos_part_t part;
@@ -742,7 +788,6 @@ ods_obj_t __sos_part_ref_next(sos_t sos, ods_obj_t part_obj)
 
 static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 {
-	int rc = 0;
 	sos_part_t part;
 	ods_obj_t part_obj;
 	int new;
@@ -767,8 +812,12 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 			if (errno == EPERM) {
 				continue;
 			} else {
-				rc = errno ? errno : ENOMEM;
-				goto out;
+				sos_error("Error %d opening the partition '%s' "
+					  "at path '%s'.\n",
+					  errno,
+					  SOS_PART_REF(part_obj)->name,
+					  SOS_PART_REF(part_obj)->path);
+				continue;
 			}
 		}
 		if (SOS_PART_REF(part_obj)->state == SOS_PART_STATE_PRIMARY) {
@@ -776,10 +825,9 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 			sos_ref_get(&part->ref_count, "primary_part");
 		}
 	}
- out:
 	if (part_obj)
 		ods_obj_put(part_obj);
-	return rc;
+	return 0;
 }
 
 static int refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
@@ -991,36 +1039,43 @@ err_0:
 /**
  * @brief Detach a partition from a container
  *
- * Detaches the partition from the container. The application
- * MUST NOT use the partion handle \c part after calling this
- * function.
+ * Detaches the partition from the container.
  *
  * @param sos The container handle
- * @param path The path to the partition
+ * @param name The name of the partition
  * @retval 0 The partition was successfully detached
  * @retval ENOENT The partition is not attached
  */
-int sos_part_detach(sos_part_t part)
+int sos_part_detach(sos_t sos, const char *name)
 {
-	sos_t sos = part->sos;
+	sos_part_t part;
 	ods_ref_t prev_ref, next_ref;
+	ods_obj_t part_ref;
 	int rc = 0;
 
-	if (!part->sos || !part->udata_obj || !part->ref_obj)
-		return ENOENT;
-
-	pthread_mutex_lock(&part->sos->lock);
+	pthread_mutex_lock(&sos->lock);
 	ods_lock(sos->part_ref_ods, 0, NULL);
 
-	if (sos_part_state(part) == SOS_PART_STATE_PRIMARY) {
+	/* Find the partition reference  */
+	for (part_ref = __sos_part_ref_first(sos);
+	     part_ref; part_ref = __sos_part_ref_next(sos, part_ref)) {
+		if (0 == strcmp(name, SOS_PART_REF(part_ref)->name)) {
+			prev_ref = SOS_PART_REF(part_ref)->prev;
+			next_ref = SOS_PART_REF(part_ref)->next;
+			break;
+		}
+	}
+	if (part_ref == NULL) {
+		rc = ENOENT;
+		goto out;
+	}
+
+	if (SOS_PART_REF(part_ref)->state == SOS_PART_STATE_PRIMARY) {
 		rc = EINVAL;
 		goto out;
 	}
 
 	/* Remove the partition reference */
-	prev_ref = SOS_PART_REF(part->ref_obj)->prev;
-	next_ref = SOS_PART_REF(part->ref_obj)->next;
-
 	if (prev_ref) {
 		ods_obj_t prev = ods_ref_as_obj(sos->part_ref_ods, prev_ref);
 		SOS_PART_REF(prev)->next = next_ref;
@@ -1037,16 +1092,20 @@ int sos_part_detach(sos_part_t part)
 	} else {
 		SOS_PART_REF_UDATA(sos->part_ref_udata)->tail = prev_ref;
 	}
-
-	/* Remove the sos_part_t from the part_list */
-	TAILQ_REMOVE(&sos->part_list, part, entry);
-	ods_obj_delete(part->ref_obj);
 	ods_atomic_inc(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
-	ods_atomic_dec(&SOS_PART_UDATA(part->udata_obj)->ref_count);
 	ods_obj_update(sos->part_ref_udata);
-	__part_close(part);
-	sos_ref_put(&part->ref_count, "application");	/* obtained by ...find */
-	sos_ref_put(&part->ref_count, "part_list");
+	/* Remove the sos_part_t from the part_list, if present */
+	TAILQ_FOREACH(part, &sos->part_list, entry) {
+		if (part->ref_obj == part_ref)
+			break;
+	}
+	if (part) {
+		/* The partition may have failed to be opened due to
+		 * permission or path errors */
+		TAILQ_REMOVE(&sos->part_list, part, entry);
+		ods_atomic_dec(&SOS_PART_UDATA(part->udata_obj)->ref_count);
+	}
+	ods_obj_delete(part_ref);
 out:
 	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
@@ -1351,7 +1410,7 @@ sos_part_state_t sos_part_state(sos_part_t part)
 }
 
 /* Shallow copy a directory and its contents */
-static int __sos_copy_directory(const char *src_dir, const char *dst_dir)
+int __sos_copy_directory(const char *src_dir, const char *dst_dir)
 {
 	char path[PATH_MAX];
 	struct dirent **namelist;
@@ -1448,65 +1507,6 @@ static int __sos_remove_directory(const char *dir)
 		return rc;
 	}
 	return 0;
-}
-
-/**
- * \brief Move a partition
- *
- * Move an *offline* partition from its current storage location to
- * another location.
- *
- * \param part The partition handle
- * \param path The new path for the partition
- * \retval 0 The partition was successfully moved
- * \retval EBUSY The partition is not offline or another container is modifying it
- * \retval EINVAL The destination path is the same as the source path
- * \retval EEXIST The destination path already exists
- * \retval EPERM The user has insufficient privilege to write to the destination path
- */
-int sos_part_move(sos_part_t part, const char *dest_path)
-{
-	sos_t sos = part->sos;
-	struct stat sb;
-	int rc;
-
-	pthread_mutex_lock(&sos->lock);
-	ods_lock(sos->part_ref_ods, 0, NULL);
-
-	if (sos_part_state(part) != SOS_PART_STATE_OFFLINE) {
-		rc = EBUSY;
-		goto out;
-	}
-
-	if (SOS_PART_UDATA(part->udata_obj)->is_busy) {
-		rc = EBUSY;
-		goto out;
-	}
-
-	rc = stat(dest_path, &sb);
-	if (rc == 0 || (rc && errno != ENOENT)) {
-		sos_error("The destination directory '%s' already exists.\n",
-			dest_path);
-		goto out;
-	}
-	rc = __sos_copy_directory(sos_part_path(part), dest_path);
-	if (rc)
-		goto out;
-
-	rc = __sos_remove_directory(sos_part_path(part));
-	if (rc) {
-		sos_error("Error %d removing source directory '%s'\n",
-			rc, sos_part_path(part));
-	}
-	__part_close(part);
-	rc = __part_open(part, dest_path, sos->o_perm & ~SOS_PERM_CREAT, 0, 0, 06);
-	if (!rc)
-		strcpy(SOS_PART_REF(part->ref_obj)->path, dest_path);
-	ods_obj_update(part->ref_obj);
-out:
-	ods_unlock(sos->part_ref_ods, 0);
-	pthread_mutex_unlock(&sos->lock);
-	return rc;
 }
 
 /**

@@ -41,17 +41,15 @@
  */
 
 /**
- * \page sos_part_create Create a Partition
+ * \page sos_cont_clone Create a thin copy of a container
  *
- * sos_part_create -C <container> [-s <state>] [-p <path>] part_name
+ * This command creates a new container with all of the schema from
+ * the source container, but none of the partition data.
  *
- * @param "-C PATH" The *PATH* to the Container. This option is required.
- * @param "-s STATE" The *STATE* of the new partition. This paramter is optional.
- * The default initial state is *offline*. The STATE is one of *primary*, *active*,
- * or *offline*.
- * @param "-p PATH" The *PATH* to the parition. This parameter is optional. The
- * default path is the container path.
- * @param part_name The name of the partition.
+ * sos_cont_clone -C <container> <clone-container-path>
+ *
+ * @param "-C PATH" The *PATH* to the source Container. This parameter is required.
+ * @param  The *PATH* to the cloned container. This parameter is required.
  */
 #include <sys/time.h>
 #include <string.h>
@@ -62,21 +60,21 @@
 #include <errno.h>
 #include <sos/sos.h>
 
-const char *short_options = "C:p:s:d:";
+const char *short_options = "C:c:";
 
 struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},
 	{"container",   required_argument,  0,  'C'},
-	{"path",		required_argument,  0,  'p'},
+	{"clone",	required_argument,  0,  'c'},
 
 	{0,             0,                  0,  0}
 };
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_cont_clone -C <path> -p <path>\n");
+	printf("sos_cont_clone -C <path> -c <path>\n");
 	printf("    -C <path>   The path to the container to clone.\n");
-	printf("    -p <path>	The path to the cloned container.\n");
+	printf("    -c <path>	The path to the new clone; that must not exist.\n");
 	exit(1);
 }
 
@@ -91,7 +89,7 @@ int main(int argc, char **argv)
 		case 'C':
 			cont_path = strdup(optarg);
 			break;
-		case 'p':
+		case 'c':
 			clone_path = strdup(optarg);
 			break;
 		case '?':
@@ -109,7 +107,8 @@ int main(int argc, char **argv)
 	}
 	rc = sos_container_clone(sos, clone_path);
 	if (rc) {
-		printf("The clone at %s could not be created, error %s\n", clone_path, strerror(rc));
+		printf("The clone at %s could not be created, error %s\n",
+		       clone_path, strerror(rc));
 		exit(1);
 	}
 	return 0;

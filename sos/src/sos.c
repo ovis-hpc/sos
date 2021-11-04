@@ -1215,7 +1215,14 @@ void sos_container_close(sos_t sos, sos_commit_t flags)
 int sos_container_clone(sos_t sos, const char *path)
 {
 	int rc = 0;
-	sos_t clone = sos_container_open(path, SOS_PERM_RW | SOS_PERM_CREAT, sos->o_mode);
+	sos_t clone;
+
+	/* Make certain the destination does not already exist */
+	clone = sos_container_open(path, SOS_PERM_RW, sos->o_mode);
+	if (clone)
+		return EEXIST;
+
+	clone = sos_container_open(path, SOS_PERM_RW | SOS_PERM_CREAT, sos->o_mode);
 	if (!clone)
 		return errno;
 

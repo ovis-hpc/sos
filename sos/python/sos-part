@@ -368,13 +368,9 @@ if __name__ == "__main__":
     #
     if args.detach:
         try:
-            part = cont.part_by_name(args.name)
-            if not part:
-                print(f"The partition '{args.name}' was not found in the container")
-                sys.exit(1)
-            part.detach()
+            cont.part_detach(args.name)
         except:
-            print(f"The partition '{args.path}' could not be detached")
+            print(f"The partition '{args.name}' could not be detached")
             sys.exit(1)
     sys.exit(0)
 

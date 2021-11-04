@@ -51,10 +51,6 @@ sos_part_modify_SOURCES = sos_part_modify.c
 sos_part_modify_LDADD = libsos.la
 bin_PROGRAMS += sos_part_modify
 
-sos_part_move_SOURCES = sos_part_move.c
-sos_part_move_LDADD = libsos.la
-bin_PROGRAMS += sos_part_move
-
 sos_part_migrate_SOURCES = sos_part_migrate.c
 sos_part_migrate_LDADD = libsos.la -luuid
 bin_PROGRAMS += sos_part_migrate
