@@ -833,6 +833,8 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 			return NULL;
 		}
 		o_mode = va_arg(ap, int);
+	} else {
+		o_mode = 0666;
 	}
 	if (o_perm & SOS_PERM_USER) {
 		euid = va_arg(ap, uid_t);

@@ -955,7 +955,7 @@ int sos_part_attach(sos_t sos, const char *name, const char *path)
 	sos_part_t part = NULL;
 	ods_ref_t head_ref, tail_ref;
 	ods_obj_t new_part_ref;
-	int rc;
+	int rc = 0;
 
 	pthread_mutex_lock(&sos->lock);
 	ods_lock(sos->part_ref_ods, 0, NULL);
