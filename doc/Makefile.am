@@ -20,8 +20,7 @@ DOCINPUT = $(top_srcdir)/sos/include/sos/sos.h \
 		       $(top_srcdir)/sos/src/sos_part_attach.c \
 		       $(top_srcdir)/sos/src/sos_part_detach.c \
 		       $(top_srcdir)/sos/src/sos_part_query.c \
-		       $(top_srcdir)/sos/src/sos_part_modify.c \
-		       $(top_srcdir)/sos/src/sos_part_move.c
+		       $(top_srcdir)/sos/src/sos_part_modify.c
 
 
 doxygen-out: $(DOCINPUT)

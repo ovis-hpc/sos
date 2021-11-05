@@ -9,17 +9,18 @@ License: GPLv2 or BSD
 URL: http://www.ogc.us
 Source0: %{name}-%{version}.tar.gz
 
+BuildRequires: python3-devel
+
 Prefix: @prefix@
 %define _prefix @prefix@
 
 %description
-Scalable Object Storage (SOS) ...
-
+Distributed Scalable Object Storage (D/SOS)
 
 %prep
 %setup -q
 
-
+%define __brp_mangle_shebangs /usr/bin/true
 %build
 %configure @ac_configure_args@
 make %{?_smp_mflags}
@@ -33,73 +34,44 @@ rm -rf %{buildroot}
 
 # files for main package
 %files
+%defattr(-,root,root)
+%{_bindir}/ods_dump
+%{_bindir}/sos_*
+%{_bindir}/sos-db
+%{_bindir}/sos-import-csv
+%{_bindir}/sos-monitor
+%{_bindir}/sos-part
+%{_bindir}/sos-schema
+%{_bindir}/dsosql
+%{_bindir}/dsosd
+%{_bindir}/rpcgen
 %{_libdir}/libidx_*
 %{_libdir}/libkey_*
 %{_libdir}/libods.*
 %{_libdir}/libsos.*
-
-# Legacy storage management commands
-%package legacy
-Summary: SOSDB compatability commands
-Group: %{_grp}
-%description legacy
-Legacy storage management commands
-%files legacy
-%defattr(-,root,root)
-%{_bindir}/sos_cmd
-%{_bindir}/sos_part_create
-%{_bindir}/sos_part_delete
-%{_bindir}/sos_part_modify
-%{_bindir}/sos_part_move
-%{_bindir}/sos_part_query
-
-# sosdb-devel package
-%package devel
-Summary: SOSDB header files
-Group: %{_grp}
-%description devel
-Header files for developing SOSDB applications
-%files devel
-%defattr(-,root,root)
+%{_libdir}/libdsos.*
+%{_libdir}/sos-configvars.sh
+%{_libdir}/libtirpc.*
+%{_prefix}/lib*/python*/site-packages/sosdb/
 %{_includedir}/ods/
 %{_includedir}/sos/
+%{_includedir}/dsos.h
+%exclude %{_includedir}/tirpc
+%exclude /etc/bindresvport.blacklist
+%exclude /etc/netconfig
+%exclude %{_libdir}/pkgconfig/libtirpc.pc
 
-# sosdb-python package
-%package python
-Summary: Python support for SOSDB
-Group: %{_grp}
-%description python
-Python module for implementing SOSDB applications in Python
-%files python
-%defattr(-,root,root)
-%{_prefix}/lib*/python*/site-packages/%{name}/
-
-%package utils
-Summary: SOSDB Utilities
-Group: %{_grp}
-%description utils
-Commands for managing SOSDB databases
-%files utils
-%defattr(-,root,root)
-%{_prefix}/bin/lmq
-%{_prefix}/bin/sos-import-csv
-%{_prefix}/bin/sos-schema
-%{_prefix}/bin/sos-db
-%{_prefix}/bin/sos-part
-%{_prefix}/bin/sos-monitor
-
-%if "@ENABLE_DOC_TRUE@x" == "x"
-# SOS-doc package
+# sosdb-doc package
 %package doc
-Summary: SOS documentation
-Group: %{_grp}
+Summary: sosdb documentation
+Obsoletes: sosdb-doc < %{version}
+Group: Documentation
+Obsoletes: SOS-doc
 %description doc
-Documetnation for SOS package.
+Documentation for sosdb package.
+
 %files doc
 %defattr(-,root,root)
-%if "@ENABLE_DOC_HTML_TRUE@x" == "x"
-%{_datadir}/doc
-%endif
-%endif
+%{_prefix}/share/man
 
 %changelog
