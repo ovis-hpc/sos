@@ -534,7 +534,6 @@ cdef extern from "sos/sos.h":
     int sos_part_chmod(sos_part_t part, int perm)
     int sos_part_attach(sos_t sos, const char *name, const char *path)
     int sos_part_detach(sos_t sos, const char *name)
-    int sos_part_move(sos_part_t part, const char *part_path)
     sos_part_t sos_part_by_name(sos_t sos, const char *name)
     sos_part_t sos_part_by_path(sos_t sos, const char *path)
     uid_t sos_part_uid(sos_part_t part)
