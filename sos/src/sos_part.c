@@ -222,14 +222,6 @@
 #include <ods/ods_idx.h>
 #include "sos_priv.h"
 
-int64_t part_comparator(void *a, const void *b, void *arg)
-{
-	return strcmp(a, b);
-}
-
-struct ods_rbt part_tree = ODS_RBT_INITIALIZER(part_comparator);
-pthread_mutex_t part_tree_lock = PTHREAD_MUTEX_INITIALIZER;
-
 static sos_part_t __sos_part_by_name(sos_t sos, const char *name);
 static sos_part_t __sos_part_by_path(sos_t sos, const char *path);
 static sos_part_t __sos_part_first(sos_part_iter_t iter);
@@ -462,22 +454,7 @@ static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj,
 				  uid_t euid, gid_t egid, int acc)
 {
 	int rc;
-	sos_part_t part;
-
-	/* See if this partition is already open */
-	pthread_mutex_lock(&part_tree_lock);
-	struct ods_rbn *rbn = ods_rbt_find(&part_tree, SOS_PART_REF(ref_obj)->path);
-	if (rbn) {
-		part = container_of(rbn, struct sos_part_s, rbn);
-		if (!__access_check(part->udata_obj, euid, egid, acc)) {
-			rc = EPERM;
-			part = NULL;
-			goto out;
-		}
-		sos_ref_get(&part->ref_count, __func__);
-		goto out;
-	}
-	part  = calloc(1, sizeof *part);
+	sos_part_t part = calloc(1, sizeof *part);
 	if (!part)
 		goto out;
 	sos_ref_init(&part->ref_count, "part_list", __sos_part_free, part);
@@ -492,11 +469,7 @@ static sos_part_t __sos_part_open(sos_t sos, ods_obj_t ref_obj,
 	part->ref_obj = ods_obj_get(ref_obj);
 	part->sos = sos;
 	TAILQ_INSERT_TAIL(&sos->part_list, part, entry);
-	ods_rbn_init(&part->rbn, SOS_PART_REF(ref_obj)->path);
-	sos_ref_get(&part->ref_count, __func__);
-	ods_rbt_ins(&part_tree, &part->rbn);
 out:
-	pthread_mutex_unlock(&part_tree_lock);
 	return part;
 }
 
@@ -791,6 +764,7 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 	sos_part_t part;
 	ods_obj_t part_obj;
 	int new;
+	int rc = ENOENT;
 
 	if (sos->primary_part) {
 		sos->primary_part = NULL;
@@ -824,10 +798,11 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 			sos->primary_part = part;
 			sos_ref_get(&part->ref_count, "primary_part");
 		}
+		rc = 0;
 	}
 	if (part_obj)
 		ods_obj_put(part_obj);
-	return 0;
+	return rc;
 }
 
 static int refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
