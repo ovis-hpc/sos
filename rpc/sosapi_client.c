@@ -941,7 +941,7 @@ dsos_session_t dsos_session_open(const char *config_file)
 		if (rc)
 			return NULL;
 		char thread_name[16];
-		snprintf(thread_name, sizeof(thread_name), "client:%d", i);
+		snprintf(thread_name, sizeof(thread_name), "client:%d", (uint8_t)i);
 		pthread_setname_np(client->request_thread, thread_name);
 	}
 
