@@ -38,7 +38,7 @@ dsosd_SOURCES = sosapi_server.c ../ods/src/ods_rbt.c ast.c \
 	sosapi.h ast.h \
 	../ods/include/ods/ods_rbt.h
 dsosd_CFLAGS = $(AM_CFLAGS)
-dsosd_LDADD = libdsos.la -lpthread -luuid -lm
+dsosd_LDADD = ../sos/src/libsos.la libdsos.la -lpthread -luuid -lm
 bin_PROGRAMS += dsosd
 
 dsosql_SOURCES = dsosql.c dsosql_commands.c \
@@ -46,7 +46,7 @@ dsosql_SOURCES = dsosql.c dsosql_commands.c \
 	../ods/src/ods_rbt.c ../ods/include/ods/ods_rbt.h
 
 dsosql_CFLAGS = $(AM_CFLAGS) $(READLINE_CFLAGS)
-dsosql_LDADD = libdsos.la -lpthread -luuid $(READLINE_LIBS) -lm
+dsosql_LDADD = ../lib/json/libsos_json.la ../sos/src/libsos.la libdsos.la -lpthread -luuid $(READLINE_LIBS) -lm
 bin_PROGRAMS += dsosql
 
 AM_YFLAGS = -d
