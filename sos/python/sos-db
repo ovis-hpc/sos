@@ -74,6 +74,9 @@ if __name__ == "__main__":
     parser.add_argument("--mode", metavar="PERM", default="0o660",
                         help="The permissions to assign to SOS database files. "
                         "Specified as an octal number, e.g. 0o666")
+    parser.add_argument("--backend", metavar="NAME", default="MMOS",
+                        help="Specifies the back-end storage strategy. " \
+                        "Supported values are 'mmos' and 'lsos'. The default is 'mmos'")
     parser.add_argument("--query", action="store_true",
                         help="Query a container's storage information")
     parser.add_argument("--verbose", action="store_true",
@@ -89,10 +92,13 @@ if __name__ == "__main__":
     if args.create:
         try:
             # Create the database
+            perm = Sos.PERM_CREAT
+            if args.backend.lower() == "lsos":
+                perm |= Sos.BE_LSOS
             if args.mode:
-                cont.open(args.path, Sos.PERM_CREAT, o_mode=int(args.mode, base=0))
+                cont.open(args.path, perm, o_mode=int(args.mode, base=0))
             else:
-                cont.open(args.path, Sos.PERM_CREAT)
+                cont.open(args.path, perm)
         except Exception as ex:
             print(f"The container {args.path} could not be created.")
             sys.exit(1)

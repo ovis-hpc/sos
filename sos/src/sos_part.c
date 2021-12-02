@@ -282,6 +282,8 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 	int rc;
 	ods_t ods;
 	struct stat sb;
+	uid_t euid = geteuid();
+	gid_t egid = getegid();
 
 	rc = stat(part_path, &sb);
 	if (rc == 0)
@@ -300,6 +302,9 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 	ods_obj_t udata = ods_get_user_data(ods);
 	SOS_PART_UDATA(udata)->signature = SOS_PART_SIGNATURE;
 	strncpy(SOS_PART_UDATA(udata)->desc, part_desc, SOS_PART_DESC_LEN);
+	SOS_PART_UDATA(udata)->user_id = euid;
+	SOS_PART_UDATA(udata)->group_id = egid;
+	SOS_PART_UDATA(udata)->mode = o_mode;
 	uuid_generate(uuid);
 	uuid_copy(SOS_PART_UDATA(udata)->uuid, uuid);
 	ods_obj_update(udata);
@@ -375,7 +380,7 @@ out_0:
 /* Returns 1 if the specified user/group has access to the partition */
 static int __access_check(ods_obj_t part_obj, uid_t euid, gid_t egid, int access)
 {
-	int permissions = SOS_PART_UDATA(part_obj)->perm;
+	int permissions = SOS_PART_UDATA(part_obj)->mode;
 	if (euid == 0)
 		return 1;
 	/* Other */
@@ -545,7 +550,7 @@ int sos_part_chown(sos_part_t part, uid_t uid, gid_t gid)
 
 int sos_part_chmod(sos_part_t part, int mode)
 {
-	SOS_PART_UDATA(part->udata_obj)->perm = mode;
+	SOS_PART_UDATA(part->udata_obj)->mode = mode;
 	ods_obj_update(part->udata_obj);
 	return 0;
 }
@@ -767,8 +772,8 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 	int rc = ENOENT;
 
 	if (sos->primary_part) {
-		sos->primary_part = NULL;
 		sos_ref_put(&sos->primary_part->ref_count, "primary_part");
+		sos->primary_part = NULL;
 	}
 	for (part_obj = __sos_part_ref_first(sos);
 	     part_obj; part_obj = __sos_part_ref_next(sos, part_obj)) {
@@ -816,23 +821,7 @@ static int refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 
 int __sos_open_partitions(sos_t sos, char *tmp_path, uid_t euid, gid_t egid, int acc)
 {
-	int rc;
-
-	/* Open the partition ODS */
-	sprintf(tmp_path, "%s/.__part", sos->path);
-	sos->part_ref_ods = ods_open(tmp_path, ODS_PERM_RW);
-	if (!sos->part_ref_ods)
-		goto err_0;
-	sos->part_ref_udata = ods_get_user_data(sos->part_ref_ods);
-	if (!sos->part_ref_udata)
-		goto err_1;
-	rc = refresh_part_list(sos, euid, egid, acc);
-	return rc;
- err_1:
-	ods_close(sos->part_ref_ods, ODS_COMMIT_ASYNC);
-	sos->part_ref_ods = NULL;
- err_0:
-	return errno;
+	return refresh_part_list(sos, euid, egid, acc);
 }
 
 sos_part_t __sos_primary_obj_part(sos_t sos)
@@ -1071,7 +1060,7 @@ int sos_part_detach(sos_t sos, const char *name)
 	ods_obj_update(sos->part_ref_udata);
 	/* Remove the sos_part_t from the part_list, if present */
 	TAILQ_FOREACH(part, &sos->part_list, entry) {
-		if (part->ref_obj == part_ref)
+		if (part->ref_obj->ref == part_ref->ref)
 			break;
 	}
 	if (part) {
@@ -1325,7 +1314,7 @@ uid_t sos_part_gid(sos_part_t part)
  */
 int sos_part_perm(sos_part_t part)
 {
-	return SOS_PART_UDATA(part->udata_obj)->perm;
+	return SOS_PART_UDATA(part->udata_obj)->mode;
 }
 /**
  * \brief Return the partition's path

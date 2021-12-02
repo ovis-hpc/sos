@@ -154,50 +154,9 @@ class PartitionTest(SosTestCase):
     def test_05_iter_inf(self):
         self.__test_iter_inf()
 
-    def test_06_part_move(self):
-        # Move a partition to another location and ensure that the
-        # content is iterable
-        #
-        # partition 1 contains the keys 1..511
-        # partition 2 contains the keys 256..767
-        global part_path
-
-        p1 = self.db.part_by_name("1")
-        self.assertNotEqual(p1, None)
-        p1.state_set("OFFLINE")
-        part_path = p1.path() + "-moved"
-        p1.move(part_path)
-        a = self.schema.attr_by_name("uint32")
-
-        # The partition is moved and OFFLINE, make certain the
-        # keys are not present
-        ai = Sos.AttrIter(a)
-        key = Sos.Key(attr=a)
-        for i in range(1, 256):
-            key.set_value(i)
-            rc = ai.find(key)
-            self.assertEqual(rc, False)
-        key.release()
-        ai.release()
-
-        # Move the partition back to ACTIVE and the keys in that partition
-        # should now be found
-        p1.state_set("ACTIVE")
-        ai = Sos.AttrIter(a)
-        key = Sos.Key(attr=a)
-        for i in range(1, 256):
-            key.set_value(i)
-            rc = ai.find(key)
-            self.assertEqual(rc, True)
-        key.release()
-        ai.release()
-        p1.release()    # release the partition reference
-
     def test_07_part_detach(self):
         # Detach the partition
-        p1 = self.db.part_by_name("1")
-        p1.state_set("OFFLINE")
-        p1.detach()
+        self.db.part_detach("1")
         p1 = self.db.part_by_name("1")
         self.assertEqual(p1, None)
 
@@ -206,11 +165,8 @@ class PartitionTest(SosTestCase):
         # partition into it
         global part_path
         c = self.db.clone(self.db.path() + "-cloned")
-        p = Sos.Partition()
-        p.open(self.db.path() + "/1-moved")
-        p.attach(c, "1-moved")
-        p.release()
-        p1 = c.part_by_name("1-moved")
+        c.part_attach("1", self.db.path() + "/1")
+        p1 = c.part_by_name("1")
         p1.state_set("PRIMARY")
         p1.release()
 

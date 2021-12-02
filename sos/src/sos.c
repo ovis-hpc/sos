@@ -1016,16 +1016,14 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 		acc = 06;
 	if (o_perm & SOS_PERM_WR)
 		acc |= 04;
-	rc = __sos_open_partitions(sos, tmp_path, euid, egid, acc);
-	if (rc) {
-		errno = rc;
+	/* Open the partition ODS */
+	sprintf(tmp_path, "%s/.__part", sos->path);
+	sos->part_ref_ods = ods_open(tmp_path, ODS_PERM_RW);
+	if (!sos->part_ref_ods)
 		goto err;
-	}
-
-	pthread_mutex_lock(&cont_list_lock);
-	LIST_INSERT_HEAD(&cont_list, sos, entry);
-	pthread_mutex_unlock(&cont_list_lock);
-
+	sos->part_ref_udata = ods_get_user_data(sos->part_ref_ods);
+	if (!sos->part_ref_udata)
+		goto err;
 	if (need_part) {
 		snprintf(tmp_path, sizeof(tmp_path), "%s/default", path_arg);
 		rc = __sos_part_create(tmp_path, "default container partition", sos->o_perm, o_mode);
@@ -1047,7 +1045,17 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 		sos_part_put(part);
 		if (rc)
 			goto err;
+	} else {
+		rc = __sos_open_partitions(sos, tmp_path, euid, egid, acc);
+		if (rc) {
+			errno = rc;
+			goto err;
+		}
 	}
+	pthread_mutex_lock(&cont_list_lock);
+	LIST_INSERT_HEAD(&cont_list, sos, entry);
+	pthread_mutex_unlock(&cont_list_lock);
+
 	ods_iter_delete(iter);
 	close(lock_fd);
 	ods_commit(sos->part_ref_ods, ODS_COMMIT_SYNC);

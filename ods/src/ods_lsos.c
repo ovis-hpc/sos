@@ -153,8 +153,6 @@ static inline int size_to_bkt(size_t sz)
 
 static inline size_t bkt_to_size(int bkt)
 {
-	if (bkt > ODS_BKT_TABLE_SZ)
-		printf("holy shit\n");
 	assert(bkt < ODS_BKT_TABLE_SZ);
 	return (bkt + 1) << ODS_GRAIN_SHIFT;
 }
@@ -213,7 +211,6 @@ static int init_pgtbl(int pg_fd)
 	rc = write(pg_fd, &pge, sizeof(pge));
 	if (rc != sizeof(pge))
 		return errno;
-
 
 	/* Initialize the free entry */
 	pge.pg_flags = 0;
@@ -345,7 +342,8 @@ static int64_t map_page_cmp(void *akey, const void *bkey, void *arg)
  */
 static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 {
-	void *obj_map;
+	char map_path[PATH_MAX];
+	uint64_t *obj_map;
 	struct ods_rbn *rbn;
 	struct map_key_s key;
 	ods_map_t map;
@@ -386,7 +384,8 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 			goto out;
 		}
 
-		/* See if this object starts inside this map. If so,
+		/*
+		 * See if this object starts inside this map. If so,
 		 * the object is large, and spans two maps. Truncate
 		 * this map and create a new one starting at loff.
 		 */
@@ -396,46 +395,62 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 			map->map.len = loff - map->map.off;
 			diff -= map->map.len;
 			if (diff) {
-				int rc = munmap(&map->data[map->map.len], diff);
-				assert(rc == 0);
 				span = 1;
 			} else {
 				assert(0);
 			}
 		}
-
 		/* Object not in any map, create a new one */
 	}
-	ods->obj_map_sz = new_obj_map_sz(ods);
 	if (span)
-		map_off = ODS_ALIGN(loff, ODS_PAGE_SIZE);
+		assert(0 == "map-spanning objects not supported");
 	else
 		map_off = ODS_ALIGN(loff, ods->obj_map_sz);
 	map_len = ods->obj_map_sz;
 	if (map_len < sz)
-		map_len = sz;
-	/* End of map must align on obj_map_sz boundary to avoid overlapping */
-	map_len = ODS_ROUNDUP(map_off + map_len, ods->obj_map_sz) - map_off;
-	obj_map = mmap(0, map_len,
-		       PROT_READ | PROT_WRITE,
-		       MAP_ANONYMOUS | MAP_SHARED | MAP_POPULATE, -1, 0);
-	if (obj_map == MAP_FAILED) {
+		assert(0 == "objects larger than ods_map_sz are not supported");
+	int rc = snprintf(map_path, sizeof(map_path), "%s-%016lx-%016lx", ods->base.path, map_off, map_len);
+	assert(rc < sizeof(map_path));
+	for (rc = 1; rc < strlen(map_path); rc++) {
+		if (map_path[rc] == '/')
+			map_path[rc] = '_';
+	}
+	int sfd = shm_open(map_path, O_RDWR | O_CREAT, 0666);
+	if (sfd < 0) {
+		ods_lerror("Error %d creating shared memory segment '%s'\n", errno, map_path);
+		goto err_1;
+	}
+	/*
+	 * The map has a 64b generation number at the front. This is why
+	 * the map size in incremented by 8B.
+	 */
+	obj_map = mmap(0, map_len + sizeof(uint64_t),
+		       PROT_READ | PROT_WRITE, MAP_SHARED, sfd, 0);
+	if (obj_map == (uint64_t *)MAP_FAILED) {
 		ods_lerror("Map failure for %zu bytes in %s\n",
 			   map_len, ods->base.path);
 		ods_info(&ods->base, __ods_log_fp, ODS_INFO_ALL);
 		goto err_1;
 	}
+	rc = ftruncate(sfd, map_len + sizeof(uint64_t));
+	close(sfd);	/* Close the shm file descriptor */
+	if (rc) {
+		ods_lerror("Error %d setting map size to %ld",
+			errno, map_len + sizeof(uint64_t));
+		goto err_2;
+	}
 	map = calloc(1, sizeof *map + (map_len >> ODS_PAGE_SHIFT) * sizeof(struct ods_rbn));
 	if (!map) {
-		ods_lerror("Memory allocation failure in %s for %d bytes\n",
-			   __func__, sizeof *map);
+		ods_lerror("Memory allocation failure of %d bytes\n",
+			   sizeof *map);
 		goto err_2;
 	}
 	map->ods = ods;
 	map->refcount = 1;
 	map->map.len = map_len;
 	map->map.off = map_off;
-	map->data = obj_map;
+	map->gen = obj_map;
+	map->data = (unsigned char *)(obj_map + 1);
 	map->last_used = time(NULL);
 	ods_rbt_init(&map->pg_tree, map_page_cmp, NULL);
 	int pg;
@@ -446,8 +461,8 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 	for (pg = 1; pg < map_len >> ODS_PAGE_SHIFT; pg++)
 		map->pg_rbn[pg].left = &map->pg_rbn[pg-1];
 	map->free_pg = &map->pg_rbn[pg-1];
-	read_map_pages(map);
-
+	if (0 == __sync_fetch_and_add(map->gen, 1))
+		read_map_pages(map);
 	ods_rbn_init(&map->rbn, &map->map);
 	ods_rbt_ins(&ods->map_tree, &map->rbn);
  out:
@@ -572,7 +587,7 @@ static void flush_commit_buffer(ods_map_t map,
 	ods_lsos_t ods = map->ods;
 	int rc;
 
-	ods_ldebug("fd %d fileoff %ld len %ld %s\n", ods->data_fd,
+	ods_ldebug("WRITE: fd %d fileoff %ld len %ld %s\n", ods->data_fd,
 		   commit_fileoff, commit_len, map->ods->base.path);
 
 	/* Seek to the file offset */
@@ -633,25 +648,23 @@ static void commit_map_page(ods_lsos_t ods, ods_map_t map, uint64_t pg_no,
 	pg = &pgt->pg_pages[pg_no];
 	pg->pg_foff = pg_foff;
 	pg->pg_flen = pg_flen;
-	ods_ldebug("%s: pg %d bufoff %ld pg_foff %ld pg_flen %ld\n", __func__,
-		   pg_no, *commit_bufoff, pg->pg_foff, pg->pg_flen);
+	ods_linfo("COMMIT: pg %d bufoff %ld pg_foff %ld pg_flen %ld\n",
+		  pg_no, *commit_bufoff, pg->pg_foff, pg->pg_flen);
 }
 
 static void commit_map_pages(ods_map_t map)
 {
-	ods_linfo("WRITE %p: %10lx %10lx %8ld %s\n", map, map->map.off, map->map.len,
-		   ods_rbt_card(&map->pg_tree), map->ods->base.path);
-	uint8_t *commit_buf = malloc(ODS_COMMIT_BUFLEN + ODS_PAGE_SIZE);
+	uint8_t *commit_buf = NULL;
 	size_t commit_buflen = ODS_COMMIT_BUFLEN;
 	int commit_fileoff = lseek(map->ods->data_fd, 0, SEEK_END);
 	int commit_bufoff = 0;
 	struct ods_rbn *rbn;
 	uint64_t pg_no;
-	if (!commit_buf) {
-		ods_lfatal("Memory allocation failure commiting data\n");
-		return;
-	}
 	for (rbn = ods_rbt_min(&map->pg_tree); rbn; rbn = ods_rbt_min(&map->pg_tree)) {
+		if (!commit_buf) {
+			commit_buf = malloc(ODS_COMMIT_BUFLEN + ODS_PAGE_SIZE);
+			assert(commit_buf);
+		}
 		ods_rbt_del(&map->pg_tree, rbn);
 		rbn->left = map->free_pg;
 		map->free_pg = rbn;
@@ -660,10 +673,11 @@ static void commit_map_pages(ods_map_t map)
 				commit_buf, commit_buflen,
 				&commit_fileoff, &commit_bufoff);
 	}
-	if (commit_bufoff)
+	if (commit_buf) {
 		flush_commit_buffer(map, commit_buf, commit_fileoff, commit_bufoff);
-	msync(map->ods->pg_table, map->ods->pg_sz, MS_SYNC);
-	free(commit_buf);
+		msync(map->ods->pg_table, map->ods->pg_sz, MS_SYNC);
+		free(commit_buf);
+	}
 }
 
 static void read_map_pages(ods_map_t map)
@@ -676,16 +690,13 @@ static void read_map_pages(ods_map_t map)
 	uint64_t map_off;
 	int rc;
 
-	ods_linfo("READ  %p: %10lx %10lx %8s %s\n",
-		  map, map->map.off, map->map.len, "", map->ods->base.path);
-
 	pg_no = map->map.off >> ODS_PAGE_SHIFT;
 	map_off = 0;
 	do {
 		pg = &pgt->pg_pages[pg_no];
 		if (pg->pg_flen) {
 			rc = pread(map->ods->data_fd, file_data, pg->pg_flen, pg->pg_foff);
-			ods_ldebug("%12ld %12p %12p %s\n",
+			ods_ldebug("READ: pg %12ld file_off %12p data_len %12p path %s\n",
 				   pg_no, pg->pg_foff, pg->pg_flen, map->ods->base.path);
 			assert(rc == pg->pg_flen);
 			dst_sz = ODS_PAGE_SIZE;
@@ -710,7 +721,7 @@ static inline void map_put(ods_map_t map)
 	if (!ods_atomic_dec(&map->refcount)) {
 		int rc;
 		commit_map_pages(map);
-		rc = munmap(map->data, map->map.len);
+		rc = munmap(map->gen, map->map.len + sizeof(uint64_t));
 		assert(0 == rc);
 		if (1) { // __ods_debug) {
 			/*
@@ -1746,7 +1757,7 @@ static int ods_lsos_close(ods_t ods_, int flags)
 	while ((rbn = ods_rbt_min(&ods->map_tree))) {
 		map = container_of(rbn, struct ods_map_s, rbn);
 		ods_rbt_del(&ods->map_tree, rbn);
-		int rc = munmap(map->data, map->map.len);
+		int rc = munmap(map->gen, map->map.len + sizeof(uint64_t));
 		assert(0 == rc);
 		free(map);
 	}
@@ -1897,7 +1908,7 @@ static void ods_lsos_dump(ods_t ods_, FILE *fp)
 
 static void ods_lsos_obj_iter_pos_init(ods_obj_iter_pos_t pos)
 {
-	pos->page_no = 1;		      /* first page is udata */
+	pos->page_no = 1;		/* first page is udata */
 	pos->blk = 0;
 }
 

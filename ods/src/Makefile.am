@@ -21,7 +21,7 @@ libods_la_SOURCES = \
     ods_rbt.c \
     ods_log.c ods_log.h \
     fnv_hash.h
-libods_la_LIBADD = -ldl -lpthread -luuid -lz
+libods_la_LIBADD = -ldl -lpthread -luuid -lz -lrt
 # libods_la_LDFLAGS = -pg
 lib_LTLIBRARIES += libods.la
 

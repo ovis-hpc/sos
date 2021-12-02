@@ -144,7 +144,7 @@ typedef struct sos_part_udata_s {
 	uint32_t is_busy;	/* !0 if another container is changing this partition */
 	uint64_t user_id;	/* user id (uid_t) */
 	uint64_t group_id;	/* group id (gid_t) */
-	uint32_t perm;		/* Permission bits ala, -rw-rw-rw- */
+	uint32_t mode;		/* Permission bits ala, -rw-rw-rw- */
 } *sos_part_udata_t;
 #define SOS_PART_UDATA(_o_) ODS_PTR(sos_part_udata_t, _o_)
 

@@ -66,7 +66,8 @@ struct ods_map_s {
 	struct ods_rbt pg_tree;
 
 	/* Pointer to the data in memory */
-	unsigned char *data;
+	uint64_t *gen;
+	unsigned char *data;	/* Start of ods data */
 
 	/* time() last used */
 	time_t last_used;

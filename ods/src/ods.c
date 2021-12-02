@@ -618,7 +618,7 @@ static void __attribute__ ((constructor)) ods_lib_init(void)
 	env = getenv("ODS_MAP_SIZE");
 	if (env) {
 		__ods_def_map_sz = atoi(env);
-		if (__ods_def_map_sz < ODS_DEF_MAP_SZ)
-			__ods_def_map_sz = ODS_DEF_MAP_SZ;
+		if (__ods_def_map_sz < ODS_MIN_MAP_SZ)
+			__ods_def_map_sz = ODS_MIN_MAP_SZ;
 	}
 }

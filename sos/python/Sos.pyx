@@ -1036,7 +1036,7 @@ cdef class Partition(SosObject):
         return PartStat(self)
 
     def attach(self, Container cont, name):
-        """Attach partition to a container
+        """Attach a partition to a container
 
         Adds the partition as \c name to the container \c cont. The
         partition state is OFFLINE once attached. The schema in the
@@ -1197,10 +1197,17 @@ cdef class Schema(SosObject):
         self.c_next_attr = sos_schema_attr_next(self.c_next_attr)
         return a
 
-    def from_template(self, template):
+    def from_template(self, *args):
         """Create a schema from a template specification
 
-        The template parameter defines a SOS schema. The format is
+        If there are two parameters, first parameter is a string,
+        follow by an array of attributes as follows:
+
+        "<schema-name>", [ <attr-def> ]
+
+        The UUID for the schema will be generated internally.
+
+        If there is a single parameter, it must be a dictionary
         as follows:
 
         {
@@ -1292,8 +1299,18 @@ cdef class Schema(SosObject):
         cdef const char *idx_args = NULL
         cdef int join_count
         cdef char **join_args
-        cdef uuid_t uuid
+        cdef uuid_t c_uuid
 
+        if len(args) == 1:
+            template = args[0]
+        elif len(args) == 2:
+            template = {}
+            template['name'] = args[0]
+            template['uuid'] = str(uuid.uuid1())
+            template['attrs'] = args[1]
+        else:
+            s = f"The number of arguments must be one or two, not {len(args)}"
+            raise ValueError(s)
         if 'name' not in template:
             raise ValueError("'name' is missing from the template")
         if 'uuid' not in template:
@@ -1302,11 +1319,11 @@ cdef class Schema(SosObject):
             raise ValueError("'attrs' is missing from the template")
 
         uuid_str = template['uuid']
-        uuid_parse(uuid_str.encode(), uuid)
+        uuid_parse(uuid_str.encode(), c_uuid)
         schema_name = template['name']
         attrs = template['attrs']
 
-        self.c_schema = sos_schema_create(schema_name.encode(), uuid)
+        self.c_schema = sos_schema_create(schema_name.encode(), c_uuid)
         if self.c_schema == NULL:
             self.abort(ENOMEM)
         for attr in attrs:
