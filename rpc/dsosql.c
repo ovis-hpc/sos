@@ -996,7 +996,8 @@ void usage(int argc, char *argv[])
 static struct option long_opts[] = {
 	{ "attach",	required_argument, 0, 'a' },
 	{ "open",	required_argument, 0, 'o' },
-	{ "history",	required_argument, 0, 'h' }
+	{ "history",	required_argument, 0, 'h' },
+	{ 0 }
 };
 
 #define HISTORY_PATH	"DSOSQL_HISTORY_PATH"
