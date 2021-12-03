@@ -194,12 +194,13 @@ if __name__ == "__main__":
         import_schema(cont, args.import_dir)
 
     if args.export:
+        exdir = os.path.abspath(args.export)
         if args.schema:
             s = cont.schema_by_name(schema_name)
             if s is None:
                 print("The schema '{0}' was not found.".format(schema_name))
                 sys.exit(1)
-            export_schema(cont, s, args.export)
+            export_schema(cont, s, exdir)
         else:
             for s in cont.schema_iter():
-                export_schema(cont, s, args.export)
+                export_schema(cont, s, exdir)
