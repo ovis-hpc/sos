@@ -96,24 +96,32 @@ class Permission:
 
 def print_table(p, hdr=True, ftr=False):
     if hdr:
-        print("{0:18} {1:10} {2:5} {3:5} {4:12} {5:10} {6:36} {7}".
-                format("Name", "State", "uid", "gid", "Permissions", "Size", "Description", "Path"))
+        print("{0:18} {1:10} {2:12} {3:12} {4:12} {5:10} {6:36} {7}".
+                format("Name", "State", "User", "Group", "Permissions", "Size", "Description", "Path"))
     if hdr or ftr:
         print("{0} {1} {2} {3} {4} {5} {6} {7}".
                 format('-'.ljust(18,'-'), '-'.ljust(10,'-'),
-                        '-'.ljust(5, '-'), '-'.ljust(5, '-'), '-'.ljust(12, '-'),
+                        '-'.ljust(12, '-'), '-'.ljust(12, '-'), '-'.ljust(12, '-'),
                         '-'.ljust(10,'-'), '-'.ljust(36,'-'),
                         '-'.ljust(20,'-')))
     if ftr:
         return
 
     stat = p.stat()
-    uid = p.uid()
-    gid = p.gid()
+    try:
+        uid = pwd.getpwuid(int(p.uid()))
+        uid = uid.pw_name
+    except:
+        uid = p.uid()
+    try:
+        gid = grp.getgrgid(int(p.gid()))
+        gid = gid.gr_name
+    except:
+        gid = p.gid()
     perm = Permission(p.perm())
     accessed = dt.datetime.fromtimestamp(stat.accessed)
     modified = dt.datetime.fromtimestamp(stat.modified)
-    print("{0:18} {1:10} {2:5} {3:5} {4:12} {5:10} {6:36} {7}". \
+    print("{0:18} {1:10} {2:12} {3:12} {4:12} {5:10} {6:36} {7}". \
             format(p.name(), str(p.state()), uid, gid, str(perm),
                     fmt_size(stat.size), p.desc(), p.path()))
 
@@ -241,7 +249,7 @@ if __name__ == "__main__":
                 if args.group.isdigit():
                     gid = int(args.group)
                 else:
-                    gr = grp.getgrnam(args.user)
+                    gr = grp.getgrnam(args.group)
                     gid = gr.gr_gid
             else:
                 gid = int(args.group)
