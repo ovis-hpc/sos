@@ -43,7 +43,7 @@
 /**
  * \page sos_part_modify Modify the State of a Partition
  *
- * sos_part_modify -C <container> -s <state> <name>
+ * sos_part_modify -C <container> -s <state> -u <uid> -g <gid> -o <mode> <name>
  *
  * Modify the state of a partition. Valid values for the \c -s parameter
  * are: "primary", "active", and "offline".
@@ -66,6 +66,9 @@
  *                    - *primary*
  *                    - *active*
  *                    - *offline*
+ * @param "-u UID" The user-id to assign to the container
+ * @param "-g GID" The group-id to assign to the container
+ * @param "-o MODE" The access mode bits (see open(3))
  *
  */
 #include <sys/time.h>
@@ -75,29 +78,35 @@
 #include <errno.h>
 #include <sos/sos.h>
 
-const char *short_options = "C:s:";
+const char *short_options = "C:s:u:g:o:";
 
 struct option long_options[] = {
 	{"help",        no_argument,        0,  '?'},
 	{"container",   required_argument,  0,  'C'},
 	{"state",       required_argument,  0,  's'},
+	{"uid",         required_argument,  0,  'u'},
+	{"gid",         required_argument,  0,  'g'},
+	{"mode",        required_argument,  0,  'o'},
 	{0,             0,                  0,  0}
 };
 
 void usage(int argc, char *argv[])
 {
-	printf("sos_part_modify -C <path> -s <state> <name>\n");
-	printf("    -C <path>   The path to the container.\n");
-	printf("    -s <state>  Modify the state of a partition. Valid states are:\n"
+	printf("sos_part_modify -C <path> -s <state> <name>\n"
+	       "    -C <path>   The path to the container.\n"
+	       "    -s <state>  Modify the state of a partition. Valid states are:\n"
 	       "                primary  - All new allocations go in this partition.\n"
 	       "                active   - Objects are accessible, the partition does not grow\n"
 	       "                offline  - Object references are invalid; the partition\n"
-	       "                           may be moved or deleted.\n");
-	printf("    <name>	The partition name.\n");
+	       "                           may be moved or deleted.\n"
+	       "    -u <uid>    The user-id\n"
+	       "    -g <gid>    The group-id\n"
+	       "    -o <mode>   The acces mode mask (see open(3))\n"
+	       "    <name>	The partition name.\n");
 	exit(1);
 }
 
-void modify_part(sos_t sos, const char *name, const char *state)
+void modify_part(sos_t sos, const char *name, const char *state, uid_t uid, gid_t gid, int mode)
 {
 	sos_part_t part;
 	int rc = ENOENT;
@@ -108,6 +117,10 @@ void modify_part(sos_t sos, const char *name, const char *state)
 		return;
 	}
 	rc = 0;
+
+	if (!state)
+		goto skip_state;
+
 	if (0 == strcasecmp(state, "active")) {
 		rc = sos_part_state_set(part, SOS_PART_STATE_ACTIVE);
 		if (rc) {
@@ -125,6 +138,10 @@ void modify_part(sos_t sos, const char *name, const char *state)
 	} else {
 		printf("The state string '%s is invalid.\n", state);
 	}
+skip_state:
+	sos_part_chown(part, uid, gid);
+	if (mode)
+		sos_part_chmod(part, mode);
 	sos_part_put(part);
 }
 
@@ -135,6 +152,9 @@ int main(int argc, char **argv)
 	char *state = NULL;
 	int o;
 	sos_t sos;
+	uid_t uid = -1;
+	gid_t gid = -1;
+	int mode = 0;
 	while (0 < (o = getopt_long(argc, argv, short_options, long_options, NULL))) {
 		switch (o) {
 		case 'C':
@@ -143,12 +163,21 @@ int main(int argc, char **argv)
 		case 's':
 			state = strdup(optarg);
 			break;
+		case 'u':
+			uid = strtol(optarg, NULL, 0);
+			break;
+		case 'g':
+			gid = strtol(optarg, NULL, 0);
+			break;
+		case 'o':
+			mode = strtol(optarg, NULL, 0);
+			break;
 		case '?':
 		default:
 			usage(argc, argv);
 		}
 	}
-	if (!cont_path || !state)
+	if (!cont_path)
 		usage(argc, argv);
 
 	if (optind == argc)
@@ -160,6 +189,6 @@ int main(int argc, char **argv)
 		       errno, cont_path);
 		exit(1);
 	}
-	modify_part(sos, name, state);
+	modify_part(sos, name, state, uid, gid, mode);
 	return 0;
 }

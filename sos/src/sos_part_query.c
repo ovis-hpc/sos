@@ -183,6 +183,9 @@ void print_partitions(sos_t sos, FILE *fp, char *part_name, int show_objects)
 			tm = localtime((const time_t *)&sb.accessed);
 			strftime(datestr, sizeof(datestr), "%Y/%m/%d %H:%M", tm);
 			fprintf(fp, "\tAccessed    : %-16s\n", datestr);
+			fprintf(fp, "\tUser        : %d\n", sos_part_uid(part));
+			fprintf(fp, "\tGroup       : %d\n", sos_part_gid(part));
+			fprintf(fp, "\tPerm        : %o\n", sos_part_perm(part));
 		}
 		if (show_objects) {
 			print_objects(part);

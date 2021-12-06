@@ -540,9 +540,9 @@ void sos_part_close(sos_part_t part)
 
 int sos_part_chown(sos_part_t part, uid_t uid, gid_t gid)
 {
-	if (uid >= 0)
+	if (uid != (uid_t)-1)
 		SOS_PART_UDATA(part->udata_obj)->user_id = uid;
-	if (gid >= 0)
+	if (gid != (gid_t)-1)
 		SOS_PART_UDATA(part->udata_obj)->group_id = gid;
 	ods_obj_update(part->udata_obj);
 	return 0;
