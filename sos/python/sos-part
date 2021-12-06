@@ -166,11 +166,11 @@ if __name__ == "__main__":
                         help="The user name or user-id that owns the container")
     parser.add_argument("--group", metavar="GROUP", default=None,
                         help="The group name or group-id that owns the container")
-    parser.add_argument("--backend", metavar="BACKEND", default='lsos',
+    parser.add_argument("--backend", metavar="BACKEND", default='MMOS',
                         help="The desired storage backend, one of: "
                         "'LSOS' (Log Structured Object Store), or "
                         "'MMOS' (Memory Mapped Object Store). "
-                        " The default is 'lsos'.")
+                        " The default is 'MMOS'.")
     parser.add_argument("--desc", default=None,
                         help="A description for the partition.")
     parser.add_argument("--cont", default=None, metavar="PATH",
