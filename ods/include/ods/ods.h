@@ -115,7 +115,7 @@ extern ods_t ods_open(const char *path, ods_perm_t o_flags, ...);
 ods_perm_t ods_backend_type_get(ods_t ods);
 
 #define ODS_VER_MAJOR	5
-#define ODS_VER_MINOR	1
+#define ODS_VER_MINOR	2
 #define ODS_VER_FIX	1
 
 #pragma pack(1)
