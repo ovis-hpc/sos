@@ -1862,6 +1862,92 @@ static int ods_mmap_destroy(ods_t ods)
 	return status;
 }
 
+int ods_mmap_begin(ods_t ods_, struct timespec *wait)
+{
+	ods_mmap_t ods = (ods_mmap_t)ods_;
+	ods_pgt_t pgt;
+	uint64_t pid = (uint64_t)getpid();
+	struct timespec now;
+	int rc;
+
+ retry:
+	__ods_lock(ods_);
+	__pgt_lock(ods);
+	pgt = pgt_get(ods);
+	if (!pgt) {
+		rc = EINVAL;
+		goto out;
+	}
+
+	if (0 == (rc = __sync_val_compare_and_swap(&pgt->pgt_x, 0, pid)))
+		goto out;
+
+	__pgt_unlock(ods);
+	__ods_unlock(ods_);
+	usleep(500);
+
+	if (!wait)
+		goto retry;
+
+	clock_gettime(CLOCK_REALTIME, &now);
+	if (now.tv_sec > wait->tv_sec) {
+		return ETIMEDOUT;
+	} else if (now.tv_sec == wait->tv_sec) {
+		if (now.tv_nsec > wait->tv_nsec) {
+			return ETIMEDOUT;
+		}
+	}
+	goto retry;
+
+ out:
+	__pgt_unlock(ods);
+	__ods_unlock(ods_);
+	return rc;
+}
+
+int ods_mmap_end(ods_t ods_)
+{
+	ods_mmap_t ods = (ods_mmap_t)ods_;
+	ods_pgt_t pgt;
+	int rc = 0;
+
+	__ods_lock(ods_);
+	__pgt_lock(ods);
+
+	pgt = pgt_get(ods);
+	if (!pgt) {
+		rc = EINVAL;
+		goto out;
+	}
+	__sync_lock_release(&pgt->pgt_x, 0);
+ out:
+	__pgt_unlock(ods);
+	__ods_unlock(ods_);
+	return rc;
+}
+
+pid_t ods_mmap_test(ods_t ods_)
+{
+	ods_mmap_t ods = (ods_mmap_t)ods_;
+	ods_pgt_t pgt;
+	pid_t pid;
+
+	__ods_lock(ods_);
+	__pgt_lock(ods);
+
+	pgt = pgt_get(ods);
+	if (!pgt) {
+		pid = (pid_t)-1;
+		errno = EINVAL;
+		goto out;
+	}
+	pid = (pid_t)pgt->pgt_x;
+ out:
+	__pgt_unlock(ods);
+	__ods_unlock(ods_);
+	return pid;
+}
+
 static uint64_t ods_mmap_flush_data(ods_t ods, int keep_time);
 ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 {
@@ -1880,6 +1966,9 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 	}
 	ods->base.o_perm = o_perm;
 	ods->base.be_type = ODS_BE_MMAP;
+	ods->base.begin_x = ods_mmap_begin;
+	ods->base.end_x = ods_mmap_end;
+	ods->base.test_x = ods_mmap_test;
 	ods->base.commit = ods_mmap_commit;
 	ods->base.close = ods_mmap_close;
 	ods->base.alloc =  ods_mmap_alloc;

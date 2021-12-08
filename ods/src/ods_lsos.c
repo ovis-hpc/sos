@@ -2116,6 +2116,83 @@ static int ods_lsos_set(ods_t ods_, int cfg_id, ...)
 	return rc;
 }
 
+int ods_lsos_begin(ods_t ods_, struct timespec *wait)
+{
+	ods_lsos_t ods = (ods_lsos_t)ods_;
+	ods_pgt_t pgt;
+	uint64_t pid = (uint64_t)getpid();
+	int rc = EINVAL;
+
+	__ods_lock(ods_);
+	__pgt_lock(ods);
+	pgt = pgt_get(ods);
+	if (!pgt)
+		goto out;
+	while (0 != __sync_val_compare_and_swap(&pgt->pgt_x, 0, pid)) {
+		struct timespec now;
+		usleep(500);
+		if (!wait)
+			continue;
+		clock_gettime(CLOCK_REALTIME, &now);
+		if (now.tv_sec > wait->tv_sec) {
+			rc = ETIMEDOUT;
+			goto out;
+		} else if (now.tv_sec == wait->tv_sec) {
+			if (now.tv_nsec > wait->tv_nsec) {
+				rc = ETIMEDOUT;
+				goto out;
+			}
+		}
+	}
+	rc = 0;
+ out:
+	__pgt_unlock(ods);
+	__ods_unlock(ods_);
+	return rc;
+}
+
+int ods_lsos_end(ods_t ods_)
+{
+	ods_lsos_t ods = (ods_lsos_t)ods_;
+	ods_pgt_t pgt;
+	int rc = 0;
+
+	__ods_lock(ods_);
+	__pgt_lock(ods);
+
+	pgt = pgt_get(ods);
+	if (!pgt) {
+		rc = EINVAL;
+		goto out;
+	}
+	__sync_lock_release(&pgt->pgt_x, 0);
+ out:
+	__pgt_unlock(ods);
+	__ods_unlock(ods_);
+	return rc;
+}
+
+pid_t ods_lsos_test(ods_t ods_)
+{
+	ods_lsos_t ods = (ods_lsos_t)ods_;
+	ods_pgt_t pgt;
+	pid_t pid;
+
+	__ods_lock(ods_);
+	__pgt_lock(ods);
+
+	pgt = pgt_get(ods);
+	if (!pgt) {
+		pid = (pid_t)-1;
+		errno = EINVAL;
+		goto out;
+	}
+	pid = (pid_t)pgt->pgt_x;
+ out:
+	__pgt_unlock(ods);
+	__ods_unlock(ods_);
+	return pid;
+}
 
 ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 {
@@ -2134,6 +2211,9 @@ ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 	}
 	ods->base.o_perm = o_perm;
 	ods->base.be_type = ODS_BE_LSOS;
+	ods->base.begin_x = ods_lsos_begin;
+	ods->base.end_x = ods_lsos_end;
+	ods->base.test_x = ods_lsos_test;
 	ods->base.commit = ods_lsos_commit;
 	ods->base.close = ods_lsos_close;
 	ods->base.alloc =  ods_lsos_alloc;

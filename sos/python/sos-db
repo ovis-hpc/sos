@@ -65,29 +65,30 @@ def fmt_size(size):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create a SOS DB")
-    parser.add_argument("--path", required=True,
-                        help="The path to the database.")
-    parser.add_argument("--create", action="store_true",
+    actions = parser.add_mutually_exclusive_group(required=True)
+    actions.add_argument("--create", action="store_true",
                         help="Create a new SOS database. " \
                         "The --path parameter specifies the path to the new " \
                         "database.")
+    actions.add_argument("--query", action="store_true",
+                        help="Query a container's storage information")
+    actions.add_argument("--transaction", 
+                        help="Start/End a container transaction")
+
+    parser.add_argument("--path", required=True,
+                        help="The path to the database.")
     parser.add_argument("--mode", metavar="PERM", default="0o660",
                         help="The permissions to assign to SOS database files. "
                         "Specified as an octal number, e.g. 0o666")
     parser.add_argument("--backend", metavar="NAME", default="MMOS",
                         help="Specifies the back-end storage strategy. " \
                         "Supported values are 'mmos' and 'lsos'. The default is 'mmos'")
-    parser.add_argument("--query", action="store_true",
-                        help="Query a container's storage information")
     parser.add_argument("--verbose", action="store_true",
                         help="Request verbose query output")
+
     args = parser.parse_args()
 
     cont = Sos.Container()
-
-    if not args.create and not args.query:
-        print("Either the --create or --query options must be specified.")
-        sys.exit(1)
 
     if args.create:
         try:
@@ -127,3 +128,17 @@ if __name__ == "__main__":
                          accessed.strftime("%m/%d/%y %H:%M:%S"),
                          modified.strftime("%m/%d/%y %H:%M:%S"),
                          fmt_size(stat.size), p.path()))
+
+    if args.transaction:
+        try:
+            cont.open(args.path)
+        except Exception as ex:
+            print(f"The container {args.path} could not be opened.")
+            sys.exit(1)
+        if args.transaction.lower() == "begin":
+            cont.begin()
+        elif args.transaction.lower() == "end":
+            cont.end()
+        else:
+            print(f"The transaction argument must be 'begin' or 'end'")
+            sys.exit(1)

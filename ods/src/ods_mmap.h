@@ -1,4 +1,4 @@
-/*
+/* -*- c-basic-offset : 8 -*-
  * Copyright (c) 2021 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2021 Sandia Corporation. All rights reserved.
  *
@@ -170,8 +170,8 @@ typedef struct ods_lock_s {
 			 (3 * sizeof(uint64_t)) +	\
 			 sizeof(ods_lock_t)		\
 			 )
-#define ODS_LOCK_MEM_SZ	(ODS_PAGE_SIZE - ODS_PGT_PFX_SZ)
-#define ODS_LOCK_CNT	(ODS_LOCK_MEM_SZ / sizeof(ods_lock_t))
+#define ODS_LOCK_MEM_SZ	(ODS_PAGE_SIZE - ODS_PGT_PFX_SZ - sizeof(uint64_t))
+#define ODS_LOCK_CNT	(ODS_LOCK_MEM_SZ/ sizeof(ods_lock_t))
 
 typedef struct ods_bkt_s {
 	uint64_t pg_next;	/* next bucket */
@@ -186,8 +186,9 @@ typedef struct ods_pgt_s {
 	/* Inter-process locks for applications */
 	union {
 		unsigned char lock_mem[ODS_LOCK_MEM_SZ];
-		ods_lock_t lck_tbl[0];
+		ods_lock_t lck_tbl[ODS_LOCK_CNT];
 	};
+	uint64_t pgt_x;		/* pid of transaction owner */
 	/* Should begin on a 4096B boundary */
 	struct ods_bkt_s bkt_table[ODS_BKT_TABLE_SZ];
 	struct ods_pg_s pg_pages[0];/* array of page control information */

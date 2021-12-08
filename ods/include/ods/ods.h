@@ -1,4 +1,4 @@
-/*
+/* -*- c-basic-offset : 8 -*-
  * Copyright (c) 2021 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2012 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive
@@ -288,6 +288,10 @@ extern void ods_commit(ods_t ods, int flags);
  * \retval EINVAL The \c ods parameter is NULL
  */
 extern int ods_close(ods_t ods, int flags);
+
+extern int ods_begin_x(ods_t ods, struct timespec *wait);
+extern int ods_end_x(ods_t ods);
+extern pid_t ods_test_x(ods_t ods);
 
 /**
  * \brief Allocate an object of the requested size

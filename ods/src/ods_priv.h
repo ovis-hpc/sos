@@ -39,6 +39,10 @@ struct ods_s {
 	ods_atomic_t obj_count;
 	LIST_HEAD(obj_list_head, ods_obj_s) obj_list;
 
+
+	int (*begin_x)(ods_t ods, struct timespec *wait);
+	int (*end_x)(ods_t ods);
+	pid_t (*test_x)(ods_t ods);
 	int (*close)(ods_t ods, int flags);
 	void (*commit)(ods_t ods, int flags);
 	ods_ref_t (*alloc)(ods_t ods, size_t sz);

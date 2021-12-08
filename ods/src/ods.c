@@ -122,6 +122,21 @@ int ods_lock_cleanup(const char *path)
 	return rc;
 }
 
+int ods_begin_x(ods_t ods, struct timespec *wait)
+{
+	return ods->begin_x(ods, wait);
+}
+
+int ods_end_x(ods_t ods)
+{
+	return ods->end_x(ods);
+}
+
+pid_t ods_test_x(ods_t ods)
+{
+	return ods->test_x(ods);
+}
+
 int ods_lock_info(const char *path, FILE *fp)
 {
 	ods_t ods = ods_open(path, ODS_PERM_RD, 0660);

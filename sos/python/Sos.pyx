@@ -774,6 +774,23 @@ cdef class Container(SosObject):
         if rc != 0:
             self.abort(rc)
 
+    def begin(self):
+        """Begin a transaction boundary on the container
+
+        Another process attempting to begin a transaction
+        will block until the owning process ends the
+        transaction
+        """
+        sos_begin_x(self.c_cont)
+
+    def end(self):
+        """End a transaction on the container
+
+        Any process blocked attempting to begin a transaction will
+        continue
+        """
+        sos_end_x(self.c_cont)
+
     def part_create(self, name, desc=None, path=None):
         """Create a new partition and attach it to the container
 

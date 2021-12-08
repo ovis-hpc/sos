@@ -534,6 +534,18 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 	return 0;
 }
 
+void sos_begin_x(sos_t sos)
+{
+	if (!sos->part_ref_ods)
+		return;
+	ods_begin_x(sos->part_ref_ods, NULL);
+}
+
+void sos_end_x(sos_t sos)
+{
+	ods_end_x(sos->part_ref_ods);
+}
+
 /**
  * @brief Return storage utilization information about an index
  *
@@ -623,7 +635,7 @@ static int release_locks(const char *path, const struct stat *sb,
 	len = strlen(tmp_path);
 	if (strcmp(&tmp_path[len-3], ".BE"))
 		return 0;
-	/* strip the .PG, ods_lock_info will append it */
+	/* strip the .PG, ods_lock_cleanup will append it */
 	tmp_path[len-3] = '\0';
 	ods_lock_cleanup(tmp_path);
 	return 0;
