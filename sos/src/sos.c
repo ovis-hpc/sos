@@ -215,8 +215,8 @@ int sos_obj_ref_from_str(sos_obj_ref_t ref, const char *value, char **endptr)
 int __sos_make_all_dir(const char *inp_path, mode_t omode)
 {
 	struct stat sb;
-	mode_t numask, oumask;
-	int first, last, retval;
+	mode_t oumask;
+	int last, retval;
 	char *p, *path;
 
 	p = path = strdup(inp_path);
@@ -230,7 +230,8 @@ int __sos_make_all_dir(const char *inp_path, mode_t omode)
 	if (p[0] == '/')
 		++p;
 
-	for (first = 1, last = 0; !last ; ++p) {
+	oumask = umask(0);
+	for (last = 0; !last ; ++p) {
 		if (p[0] == '\0')
 			last = 1;
 		else if (p[0] != '/')
@@ -238,15 +239,7 @@ int __sos_make_all_dir(const char *inp_path, mode_t omode)
 		*p = '\0';
 		if (!last && p[1] == '\0')
 			last = 1;
-		if (first) {
-			oumask = umask(0);
-			numask = oumask & ~(S_IWUSR | S_IXUSR);
-			(void)umask(numask);
-			first = 0;
-		}
-		if (last)
-			(void)umask(oumask);
-		if (mkdir(path, last ? omode : S_IRWXU | S_IRWXG | S_IRWXO) < 0) {
+		if (mkdir(path, omode) < 0) {
 			if (errno == EEXIST || errno == EISDIR) {
 				if (stat(path, &sb) < 0) {
 					retval = 1;
@@ -267,8 +260,7 @@ int __sos_make_all_dir(const char *inp_path, mode_t omode)
 		if (!last)
 			*p = '/';
 	}
-	if (!first && !last)
-		(void)umask(oumask);
+	(void)umask(oumask);
 	free(path);
 	return retval;
 }

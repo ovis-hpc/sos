@@ -2253,7 +2253,9 @@ ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 
 	/* Take the ods file lock */
 	sprintf(tmp_path, "%s.lock", path);
+	mode_t oumask = umask(0);
 	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
+	umask(oumask);
 	if (lock_fd < 0)
 		return NULL;
 	rc = flock(lock_fd, LOCK_EX);
