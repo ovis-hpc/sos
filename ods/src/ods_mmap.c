@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <pthread.h>
+#include <libgen.h>
 #include <ods/ods.h>
 #include <ods/ods_rbt.h>
 #include "config.h"
@@ -2012,7 +2013,15 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 	ods->base.set = ods_mmap_set;
 
 	/* Take the ods file lock */
-	sprintf(tmp_path, "%s.lock", path);
+	char *dir = strdup(path);
+	if (!dir)
+		return NULL;
+	char *base = strdup(path);
+	if (!base)
+		return NULL;
+	sprintf(tmp_path, "%s/.%s.lock", dirname((char *)dir), basename((char *)base));
+	free(dir);
+	free(base);
 	mode_t oumask = umask(0);
 	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
 	umask(oumask);

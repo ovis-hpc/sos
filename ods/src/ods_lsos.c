@@ -29,6 +29,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <zlib.h>
+#include <libgen.h>
 #include <ods/ods.h>
 #include <ods/ods_rbt.h>
 #include "config.h"
@@ -721,6 +722,14 @@ static inline void map_put(ods_map_t map)
 	if (!ods_atomic_dec(&map->refcount)) {
 		int rc;
 		commit_map_pages(map);
+		if (0 == __sync_sub_and_fetch(map->gen, 1)) {
+			char map_path[PATH_MAX];
+			int rc = snprintf(map_path, sizeof(map_path),
+					"%s-%016lx-%016lx",
+					map->ods->base.path, map->map.off, map->map.len);
+			assert(rc < sizeof(map_path));
+			shm_unlink(map_path);
+		}
 		rc = munmap(map->gen, map->map.len + sizeof(uint64_t));
 		assert(0 == rc);
 		if (1) { // __ods_debug) {
@@ -1757,6 +1766,14 @@ static int ods_lsos_close(ods_t ods_, int flags)
 	while ((rbn = ods_rbt_min(&ods->map_tree))) {
 		map = container_of(rbn, struct ods_map_s, rbn);
 		ods_rbt_del(&ods->map_tree, rbn);
+		if (0 == __sync_sub_and_fetch(map->gen, 1)) {
+			char map_path[PATH_MAX];
+			int rc = snprintf(map_path, sizeof(map_path),
+					"%s-%016lx-%016lx",
+					map->ods->base.path, map->map.off, map->map.len);
+			assert(rc < sizeof(map_path));
+			shm_unlink(map_path);
+		}
 		int rc = munmap(map->gen, map->map.len + sizeof(uint64_t));
 		assert(0 == rc);
 		free(map);
@@ -2252,7 +2269,15 @@ ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 	ods->base.set = ods_lsos_set;
 
 	/* Take the ods file lock */
-	sprintf(tmp_path, "%s.lock", path);
+	char *dir = strdup(path);
+	if (!dir)
+		return NULL;
+	char *base = strdup(path);
+	if (!base)
+		return NULL;
+	sprintf(tmp_path, "%s/.%s.lock", dirname((char *)dir), basename((char *)base));
+	free(dir);
+	free(base);
 	mode_t oumask = umask(0);
 	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
 	umask(oumask);

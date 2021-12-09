@@ -138,6 +138,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <limits.h>
+#include <libgen.h>
 #include <errno.h>
 #include <assert.h>
 #include <ftw.h>
@@ -879,7 +880,15 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	TAILQ_INIT(&sos->part_list);
 
 	/* Take the SOS file lock */
-	sprintf(tmp_path, "%s.lock", path);
+	char *dir = strdup(path);
+	if (!dir)
+		return NULL;
+	char *base = strdup(path);
+	if (!base)
+		return NULL;
+	sprintf(tmp_path, "%s/.%s.lock", dirname(dir), basename(base));
+	free(dir);
+	free(base);
 	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
 	if (lock_fd < 0)
 		return NULL;
