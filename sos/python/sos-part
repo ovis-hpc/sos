@@ -46,8 +46,9 @@
 from builtins import str
 import shutil
 import sys
-import argparse
 import os
+import errno
+import argparse
 import pwd
 import grp
 from sosdb import Sos
@@ -174,10 +175,16 @@ if __name__ == "__main__":
     parser.add_argument("--desc", default=None,
                         help="A description for the partition.")
     parser.add_argument("--cont", default=None, metavar="PATH",
-                        help="The path to the container if attaching or detaching partitions.\n"
-                            "If specified with --query, a container's attached partitions are queried.")
+                        help="The path to the container used with the "
+                        "--attach, --detach, and --query actions.")
     parser.add_argument("--fmt", default='table',
                         help="The desired query output format: 'table', or 'json'.")
+    parser.add_argument("--cur-dir", metavar="PATH",
+                        help="Path to the template directory definining the "
+                        "schema UUID currently in use in the partition.")
+    parser.add_argument("--new-dir", metavar="PATH",
+                        help="Path to the template directory definining the "
+                        "schema UUID that will replace the current UUID.")
 
     actions = parser.add_mutually_exclusive_group(required=True)
     actions.add_argument("--query", action="store_true",
@@ -194,7 +201,10 @@ if __name__ == "__main__":
     actions.add_argument("--set", action="store_true",
                          help="Set user-id, group-id, and permission bits"
                             "for accessing a partition's contents")
-
+    actions.add_argument("--remap-schema", action="store_true",
+                         help="Replace the schema UUID in a partition. "
+                         "Used when importing a partition that was populated "
+                         "using a different schema dictionary.")
     args = parser.parse_args()
 
     #
@@ -362,13 +372,18 @@ if __name__ == "__main__":
         part = Sos.Partition()
         try:
             part.open(args.path)
-        except:
+        except Exception as e:
             print(f"The partition '{args.path}' could not be opened")
             sys.exit(1)
         try:
             part.attach(cont, args.name)
-        except:
-            print(f"The partition '{args.name}' could not be attached.")
+        except Exception as e:
+            if part.errno() == errno.EEXIST:
+                print(f"A partition with this name or path already exists in the container.")
+            elif part.errno() == errno.EPERM:
+                print(f"You do not have sufficient permission to attach this container/partition.")
+            else:
+                print(f"Error '{str(e)}' attaching partition '{args.name}'.")
             sys.exit(1)
 
     #
@@ -380,5 +395,28 @@ if __name__ == "__main__":
         except:
             print(f"The partition '{args.name}' could not be detached")
             sys.exit(1)
+
+    #
+    # Remap a partition's schema UUID
+    #
+    if args.remap_schema:
+        part = Sos.Partition()
+        try:
+            part.open(args.path)
+        except:
+            print(f"The partition '{args.path}' could not be opened")
+            sys.exit(1)
+        count, err = part.remap_schema_uuid(args.new_dir, args.cur_dir)
+        print(f"{count} objects were updated with new schema UUID.")
+        if err != 0:
+            if err == errno.ENOENT:
+                print(f"The {args.new_dir} or {args.cur_dir} files could not " \
+                      "be opened.")
+            elif err == errno.EINVAL:
+                print(f"The {args.new_dir} or {args.cur_dir} files are not " \
+                      "valid JSON.")
+            elif err != 0:
+                print(f"Error {err} was returned remapping the partition's UUID")
+        sys.exit(1)
     sys.exit(0)
 

@@ -258,7 +258,7 @@ void __sos_schema_free(sos_schema_t schema)
  *
  *     struct sos_schema_template employee = {
  *         .name = "employee",
- * 	   .uuid = "35190552-9177-11eb-941e-0cc47a6e9146",
+ *	   .uuid = "35190552-9177-11eb-941e-0cc47a6e9146",
  *         .attrs = {
  *              {
  *                  .name = "First",
@@ -1005,7 +1005,7 @@ retry:
 		}
 		/* Current allocation is big enough, reuse it */
 		off = val->data->array_info.offset;
-	} else 	if (off + size < ods_obj_size(obj->obj)) {
+	} else	if (off + size < ods_obj_size(obj->obj)) {
 		/* Allocate a new array */
 		val->data->array_info.offset = off;
 		val->data->array_info.size = size;
@@ -1439,7 +1439,7 @@ int sos_obj_commit_part(sos_obj_t obj, sos_part_t part)
 		if (!part)
 			return ENOSPC;
 	}
-   	state = sos_part_state(part);
+	state = sos_part_state(part);
 	if (!(state == SOS_PART_STATE_PRIMARY || state == SOS_PART_STATE_ACTIVE))
 		return ENOSPC;
 
@@ -1897,6 +1897,195 @@ static const char *type_name(sos_type_t t)
 	if (t <= SOS_TYPE_LAST)
 		return type_names[t];
 	return "corrupted!";
+}
+
+void __sos_schema_print(ods_obj_t schema_obj, FILE *fp)
+{
+	int idx;
+	ods_obj_t ext_obj;
+	sos_array_t ext;
+	sos_schema_data_t schema_data;
+	const char **attr_names;
+	char uuid_str[37];
+
+	if (!schema_obj)
+		return;
+
+	schema_data = schema_obj->as.ptr;
+	attr_names = calloc(schema_data->attr_cnt, sizeof(char *));
+	if (!attr_names)
+		return;
+
+	fprintf(fp, "  {\n");
+	fprintf(fp, "    \"name\" : \"%s\",\n", schema_data->name);
+	uuid_unparse_lower(schema_data->uuid, uuid_str);
+	fprintf(fp, "    \"uuid\" : \"%s\",\n", uuid_str);
+	fprintf(fp, "    \"attrs\" : [");
+	for (idx = 0; idx < schema_data->attr_cnt; idx++) {
+		sos_attr_data_t attr_data = &schema_data->attr_dict[idx];
+		attr_names[idx] = attr_data->name;
+		if (idx != 0)
+			fprintf(fp, ",\n");
+		else
+			fprintf(fp, "\n");
+		fprintf(fp, "      {\n");
+		fprintf(fp, "        \"name\" : \"%s\",\n", attr_data->name);
+		fprintf(fp, "        \"id\" : %d,\n", attr_data->id);
+		fprintf(fp, "        \"type\" : \"%s\"", type_names[attr_data->type]);
+		if (attr_data->indexed)
+			fprintf(fp, ",\n        \"index\" : {}");
+		if (attr_data->ext_ref) {
+			int join_idx;
+			ext_obj = ods_ref_as_obj(ods_obj_ods(schema_obj), attr_data->ext_ref);
+			if (!ext_obj) {
+				errno = EPROTO;
+				goto err_0;
+			}
+			ext = ODS_PTR(sos_array_t, ext_obj);
+			fprintf(fp, ",\n        \"join_attrs\" : [");
+			for (join_idx = 0; join_idx < ext->count; join_idx++) {
+				int attr_id = ext->data.uint32_[join_idx];
+				if (join_idx)
+					fprintf(fp, ",");
+				fprintf(fp, "\"%s\"", attr_names[attr_id]);
+			}
+			fprintf(fp, "]");
+			ods_obj_put(ext_obj);
+		}
+		fprintf(fp, "\n      }");
+	}
+	fprintf(fp, "\n    ]\n");
+	fprintf(fp, "  }");
+ err_0:
+	free(attr_names);
+	return;
+}
+
+#include <libgen.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/file.h>
+
+int sos_schema_export(const char *path_arg, FILE *fp)
+{
+	char tmp_path[PATH_MAX];
+	char *path = NULL;
+	struct stat sb;
+	ods_iter_t iter = NULL;
+	int rc;
+	int lock_fd;
+
+	if (strlen(path_arg) >= SOS_PART_PATH_LEN)
+		return E2BIG;
+
+	if (path_arg[0] != '/') {
+		if (!getcwd(tmp_path, sizeof(tmp_path)))
+			return errno;
+		if (strlen(tmp_path) + strlen(path_arg) > SOS_PART_PATH_LEN)
+			return E2BIG;
+		strcat(tmp_path, "/");
+		strcat(tmp_path, path_arg);
+		path = strdup(tmp_path);
+	} else {
+		path = strdup(path_arg);
+	}
+	if (!path)
+		return ENOMEM;
+
+	/* Take the SOS file lock */
+	char *dir = strdup(path);
+	if (!dir)
+		return ENOMEM;
+	char *base = strdup(path);
+	if (!base) {
+		free(dir);
+		return ENOMEM;
+	}
+	sprintf(tmp_path, "%s/.%s.lock", dirname(dir), basename(base));
+	free(dir);
+	free(base);
+	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
+	if (lock_fd < 0)
+		return errno;
+	rc = flock(lock_fd, LOCK_EX);
+	if (rc) {
+		close(lock_fd);
+		errno = rc;
+		return errno;
+	}
+
+	/* Stat the container path to check that it exists */
+	rc = stat(path, &sb);
+	if (rc)
+		return rc;
+
+	/* Open the ODS containing the schema objects */
+	sprintf(tmp_path, "%s/.__schemas", path);
+	ods_t schema_ods = ods_open(tmp_path, 0660);
+	if (!schema_ods) {
+		fprintf(fp, "Error %d opening schema ODS in open of %s\n", errno, path_arg);
+		goto err_0;
+	}
+	ods_obj_t udata = ods_get_user_data(schema_ods);
+	if ((SOS_SCHEMA_UDATA(udata)->signature != SOS_SCHEMA_SIGNATURE)) {
+		errno = EINVAL;
+		fprintf(fp, "Schema ODS in %s is corrupted expected %lX, got %lx\n", path_arg,
+			  SOS_SCHEMA_SIGNATURE,
+			  SOS_SCHEMA_UDATA(udata)->signature);
+		ods_obj_put(udata);
+		goto err_1;
+	}
+
+#if 0
+	if (!is_supported_version(SOS_SCHEMA_UDATA(udata)->version, SOS_LATEST_VERSION)) {
+		errno = EPROTO;
+		sos_error("Schema ODS in %s is an unsupported version expected %llX, got %llx\n",
+			  path_arg,
+			  SOS_LATEST_VERSION,
+			  SOS_SCHEMA_UDATA(udata)->version);
+		ods_obj_put(udata);
+		goto err_1;
+	}
+#endif
+	ods_obj_put(udata);
+
+	/* Open the index on the schema objects */
+	sprintf(tmp_path, "%s/.__schema_idx", path);
+	ods_idx_t schema_idx = ods_idx_open(tmp_path, 0660);
+	if (!schema_idx)
+		goto err_1;
+
+	fprintf(fp, "[");
+	/*
+	 * Print the schema dictionary
+	 */
+	iter = ods_iter_new(schema_idx);
+	ods_lock(schema_ods, 0, NULL);
+		int comma = 0;
+	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_next(iter)) {
+		sos_obj_ref_t obj_ref;
+		obj_ref.idx_data = ods_iter_data(iter);
+		ods_obj_t schema_obj = ods_ref_as_obj(schema_ods, obj_ref.ref.obj);
+		if (comma)
+			fprintf(fp, ",\n");
+		else
+			fprintf(fp, "\n");
+		__sos_schema_print(schema_obj, fp);
+		ods_obj_put(schema_obj);
+		comma = 1;
+	}
+	fprintf(fp, "\n]\n");
+	ods_unlock(schema_ods, 0);
+	ods_iter_delete(iter);
+	errno = 0;
+	ods_idx_close(schema_idx, ODS_COMMIT_ASYNC);
+ err_1:
+	ods_close(schema_ods, ODS_COMMIT_ASYNC);
+ err_0:
+	close(lock_fd);
+	return errno;
 }
 
 /**

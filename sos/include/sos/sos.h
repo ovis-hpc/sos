@@ -342,6 +342,7 @@ typedef struct sos_schema_template {
 /** \defgroup schema_funcs Schema Functions
  * @{
  */
+int sos_schema_export(const char *path, FILE *fp);
 sos_schema_t sos_schema_create(const char *name, const uuid_t uuid);
 sos_schema_t sos_schema_new(const char *name);
 void sos_schema_free(sos_schema_t schema);
@@ -472,6 +473,7 @@ int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
 uid_t sos_part_uid(sos_part_t part);
 gid_t sos_part_gid(sos_part_t part);
 int sos_part_perm(sos_part_t part);
+size_t sos_part_remap_schema_uuid(sos_part_t part, const char *dst_path, const char *src_path);
 
 typedef char sos_obj_ref_str_t[37+32];
 char *sos_obj_ref_to_str(sos_obj_ref_t ref, sos_obj_ref_str_t str);

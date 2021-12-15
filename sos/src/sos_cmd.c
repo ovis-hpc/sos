@@ -94,6 +94,7 @@
  *              [-V <col>]  Add an object attribute (i.e. column) to the output.
  *                          If not specified, all attributes in the object are output.
  *                          Use '<col>[width]' to specify the desired column width
+ *          -s             Dump a container's schema without opening it.
  *
  * \section sos_cmd_create_container Create a new Container
  * @param "-C PATH" The *PATH* to the root of the Container. This is a required
@@ -237,7 +238,7 @@
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
-const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:tidcqlLRv";
+const char *short_options = "f:I:M:m:C:K:O:S:X:V:F:T:tidcqlLRvs";
 
 struct option long_options[] = {
 	{"format",      required_argument,  0,  'f'},
@@ -253,6 +254,7 @@ struct option long_options[] = {
 	{"container",   required_argument,  0,  'C'},
 	{"mode",	required_argument,  0,  'O'},
 	{"schema_name",	required_argument,  0,  'S'},
+	{"schema_export",required_argument,  0,  's'},
 	{"index",	required_argument,  0,  'X'},
 	{"csv",		required_argument,  0,  'I'},
 	{"map",         required_argument,  0,  'M'},
@@ -302,6 +304,7 @@ void usage(int argc, char *argv[])
 	printf("       [-V <col>]  Add an object attribute (i.e. column) to the output.\n");
 	printf("                   If not specified, all attributes in the object are output.\n");
 	printf("                   Use '<col>[width]' to specify the desired column width\n");
+	printf("    -s             Export all schema from a container to a JSON text file.\n");
 	exit(1);
 }
 
@@ -1019,7 +1022,7 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 #define DEBUG		0x1000
 #define VERSION		0x2000
 #define TEST		0x4000
-
+#define SEXP		0x8000
 struct cond_key_s {
 	char *name;
 	enum sos_cond_e cond;
@@ -1173,6 +1176,9 @@ int main(int argc, char **argv)
 		case 'O':
 			o_mode = strtol(optarg, NULL, 0);
 			break;
+		case 's':
+			action |= SEXP;
+			break;
 		case 'V':
 			if (add_column(optarg))
 				exit(11);
@@ -1216,6 +1222,10 @@ int main(int argc, char **argv)
 	if (!action) {
 		printf("No action was requested.\n");
 		usage(argc, argv);
+	}
+	if (action & SEXP) {
+		sos_schema_export(path, stdout);
+		return 0;
 	}
 	if (action & CREATE) {
 		rc = create(path, o_mode);

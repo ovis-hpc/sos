@@ -46,6 +46,8 @@ from builtins import str
 from cpython cimport PyObject, Py_INCREF
 from libc.stdint cimport *
 from libc.stdlib cimport calloc, malloc, free, realloc
+from libc.stdio cimport fdopen, fclose
+import os
 import datetime as dt
 import numpy as np
 import struct
@@ -56,6 +58,7 @@ import uuid
 from sosdb.DataSet import DataSet
 cimport numpy as np
 import pandas as pd
+import json
 
 #
 # Initialize the numpy array support. Numpy arrays are used
@@ -167,6 +170,48 @@ libc_errno_str = {
     EXFULL : "Exchange full"
 }
 
+def export_schema(path, dir_path):
+    """Export the schema from a container
+
+    This allows a container that is _broken_, i.e. can't be
+    opened to have its schema extracted. This is necessary
+    to be able to succesfully migrate partitions out of a container
+    that cannot be opened.
+
+    This function cannot export schema from a container that has
+    its schema ODS corrupted.
+
+    Parameters:
+    - container-path	Path to the container
+    - export-path Path  Path to a file that will contain JSON formatted
+                        schema templates
+
+    """
+    cdef FILE *c_fp
+    cdef int c_rc
+    tmp_path = path + "_exp"
+    fp = open(tmp_path, "w")
+    c_fp = fdopen(fp.fileno(), "w")
+    c_rc = sos_schema_export(path.encode(), c_fp)
+    fclose(c_fp);
+    fp_exp = open(tmp_path, "r")
+    schemas = json.load(fp_exp)
+    os.unlink(tmp_path)
+
+    # Create a lookup table where a schema can be looked up
+    # either by its name or by its uuid
+    sdir = {}
+    sdir['schemas'] = schemas
+    sdir['names'] = {}
+    sdir['uuids'] = {}
+
+    for schema in schemas:
+        sdir['names'][schema['name']] = schema['uuid']
+        sdir['uuids'][schema['uuid']] = schema['name']
+    fp3 = open(dir_path, "w")
+    json.dump(sdir, fp3, indent=2)
+    return sdir
+
 cdef class SosObject:
     cdef int error
     def __init__(self):
@@ -174,7 +219,7 @@ cdef class SosObject:
     def errno(self):
         return self.error
     def errstr(self):
-        return libc_errno_str(self.error)
+        return libc_errno_str[self.error]
     def abort(self, error=None):
         if error:
             self.error = error
@@ -1104,6 +1149,13 @@ cdef class Partition(SosObject):
         if c_part == NULL:
             self.abort(errno)
         self.c_part = c_part;
+
+    def remap_schema_uuid(self, dst_path, src_path):
+        """Remap the partition's UUID from one value to another"""
+        cdef size_t count = sos_part_remap_schema_uuid(self.c_part,
+                                                       dst_path.encode(),
+                                                       src_path.encode())
+        return (count, errno)
 
     def state_set(self, new_state):
         """Set the partition state"""
@@ -5980,7 +6032,7 @@ cdef class Query:
     cdef primary                # primary attribute
     cdef group_fn               # function that decides how objects are grouped
     cdef unique                 # Boolean indicating if queries are unique
-    cdef desc	                # Boolean defining results order
+    cdef desc                   # Boolean defining results order
     cdef inputer                # Maintains query results
 
     def __init__(self, container):

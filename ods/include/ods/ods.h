@@ -119,11 +119,12 @@ ods_perm_t ods_backend_type_get(ods_t ods);
 #define ODS_VER_FIX	1
 
 #pragma pack(1)
+/*! Specifies the ODS version */
 struct ods_version_s {
-	uint8_t major;			/* Binary compatability */
-	uint8_t minor;			/* Feature availability */
-	uint16_t fix;			/* Defect repair */
-	const char commit_id[44];	/* git commit id */
+	uint8_t major;			/*!< Binary compatability */
+	uint8_t minor;			/*!< Feature availability */
+	uint16_t fix;			/*!< Defect repair */
+	const char commit_id[44];	/*!< git commit id */
 };
 #pragma pack()
 /**

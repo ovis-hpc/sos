@@ -51,51 +51,6 @@ from sosdb import Sos
 import json
 import os
 
-def export_schema(cont, s, dirname):
-    fname = dirname + '/' + str(s.uuid())
-    lname = dirname + '/' + s.name()
-    try:
-        # Create the file path/uuid
-        f = open(fname, 'w')
-        # Link the file to path/name
-        os.symlink(fname, lname)
-    except OSError as e:
-        print(e)
-
-    f.write("{\n")
-    f.write(f'  "name" : "{s.name()}",\n')
-    f.write(f'  "uuid" : "{s.uuid()}",\n')
-    f.write(f'  "attrs" : [\n')
-    acomma = False
-    for a in s:
-        if acomma:
-            f.write(',\n')
-        acomma = True
-        f.write('    {\n')
-        f.write(f'      "name" : "{a.name()}",\n')
-        f.write(f'      "type" : "{a.type_name()}"')
-        jcomma = False
-        if a.type() == Sos.TYPE_JOIN:
-            f.write(',\n')
-            f.write(f'      "join_attrs" : [')
-            idl = a.join_list()
-            jcomma = False
-            for i in idl:
-                if jcomma:
-                    f.write(',')
-                jattr = s.attr_by_id(i)
-                jcomma = True
-                f.write(f'"{jattr.name()}"')
-            f.write(']')
-        if a.is_indexed():
-            f.write(',\n      "index" : {}\n')
-        else:
-            f.write('\n')
-        f.write('    }')
-    f.write('\n  ]\n')
-    f.write("}\n")
-    f.close()
-
 def import_schema(cont, dirname):
     for root, dirs, files in os.walk(dirname):
         for name in files:
@@ -144,16 +99,6 @@ def query_schema(cont, schema_name, verbose=False):
     if count == 0 and schema_name is not None:
         print("The schema '{0}' was not found.".format(schema_name))
 
-def add_schema(cont, path):
-    try:
-        fp = open(path, 'r')
-        spec = json.load(fp)
-        schema = Sos.Schema()
-        schema.from_template(spec)
-        schema.add(cont)
-    except Exception as ex:
-        print(str(ex))
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Query metric data in a container")
     parser.add_argument("-p", "--path", metavar="PATH", required=True, dest="path",
@@ -168,14 +113,22 @@ if __name__ == "__main__":
                          "option to query a single schema")
     actions.add_argument("-a", "--add", metavar="PATH", dest="add",
                          help="Add the schema defined in the file at PATH to the container.")
-    actions.add_argument("-e", "--export", metavar="DIR", dest="export",
-                         help="Export the schema specifed by --schema in JSON format"
-                         "to a file in directory at DIR. If --schema is not specified, "
-                         "all schema will be exported.")
-    actions.add_argument("-i", "--import", metavar="DIR", dest="import_dir",
-                         help="Import schema from files contained "
-                         "in DIR. See the --add option to import only a single schema.")
+    actions.add_argument("-e", "--export", metavar="PATH", dest="export_path",
+                         help="Export all schema in the container to a JSON formatted "
+                         "file. This file may be imported into another container using the "
+                         "--import option.")
+    actions.add_argument("-i", "--import", metavar="PATH", dest="import_path",
+                         help="Import all schema in the specified JSON formatted file.")
     args = parser.parse_args()
+
+
+    if args.export_path:
+        try:
+            sdir = Sos.export_schema(args.path, args.export_path)
+        except:
+            print(f"Error accessing container '{args.path}'")
+            sys.exit(1)
+        sys.exit(0)
 
     try:
         cont = Sos.Container()
@@ -184,23 +137,20 @@ if __name__ == "__main__":
         print(f"The container {args.path} could not be opened.")
         sys.exit(1)
 
+    if args.import_path:
+        try:
+            fp = open(args.import_path)
+            sdir = json.load(fp)
+            for spec in sdir['schemas']:
+                schema = Sos.Schema()
+                schema.from_template(spec)
+                schema.add(cont)
+
+        except Exception as ex:
+            print(str(ex))
+
     if args.query:
         query_schema(cont, args.schema, verbose=args.verbose)
 
     if args.add:
         add_schema(cont, args.add)
-
-    if args.import_dir:
-        import_schema(cont, args.import_dir)
-
-    if args.export:
-        exdir = os.path.abspath(args.export)
-        if args.schema:
-            s = cont.schema_by_name(schema_name)
-            if s is None:
-                print("The schema '{0}' was not found.".format(schema_name))
-                sys.exit(1)
-            export_schema(cont, s, exdir)
-        else:
-            for s in cont.schema_iter():
-                export_schema(cont, s, exdir)

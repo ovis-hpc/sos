@@ -460,6 +460,7 @@ cdef extern from "sos/sos.h":
     sos_config_t sos_config_next(sos_config_iter_t iter)
     void sos_config_print(const char *path, FILE *fp)
 
+    int sos_schema_export(const char *path, FILE *)
     sos_schema_t sos_schema_create(const char *name, uuid_t uuid)
     sos_schema_t sos_schema_new(const char *name)
     void sos_schema_free(sos_schema_t schema)
@@ -564,6 +565,7 @@ cdef extern from "sos/sos.h":
     void sos_part_obj_iter_pos_init(sos_part_obj_iter_pos_t pos)
     int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
                           sos_part_obj_iter_fn_t fn, void *arg)
+    size_t sos_part_remap_schema_uuid(sos_part_t part, const char *dst_path, const char *src_path)
 
     cdef enum sos_byte_order_e:
         SOS_OBJ_BE,

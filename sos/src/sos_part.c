@@ -1,4 +1,4 @@
-/*
+/* -*- c-basic-offset : 8 -*-
  * Copyright (c) 2021 Open Grid Computing, Inc. All rights reserved.
  *
  * This software is available to you under a choice of one of two
@@ -220,6 +220,7 @@
 #include <sos/sos.h>
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
+#include "json.h"
 #include "sos_priv.h"
 
 static sos_part_t __sos_part_by_name(sos_t sos, const char *name);
@@ -919,17 +920,25 @@ int sos_part_attach(sos_t sos, const char *name, const char *path)
 	sos_part_t part = NULL;
 	ods_ref_t head_ref, tail_ref;
 	ods_obj_t new_part_ref;
+	ods_obj_t part_ref;
 	int rc = 0;
 
 	pthread_mutex_lock(&sos->lock);
 	ods_lock(sos->part_ref_ods, 0, NULL);
 
-	part = __sos_part_by_name(sos, name);
-	if (!part)
-		part = __sos_part_by_path(sos, path);
-	if (part) {
-		rc = EEXIST;
-		goto err_0;
+	/* See if there is already a partition with this name or path */
+	for (part_ref = __sos_part_ref_first(sos);
+	     part_ref; part_ref = __sos_part_ref_next(sos, part_ref)) {
+		if (0 == strcmp(name, SOS_PART_REF(part_ref)->name)) {
+			break;
+		}
+		if (0 == strcmp(path, SOS_PART_REF(part_ref)->path)) {
+			break;
+		}
+	}
+	if (part_ref != NULL) {
+		ods_obj_put(part_ref);
+		return EEXIST;
 	}
 
 	/*
@@ -1582,4 +1591,181 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
 	args.fn = fn;
 	args.arg = arg;
 	return ods_obj_iter(part->obj_ods, ods_pos, __part_obj_iter_cb, &args);
+}
+
+static int64_t uuid_comparator(void *a, const void *b, void *arg)
+{
+	return uuid_compare(a, b);
+}
+
+struct uuid_entry {
+	uuid_t dst_uuid;	/* the destination uuid */
+	uuid_t src_uuid;	/* the destination uuid */
+	struct ods_rbn rbn;	/* node with source uuid as key */
+};
+
+static struct ods_rbt *__load_map(const char *dst_path, const char *src_path)
+{
+	FILE *dst_fp, *src_fp;
+	struct ods_rbt *rbt = NULL;
+	json_entity_t dst_e;
+	json_entity_t src_e;
+	int rc;
+
+	dst_fp = fopen(dst_path, "r");
+	if (!dst_fp)
+		goto out_0;
+	src_fp = fopen(src_path, "r");
+	if (!src_fp)
+		goto out_1;
+
+	rc = json_parse_file(dst_fp, &dst_e);
+	if (rc)
+		goto out_2;
+	rc = json_parse_file(src_fp, &src_e);
+	if (rc)
+		goto out_3;
+	/* Iterate over the src entity and add a tree entry for each
+	 * UUID in the object
+	 */
+	json_entity_t src_uuid_dict = json_value_find(src_e, "uuids");
+	if (!src_uuid_dict) {
+		/* The uuids entry is missing */
+		errno = EINVAL;
+		goto out_4;
+	}
+	json_entity_t dst_name_dict = json_value_find(dst_e, "names");
+	if (!dst_name_dict) {
+		/* The uuids entry is missing */
+		errno = EINVAL;
+		goto out_4;
+	}
+	rbt = malloc(sizeof(*rbt));
+	if (!rbt)
+		goto out_4;
+	ods_rbt_init(rbt, uuid_comparator, NULL);
+
+	char *src_uuid_str;
+	char *schema_name_str;
+	char *dst_uuid_str;
+	json_entity_t uuid_e;
+	json_entity_t name_e;
+	rc = 0;
+	for (uuid_e = json_attr_first(src_uuid_dict); uuid_e; uuid_e = json_attr_next(uuid_e)) {
+		/* Get the source UUID from the source dictionary */
+		src_uuid_str = strdup(json_attr_name(uuid_e)->str);
+		if (!src_uuid_str) {
+			rc = ENOMEM;
+			goto out_5;
+		}
+		/* Get the schema name from the uuid entry */
+		schema_name_str = strdup(json_value_str(json_attr_value(uuid_e))->str);
+		if (!schema_name_str) {
+			rc = ENOMEM;
+			goto out_5;
+		}
+		/* Lookup the destination UUID with the schema name from the source */
+		name_e = json_attr_find(dst_name_dict, schema_name_str);
+		if (!name_e) {
+			rc = ENOKEY;
+			goto out_5;
+		}
+		/* The destination schema UUID is the value of the name attribute */
+		dst_uuid_str = json_value_str(json_attr_value(name_e))->str;
+
+		struct uuid_entry *ue = malloc(sizeof *ue);
+		if (!ue) {
+			rc = ENOMEM;
+			goto out_5;
+		}
+		uuid_parse(src_uuid_str, ue->src_uuid);
+		uuid_parse(dst_uuid_str, ue->dst_uuid);
+		ods_rbn_init(&ue->rbn, ue->src_uuid);
+		ods_rbt_ins(rbt, &ue->rbn);
+	}
+ out_5:
+	if (rc) {
+		errno = rc;
+		free(rbt);
+		rbt = NULL;
+	}
+ out_4:
+	json_entity_free(src_e);
+ out_3:
+	json_entity_free(dst_e);
+ out_2:
+	fclose(src_fp);
+ out_1:
+	fclose(dst_fp);
+ out_0:
+	return rbt;
+}
+
+struct remap_obj_iter_args_s {
+	struct ods_rbt *rbt;
+	int64_t visited_count;
+	int64_t missing_mapping_count;
+	int64_t unchanged_count;
+	int64_t updated_count;
+};
+
+static int __remap_callback_fn(sos_part_t part, ods_obj_t ods_obj, sos_obj_t sos_obj, void *arg)
+{
+	struct remap_obj_iter_args_s *uarg = arg;
+	struct ods_rbn *rbn;
+	struct uuid_entry *ue;
+
+	rbn = ods_rbt_find(uarg->rbt, SOS_OBJ(ods_obj)->schema_uuid);
+	if (!rbn) {
+		uarg->missing_mapping_count += 1;
+		uarg->unchanged_count += 1;
+		goto out;
+	}
+	ue = container_of(rbn, struct uuid_entry, rbn);
+	if (0 == uuid_compare(SOS_OBJ(ods_obj)->schema_uuid, ue->dst_uuid)) {
+		uarg->unchanged_count += 1;
+		goto out;
+	}
+	uuid_copy(SOS_OBJ(ods_obj)->schema_uuid, ue->dst_uuid);
+	ods_obj_update(ods_obj);
+	uarg->updated_count += 1;
+out:
+        ods_obj_put(ods_obj);
+        uarg->visited_count += 1;
+	return 0;
+}
+
+/**
+ * \brief Rewrite the Schema UUID in objects in the partition
+ *
+ * Every object in the partition has a head that includes the schema
+ * UUID. If a partition is moved to a new container that has a different
+ * UUID for this schema, it must be changed.
+ *
+ * \param part     The partition handle
+ * \param dst_path The path to the schema template directory for the
+ *                 destination schema
+ * \param src_path The path to the schema template directory for the
+ *                 schema currently in the partition
+ * \returns The number of objects that were modified
+ */
+size_t sos_part_remap_schema_uuid(sos_part_t part, const char *dst_path, const char *src_path)
+{
+	struct remap_obj_iter_args_s uarg;
+	struct ods_rbt *rbt =  __load_map(dst_path, src_path);
+	if (!rbt)
+		return (size_t)-1;
+
+	uarg.rbt = rbt;
+	uarg.visited_count = 0;
+	uarg.missing_mapping_count = 0;
+	uarg.unchanged_count = 0;
+	uarg.updated_count = 0;
+
+	int rc = sos_part_obj_iter(part, NULL, __remap_callback_fn, &uarg);
+	if (rc)
+		errno  = rc;
+	else
+		errno = 0;
+	return uarg.updated_count;
 }
