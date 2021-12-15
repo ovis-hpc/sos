@@ -1,5 +1,5 @@
 ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = ods sos
+SUBDIRS = lib ods sos
 SUBDIRS += rpcgen libtirpc rpc
 SUBDIRS += sos/python
 

@@ -62,6 +62,10 @@ AM_CONDITIONAL(INET6, test "x$disable_ipv6" != xno)
 if test "x$enable_ipv6" != xno; then
 	AC_DEFINE(INET6, 1, [Define to 1 if IPv6 is available])
 fi
+AX_LIB_READLINE
+if test "$ax_cv_lib_readline" == "no"; then
+   AC_MSG_ERROR("You need to install libreadline to build SOS")
+fi
 
 dnl this will add document options. Please see m4/options.m4.
 OPTION_DOC
@@ -183,6 +187,8 @@ AC_CONFIG_FILES([
 		doc/Doxyfile
 		doc/Makefile
 		man/Makefile
+		lib/Makefile
+		lib/json/Makefile
 		ods/Makefile
 		ods/include/Makefile
 		ods/src/Makefile

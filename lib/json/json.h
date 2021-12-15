@@ -137,6 +137,26 @@ extern void json_entity_free(json_entity_t e);
 extern const char *json_type_name(enum json_value_e type);
 extern enum json_value_e json_entity_type(json_entity_t e);
 
+/**
+ * \brief Parse the contents of a file
+ *
+ * \param fp Pointer to the FILE
+ * \param e  Pointer to a json_entity_t to contain the object
+ * \return 0 An object was succesfully parsed
+ * \return EINVAL There was a syntax error in the file
+ * \return ENOENT The file does not exist
+ * \return ENOMEM Memory allocation failure
+ */
+extern int json_parse_file(FILE *fp, json_entity_t *e);
+/**
+ * \brief Parse the contents of a buffer
+ *
+ * \param fp Pointer to the FILE
+ * \param e  Pointer to a json_entity_t to contain the object
+ * \return 0 An object was succesfully parsed
+ * \return EINVAL There was a syntax error in the buffer
+ * \return ENOMEM Memory allocation failure
+ */
 extern int json_parse_buffer(json_parser_t p, char *buf, size_t buf_len, json_entity_t *e);
 
 extern json_entity_t json_entity_new(enum json_value_e type, ...);
@@ -331,5 +351,4 @@ extern jbuf_t jbuf_append_attr(jbuf_t jb, const char *name, const char *fmt, ...
 extern jbuf_t jbuf_append_str(jbuf_t jb, const char *fmt, ...);
 extern jbuf_t jbuf_append_va(jbuf_t jb, const char *fmt, va_list ap);
 extern void jbuf_free(jbuf_t jb);
-
 #endif

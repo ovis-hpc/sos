@@ -12,7 +12,6 @@
 #    	READLINE_CFLAGS=-DHAVE_LIBREADLINE -DHAVE_READLINE_HISTORY
 #    	depending on whether readline/history.h exists or not.
 #
-
 # ===========================================================================
 #      http://www.gnu.org/software/autoconf-archive/ax_lib_readline.html
 # ===========================================================================
@@ -128,6 +127,8 @@ AC_DEFUN([AX_LIB_READLINE], [
                   [Define if your readline library has \`add_history'])
         AC_CHECK_HEADERS(history.h readline/history.h)
       fi
+      AC_DEFINE_UNQUOTED(READLINE_LIBS, ["$ax_cv_lib_readline"], [The libs required to link with readline])
+      AC_DEFINE_UNQUOTED(READLINE_CFLAGS, ["$READLINE_CFLAGS"], [The CFLAGS needed for readline])
     fi
   fi
 ])dnl
