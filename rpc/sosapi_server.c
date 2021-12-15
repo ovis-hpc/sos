@@ -99,7 +99,7 @@ static inline uint64_t get_next_handle() {
 	return maybe ? maybe : __sync_add_and_fetch(&next_handle, 1);
 }
 pthread_mutex_t client_tree_lock = PTHREAD_MUTEX_INITIALIZER;
-int64_t handle_comparator(void *a, const void *b, void *arg)
+static int64_t handle_comparator(void *a, const void *b, void *arg)
 {
 	uint64_t a_ = *(uint64_t *)a;
 	uint64_t b_ = *(uint64_t *)b;
@@ -109,12 +109,12 @@ int64_t handle_comparator(void *a, const void *b, void *arg)
 		return 1;
 	return 0;
 }
-int64_t name_comparator(void *a, const void *b, void *arg)
+static int64_t name_comparator(void *a, const void *b, void *arg)
 {
 	return strcmp(a, b);
 }
 
-int64_t uuid_comparator(void *a, const void *b, void *arg)
+static int64_t uuid_comparator(void *a, const void *b, void *arg)
 {
 	return uuid_compare(a, b);
 }
