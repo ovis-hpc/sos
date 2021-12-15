@@ -12,9 +12,25 @@
 #include <sys/errno.h>
 #include <regex.h>
 #include <getopt.h>
+#include <ctype.h>
+#include "config.h"
 
-#include <readline/readline.h>
-#include <readline/history.h>
+#if defined(HAVE_READLINE_READLINE_H)
+#    include <readline/readline.h>
+#elif defined(HAVE_READLINE_H)
+#    include <readline.h>
+#else
+#    include <editline/readline.h>
+#endif
+
+#ifdef HAVE_READLINE_HISTORY
+#  if defined(HAVE_READLINE_HISTORY_H)
+#    include <readline/history.h>
+#  elif defined(HAVE_HISTORY_H)
+#    include <history.h>
+#  endif
+/* The history functions are defined in readline.h */
+#endif
 
 #include <pwd.h>
 #include <grp.h>
@@ -329,11 +345,11 @@ int execute_line(char *line)
 
 	/* Isolate the command word. */
 	i = 0;
-	while (line[i] && whitespace(line[i]))
+	while (line[i] && isspace(line[i]))
 		i++;
 	word = line + i;
 
-	while (line[i] && !whitespace(line[i]))
+	while (line[i] && !isspace(line[i]))
 		i++;
 
 	if (line[i])
@@ -346,7 +362,7 @@ int execute_line(char *line)
 	}
 
 	/* Get argument to command, if any. */
-	while (whitespace(line[i]))
+	while (isspace(line[i]))
 		i++;
 
 	word = line + i;
@@ -372,14 +388,14 @@ char *stripwhite(char *string)
 {
 	register char *s, *t;
 
-	for (s = string; whitespace(*s); s++)
+	for (s = string; isspace(*s); s++)
 		;
 
 	if (*s == 0)
 		return (s);
 
 	t = s + strlen(s) - 1;
-	while (t > s && whitespace(*t))
+	while (t > s && isspace(*t))
 		t--;
 	*++t = '\0';
 
@@ -389,7 +405,7 @@ char *stripwhite(char *string)
 char *command_generator();
 char *argument_generator();
 char **dsosql_completion();
-extern char **completion_matches(char *text, void *entry_func);
+extern char **completion_matches(const char *text, rl_compentry_func_t *entry_func);
 
 /* Tell the GNU Readline library how to complete.  We want to try to complete
    on command names if this is the first word in the line, or on filenames
