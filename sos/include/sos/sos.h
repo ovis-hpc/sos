@@ -332,7 +332,7 @@ typedef struct sos_schema_template_attr {
 
 typedef struct sos_schema_template {
 	const char *name;
-	const unsigned char *uuid;
+	const char *uuid;
 	struct sos_schema_template_attr attrs[];
 } *sos_schema_template_t;
 

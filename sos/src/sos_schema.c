@@ -284,7 +284,10 @@ void __sos_schema_free(sos_schema_t schema)
 sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 {
 	int i, rc;
-	sos_schema_t schema = sos_schema_create(t->name, t->uuid);
+	sos_schema_t schema;
+	uuid_t uuid;
+	uuid_parse(t->uuid, uuid);
+	schema = sos_schema_create(t->name, uuid);
 	if (!schema)
 		goto err;
 	for (i = 0; 1; i++) {
@@ -2006,7 +2009,7 @@ int sos_schema_export(const char *path_arg, FILE *fp)
 	sprintf(tmp_path, "%s/.%s.lock", dirname(dir), basename(base));
 	free(dir);
 	free(base);
-	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
+	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0666);
 	if (lock_fd < 0)
 		return errno;
 	rc = flock(lock_fd, LOCK_EX);
