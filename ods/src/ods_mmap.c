@@ -2023,7 +2023,7 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 	free(dir);
 	free(base);
 	mode_t oumask = umask(0);
-	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
+	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0666);
 	umask(oumask);
 	if (lock_fd < 0)
 		return NULL;

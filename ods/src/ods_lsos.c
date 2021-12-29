@@ -2279,7 +2279,7 @@ ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 	free(dir);
 	free(base);
 	mode_t oumask = umask(0);
-	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
+	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0666);
 	umask(oumask);
 	if (lock_fd < 0)
 		return NULL;
@@ -2329,7 +2329,6 @@ ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 
 	ods->obj_map_sz = __ods_def_map_sz;
 	ods_rbt_init(&ods->map_tree, map_cmp, NULL);
-	rc = flock(lock_fd, LOCK_UN);
 	close(lock_fd);
 	return &ods->base;
 
@@ -2341,7 +2340,6 @@ ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 	if (data_fd >= 0)
 		close(data_fd);
 	free(ods);
-	rc = flock(lock_fd, LOCK_UN);
 	close(lock_fd);
 	errno = rc;
 	return NULL;

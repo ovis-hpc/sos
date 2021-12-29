@@ -889,7 +889,7 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	sprintf(tmp_path, "%s/.%s.lock", dirname(dir), basename(base));
 	free(dir);
 	free(base);
-	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0660);
+	lock_fd = open(tmp_path, O_RDWR | O_CREAT, 0666);
 	if (lock_fd < 0)
 		return NULL;
 	rc = flock(lock_fd, LOCK_EX);
