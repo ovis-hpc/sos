@@ -97,14 +97,25 @@ class Permission:
 
 def print_table(p, hdr=True, ftr=False):
     if hdr:
-        print("{0:18} {1:10} {2:12} {3:12} {4:12} {5:10} {6:36} {7}".
-                format("Name", "State", "User", "Group", "Permissions", "Size", "Description", "Path"))
+        if int(p.state()) != Sos.PART_STATE_DETACHED:
+            print("{0:18} {1:10} ".format("Name", "State"), end='')
+        print("{0:24} {1:24} {2:12} {3:10} {4:36}".
+                format("User", "Group", "Permissions", "Size", "Description"), end='')
+        if int(p.state()) != Sos.PART_STATE_DETACHED:
+            print(" {0:20}".format("Path"))
+        else:
+            print("")
     if hdr or ftr:
-        print("{0} {1} {2} {3} {4} {5} {6} {7}".
-                format('-'.ljust(18,'-'), '-'.ljust(10,'-'),
-                        '-'.ljust(12, '-'), '-'.ljust(12, '-'), '-'.ljust(12, '-'),
-                        '-'.ljust(10,'-'), '-'.ljust(36,'-'),
-                        '-'.ljust(20,'-')))
+        if int(p.state()) != Sos.PART_STATE_DETACHED:
+            print("{0} {1} ".format('-'.ljust(18,'-'), '-'.ljust(10,'-')), end='')
+        print("{0} {1} {2} {3} {4}".
+                format('-'.ljust(24, '-'), '-'.ljust(24, '-'), '-'.ljust(12, '-'),
+                       '-'.ljust(10,'-'), '-'.ljust(36,'-')), end='')
+        if int(p.state()) != Sos.PART_STATE_DETACHED:
+            print(" {0}".format('-'.ljust(20,'-')))
+        else:
+            print("")
+
     if ftr:
         return
 
@@ -122,9 +133,15 @@ def print_table(p, hdr=True, ftr=False):
     perm = Permission(p.perm())
     accessed = dt.datetime.fromtimestamp(stat.accessed)
     modified = dt.datetime.fromtimestamp(stat.modified)
-    print("{0:18} {1:10} {2:12} {3:12} {4:12} {5:10} {6:36} {7}". \
-            format(p.name(), str(p.state()), uid, gid, str(perm),
-                    fmt_size(stat.size), p.desc(), p.path()))
+
+    if int(p.state()) != Sos.PART_STATE_DETACHED:
+        print("{0:18} {1:10} ".format(p.name(), str(p.state())), end='')
+    print("{0:24} {1:24} {2:12} {3:10} {4:36}". \
+            format(uid, gid, str(perm), fmt_size(stat.size), p.desc()), end='')
+    if int(p.state()) != Sos.PART_STATE_DETACHED:
+        print(" {0}".format(p.path()))
+    else:
+        print("")
 
 def print_json(p, hdr=True, ftr=False):
     if ftr:
@@ -419,4 +436,3 @@ if __name__ == "__main__":
                 print(f"Error {err} was returned remapping the partition's UUID")
         sys.exit(1)
     sys.exit(0)
-
