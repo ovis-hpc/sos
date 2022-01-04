@@ -12,7 +12,7 @@ xdr-files : FORCE
 	rm -f $(srcdir)/sosapi.h
 FORCE :
 
-sosapi.h : sosapi.x xdr-files
+$(BUILT_SOURCES) : sosapi.x xdr-files
 	rpcgen -N -M $(srcdir)/sosapi.x
 
 AM_CFLAGS = -Wno-unused-variable \
