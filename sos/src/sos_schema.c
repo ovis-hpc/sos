@@ -1023,6 +1023,7 @@ retry:
 			goto err;
 		obj_ref.ref.obj = ods_obj_ref(obj->obj);
 		obj->obj_ref = obj_ref;
+		val->data = (sos_value_data_t)&obj->obj->as.bytes[attr->data->offset];
 		failed = 1;
 		goto retry;
 	}
