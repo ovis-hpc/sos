@@ -286,7 +286,13 @@ sos_schema_t sos_schema_from_template(sos_schema_template_t t)
 	int i, rc;
 	sos_schema_t schema;
 	uuid_t uuid;
-	uuid_parse(t->uuid, uuid);
+	if (t->uuid) {
+		rc = uuid_parse(t->uuid, uuid);
+		if (rc)
+			return NULL;
+	} else {
+		uuid_generate(uuid);
+	}
 	schema = sos_schema_create(t->name, uuid);
 	if (!schema)
 		goto err;
