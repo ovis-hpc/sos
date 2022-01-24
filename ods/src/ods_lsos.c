@@ -728,7 +728,13 @@ static inline void map_put(ods_map_t map)
 					"%s-%016lx-%016lx",
 					map->ods->base.path, map->map.off, map->map.len);
 			assert(rc < sizeof(map_path));
-			shm_unlink(map_path);
+			for (rc = 1; rc < strlen(map_path); rc++) {
+				if (map_path[rc] == '/')
+					map_path[rc] = '_';
+			}
+			rc = shm_unlink(map_path);
+			if (rc)
+				ods_lerror("Error %d unlinking %s\n", rc, map_path);
 		}
 		rc = munmap(map->gen, map->map.len + sizeof(uint64_t));
 		assert(0 == rc);
@@ -1759,25 +1765,34 @@ static int ods_lsos_close(ods_t ods_, int flags)
 		munmap(ods->lck_table, ODS_PAGE_SIZE);
 	close(ods->pg_fd);
 	close(ods->data_fd);
-	free(ods->base.path);
 
 	/* Clean up any maps */
 	struct ods_rbn *rbn;
 	while ((rbn = ods_rbt_min(&ods->map_tree))) {
+		int rc;
 		map = container_of(rbn, struct ods_map_s, rbn);
 		ods_rbt_del(&ods->map_tree, rbn);
 		if (0 == __sync_sub_and_fetch(map->gen, 1)) {
 			char map_path[PATH_MAX];
-			int rc = snprintf(map_path, sizeof(map_path),
+			rc = snprintf(map_path, sizeof(map_path),
 					"%s-%016lx-%016lx",
 					map->ods->base.path, map->map.off, map->map.len);
 			assert(rc < sizeof(map_path));
-			shm_unlink(map_path);
+			for (rc = 1; rc < strlen(map_path); rc++) {
+				if (map_path[rc] == '/')
+					map_path[rc] = '_';
+			}
+			rc = shm_unlink(map_path);
+			if (rc) {
+				ods_lerror("Error %d unlinking shared memory %s",
+					rc, map_path);
+			}
 		}
-		int rc = munmap(map->gen, map->map.len + sizeof(uint64_t));
+		rc = munmap(map->gen, map->map.len + sizeof(uint64_t));
 		assert(0 == rc);
 		free(map);
 	}
+	free(ods->base.path);
 	free(ods);
 	return 0;
 }
