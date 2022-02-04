@@ -591,6 +591,7 @@ void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 	size_t col_len;
 	char *col_str;
 	static char str[80];
+	char *s;
 	if (!first_row)
 		fprintf(outp, ",\n");
 	first_row = 0;
@@ -606,12 +607,17 @@ void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 		} else {
 			col_str = malloc(col_len);
 		}
-		if (sos_attr_is_array(attr) && sos_attr_type(attr) != SOS_TYPE_CHAR_ARRAY) {
-			fprintf(outp, "\"%s\" : [%s]", col->name,
-				sos_obj_attr_to_str(obj, attr, col_str, col_len));
+		s = sos_obj_attr_to_str(obj, attr, col_str, col_len);
+		if (!s) {
+			fprintf(outp, "\"%s\" : null", col->name);
 		} else {
-			fprintf(outp, "\"%s\" : \"%s\"", col->name,
-				sos_obj_attr_to_str(obj, attr, col_str, col_len));
+			if (sos_attr_is_array(attr) &&
+					sos_attr_type(attr) != SOS_TYPE_CHAR_ARRAY &&
+					sos_attr_type(attr) != SOS_TYPE_BYTE_ARRAY) {
+					fprintf(outp, "\"%s\" : [%s]", col->name, s);
+			} else {
+				fprintf(outp, "\"%s\" : %s", col->name, s);
+			}
 		}
 		if (col_str != str)
 			free(col_str);
