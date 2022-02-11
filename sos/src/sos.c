@@ -1,4 +1,4 @@
-/*
+/* -*- c-basic-offset : 8 -*-
  * Copyright (c) 2012-2021 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2012-2020 Sandia Corporation. All rights reserved.
  *
@@ -462,6 +462,21 @@ err_1:
 	errno = rc; /* rmdir will stomp errno */
 err_0:
 	return rc;
+}
+
+const char *sos_container_path(sos_t sos)
+{
+	return sos->path;
+}
+
+sos_perm_t sos_container_perm(sos_t sos)
+{
+	return sos->o_perm;
+}
+
+int sos_container_mode(sos_t sos)
+{
+	return sos->o_mode;
 }
 
 /**
