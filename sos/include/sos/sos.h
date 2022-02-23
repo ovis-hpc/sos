@@ -145,7 +145,7 @@ void sos_config_iter_free(sos_config_iter_t iter);
 sos_config_t sos_config_first(sos_config_iter_t iter);
 sos_config_t sos_config_next(sos_config_iter_t iter);
 void sos_config_print(const char *path, FILE *fp);
-void sos_begin_x(sos_t sos);
+int sos_begin_x(sos_t sos, struct timespec *ts);
 void sos_end_x(sos_t sos);
 /** @} */
 /** @} */
@@ -786,6 +786,7 @@ int sos_iter_flags_set(sos_iter_t i, sos_iter_flags_t flags);
 sos_iter_flags_t sos_iter_flags_get(sos_iter_t i);
 uint64_t sos_iter_card(sos_iter_t i);
 uint64_t sos_iter_dups(sos_iter_t i);
+uint64_t sos_iter_size(sos_iter_t i);
 
 int sos_iter_next(sos_iter_t iter);
 int sos_iter_prev(sos_iter_t i);

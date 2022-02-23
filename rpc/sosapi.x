@@ -25,6 +25,18 @@ union dsos_iter_res switch (int error) {
     default:
         void;
 };
+struct dsos_iter_stats_ {
+    unsigned long cardinality;
+    unsigned long duplicates;
+    unsigned long size_bytes;
+};
+
+union dsos_iter_stats_res switch (int error) {
+    case 0:
+        dsos_iter_stats_ stats;
+    default:
+        void;
+};
 
 typedef unsigned char dsos_uuid[16];
 typedef string dsos_uuid_str<48>;
@@ -67,7 +79,7 @@ struct dsos_schema_spec_attr {
 };
 
 struct dsos_schema_spec {
-	dsos_schema_name name;  /* Unique for the container */
+    dsos_schema_name name;  /* Unique for the container */
     dsos_schema_id id;      /* Session local id, returned on create/find */
     dsos_uuid uuid;         /* Universally unique id for the schema */
     dsos_schema_spec_attr attrs<>;
@@ -230,6 +242,7 @@ program SOSDB {
         dsos_obj_list_res ITER_NEXT(dsos_container_id, dsos_iter_id) = 46;
         dsos_obj_list_res ITER_PREV(dsos_container_id, dsos_iter_id) = 47;
         dsos_obj_list_res ITER_FIND(dsos_container_id, dsos_iter_id) = 48;
+	dsos_iter_stats_res ITER_STATS(dsos_container_id, dsos_iter_id) = 49;
 
         /* Object operations */
         dsos_obj_create_res OBJ_CREATE(dsos_obj_link) = 50;

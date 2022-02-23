@@ -1982,9 +1982,11 @@ sos_obj_t dsos_iter_begin(dsos_iter_t iter)
 sos_obj_t dsos_iter_end(dsos_iter_t iter)
 {
 	int client_id;
+	iter->action = DSOS_ITER_END;
 	for (client_id = 0; client_id < iter->cont->sess->client_count; client_id++) {
 		(void)iter_obj_add(iter, client_id);
 	}
+	iter->action = DSOS_ITER_PREV;
 	return iter_obj_max(iter);
 }
 
@@ -2011,6 +2013,46 @@ int dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key)
 int dsos_iter_find(dsos_iter_t iter, sos_key_t key)
 {
 	return ENOSYS;
+}
+
+dsos_iter_stats_t dsos_iter_stats(dsos_iter_t iter)
+{
+	enum clnt_stat rpc_err;
+	int i;
+	dsos_container_t cont;
+	dsos_iter_stats_res stats_res;
+	dsos_iter_stats_t stats;
+
+	memset(&stats, 0, sizeof(stats));
+
+	cont = iter->cont;
+	if (!cont)
+		goto out;
+
+	for (i = 0; i < cont->handle_count; i++) {
+		dsos_client_t client = &cont->sess->clients[i];
+		memset(&stats_res, 0, sizeof(stats_res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rpc_err = iter_stats_1(cont->handles[i], iter->handles[i], &stats_res, client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		if (rpc_err != RPC_SUCCESS) {
+			fprintf(stderr, "iter_stats_1 failed on client %d with RPC error %d\n",
+				i, rpc_err);
+			errno = ENETDOWN;
+			goto out;
+		}
+		if (stats_res.error) {
+			fprintf(stderr, "iter_stats_1 failed on client %d with error %d\n",
+				i, stats_res.error);
+			errno = stats_res.error;
+			goto out;
+		}
+		stats.cardinality += stats_res.dsos_iter_stats_res_u.stats.cardinality;
+		stats.duplicates += stats_res.dsos_iter_stats_res_u.stats.duplicates;
+		stats.size_bytes += stats_res.dsos_iter_stats_res_u.stats.size_bytes;
+	}
+ out:
+	return stats;
 }
 
 int dsos_attr_value_min(dsos_container_t cont, sos_attr_t attr)

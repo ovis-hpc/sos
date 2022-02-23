@@ -578,12 +578,14 @@ struct iter_args {
 void __make_part_offline(sos_t sos, sos_part_t part)
 {
 	SOS_PART_REF(part->ref_obj)->state = SOS_PART_STATE_OFFLINE;
+	SOS_PART_UDATA(part->udata_obj)->is_primary = 0;
 	__sos_schema_reset(part->sos);
 }
 
 static void __make_part_active(sos_t sos, sos_part_t part)
 {
 	SOS_PART_REF(part->ref_obj)->state = SOS_PART_STATE_ACTIVE;
+	SOS_PART_UDATA(part->udata_obj)->is_primary = 0;
 	__sos_schema_reset(part->sos);
 }
 
@@ -770,7 +772,7 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 	sos_part_t part;
 	ods_obj_t part_obj;
 	int new;
-	int rc = ENOENT;
+	int rc = 0;
 
 	if (sos->primary_part) {
 		sos_ref_put(&sos->primary_part->ref_count, "primary_part");
@@ -1043,11 +1045,6 @@ int sos_part_detach(sos_t sos, const char *name)
 		goto out;
 	}
 
-	if (SOS_PART_REF(part_ref)->state == SOS_PART_STATE_PRIMARY) {
-		rc = EINVAL;
-		goto out;
-	}
-
 	/* Remove the partition reference */
 	if (prev_ref) {
 		ods_obj_t prev = ods_ref_as_obj(sos->part_ref_ods, prev_ref);
@@ -1079,6 +1076,7 @@ int sos_part_detach(sos_t sos, const char *name)
 		ods_atomic_dec(&SOS_PART_UDATA(part->udata_obj)->ref_count);
 	}
 	ods_obj_delete(part_ref);
+	ods_obj_put(part_ref);
 out:
 	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);

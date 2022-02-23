@@ -66,6 +66,7 @@ struct cmd_s {
 	int args_count;
 	struct cmd_arg_s args[255];   /* Array of valid arguments to the commmand */
 };
+dsos_container_t g_cont;
 
 int open_session(cmd_t, av_list_t avl);
 int open_container(cmd_t, av_list_t avl);
@@ -155,10 +156,11 @@ struct cmd_s commands[] = {
 	[SELECT_CMD] = {"select", select_command, "select COLS from SCHEMA where COND",
 	},
 	[SHOW_CMD] = {"show", show_command, "Display information about a DSOSD object.",
-	      2,
-	      {
-		      { -1, "schemas" }
-	      }
+		2,
+		{
+			{ SOS_TYPE_STRING, "index", },
+			{ SOS_TYPE_STRING, "from", },
+		}
 	},
 	[HELP_CMD] = {"help", help_command, "help"},
 	[HELP_CMD_2] = {"?", help_command, "Synonym for `help'"},
@@ -553,10 +555,77 @@ int open_session(cmd_t cmd, av_list_t avl)
 
 int show_command(cmd_t cmd, av_list_t avl)
 {
+	dsos_res_t res;
+	av_t av;
+	dsos_iter_t iter;
+	char *attr_name = NULL;
+	sos_obj_t obj;
+	int min_n_max;
+
+	if (!g_cont) {
+		printf("There is not container open.\n");
+		goto out;
+	}
+
+	av = av_find(avl, "from");
+	if (!av) {
+		printf("The 'from' attribute is required.\n");
+		goto out;
+	}
+
+	dsos_schema_t dschema = dsos_schema_by_name(g_cont, av->value_str);
+	if (!dschema) {
+		printf("The schema '%s' could not be found.\n", av->value_str);
+		goto out;
+	}
+	sos_schema_t schema = dsos_schema_local(dschema);
+
+	av = av_find(avl, "index");
+	if (!av) {
+		printf("The 'index' atttribute is required.\n");
+		goto out;
+	}
+	attr_name = av->value_str;
+	iter = dsos_iter_create(g_cont, dschema, attr_name);
+	if (!iter) {
+		printf("Error %d creating the iterator.\n", errno);
+		goto out;
+	}
+	sos_attr_t index_attr = sos_schema_attr_by_name(schema, attr_name);
+	if (TAILQ_EMPTY(&col_list)) {
+		if (sos_attr_type(index_attr) != SOS_TYPE_JOIN) {
+			add_column(schema, sos_attr_name(index_attr));
+		} else {
+			int join_idx;
+			sos_array_t join_list = sos_attr_join_list(index_attr);
+			for (join_idx = 0; join_idx < join_list->count; join_idx++) {
+				sos_attr_t join_attr =
+					sos_schema_attr_by_id(schema,
+							      join_list->data.uint32_[join_idx]);
+				add_column(schema, sos_attr_name(join_attr));
+			}
+		}
+	}
+	obj = dsos_iter_begin(iter);
+	if (!obj) {
+		printf("The iterator for '%s' is empty.\n", attr_name);
+		goto out;
+	}
+	table_header(stdout, index_attr);
+	table_row(stdout, schema, obj);
+	sos_obj_put(obj);
+	obj = dsos_iter_end(iter);
+	table_row(stdout, schema, obj);
+	sos_obj_put(obj);
+
+	dsos_iter_stats_t stats = dsos_iter_stats(iter);
+	fprintf(stdout, "%-*s : %lu\n", 12, "Cardinality", stats.cardinality);
+	fprintf(stdout, "%-*s : %lu\n", 12, "Duplicates", stats.duplicates);
+	fprintf(stdout, "%-*s : %lu\n", 12, "Size(kB)", stats.size_bytes / 1000);
+ out:
 	return 0;
 }
 
-dsos_container_t g_cont;
 int open_container(cmd_t cmd, av_list_t avl)
 {
 	char *path;

@@ -88,6 +88,12 @@ extern sos_obj_t dsos_iter_prev(dsos_iter_t iter);
 extern int dsos_iter_find_glb(dsos_iter_t iter, sos_key_t key);
 extern int dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key);
 extern int dsos_iter_find(dsos_iter_t iter, sos_key_t key);
+typedef struct dsos_iter_stats_s {
+	uint64_t cardinality;
+	uint64_t duplicates;
+	uint64_t size_bytes;
+} dsos_iter_stats_t;
+extern dsos_iter_stats_t dsos_iter_stats(dsos_iter_t iter);
 extern int dsos_attr_value_min(dsos_container_t cont, sos_attr_t attr);
 extern int dsos_attr_value_max(dsos_container_t cont, sos_attr_t attr);
 extern dsos_query_t dsos_query_create(dsos_container_t cont);

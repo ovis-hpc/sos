@@ -1,3 +1,4 @@
+/* -*- c-basic-offset : 8 -*- */
 #include <pthread.h>
 #include <sys/time.h>
 #include <sys/queue.h>
@@ -13,7 +14,10 @@
 #include "dsos.h"
 #include <ods/ods_atomic.h>
 #include "json.h"
+#include "dsosql.h"
 #undef VERSION
+
+struct col_list_s col_list = TAILQ_HEAD_INITIALIZER(col_list);
 
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
@@ -97,19 +101,11 @@ int schema_dir(sos_t sos)
 	return 0;
 }
 
-struct col_s {
-	const char *name;
-	int id;
-	int width;
-	TAILQ_ENTRY(col_s) entry;
-};
-TAILQ_HEAD(col_list_s, col_s) col_list = TAILQ_HEAD_INITIALIZER(col_list);
-
 /*
  * Add a column. The format is:
  * <name>[col_width]
  */
-static int add_column(const char *str)
+int add_column(sos_schema_t schema, const char *str)
 {
 	char *width;
 	char *s = NULL;
@@ -129,6 +125,10 @@ static int add_column(const char *str)
 	if (!col->name)
 		goto err;
 	TAILQ_INSERT_TAIL(&col_list, col, entry);
+	sos_attr_t attr = sos_schema_attr_by_name(schema, s);
+	if (!attr)
+goto err;
+	col->id = sos_attr_id(attr);
 	return 0;
  err:
 	if (col)
@@ -157,7 +157,7 @@ enum query_fmt {
 	JSON_FMT
 } format;
 
-static void table_header(FILE *outp, sos_attr_t index_attr)
+void table_header(FILE *outp, sos_attr_t index_attr)
 {
 	struct col_s *col;
 	if (index_attr) {
@@ -222,7 +222,7 @@ static void json_header(FILE *outp)
 	fprintf(outp, "{ \"data\" : [\n");
 }
 
-static void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
+void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 {
 	struct col_s *col;
 	size_t col_len;
@@ -243,6 +243,8 @@ static void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 				col_str = str;
 			else
 				col_str = malloc(col_len);
+			if (col_len < strlen(col->name))
+				col_len = strlen(col->name);
 		}
 		if (col->width > 0) {
 			fprintf(outp, "%*s ", col->width,
@@ -322,7 +324,7 @@ static void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 	fprintf(outp, "}");
 }
 
-static void table_footer(FILE *outp, int rec_count, int iter_count)
+void table_footer(FILE *outp, int rec_count, int iter_count)
 {
 	struct col_s *col;
 
@@ -392,7 +394,7 @@ int dsosql_query(sos_t sos, const char *schema_name, const char *index_name)
 		attr_count = sos_schema_attr_count(schema);
 		for (attr_id = 0; attr_id < attr_count; attr_id++) {
 			attr = sos_schema_attr_by_id(schema, attr_id);
-			if (add_column(sos_attr_name(attr)))
+			if (add_column(schema, sos_attr_name(attr)))
 				return ENOMEM;
 		}
 	}
@@ -867,7 +869,7 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 	}
 	for (attr = sos_schema_attr_first(schema); attr; attr = sos_schema_attr_next(attr))
 		if (sos_attr_type(attr) != SOS_TYPE_JOIN)
-			add_column(sos_attr_name(attr));
+			add_column(schema, sos_attr_name(attr));
 	TAILQ_FOREACH(col, &col_list, entry) {
 		attr = sos_schema_attr_by_name(schema, col->name);
 		if (!attr) {

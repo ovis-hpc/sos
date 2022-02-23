@@ -1211,10 +1211,37 @@ out_0:
 	return TRUE;
 }
 
-bool_t iter_end_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
+bool_t iter_end_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_list_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
+	struct dsos_session *client;
+	struct dsos_iter *diter;
+	int rc;
+
+	client = get_client(cont);
+	if (!client) {
+		res->error = DSOS_ERR_CLIENT;
+		goto out_0;
+	}
+
+	diter = get_iter(client, iter_id);
+	if (!diter) {
+		res->error = DSOS_ERR_ITER;
+		goto out_1;
+	}
+
+	clock_gettime(CLOCK_REALTIME, &client->acc_time);
+
+	rc = sos_iter_end(diter->iter);
+	if (!rc) {
+		rc = __make_obj_list(res, diter);
+	} else {
+		res->error = rc;
+	}
+out_1:
+	put_client(client);
+out_0:
 	return TRUE;
 }
 
@@ -1274,6 +1301,37 @@ bool_t iter_find_lub_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_l
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
+	return TRUE;
+}
+
+bool_t iter_stats_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_iter_stats_res *res, struct svc_req *req)
+{
+	if (!authenticate_request(req, __func__))
+		return FALSE;
+	struct dsos_session *client;
+	struct dsos_iter *diter;
+	int rc;
+	memset(res, 0, sizeof(*res));
+	client = get_client(cont);
+	if (!client) {
+		res->error = DSOS_ERR_CLIENT;
+		goto out_0;
+	}
+
+	diter = get_iter(client, iter_id);
+	if (!diter) {
+		res->error = DSOS_ERR_ITER;
+		goto out_1;
+	}
+
+	clock_gettime(CLOCK_REALTIME, &client->acc_time);
+
+	res->dsos_iter_stats_res_u.stats.cardinality = sos_iter_card(diter->iter);
+	res->dsos_iter_stats_res_u.stats.duplicates = sos_iter_dups(diter->iter);
+	res->dsos_iter_stats_res_u.stats.size_bytes = sos_iter_size(diter->iter);
+ out_1:
+	put_client(client);
+ out_0:
 	return TRUE;
 }
 

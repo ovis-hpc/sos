@@ -542,11 +542,26 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
 	return 0;
 }
 
-void sos_begin_x(sos_t sos)
+/**
+ * @brief Begin a transaction on a SOS container
+ *
+ * Attempts to begin a transaction boundary on a container. The \c
+ * timeout parameter specifies how long to wait before giving up. If a
+ * transaction could not be acquired by the specified timeout,
+ * ETIMEDOUT is returned.  Otherwise zero is returned. A NULL
+ * \c timeout indicates that the function will wait forever.
+ *
+ * @param sos The container handle
+ * @param timeout Pointer to a timespec structure indicating
+ * @returns 0 if the transaction was acquired or ETIMEDOUT if a
+ *            transaction could not be acquired within the specified
+ *            timeout.
+ */
+int sos_begin_x(sos_t sos, struct timespec *ts)
 {
 	if (!sos->part_ref_ods)
-		return;
-	ods_begin_x(sos->part_ref_ods, NULL);
+		return EINVAL;
+	return ods_begin_x(sos->part_ref_ods, ts);
 }
 
 void sos_end_x(sos_t sos)

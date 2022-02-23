@@ -247,9 +247,27 @@ uint64_t sos_iter_dups(sos_iter_t iter)
 	LIST_FOREACH(iter_ref, &iter->iter_list, entry) {
 		int rc = ods_idx_stat(ods_iter_idx(iter_ref->iter), &sb);
 		if (!rc)
-			dups = sb.duplicates;
+			dups += sb.duplicates;
 	}
 	return dups;
+}
+
+/**
+ * \brief Return the size of ihe iterator index in bytes
+ * \returns The size of the iterator index
+ */
+uint64_t sos_iter_size(sos_iter_t iter)
+{
+	struct ods_idx_stat_s sb;
+	uint64_t size = 0;
+	ods_iter_ref_t iter_ref;
+
+	LIST_FOREACH(iter_ref, &iter->iter_list, entry) {
+		int rc = ods_idx_stat(ods_iter_idx(iter_ref->iter), &sb);
+		if (!rc)
+			size += sb.size;
+	}
+	return size;
 }
 
 static void __sos_reset_iter(sos_iter_t i)

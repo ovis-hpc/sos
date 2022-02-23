@@ -819,14 +819,27 @@ cdef class Container(SosObject):
         if rc != 0:
             self.abort(rc)
 
-    def begin(self):
+    def begin(self, timeout = None):
         """Begin a transaction boundary on the container
 
         Another process attempting to begin a transaction
         will block until the owning process ends the
         transaction
+
+	Positional Parameters:
+
+	- The time in seconds to wait to acquire the transaction. If
+          the transaction cannot be acquired within the specified
+          timeout, a TimeoutError exception is thrown.
+ 
         """
-        sos_begin_x(self.c_cont)
+        cdef timespec ts
+        if timeout:
+            ts.tv_sec = timeout
+            ts.tv_nsec = 0
+            sos_begin_x(self.c_cont, &ts)
+        else:
+            sos_begin_x(self.c_cont, NULL)
 
     def end(self):
         """End a transaction on the container
