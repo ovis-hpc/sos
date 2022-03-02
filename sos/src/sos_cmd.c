@@ -591,7 +591,7 @@ void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 	size_t col_len;
 	char *col_str;
 	static char str[80];
-	char *s;
+	char *s, *o, *ptr;
 	if (!first_row)
 		fprintf(outp, ",\n");
 	first_row = 0;
@@ -611,12 +611,48 @@ void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 		if (!s) {
 			fprintf(outp, "\"%s\" : null", col->name);
 		} else {
-			if (sos_attr_is_array(attr) &&
-					sos_attr_type(attr) != SOS_TYPE_CHAR_ARRAY &&
-					sos_attr_type(attr) != SOS_TYPE_BYTE_ARRAY) {
-					fprintf(outp, "\"%s\" : [%s]", col->name, s);
-			} else {
+			switch (sos_attr_type(attr)) {
+			case SOS_TYPE_INT16:
+			case SOS_TYPE_INT32:
+			case SOS_TYPE_INT64:
+			case SOS_TYPE_UINT16:
+			case SOS_TYPE_UINT32:
+			case SOS_TYPE_UINT64:
+			case SOS_TYPE_FLOAT:
+			case SOS_TYPE_DOUBLE:
+			case SOS_TYPE_LONG_DOUBLE:
+			case SOS_TYPE_TIMESTAMP:
 				fprintf(outp, "\"%s\" : %s", col->name, s);
+				break;
+			case SOS_TYPE_OBJ:
+			case SOS_TYPE_STRUCT:
+			case SOS_TYPE_JOIN:
+			case SOS_TYPE_BYTE_ARRAY:
+			case SOS_TYPE_CHAR_ARRAY:
+				fprintf(outp, "\"%s\" : \"%s\"", col->name, s);
+				break;
+			case SOS_TYPE_INT16_ARRAY:
+			case SOS_TYPE_INT32_ARRAY:
+			case SOS_TYPE_INT64_ARRAY:
+			case SOS_TYPE_UINT16_ARRAY:
+			case SOS_TYPE_UINT32_ARRAY:
+			case SOS_TYPE_UINT64_ARRAY:
+			case SOS_TYPE_FLOAT_ARRAY:
+			case SOS_TYPE_DOUBLE_ARRAY:
+			case SOS_TYPE_LONG_DOUBLE_ARRAY:
+				fprintf(outp, "\"%s\" : [%s]", col->name, s);
+				break;
+			case SOS_TYPE_OBJ_ARRAY:
+				fprintf(outp, "\"%s\" : [", col->name);
+				o = strtok_r(s, ',', &ptr);
+				fprintf(outp, "\"%s\"", o);
+				for (; o; o = strtok_r(NULL, ',', &ptr)) {
+					fprintf(outp, ",\"%s\"", o);
+				}
+				fprintf(outp, "]");
+				break;
+			default:
+				break;
 			}
 		}
 		if (col_str != str)
