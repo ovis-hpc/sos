@@ -616,7 +616,7 @@ void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 					sos_attr_type(attr) != SOS_TYPE_BYTE_ARRAY) {
 					fprintf(outp, "\"%s\" : [%s]", col->name, s);
 			} else {
-				fprintf(outp, "\"%s\" : %s", col->name, s);
+				fprintf(outp, "\"%s\" : \"%s\"", col->name, s);
 			}
 		}
 		if (col_str != str)
