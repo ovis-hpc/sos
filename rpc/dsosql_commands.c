@@ -17,8 +17,6 @@
 #include "dsosql.h"
 #undef VERSION
 
-struct col_list_s col_list = TAILQ_HEAD_INITIALIZER(col_list);
-
 int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str);
 char *strcasestr(const char *haystack, const char *needle);
 
@@ -105,7 +103,7 @@ int schema_dir(sos_t sos)
  * Add a column. The format is:
  * <name>[col_width]
  */
-int add_column(sos_schema_t schema, const char *str)
+int add_column(sos_schema_t schema, const char *str, struct col_list_s *col_list)
 {
 	char *width;
 	char *s = NULL;
@@ -124,7 +122,7 @@ int add_column(sos_schema_t schema, const char *str)
 	col->name = s;
 	if (!col->name)
 		goto err;
-	TAILQ_INSERT_TAIL(&col_list, col, entry);
+	TAILQ_INSERT_TAIL(col_list, col, entry);
 	sos_attr_t attr = sos_schema_attr_by_name(schema, s);
 	if (!attr)
 goto err;
@@ -157,7 +155,7 @@ enum query_fmt {
 	JSON_FMT
 } format;
 
-void table_header(FILE *outp, sos_attr_t index_attr)
+void table_header(FILE *outp, sos_attr_t index_attr, struct col_list_s *col_list)
 {
 	struct col_s *col;
 	if (index_attr) {
@@ -180,7 +178,7 @@ void table_header(FILE *outp, sos_attr_t index_attr)
 		}
 	}
 	/* Print the header labels */
-	TAILQ_FOREACH(col, &col_list, entry) {
+	TAILQ_FOREACH(col, col_list, entry) {
 		if (col->width > 0)
 			fprintf(outp, "%-*s ", col->width, col->name);
 		else
@@ -189,7 +187,7 @@ void table_header(FILE *outp, sos_attr_t index_attr)
 	fprintf(outp, "\n");
 
 	/* Print the header separators */
-	TAILQ_FOREACH(col, &col_list, entry) {
+	TAILQ_FOREACH(col, col_list, entry) {
 		int i;
 		if (col->width > 0)
 			for (i = 0; i < col->width; i++)
@@ -202,13 +200,13 @@ void table_header(FILE *outp, sos_attr_t index_attr)
 	fprintf(outp, "\n");
 }
 
-static void csv_header(FILE *outp)
+static void csv_header(FILE *outp, sos_attr_t index_attr, struct col_list_s *col_list)
 {
 	struct col_s *col;
 	int first = 1;
 	/* Print the header labels */
 	fprintf(outp, "# ");
-	TAILQ_FOREACH(col, &col_list, entry) {
+	TAILQ_FOREACH(col, col_list, entry) {
 		if (!first)
 			fprintf(outp, ",");
 		fprintf(outp, "%s", col->name);
@@ -217,19 +215,19 @@ static void csv_header(FILE *outp)
 	fprintf(outp, "\n");
 }
 
-static void json_header(FILE *outp)
+static void json_header(FILE *outp, sos_attr_t index_attr, struct col_list_s *col_list)
 {
 	fprintf(outp, "{ \"data\" : [\n");
 }
 
-void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
+void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj, struct col_list_s *col_list)
 {
 	struct col_s *col;
 	size_t col_len;
 	sos_attr_t attr;
 	char *col_str;
 	char str[80];
-	TAILQ_FOREACH(col, &col_list, entry) {
+	TAILQ_FOREACH(col, col_list, entry) {
 		attr = sos_schema_attr_by_id(schema, col->id);
 		if (col->width > 0 && col->width < sizeof(str)) {
 			col_len = col->width;
@@ -259,7 +257,7 @@ void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 	fprintf(outp, "\n");
 }
 
-static void csv_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
+static void csv_row(FILE *outp, sos_schema_t schema, sos_obj_t obj, struct col_list_s *col_list)
 {
 	struct col_s *col;
 	int first = 1;
@@ -267,7 +265,7 @@ static void csv_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 	size_t col_len;
 	char *col_str;
 	char str[80];
-	TAILQ_FOREACH(col, &col_list, entry) {
+	TAILQ_FOREACH(col, col_list, entry) {
 		attr = sos_schema_attr_by_id(schema, col->id);
 		if (!first)
 			fprintf(outp, ",");
@@ -286,7 +284,7 @@ static void csv_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 	fprintf(outp, "\n");
 }
 
-static void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
+static void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj, struct col_list_s *col_list)
 {
 	struct col_s *col;
 	static int first_row = 1;
@@ -299,7 +297,7 @@ static void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 		fprintf(outp, ",\n");
 	first_row = 0;
 	fprintf(outp, "{");
-	TAILQ_FOREACH(col, &col_list, entry) {
+	TAILQ_FOREACH(col, col_list, entry) {
 		attr = sos_schema_attr_by_id(schema, col->id);
 		if (!first)
 			fprintf(outp, ",");
@@ -324,12 +322,12 @@ static void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 	fprintf(outp, "}");
 }
 
-void table_footer(FILE *outp, int rec_count, int iter_count)
+void table_footer(FILE *outp, int rec_count, int iter_count, struct col_list_s *col_list)
 {
 	struct col_s *col;
 
 	/* Print the footer separators */
-	TAILQ_FOREACH(col, &col_list, entry) {
+	TAILQ_FOREACH(col, col_list, entry) {
 		int i;
 		for (i = 0; i < col->width; i++)
 			fprintf(outp, "-");
@@ -339,133 +337,15 @@ void table_footer(FILE *outp, int rec_count, int iter_count)
 	fprintf(outp, "Records %d\n", rec_count);
 }
 
-static void csv_footer(FILE *outp, int rec_count, int iter_count)
+static void csv_footer(FILE *outp, int rec_count, int iter_count, struct col_list_s *col_list)
 {
 	fprintf(outp, "# Records %d/%d.\n", rec_count, iter_count);
 }
 
-static void json_footer(FILE *outp, int rec_count, int iter_count)
+static void json_footer(FILE *outp, int rec_count, int iter_count, struct col_list_s *col_list)
 {
 	fprintf(outp, "], \"%s\" : %d, \"%s\" : %d}\n",
 		"totalRecords", rec_count, "recordCount", iter_count);
-}
-
-int dsosql_query(sos_t sos, const char *schema_name, const char *index_name)
-{
-	sos_schema_t schema;
-	sos_attr_t attr;
-	sos_iter_t iter;
-	size_t attr_count, attr_id;
-	int rc;
-	struct col_s *col;
-	sos_filter_t filt;
-
-	schema = sos_schema_by_name(sos, schema_name);
-	if (!schema) {
-		printf("The schema '%s' was not found, error %d.\n", schema_name, errno);
-		return ENOENT;
-	}
-	attr = sos_schema_attr_by_name(schema, index_name);
-	if (!attr) {
-		printf("The attribute '%s' does not exist in '%s', error %d.\n",
-		       index_name, schema_name, errno);
-		return ENOENT;
-	}
-	if (!sos_attr_index(attr)) {
-		printf("The attribute '%s' is not indexed in '%s', error %d.\n",
-		       index_name, schema_name, errno);
-		return ENOENT;
-	}
-	iter = sos_attr_iter_new(attr);
-	if (!iter) {
-		printf("Error %d creating and iterator for the index '%s'.\n",
-		       errno, index_name);
-		return errno;
-	}
-	filt = sos_filter_new(iter);
-	if (!filt) {
-		printf("Error %d creating a filter for the index '%s'.\n",
-		       errno, index_name);
-		return errno;
-	}
-
-	/* Create the col_list from the schema if the user didn't specify one */
-	if (TAILQ_EMPTY(&col_list)) {
-		attr_count = sos_schema_attr_count(schema);
-		for (attr_id = 0; attr_id < attr_count; attr_id++) {
-			attr = sos_schema_attr_by_id(schema, attr_id);
-			if (add_column(schema, sos_attr_name(attr)))
-				return ENOMEM;
-		}
-	}
-	/* Query the schema for each attribute's id, and compute width */
-	TAILQ_FOREACH(col, &col_list, entry) {
-		attr = sos_schema_attr_by_name(schema, col->name);
-		if (!attr) {
-			printf("The attribute %s from the view is not "
-			       "in the schema.\n", col->name);
-			return ENOENT;
-		}
-		col->id = sos_attr_id(attr);
-		if (!col->width)
-			col->width = col_widths[sos_attr_type(attr)];
-	}
-
-	/* Build the index filter */
-	struct clause_s *clause;
-	TAILQ_FOREACH(clause, &clause_list, entry) {
-		rc = add_filter(schema, filt, clause->str);
-		if (rc)
-			return rc;
-	}
-
-	switch (format) {
-	case JSON_FMT:
-		json_header(stdout);
-		break;
-	case CSV_FMT:
-		csv_header(stdout);
-		break;
-	default:
-		table_header(stdout, NULL);
-		break;
-	}
-
-	int rec_count;
-	int iter_count;
-	sos_obj_t obj;
-	void (*printer)(FILE *outp, sos_schema_t schema, sos_obj_t obj);
-	switch (format) {
-	case JSON_FMT:
-		printer = json_row;
-		break;
-	case CSV_FMT:
-		printer = csv_row;
-		break;
-	default:
-		printer = table_row;
-		break;
-	}
-
-	for (rec_count = 0, iter_count = 0, obj = sos_filter_begin(filt);
-	     obj; obj = sos_filter_next(filt), iter_count++) {
-		printer(stdout, schema, obj);
-		rec_count++;
-		sos_obj_put(obj);
-	}
-	switch (format) {
-	case JSON_FMT:
-		json_footer(stdout, rec_count, iter_count);
-		break;
-	case CSV_FMT:
-		csv_footer(stdout, rec_count, iter_count);
-		break;
-	default:
-		table_footer(stdout, rec_count, iter_count);
-		break;
-	}
-	sos_filter_free(filt);
-	return 0;
 }
 
 ods_atomic_t records;
@@ -850,6 +730,11 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 	sos_obj_t obj;
 	struct col_s *col;
 	int rec_count;
+	struct col_list_s col_list = TAILQ_HEAD_INITIALIZER(col_list);
+	void (*header)(FILE *outp, sos_attr_t index_attr, struct col_list_s *col_list);
+	void (*row)(FILE *outp, sos_schema_t schema, sos_obj_t obj, struct col_list_s *col_list);
+	void (*footer)(FILE *outp, int rec_count, int iter_count, struct col_list_s *col_list);
+
 	if (!query) {
 		printf("%s\n", dsos_last_errmsg());
 		return dsos_last_err();
@@ -862,14 +747,12 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 	schema = dsos_query_schema(query);
 	/* Add all the attributes in the schema to the col_list */
 	sos_attr_t attr;
-	while (!TAILQ_EMPTY(&col_list)) {
-		col = TAILQ_FIRST(&col_list);
-		TAILQ_REMOVE(&col_list, col, entry);
-		free(col);
+	for (attr = sos_schema_attr_first(schema); attr; attr = sos_schema_attr_next(attr)) {
+		if (sos_attr_type(attr) != SOS_TYPE_JOIN) {
+			add_column(schema, sos_attr_name(attr), &col_list);
+		}
 	}
-	for (attr = sos_schema_attr_first(schema); attr; attr = sos_schema_attr_next(attr))
-		if (sos_attr_type(attr) != SOS_TYPE_JOIN)
-			add_column(schema, sos_attr_name(attr));
+
 	TAILQ_FOREACH(col, &col_list, entry) {
 		attr = sos_schema_attr_by_name(schema, col->name);
 		if (!attr) {
@@ -882,14 +765,33 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 			col->width = col_widths[sos_attr_type(attr)];
 	}
 
-	table_header(stdout, dsos_query_index_attr(query));
+	switch (output_format) {
+	case TABLE:
+		header = table_header;
+		row = table_row;
+		footer = table_footer;
+		break;
+	case CSV:
+		header = csv_header;
+		row = csv_row;
+		footer = csv_footer;
+		break;
+	case JSON:
+		header = json_header;
+		row = json_row;
+		footer = json_footer;
+		break;
+	default:
+		assert(NULL == "Invalid output format");
+	}
+	header(stdout, dsos_query_index_attr(query), &col_list);
 	rec_count = 0;
 	for (obj = dsos_query_next(query); obj; obj = dsos_query_next(query)) {
-		table_row(stdout, schema, obj);
+		row(stdout, schema, obj, &col_list);
 		sos_obj_put(obj);
 		rec_count += 1;
 	}
-	table_footer(stdout, rec_count, 0);
+	footer(stdout, rec_count, 0, &col_list);
 	while (!TAILQ_EMPTY(&col_list)) {
 		col = TAILQ_FIRST(&col_list);
 		TAILQ_REMOVE(&col_list, col, entry);
@@ -899,3 +801,4 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 	dsos_query_destroy(query);
 	return 0;
 }
+

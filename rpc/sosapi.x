@@ -120,7 +120,7 @@ union dsos_part_query_res switch (int error) {
 
 /* Result for API that return partitions */
 struct dsos_part_spec {
-	string name<>;      /* Unique for the container */
+    string name<>;      /* Unique for the container */
     string path<>;      /* The path to the partition */
     string desc<>;      /* Partition description */
     dsos_part_id id;    /* Session local id, returned on create/find */
@@ -184,7 +184,7 @@ typedef int query_option_type_int;
 
 union dsos_query_option_value switch (int query_option_type) {
     case QUERY_RESULT_FORMAT:
-        query_option_type_string format;
+        query_option_type_int format;
     case QUERY_RESULT_LIMIT:
         query_option_type_int limit;
     default:

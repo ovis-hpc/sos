@@ -39,6 +39,9 @@
 #include "dsosql.h"
 #include "json.h"
 
+int output_format = TABLE;
+int query_limit = -1;
+
 typedef struct av_s {
 	char *name;
 	char *value_str;
@@ -79,6 +82,7 @@ int quit_command(cmd_t, av_list_t avl);
 int import_csv(cmd_t, av_list_t avl);
 int help_command(cmd_t, av_list_t avl);
 int select_command(cmd_t, av_list_t avl);
+int set_option(cmd_t, av_list_t avl);
 
 /* A structure which contains information on the commands this program
    can understand. */
@@ -93,6 +97,7 @@ enum dsosql_command_id_e {
 	IMPORT_CMD,
 	SELECT_CMD,
 	SHOW_CMD,
+	SET_CMD,
 	HELP_CMD,
 	HELP_CMD_2,
 	LAST_CMD,
@@ -125,6 +130,13 @@ struct cmd_s commands[] = {
 		{
 			{ SOS_TYPE_STRING, "name" },
 			{ SOS_TYPE_STRING, "regex" },
+		}
+	},
+	[SET_CMD] = { "set", set_option, "set { format VALUE, limit VALUE }",
+		2,
+		{
+			{ SOS_TYPE_STRING, "format" },
+			{ SOS_TYPE_STRING, "limit" },
 		}
 	},
 	[CREATE_PART_CMD] = { "create_part", create_part,
@@ -561,6 +573,7 @@ int show_command(cmd_t cmd, av_list_t avl)
 	char *attr_name = NULL;
 	sos_obj_t obj;
 	int min_n_max;
+	struct col_list_s col_list = TAILQ_HEAD_INITIALIZER(col_list);
 
 	if (!g_cont) {
 		printf("There is not container open.\n");
@@ -592,18 +605,16 @@ int show_command(cmd_t cmd, av_list_t avl)
 		goto out;
 	}
 	sos_attr_t index_attr = sos_schema_attr_by_name(schema, attr_name);
-	if (TAILQ_EMPTY(&col_list)) {
-		if (sos_attr_type(index_attr) != SOS_TYPE_JOIN) {
-			add_column(schema, sos_attr_name(index_attr));
-		} else {
-			int join_idx;
-			sos_array_t join_list = sos_attr_join_list(index_attr);
-			for (join_idx = 0; join_idx < join_list->count; join_idx++) {
-				sos_attr_t join_attr =
-					sos_schema_attr_by_id(schema,
-							      join_list->data.uint32_[join_idx]);
-				add_column(schema, sos_attr_name(join_attr));
-			}
+	if (sos_attr_type(index_attr) != SOS_TYPE_JOIN) {
+		add_column(schema, sos_attr_name(index_attr), &col_list);
+	} else {
+		int join_idx;
+		sos_array_t join_list = sos_attr_join_list(index_attr);
+		for (join_idx = 0; join_idx < join_list->count; join_idx++) {
+			sos_attr_t join_attr =
+				sos_schema_attr_by_id(schema,
+						      join_list->data.uint32_[join_idx]);
+			add_column(schema, sos_attr_name(join_attr), &col_list);
 		}
 	}
 	obj = dsos_iter_begin(iter);
@@ -611,11 +622,11 @@ int show_command(cmd_t cmd, av_list_t avl)
 		printf("The iterator for '%s' is empty.\n", attr_name);
 		goto out;
 	}
-	table_header(stdout, index_attr);
-	table_row(stdout, schema, obj);
+	table_header(stdout, index_attr, &col_list);
+	table_row(stdout, schema, obj, &col_list);
 	sos_obj_put(obj);
 	obj = dsos_iter_end(iter);
-	table_row(stdout, schema, obj);
+	table_row(stdout, schema, obj, &col_list);
 	sos_obj_put(obj);
 
 	dsos_iter_stats_t stats = dsos_iter_stats(iter);
@@ -1050,6 +1061,32 @@ int select_command(cmd_t cmd, av_list_t avl)
 	}
 	av_t av = LIST_FIRST(&avl->head);
 	int rc = dsosql_query_select(g_cont, av->value_str);
+	return 0;
+}
+
+int set_option(cmd_t cmd, av_list_t avl)
+{
+	av_t av = LIST_FIRST(&avl->head);
+	LIST_FOREACH(av, &avl->head, link) {
+		if (strcasecmp(av->name, "format") == 0) {
+			if (strcasecmp(av->value_str, "table") == 0)
+				output_format = TABLE;
+			else if (strcasecmp(av->value_str, "csv") == 0)
+				output_format = CSV;
+			else if (strcasecmp(av->value_str, "json") == 0)
+				output_format = JSON;
+			else
+				printf("Ignoring invalid output format name '%s'. "
+				       "Valid formats are 'table', 'json', and 'csv'.\n",
+				       av->value_str);
+		} else if (strcasecmp(av->name, "limit") == 0) {
+			int ql = strtol(av->value_str, NULL, 0);
+			if (ql == 0)
+				printf("Ignoring invalid query limit %s.\n", av->value_str);
+			else
+				query_limit = ql;
+		}
+	}
 	return 0;
 }
 
