@@ -1,5 +1,6 @@
 AUTOMAKE_OPTIONS=subdir-objects
 SUBDIRS = . # python
+EXTRA_DIST=
 lib_LTLIBRARIES =
 sbin_PROGRAMS =
 bin_PROGRAMS =
@@ -52,4 +53,7 @@ dsosql_LDADD = ../lib/json/libsos_json.la ../sos/src/libsos.la libdsos.la -lpthr
 bin_PROGRAMS += dsosql
 
 AM_YFLAGS = -d
+
+dist_man8_MANS= \
+dsosd.man
 
