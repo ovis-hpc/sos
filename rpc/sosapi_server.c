@@ -14,6 +14,7 @@
 #include <sys/queue.h>
 #include <syslog.h>
 #include <unistd.h>
+#include "json.h"
 #include "dsos.h"
 #include "sosapi.h"          /* Created by rpcgen */
 #include "sosapi_common.h"
@@ -22,6 +23,93 @@
 static struct timespec ZERO_TIME = {
 	0, 0
 };
+
+static int dir_read = 0;
+struct dir_entry_s {
+	char *name;
+	char *path;
+	struct ods_rbn rbn;
+};
+
+static int64_t name_comparator(void *a, const void *b, void *arg);
+static struct ods_rbt dir_tree = ODS_RBT_INITIALIZER(name_comparator);
+
+/*
+ * Map a container name to a local path 
+ *
+ * If a name mapping exists, return the mapped name, otherwise
+ * return the name argument.
+ */
+static char *get_container_path(char *name)
+{
+	struct ods_rbn *rbn = ods_rbt_find(&dir_tree, name);
+	if (!rbn)
+		return name;
+
+	struct dir_entry_s *entry = container_of(rbn, struct dir_entry_s, rbn);
+	return entry->path;
+}
+
+static void read_directory(void)
+{
+	const char *path = getenv("DSOSD_DIRECTORY");
+	const char *server = getenv("DSOSD_SERVER_ID");
+	char hostname[PATH_MAX];
+	json_entity_t dir, entry;
+	struct dir_entry_s *dir_entry;
+	int rc;
+	FILE *dir_file;
+	if (dir_read)
+		return;
+	dir_read = 1;
+	if (!path)
+		return;
+	dir_file = fopen(path, "r");
+	if (!dir_file)
+		return;
+	rc = json_parse_file(dir_file, &dir);
+	if (rc != 0)
+		return;
+	/* Look up the container name mappings for this hostname */
+	if (!server) {
+		rc = gethostname(hostname, PATH_MAX);
+		if (rc)
+			return;
+		server = hostname;
+	}
+
+	dir = json_value_find(dir, server);
+	if (!dir)
+		return;
+	if (json_entity_type(dir) != JSON_DICT_VALUE) {
+		printf("Expected a directory but the entry value is a %d\n",
+		       json_entity_type(dir));
+		return;
+	}
+	for (entry = json_attr_first(dir); entry; entry = json_attr_next(entry)) {
+		if (json_entity_type(entry) != JSON_ATTR_VALUE) {
+			printf("Expected \"container-name\" : \"path\", but got an %d\n",
+			       json_entity_type(entry));
+			continue;
+		}
+		json_str_t name = json_attr_name(entry);
+		json_entity_t path = json_attr_value(entry);
+		if (json_entity_type(path) != JSON_STRING_VALUE) {
+			printf("Expected a string but the directory entry value is a %d\n",
+			       json_entity_type(path));
+			continue;
+		}
+		dir_entry = malloc(sizeof(*dir_entry));
+		if (!dir_entry) {
+			printf("%s[%d] : Memory allocation failure\n", __func__, __LINE__);
+			continue;
+		}
+		dir_entry->name = name->str;
+		dir_entry->path = path->value.str_->str;
+		ods_rbn_init(&dir_entry->rbn, dir_entry->name);
+		ods_rbt_ins(&dir_tree, &dir_entry->rbn);
+	}
+}
 
 struct dsos_session {
 	uint64_t handle;
@@ -218,9 +306,17 @@ open_1_svc(char *path, int perm, int mode, dsos_open_res *res,  struct svc_req *
 	int acc = 0;
 	char err_msg[256];
 	sos_t sos;
+	char *lpath;
 
 	if (!authenticate_request(req, __func__))
 		return FALSE;
+
+	read_directory();
+
+	/* Map the specified path to the local path */
+	lpath = get_container_path(path);
+	if (lpath)
+		path = lpath;
 
 	switch(req->rq_cred.oa_flavor) {
 	case AUTH_SYS:
