@@ -352,11 +352,11 @@ clnt_vc_call(cl, proc, xdr_args, args_ptr, xdr_results, results_ptr, timeout)
 
 	sigfillset(&newmask);
 	thr_sigsetmask(SIG_SETMASK, &newmask, &mask);
-	mutex_lock(&clnt_fd_lock);
+	mutex_lock(&ct->ct_fd_lock->lock);
 	while (ct->ct_fd_lock->active)
-		cond_wait(&ct->ct_fd_lock->cv, &clnt_fd_lock);
+		cond_wait(&ct->ct_fd_lock->cv, &ct->ct_fd_lock->lock);
 	ct->ct_fd_lock->active = TRUE;
-	mutex_unlock(&clnt_fd_lock);
+	mutex_unlock(&ct->ct_fd_lock->lock);
 	if (!ct->ct_waitset) {
 		/* If time is not within limits, we ignore it. */
 		if (time_not_ok(&timeout) == FALSE)
@@ -490,12 +490,12 @@ clnt_vc_freeres(cl, xdr_res, res_ptr)
 
 	sigfillset(&newmask);
 	thr_sigsetmask(SIG_SETMASK, &newmask, &mask);
-	mutex_lock(&clnt_fd_lock);
+	mutex_lock(&ct->ct_fd_lock->lock);
 	while (ct->ct_fd_lock->active)
-		cond_wait(&ct->ct_fd_lock->cv, &clnt_fd_lock);
+		cond_wait(&ct->ct_fd_lock->cv, &ct->ct_fd_lock->lock);
 	xdrs->x_op = XDR_FREE;
 	dummy = (*xdr_res)(xdrs, res_ptr);
-	mutex_unlock(&clnt_fd_lock);
+	mutex_unlock(&ct->ct_fd_lock->lock);
 	thr_sigsetmask(SIG_SETMASK, &(mask), NULL);
 	cond_signal(&ct->ct_fd_lock->cv);
 
@@ -528,11 +528,11 @@ clnt_vc_control(cl, request, info)
 
 	sigfillset(&newmask);
 	thr_sigsetmask(SIG_SETMASK, &newmask, &mask);
-	mutex_lock(&clnt_fd_lock);
+	mutex_lock(&ct->ct_fd_lock->lock);
 	while (ct->ct_fd_lock->active)
-		cond_wait(&ct->ct_fd_lock->cv, &clnt_fd_lock);
+		cond_wait(&ct->ct_fd_lock->cv, &ct->ct_fd_lock->lock);
 	ct->ct_fd_lock->active = TRUE;
-	mutex_unlock(&clnt_fd_lock);
+	mutex_unlock(&ct->ct_fd_lock->lock);
 
 	switch (request) {
 	case CLSET_FD_CLOSE:
@@ -650,9 +650,9 @@ clnt_vc_destroy(cl)
 
 	sigfillset(&newmask);
 	thr_sigsetmask(SIG_SETMASK, &newmask, &mask);
-	mutex_lock(&clnt_fd_lock);
+	mutex_lock(&ct_fd_lock->lock);
 	while (ct_fd_lock->active)
-		cond_wait(&ct_fd_lock->cv, &clnt_fd_lock);
+		cond_wait(&ct_fd_lock->cv, &ct_fd_lock->lock);
 	if (ct->ct_closeit && ct->ct_fd != -1) {
 		(void)close(ct->ct_fd);
 	}
@@ -667,7 +667,6 @@ clnt_vc_destroy(cl)
 	mem_free(cl, sizeof(CLIENT));
 	cond_signal(&ct_fd_lock->cv);
 	fd_lock_destroy(ct_fd, ct_fd_lock, vc_fd_locks);
-	mutex_unlock(&clnt_fd_lock);
 	thr_sigsetmask(SIG_SETMASK, &(mask), NULL);
 }
 
