@@ -644,9 +644,9 @@ void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 				break;
 			case SOS_TYPE_OBJ_ARRAY:
 				fprintf(outp, "\"%s\" : [", col->name);
-				o = strtok_r(s, ',', &ptr);
+				o = strtok_r(s, ",", &ptr);
 				fprintf(outp, "\"%s\"", o);
-				for (; o; o = strtok_r(NULL, ',', &ptr)) {
+				for (; o; o = strtok_r(NULL, ",", &ptr)) {
 					fprintf(outp, ",\"%s\"", o);
 				}
 				fprintf(outp, "]");
