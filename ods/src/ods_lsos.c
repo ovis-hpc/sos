@@ -260,11 +260,22 @@ static void __lock_init(ods_lock_t *lock)
 	pthread_mutex_init(&lock->mutex, &attr);
 }
 
+static struct timespec default_wait = {
+	.tv_sec = 1,
+	.tv_nsec = 0
+};
+
 static int __take_lock(ods_lock_t *lock, struct timespec *wait)
 {
+	int rc;
 	if (!wait)
-		return pthread_mutex_lock(&lock->mutex);
-	return pthread_mutex_timedlock(&lock->mutex, wait);
+		wait = &default_wait;
+	do {
+		rc = pthread_mutex_timedlock(&lock->mutex, wait);
+		if (wait != &default_wait)
+			return rc;
+	} while (rc != 0);
+	return rc;
 }
 
 static void __release_lock(ods_lock_t *lock)
