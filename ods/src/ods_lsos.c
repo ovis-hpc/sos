@@ -60,6 +60,7 @@ static ods_alloc_t __alloc_fn = malloc;
 static ods_free_t __free_fn = free;
 static void __lsos_update(ods_map_t map, ods_ref_t ref, size_t len);
 static uint64_t ods_lsos_flush_data(ods_t ods_, int keep_time);
+static void commit_map_pages(ods_map_t map);
 
 extern int __ods_debug;
 extern uint64_t __ods_def_map_sz;
@@ -351,6 +352,17 @@ static int64_t map_page_cmp(void *akey, const void *bkey, void *arg)
  * refers. If the object size is greater than ods->obj_map_sz, it will
  * be used for the map size rounded up to the next ODS_PAGE_SZ
  * boundary.
+ *
+ * Map design constraints:
+ *
+ * - Cannot overlap, i.e. no two maps in the tree may cover the same
+ *   address.
+ *
+ * - Must begin on an ODS_PAGE_SZ boundary
+ *
+ * - Maps may be different sizes, but they must all be an integral
+ *   multiple of ODS_PAGE_SZ
+ *
  */
 static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 {
@@ -363,7 +375,6 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 	uint64_t map_len;
 	ods_pgt_t pgt;
 	uint64_t sz;
-	int span = 0;
 	struct timespec	start, end;
 
 	/* Opportunistically check if last map will work */
@@ -395,33 +406,29 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 			map->last_used = time(NULL);
 			goto out;
 		}
-
 		/*
 		 * See if this object starts inside this map. If so,
 		 * the object is large, and spans two maps. Truncate
 		 * this map and create a new one starting at loff.
 		 */
 		if (loff >= map->map.off && loff < (map->map.off + map->map.len)) {
-			size_t diff = map->map.len;
 			assert((loff & ~ODS_PAGE_MASK) == 0);
-			map->map.len = loff - map->map.off;
-			diff -= map->map.len;
-			if (diff) {
-				span = 1;
-			} else {
-				assert(0);
-			}
+			ods_rbt_del(&ods->map_tree, &map->rbn);
+			map->map.len = loff;
+			ods_rbn_init(&map->rbn, &map->map);
+			ods_rbt_ins(&ods->map_tree, &map->rbn);
 		}
 		/* Object not in any map, create a new one */
 	}
-	if (span)
-		assert(0 == "map-spanning objects not supported");
+	map_off = ODS_ALIGN(loff, ODS_PAGE_SIZE); // ods->obj_map_sz);
+	if (sz > ods->obj_map_sz)
+		map_len = ODS_ALIGN(sz, ODS_PAGE_SIZE);
 	else
-		map_off = ODS_ALIGN(loff, ods->obj_map_sz);
-	map_len = ods->obj_map_sz;
+		map_len = ods->obj_map_sz;
 	if (map_len < sz)
 		assert(0 == "objects larger than ods_map_sz are not supported");
-	int rc = snprintf(map_path, sizeof(map_path), "%s-%016lx-%016lx", ods->base.path, map_off, map_len);
+	int rc = snprintf(map_path, sizeof(map_path), "%s-%016lx-%016lx",
+			  ods->base.path, map_off, map_len);
 	assert(rc < sizeof(map_path));
 	for (rc = 1; rc < strlen(map_path); rc++) {
 		if (map_path[rc] == '/')
@@ -473,7 +480,7 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 	for (pg = 1; pg < map_len >> ODS_PAGE_SHIFT; pg++)
 		map->pg_rbn[pg].left = &map->pg_rbn[pg-1];
 	map->free_pg = &map->pg_rbn[pg-1];
-	if (0 == __sync_fetch_and_add(map->gen, 1))
+	if ((0 == __sync_fetch_and_add(map->gen, 1)))
 		read_map_pages(map);
 	ods_rbn_init(&map->rbn, &map->map);
 	ods_rbt_ins(&ods->map_tree, &map->rbn);
@@ -2080,9 +2087,9 @@ static uint64_t ods_lsos_flush_data(ods_t ods_, int keep_time)
 		return 0;
 	}
 	/*
-	* Traverse the map_tree and add the maps that can be
-	* deleted to the del_list
-	*/
+	 * Traverse the map_tree and add the maps that can be
+	 * deleted to the del_list
+	 */
 	LIST_INIT(&del_list);
 	__ods_lock(ods_);
 	fn_arg.timeout = keep_time;
@@ -2312,7 +2319,6 @@ ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 	rc = flock(lock_fd, LOCK_EX);
 	if (rc) {
 		close(lock_fd);
-		errno = rc;
 		return NULL;
 	}
 
