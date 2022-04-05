@@ -51,6 +51,16 @@ from sosdb import Sos
 import json
 import os
 
+def add_schema(cont, path):
+    try:
+        fp = open(path, 'r')
+        spec = json.load(fp)
+        schema = Sos.Schema()
+        schema.from_template(spec)
+        schema.add(cont)
+    except Exception as ex:
+        print(str(ex))
+
 def import_schema(cont, dirname):
     for root, dirs, files in os.walk(dirname):
         for name in files:
