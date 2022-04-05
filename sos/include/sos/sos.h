@@ -394,6 +394,7 @@ size_t sos_obj_attr_strlen(sos_obj_t obj, sos_attr_t attr);
 size_t sos_obj_attr_value_set_va(sos_obj_t sos_obj, sos_attr_t attr, va_list ap);
 size_t sos_obj_attr_by_name_set(sos_obj_t sos_obj, const char *attr_name, ...);
 size_t sos_obj_attr_by_id_set(sos_obj_t sos_obj, int attr_id, ...);
+size_t sos_obj_attr_set(sos_obj_t sos_obj, sos_attr_t attr, ...);
 sos_value_t sos_obj_attr_value_get(sos_obj_t sos_obj, sos_attr_t attr);
 /** @} */
 /** @} */

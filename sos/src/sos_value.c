@@ -1198,6 +1198,16 @@ size_t sos_obj_attr_by_id_set(sos_obj_t sos_obj, int attr_id, ...)
 	return size;
 }
 
+size_t sos_obj_attr_set(sos_obj_t sos_obj, sos_attr_t attr, ...)
+{
+	size_t size;
+	va_list ap;
+	va_start(ap, attr);
+	size = sos_obj_attr_value_set_va(sos_obj, attr, ap);
+	va_end(ap);
+	return size;
+}
+
 size_t sos_value_data_size(sos_value_data_t vd, sos_type_t type)
 {
 	size_t size;
