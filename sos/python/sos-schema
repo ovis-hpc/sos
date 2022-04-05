@@ -61,15 +61,6 @@ def add_schema(cont, path):
     except Exception as ex:
         print(str(ex))
 
-def import_schema(cont, dirname):
-    for root, dirs, files in os.walk(dirname):
-        for name in files:
-            fname = root + '/' + name
-            if os.path.islink(fname):
-                continue
-            print(f"Importing {name}")
-            add_schema(cont, fname)
-
 def query_schema(cont, schema_name, verbose=False):
     count = 0
     for s in cont.schema_iter():
