@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Open Grid Computing, Inc. All rights reserved.
+ * Copyright (c) 2013-2022 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2013 Sandia Corporation. All rights reserved.
  *
  * See the file COPYING at the top of this source tree for the terms
@@ -41,6 +41,7 @@
 #define ODS_COMMIT_BUFLEN (128 * 1024)
 #define ODS_PAGE_DIRTY	1
 #define ODS_PAGE_CLEAN	2
+#define LSOS_DEFAULT_MAP_SIZE (4 * 1024 * 1024)
 
 static void read_map_pages(ods_map_t map);
 static size_t ref_size(ods_lsos_t ods, ods_ref_t ref);
@@ -61,9 +62,10 @@ static ods_free_t __free_fn = free;
 static void __lsos_update(ods_map_t map, ods_ref_t ref, size_t len);
 static uint64_t ods_lsos_flush_data(ods_t ods_, int keep_time);
 static void commit_map_pages(ods_map_t map);
+static void __active_map_info(ods_lsos_t ods, FILE *fp);
 
 extern int __ods_debug;
-extern uint64_t __ods_def_map_sz;
+#define LSOS_DEF_MAP_SZ	(1024 * 1024)
 
 static inline uint64_t compute_elapsed(struct timespec start, struct timespec end)
 {
@@ -326,12 +328,6 @@ static void __pgt_unlock(ods_lsos_t ods)
 	return __release_lock(&pgt->pgt_lock);
 }
 
-/* Returns a 2^x value based on the current ODS container size */
-static inline size_t new_obj_map_sz(ods_lsos_t ods)
-{
-	return ODS_MIN_MAP_SZ;
-}
-
 static int64_t map_page_cmp(void *akey, const void *bkey, void *arg)
 {
 	uint64_t *a = akey;
@@ -343,7 +339,17 @@ static int64_t map_page_cmp(void *akey, const void *bkey, void *arg)
 		return 1;
 	return 0;
 }
-
+#if defined(ODS_DEBUG)
+static int match_count;
+static int count_matches(struct ods_rbn *rbn, void *arg, int l)
+{
+	uint64_t loff = *(uint64_t *)arg;
+	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
+	if (loff >= map->map.off && loff < map->map.off + map->map.len)
+		match_count += 1;
+	return 0;
+}
+#endif
 /*
  * The loff parameter specifies the offset in the file the map must
  * include.
@@ -375,7 +381,7 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 	uint64_t map_len;
 	ods_pgt_t pgt;
 	uint64_t sz;
-	struct timespec	start, end;
+	int split = 0;
 
 	/* Opportunistically check if last map will work */
 	__ods_lock(&ods->base);
@@ -387,23 +393,34 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 
 	sz = *ref_sz = ref_size(ods, loff);
 
+	map = map_get(ods->last_map);
+	if (map
+	    && (loff >= map->map.off)
+	    && ((map->map.off + map->map.len) >= (loff + sz))) {
+		__pgt_unlock(ods);
+		__ods_unlock(&ods->base);
+		return map;
+	} else if (map) {
+		map_put(map);
+	}
+
 	/* Find the largest map that will support loff */
 	key.off = loff;
 	key.len = 0xffffffff;
-	clock_gettime(CLOCK_REALTIME, &start);
 	rbn = ods_rbt_find_glb(&ods->map_tree, &key);
-	clock_gettime(CLOCK_REALTIME, &end);
 	if (rbn) {
 		map = container_of(rbn, struct ods_map_s, rbn);
-#if 0
-		printf("%10ld: %p off %p len %ld\n",
-		       compute_elapsed(start, end),
-		       map, (void *)map->map.off, map->map.len);
-#endif
 		/* If object fits in the map, use it */
 		if (loff >= map->map.off
 		    && (map->map.off + map->map.len) >= (loff + sz)) {
+			ods_map_t last_map = ods->last_map;
 			map->last_used = time(NULL);
+			if (__sync_bool_compare_and_swap(&ods->last_map, last_map, map)) {
+				/* We replaced the last_map, drop the ODS ref on it */
+				map_put(last_map);
+				/* Take a ref on the new last_map */
+				map_get(map);
+			}
 			goto out;
 		}
 		/*
@@ -415,18 +432,25 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 			assert((loff & ~ODS_PAGE_MASK) == 0);
 			ods_rbt_del(&ods->map_tree, &map->rbn);
 			map->map.len = loff;
+			split = 1;
 			ods_rbn_init(&map->rbn, &map->map);
 			ods_rbt_ins(&ods->map_tree, &map->rbn);
 		}
 		/* Object not in any map, create a new one */
 	}
-	map_off = ODS_ALIGN(loff, ODS_PAGE_SIZE); // ods->obj_map_sz);
 	if (sz > ods->obj_map_sz)
-		map_len = ODS_ALIGN(sz, ODS_PAGE_SIZE);
-	else
+		ods->obj_map_sz = ODS_ALIGN(sz + ods->obj_map_sz - 1, ods->obj_map_sz);
+	if (split) {
+		/* Make the new map the obj_map_sz + obj_map_sz - the map->map.len.
+		 * This will ensure that the newly created map ends up aligned on a
+		 * an obj_map_sz boundary.
+		 */
+		map_off = map->map.off + map->map.len;
+		map_len = ods->obj_map_sz + (ods->obj_map_sz - map->map.len);
+	} else {
+		map_off = ODS_ALIGN(loff,  ods->obj_map_sz);
 		map_len = ods->obj_map_sz;
-	if (map_len < sz)
-		assert(0 == "objects larger than ods_map_sz are not supported");
+	}
 	int rc = snprintf(map_path, sizeof(map_path), "%s-%016lx-%016lx",
 			  ods->base.path, map_off, map_len);
 	assert(rc < sizeof(map_path));
@@ -485,10 +509,13 @@ static ods_map_t map_new(ods_lsos_t ods, loff_t loff, uint64_t *ref_sz)
 	ods_rbn_init(&map->rbn, &map->map);
 	ods_rbt_ins(&ods->map_tree, &map->rbn);
  out:
-#if 0
+#if defined(ODS_DEBUG)
 	match_count = 0;
 	ods_rbt_traverse(&ods->map_tree, count_matches, &loff);
-	assert(match_count == 1);
+	if (match_count != 1) {
+		__active_map_info(ods, stdout);
+		assert(0);
+	}
 #endif
 	map  = map_get(map);	/* The map_tree consumes a reference */
 	__ods_unlock(&ods->base);
@@ -918,6 +945,8 @@ static int ods_lsos_lock_info(const char *path, FILE *fp)
 
 static void __active_map_info(ods_lsos_t ods, FILE *fp)
 {
+	if (!fp)
+		fp = stdout;
 	fprintf(fp, "Active Maps\n");
 	fprintf(fp, "               Ref   Obj     Map            Map            Obj\n");
 	fprintf(fp, "Map            Count GN      Offset         Len            Data\n");
@@ -1009,7 +1038,6 @@ static void __lsos_update(ods_map_t map, ods_ref_t ref, size_t len)
 	pg_end = (ref + len - 1) >> ODS_PAGE_SHIFT;
 	for (pg_no = pg_start; pg_no <= pg_end; pg_no++) {
 		assert(((pg_no - pg_mapped) << ODS_PAGE_SHIFT) < map->map.len);
-		// clock_gettime(CLOCK_REALTIME, &start);
 		rbn = map->free_pg;
 		rbn->key64 = pg_no;
 		ods_rbn_init(rbn, &rbn->key64);
@@ -1019,12 +1047,6 @@ static void __lsos_update(ods_map_t map, ods_ref_t ref, size_t len)
 			rbn->left = map->free_pg;
 			map->free_pg = rbn;
 		}
-		// clock_gettime(CLOCK_REALTIME, &end);
-#if 0
-		printf("RBN_ins: %10ld/%10ld: %p off %p len %ld\n",
-		       ods_rbt_card(&map->pg_tree), compute_elapsed(start, end),
-		       map, (void *)map->map.off, map->map.len);
-#endif
 	}
 }
 
@@ -2359,7 +2381,7 @@ ods_t ods_lsos_open(const char *path, ods_perm_t o_perm, int o_mode)
 	if (!lck_map(ods))
 		goto err;
 
-	ods->obj_map_sz = __ods_def_map_sz;
+	ods->obj_map_sz = LSOS_DEFAULT_MAP_SIZE;
 	ods_rbt_init(&ods->map_tree, map_cmp, NULL);
 	close(lock_fd);
 	return &ods->base;

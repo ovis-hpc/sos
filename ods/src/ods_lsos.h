@@ -107,6 +107,7 @@ typedef struct ods_lsos_s {
 	size_t obj_map_sz;
 
 	/* Tree of object maps. Key is file offset and map length. */
+	ods_map_t last_map;
 	struct ods_rbt map_tree;
 } *ods_lsos_t;
 
@@ -224,7 +225,5 @@ extern time_t __ods_gc_timeout;
 #define ODS_MIN_MAP_SZ	(64 * ODS_PAGE_SIZE)	/* 256K */
 #define ODS_DEF_MAP_SZ	(256 * ODS_PAGE_SIZE)	/* 1M */
 #define ODS_MAX_MAP_SZ	(512 * ODS_DEF_MAP_SZ)	/* 512M */
-
-extern uint64_t __ods_def_map_sz;
 
 #endif

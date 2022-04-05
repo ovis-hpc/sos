@@ -481,13 +481,16 @@ int ods_close(ods_t ods, int flags)
 	if (!ods)
 		return EINVAL;
 
+	pthread_mutex_lock(&__ods_tree_lock);
 	if (!ods->open_count) {
 		ods_lfatal("%s: Use after free of ODS %p.\n", __func__, ods);
+		pthread_mutex_unlock(&__ods_tree_lock);
 		return EBADF;
 	}
 
 	if (ods_atomic_dec(&ods->open_count)) {
 		ods_commit(ods, flags);
+		pthread_mutex_unlock(&__ods_tree_lock);
 		return 0;
 	}
 
@@ -499,7 +502,6 @@ int ods_close(ods_t ods, int flags)
 	}
 
 	/* Remove the ODS from the open list */
-	pthread_mutex_lock(&__ods_tree_lock);
 	ods_rbt_del(&__ods_tree, &ods->rbn);
 	pthread_mutex_unlock(&__ods_tree_lock);
 
@@ -567,7 +569,6 @@ static void flush_all_data_fn(void *arg)
 	}
 	pthread_mutex_unlock(&__ods_tree_lock);
 }
-uint64_t __ods_def_map_sz = ODS_DEF_MAP_SZ;
 time_t __ods_gc_timeout = ODS_DEF_GC_TIMEOUT;
 static pthread_t gc_thread;
 static void *gc_thread_fn(void *arg)
@@ -629,11 +630,4 @@ static void __attribute__ ((constructor)) ods_lib_init(void)
 	int rc = pthread_create(&gc_thread, NULL, gc_thread_fn, NULL);
 	if (!rc)
 		pthread_setname_np(gc_thread, "ods:unmap");
-	/* Override the default map size */
-	env = getenv("ODS_MAP_SIZE");
-	if (env) {
-		__ods_def_map_sz = atoi(env);
-		if (__ods_def_map_sz < ODS_MIN_MAP_SZ)
-			__ods_def_map_sz = ODS_MIN_MAP_SZ;
-	}
 }

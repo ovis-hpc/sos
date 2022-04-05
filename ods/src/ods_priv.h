@@ -103,12 +103,6 @@ static inline void __ods_unlock(ods_t ods)
 /* Garbage collection timeout */
 #define ODS_DEF_GC_TIMEOUT	10 /* 10 seconds */
 
-/* Default map size */
-#define ODS_MIN_MAP_SZ	(64 * ODS_PAGE_SIZE)	/* 256K */
-#define ODS_DEF_MAP_SZ	(256 * ODS_PAGE_SIZE)	/* 1M */
-#define ODS_MAX_MAP_SZ	(512 * ODS_DEF_MAP_SZ)	/* 512M */
-
-extern uint64_t __ods_def_map_sz;
 extern time_t __ods_gc_timeout;
 
 void __ods_obj_delete(ods_obj_t obj);

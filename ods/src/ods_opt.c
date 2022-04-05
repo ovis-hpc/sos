@@ -61,40 +61,6 @@ struct ods_opt {
 	char value[ODS_OPT_VAL_SIZE];
 };
 
-static int __set_default_map_size(ods_t ods, struct ods_opt *opt, const char *name, const char *value)
-{
-	size_t size = strtol(value, NULL, 0);
-	if (size >= ODS_DEF_MAP_SZ) {
-		__ods_def_map_sz = size;
-		return 0;
-	}
-	return EINVAL;
-}
-
-static const char *__get_default_map_size(ods_t ods, struct ods_opt *opt, const char *name)
-{
-	snprintf(opt->value, sizeof(opt->value), "%zu", __ods_def_map_sz);
-	return opt->value;
-}
-
-static int __set_map_size(ods_t ods, struct ods_opt *opt, const char *name, const char *value)
-{
-	size_t size = strtol(value, NULL, 0);
-	if (size >= ODS_PAGE_SIZE) {
-		(void)ods->set(ods, ODS_MAP_SIZE, size);
-		return 0;
-	}
-	return EINVAL;
-}
-
-static const char *__get_map_size(ods_t ods, struct ods_opt *opt, const char *name)
-{
-	size_t size;
-	(void)ods->get(ods, ODS_MAP_SIZE, &size);
-	snprintf(opt->value, sizeof(opt->value), "%zu", size);
-	return opt->value;
-}
-
 static int __set_ods_debug(ods_t ods, struct ods_opt *opt, const char *name, const char *value)
 {
 	int i = strtol(value, NULL, 0);
@@ -130,9 +96,7 @@ static const char *__get_gc_timeout_ms(ods_t ods, struct ods_opt *opt, const cha
 }
 
 struct ods_opt ods_opts[] = {
-	{ "default_map_size", __set_default_map_size, __get_default_map_size },
 	{ "gc_timeout_ms", __set_gc_timeout_ms, __get_gc_timeout_ms },
-	{ "obj_map_size", __set_map_size, __get_map_size },
 	{ "ods_debug", __set_ods_debug, __get_ods_debug },
 };
 

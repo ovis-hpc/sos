@@ -51,7 +51,7 @@ static void __pgt_unlock(ods_mmap_t ods);
 static inline void map_put(ods_map_t map);
 
 extern int __ods_debug;
-extern uint64_t __ods_def_map_sz;
+#define MMOS_DEF_MAP_SZ	(1024 * 1024)
 
 /*
  * Bit vectors are 0-based
@@ -2096,7 +2096,7 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 	if (!lck_map(ods))
 		goto err;
 
-	ods->obj_map_sz = __ods_def_map_sz;
+	ods->obj_map_sz = MMOS_DEF_MAP_SZ;
 	ods_rbt_init(&ods->map_tree, map_cmp, NULL);
 
 	return &ods->base;
