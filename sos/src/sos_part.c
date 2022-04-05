@@ -303,6 +303,9 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 	ods_obj_t udata = ods_get_user_data(ods);
 	SOS_PART_UDATA(udata)->signature = SOS_PART_SIGNATURE;
 	strncpy(SOS_PART_UDATA(udata)->desc, part_desc, SOS_PART_DESC_LEN);
+	SOS_PART_UDATA(udata)->is_primary = 0;
+	SOS_PART_UDATA(udata)->is_busy = 0;
+	SOS_PART_UDATA(udata)->ref_count = 0;
 	SOS_PART_UDATA(udata)->user_id = euid;
 	SOS_PART_UDATA(udata)->group_id = egid;
 	SOS_PART_UDATA(udata)->mode = o_mode;
@@ -1074,6 +1077,7 @@ int sos_part_detach(sos_t sos, const char *name)
 		 * permission or path errors */
 		TAILQ_REMOVE(&sos->part_list, part, entry);
 		ods_atomic_dec(&SOS_PART_UDATA(part->udata_obj)->ref_count);
+		sos_part_put(part);
 	}
 	ods_obj_delete(part_ref);
 	ods_obj_put(part_ref);
