@@ -41,7 +41,7 @@ dsosd_SOURCES = sosapi_server.c ../ods/src/ods_rbt.c ast.c \
 	sosapi.h ast.h \
 	../ods/include/ods/ods_rbt.h
 dsosd_CFLAGS = $(AM_CFLAGS)
-dsosd_LDADD = ../sos/src/libsos.la libdsos.la -lpthread -luuid -lm
+dsosd_LDADD = ../sos/src/libsos.la ../lib/json/libsos_json.la libdsos.la -lpthread -luuid -lm
 bin_PROGRAMS += dsosd
 
 dsosql_SOURCES = dsosql.c dsosql_commands.c \
