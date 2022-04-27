@@ -206,7 +206,6 @@ int sos_obj_ref_from_str(sos_obj_ref_t ref, const char *value, char **endptr)
  * - sos_container_open() Open/create a Container
  * - sos_container_close() Close a container
  * - sos_container_commit() Commit a Container's contents to stable storage
- * - sos_container_move() Reset a Container's path after it has been copied to a new location
  * - sos_container_info() - Print Container information to a FILE pointer
  * - sos_container_lock_info() - Print Container lock information to a FILE pointer
  * - sos_container_lock_cleanup() - Release locks held by no process
@@ -1145,76 +1144,6 @@ int sos_container_verify(sos_t sos)
 out:
 	ods_iter_delete(iter);
 	return res;
-}
-
-/**
- * \brief Move a container
- *
- * Changes the path data that the container keeps internally for partitions.
- *
- * \param path		Pathname to the Container. See sos_container_open()
- * \param new_path	Pathname where the containter was copied.
- */
-int sos_container_move(const char *path_arg, const char *new_path)
-{
-	char tmp_path[PATH_MAX];
-	char *path = NULL;
-	ods_obj_t part_obj;
-	ods_t part_ods;
-	ods_obj_t part_udata;
-	ods_ref_t next_ref;
-	int rc;
-
-	if (strlen(new_path) >= SOS_PART_PATH_LEN)
-		return E2BIG;
-
-	if (strlen(path_arg) >= SOS_PART_PATH_LEN)
-		return E2BIG;
-
-	if (path_arg[0] != '/') {
-		if (!getcwd(tmp_path, sizeof(tmp_path)))
-			return ENOENT;
-		if (strlen(tmp_path) + strlen(path_arg) > SOS_PART_PATH_LEN)
-			return E2BIG;
-		strcat(tmp_path, "/");
-		strcat(tmp_path, path_arg);
-		path = strdup(tmp_path);
-	} else {
-		path = strdup(path_arg);
-	}
-	if (!path)
-		return ENOMEM;
-
-	/* Open the partition ODS */
-	sprintf(tmp_path, "%s/.__part", path);
-	part_ods = ods_open(tmp_path, ODS_PERM_RW);
-	if (!part_ods)
-		goto out_0;
-
-	part_udata = ods_get_user_data(part_ods);
-	if (!part_udata)
-		goto out_1;
-
-	rc = 0;
-	part_obj = ods_ref_as_obj(part_ods, SOS_PART_REF_UDATA(part_udata)->head);
-	if (!part_obj)
-		goto out_2;
-
-	while (part_obj) {
-		strcpy(SOS_PART_REF(part_obj)->path, new_path);
-		ods_obj_put(part_obj);
-
-		next_ref = SOS_PART_REF(part_obj)->next;
-		part_obj = ods_ref_as_obj(part_ods, next_ref);
-	}
-
-out_2:
-	ods_obj_put(part_udata);
-out_1:
-	ods_close(part_ods, ODS_COMMIT_SYNC);
-out_0:
-	free(path);
-	return rc;
 }
 
 /**

@@ -63,7 +63,6 @@
  *      sos_cmd -C <path> [...OPTIONS...]\n");
  *          -C <path>      The path to the container. Required for all options.
  *          -v             Print the container version information and exit.
- *          -m <new_path>  Use to modify the path saved internally after the container is copied.
  *
  *          -K <key>=<value> Set a container configuration option.
  *
@@ -246,7 +245,6 @@ struct option long_options[] = {
 	{"cleanup",	no_argument,	    0,  'R'},
 	{"info",	no_argument,	    0,  'i'},
 	{"debug",	no_argument,	    0,  'd'},
-	{"move",	no_argument,	    0,  'm'},
 	{"create",	no_argument,	    0,  'c'},
 	{"query",	no_argument,        0,  'q'},
 	{"dir",         no_argument,        0,  'l'},
@@ -272,8 +270,6 @@ void usage(int argc, char *argv[])
 	printf("sos_cmd -C <path> [...OPTIONS...]\n");
 	printf("    -C <path>      The path to the container. Required for all options.\n");
 	printf("    -v             Print the container version information and exit.\n");
-	printf("    -m <new_path>  Use to modify the path saved internally after the container is copied.\n");
-	printf("\n");
 	printf("    -K <key>=<value> Set a container configuration option.\n");
 	printf("\n");
 	printf("    -l             Print a directory of the schemas.\n");
@@ -1060,7 +1056,6 @@ int import_csv(sos_t sos, FILE* fp, char *schema_name, char *col_spec)
 #define CONFIG  	0x0100
 #define LOCKS		0x0200
 #define CLEANUP		0x0400
-#define MOVE		0x0800
 #define DEBUG		0x1000
 #define VERSION		0x2000
 #define TEST		0x4000
@@ -1155,7 +1150,6 @@ int add_filter(sos_schema_t schema, sos_filter_t filt, const char *str)
 int main(int argc, char **argv)
 {
 	char *path = NULL;
-	char *new_path = NULL;
 	char *col_map = NULL;
 	int o, rc = 0;
 	int o_mode = 0664;
@@ -1205,10 +1199,6 @@ int main(int argc, char **argv)
 			break;
 		case 'C':
 			path = strdup(optarg);
-			break;
-		case 'm':
-			new_path = strdup(optarg);
-			action |= MOVE;
 			break;
 		case 'K':
 			action |= CONFIG;
@@ -1272,15 +1262,6 @@ int main(int argc, char **argv)
 	if (action & CREATE) {
 		rc = create(path, o_mode);
 		action &= ~CREATE;
-	}
-
-	if (action & MOVE) {
-		rc = sos_container_move(path, new_path);
-		if (rc) {
-			printf("Error %d updating the container's internal path data.\n", rc);
-			exit(1);
-		}
-		action &= ~MOVE;
 	}
 
 	if (!action)
