@@ -1074,10 +1074,12 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
  * \brief Return the index for an attribute
  *
  * If the attribute is indexed, but has not yet been added to a container,
- * the function will return NULL and set errno to ENOENT;
+ * the function will return NULL and set errno to ENOENT.
+ *
+ * Most users should call sos_attr_is_indexed().
  *
  * \param attr	The sos_attr_t handle
- * \returns The attribute index handle or NULL if the attribute is not indexed
+ * \returns The attribute index handle
  */
 sos_index_t sos_attr_index(sos_attr_t attr)
 {

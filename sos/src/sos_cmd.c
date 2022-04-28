@@ -705,7 +705,7 @@ int query(sos_t sos, const char *schema_name, const char *index_name)
 		       index_name, schema_name, errno);
 		return ENOENT;
 	}
-	if (!sos_attr_index(attr)) {
+	if (!sos_attr_is_indexed(attr)) {
 		printf("The attribute '%s' is not indexed in '%s', error %d.\n",
 		       index_name, schema_name, errno);
 		return ENOENT;
