@@ -493,14 +493,14 @@ int ods_close(ods_t ods, int flags)
 		pthread_mutex_unlock(&__ods_tree_lock);
 		return 0;
 	}
-
+#if defined(ODS_DEBUG)
 	if (!LIST_EMPTY(&ods->obj_list)) {
 		ods_lwarn("%s: The ODS %s has %d active objects, "
 			"close is leaking resources.\n",
 			__func__, ods->path, ods->obj_count);
 		ods->info(ods, __ods_log_fp, ODS_INFO_ALL);
 	}
-
+#endif
 	/* Remove the ODS from the open list */
 	ods_rbt_del(&__ods_tree, &ods->rbn);
 	pthread_mutex_unlock(&__ods_tree_lock);
