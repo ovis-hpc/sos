@@ -1825,11 +1825,6 @@ static void __attribute__ ((constructor)) sos_lib_init(void)
 
 static void __attribute__ ((destructor)) sos_lib_term(void)
 {
-	while (!LIST_EMPTY(&cont_list)) {
-		sos_t sos = LIST_FIRST(&cont_list);
-		LIST_REMOVE(sos, entry);
-		sos_container_close(sos, SOS_COMMIT_SYNC);
-	}
 }
 
 /** @} */
