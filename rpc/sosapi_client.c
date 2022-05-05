@@ -910,8 +910,8 @@ dsos_session_t dsos_session_open(const char *config_file)
 	for (i = 0; i < host_count; i++) {
 		CLIENT *clnt = clnt_create(session->hosts[i], SOSDB, SOSVERS, "tcp");
 		if (clnt == NULL) {
-			fprintf(stderr, "Error creating client %d\n", i);
-			exit (1);
+			fprintf(stderr, "Error creating client %s\n", session->hosts[i]);
+			return NULL;
 		}
 		struct timeval timeout = {
 			600, 0
