@@ -1137,14 +1137,12 @@ int main(int argc, char *argv[])
 	atexit(update_history);
 	initialize_readline(); /* Bind our completer. */
 
-
 	h_path = getenv(HISTORY_PATH);
 	if (!h_path)
 		h_path = pw->pw_dir;
 	h_file = getenv(HISTORY_FILE);
 	if (!h_file)
 		h_file = ".dsosql_history";
-
 
 	int opt_idx = 0;
 	int opt;

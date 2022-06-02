@@ -556,11 +556,28 @@ int sos_container_commit(sos_t sos, sos_commit_t flags)
  *            transaction could not be acquired within the specified
  *            timeout.
  */
-int sos_begin_x(sos_t sos, struct timespec *ts)
+int sos_begin_x_wait(sos_t sos, struct timespec *ts)
 {
 	if (!sos->part_ref_ods)
 		return EINVAL;
 	return ods_begin_x(sos->part_ref_ods, ts);
+}
+
+/**
+ * @brief Begin a transaction on a SOS container
+ *
+ * Begin a transaction boundary on a container. This function
+ * will wait indefinitely for the container to become available and
+ * is equivalent to sos_begin_x_wait(sos, NULL)
+ *
+ * @param sos The container handle
+ * @returns 0
+ */
+int sos_begin_x(sos_t sos)
+{
+	if (!sos->part_ref_ods)
+		return EINVAL;
+	return ods_begin_x(sos->part_ref_ods, NULL);
 }
 
 void sos_end_x(sos_t sos)
@@ -820,27 +837,32 @@ static int is_supported_version(uint64_t v1, uint64_t v2)
  * contain a valid \c sos_t handle on exit.
  *
  * \param path_arg	Pathname to the Container. If SOS_PERM_CREAT is
- * 			specified all sub-directories in the path will be
+ *			specified all sub-directories in the path will be
  *			create.
  * \param o_perm	The requested access permissions as follows:
  *	SOS_PERM_RD	Read-only access
- * 	SOS_PERM_WR	Write-only access
- * 	SOS_PERM_RW	Read-write access
- * 	SOS_PERM_CREAT	Create the container if it does not already exist.
+ *	SOS_PERM_WR	Write-only access
+ *	SOS_PERM_RW	Read-write access
+ *	SOS_PERM_CREAT	Create the container if it does not already exist.
  *			If this flag is specified, the \c o_mode parameter
- * 			must immediately follow with the desired file
+ *			must immediately follow with the desired file
  *			permission bits. See the open() system call.
- * 	SOS_PERM_USER	Open the container as a specific user/group. This
- * 			flag cannot be used with the SOS_PERM_CREAT flag.
+ *	SOS_PERM_USER	Open the container as a specific user/group. This
+ *			flag cannot be used with the SOS_PERM_CREAT flag.
  *			If specified, the \c o_uid, and \c o_gid parameters
  *			must follow the \c o_perm parameter. This flag is
  *			useful for limiting object visibility and cannot be
  *			used with the SOS_PERM_CREAT flag.
- * 	SOS_BE_MMAP	Use the Memory Mapped Object Store back-end
- * 	SOS_BE_LSOS	Use the Log Structured Obect Store back end
- * \param o_mode	Optional file mode argument if SOS_PERM_CREAT is
- *			specified in \c o_perm. See the open() system call.
- *
+ *	SOS_BE_MMAP	Use the Memory Mapped Object Store back-end
+ *	SOS_BE_LSOS	Use the Log Structured Obect Store back end
+ * \param o_mode	If \c o_perm contains the SOS_PERM_CREAT flag, this option
+ *			immediately follows the  \c o_perm optino. See the open()
+ *			system call.
+ * \param user		if \c o_perm contains the SOS_PERM_USER flag, the \c user
+ *			parameter follows either the \c o_perm parameter or the
+ *			\c o_mode parameter if SOS_PERM_CREAT is specified.
+ * \param group		if \c o_perm contains the SOS_PERM_USER flag, the \c group
+ *			parameter follows the \c user parameter.
  * \retval !NULL	The sos_t handle for the container.
  * \retval NULL		An error occured, consult errno for the reason.
  */
@@ -861,19 +883,21 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 
 	va_start(ap, o_perm);
 	if (o_perm & SOS_PERM_CREAT) {
-		if (o_perm & SOS_PERM_USER) {
-			errno = EINVAL;
-			return NULL;
-		}
 		o_mode = va_arg(ap, int);
 	} else {
 		o_mode = 0666;
 	}
 	if (o_perm & SOS_PERM_USER) {
-		euid = va_arg(ap, uid_t);
-		egid = va_arg(ap, gid_t);
+		euid = va_arg(ap, int);
+		egid = va_arg(ap, int);
 	}
 	va_end(ap);
+
+	if (stat(path_arg, &sb) < 0) {
+		if (0 == (o_perm & SOS_PERM_CREAT)) {
+			return NULL;
+		}
+	}
 
 	(void)sos_container_lock_cleanup(path_arg);
 
@@ -934,8 +958,6 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	if (rc) {
 		/* Check if this container exists */
 		if (errno != ENOENT)
-			goto err;
-		if (0 == (o_perm & SOS_PERM_CREAT))
 			goto err;
 		rc = __sos_container_new(path_arg, &o_perm, o_mode);
 		if (rc)

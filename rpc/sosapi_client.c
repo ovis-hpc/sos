@@ -35,6 +35,9 @@ typedef struct dsos_client_request_s {
 		REQ_PART_CREATE,
 		REQ_PART_BY_NAME,
 		REQ_PART_BY_UUID,
+		REQ_PART_STATE_SET,
+		REQ_PART_CHOWN,
+		REQ_PART_CHMOD,
 		REQ_TRANSACTION_BEGIN,
 		REQ_TRANSACTION_END,
 		REQ_OBJ_CREATE,
@@ -99,6 +102,28 @@ typedef struct dsos_client_request_s {
 			dsos_part_t part;
 			dsos_part_res res;
 		} part_by_uuid;
+
+		struct part_state_set_rqst_s {
+			dsos_container_t cont;
+			dsos_part_t part;
+			sos_part_state_t state;
+			int res;
+		} part_state_set;
+
+		struct part_chown_rqst_s {
+			dsos_container_t cont;
+			uid_t uid;
+			gid_t gid;
+			dsos_part_t part;
+			int res;
+		} part_chown;
+
+		struct part_chmod_rqst_s {
+			dsos_container_t cont;
+			int mode;
+			dsos_part_t part;
+			int res;
+		} part_chmod;
 
 		struct transaction_begin_rqst_s {
 			dsos_container_t cont;
@@ -180,6 +205,8 @@ struct dsos_session_s {
 struct dsos_container_s {
 	char *path;
 	dsos_session_t sess;	/* The session */
+	int error;		/* Last error number */
+	char err_msg[256];	/* Last error message from an RPC reply */
 	int handle_count;	/* Number of servers */
 	int handles[];		/* Array of container handles from each server */
 };
@@ -237,6 +264,8 @@ struct dsos_query_s {
 	sos_attr_t key_attr;		/* The attribute that is the key */
 	pthread_mutex_t obj_tree_lock;
 	struct ods_rbt obj_tree;	/* RBT of objects indexed by key_attr */
+	char err_msg[256];
+
 };
 
 struct dsos_session_s g_session;
@@ -249,6 +278,11 @@ const char *dsos_last_errmsg(void) {
 
 const int dsos_last_err(void) {
 	return g_last_err;
+}
+
+const char *dsos_query_errmsg(dsos_query_t query)
+{
+	return query->err_msg;
 }
 
 static inline void dsos_res_init(dsos_session_t sess, dsos_res_t *res) {
@@ -327,6 +361,25 @@ static void format_request_va(dsos_client_request_t request, va_list ap)
 		request->part_by_uuid.cont = va_arg(ap, dsos_container_t);
 		uuid_copy(request->part_by_uuid.uuid, va_arg(ap, unsigned char *));
 		request->part_by_uuid.part = va_arg(ap, dsos_part_t);
+		break;
+	case REQ_PART_STATE_SET:
+		memset(&request->part_state_set, 0, sizeof(request->part_state_set));
+		request->part_state_set.cont = va_arg(ap, dsos_container_t);
+		request->part_state_set.part = va_arg(ap, dsos_part_t);
+		request->part_state_set.state = va_arg(ap, sos_part_state_t);
+		break;
+	case REQ_PART_CHOWN:
+		memset(&request->part_chown, 0, sizeof(request->part_chown));
+		request->part_chown.cont = va_arg(ap, dsos_container_t);
+		request->part_chown.part = va_arg(ap, dsos_part_t);
+		request->part_chown.uid = va_arg(ap, uid_t);
+		request->part_chown.gid = va_arg(ap, gid_t);
+		break;
+	case REQ_PART_CHMOD:
+		memset(&request->part_chmod, 0, sizeof(request->part_chmod));
+		request->part_chmod.cont = va_arg(ap, dsos_container_t);
+		request->part_chmod.part = va_arg(ap, dsos_part_t);
+		request->part_chmod.mode = va_arg(ap, int);
 		break;
 	case REQ_QUERY_CREATE:
 		memset(&request->query_create.res, 0, sizeof(request->query_create.res));
@@ -887,6 +940,8 @@ dsos_session_t dsos_session_open(const char *config_file)
 		return NULL;
 	host_count = 0;
 	while (NULL != (s = fgets(hostname, sizeof(hostname), f))) {
+		if (hostname[0] == '#')
+			continue;
 		host_count += 1;
 	}
 	session = calloc(1, sizeof(*session));
@@ -899,6 +954,8 @@ dsos_session_t dsos_session_open(const char *config_file)
 	i = 0;
 	fseek(f, 0L, SEEK_SET);
 	while (NULL != (s = fgets(hostname, sizeof(hostname), f))) {
+		if (hostname[0] == '#')
+			continue;
 		/* Strip the newline if present */
 		char *s = strstr(hostname, "\n");
 		if (s)
@@ -956,6 +1013,13 @@ void dsos_container_close(dsos_container_t cont)
 void dsos_container_commit(dsos_container_t cont)
 {
 	;
+}
+
+int dsos_container_error(dsos_container_t cont, const char** err_msg)
+{
+	if (err_msg)
+		*err_msg = cont->err_msg;
+	return cont->error;
 }
 
 static int
@@ -1018,6 +1082,15 @@ static inline dsos_schema_t dsos_schema_alloc(dsos_container_t cont)
 	return s;
 }
 
+static inline void dsos_schema_free(dsos_schema_t schema)
+{
+	if (!schema)
+		return;
+	if (schema->schema)
+		sos_schema_free(schema->schema);
+	free(schema);
+}
+
 dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dsos_res_t *res)
 {
 	int i;
@@ -1027,25 +1100,23 @@ dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dso
 	dsos_schema_spec *spec = dsos_spec_from_schema(schema);
 	if (!spec) {
 		res->any_err = errno;
-		return NULL;
+		goto err_0;
 	}
-	// TODO: handle create error
 	dsos_schema_res schema_res = {};
 	for (i = 0; i < cont->handle_count; i++) {
 		dsos_client_t client = &cont->sess->clients[i];
+		memset(&schema_res, 0, sizeof(schema_res));
 		pthread_mutex_lock(&client->rpc_lock);
 		rpc_err = schema_create_1(cont->handles[i], *spec, &schema_res, client->client);
 		pthread_mutex_unlock(&client->rpc_lock);
 		if (rpc_err != RPC_SUCCESS) {
-			fprintf(stderr, "schema_create_1 failed on client %d with RPC error %d\n",
-				i, rpc_err);
 			res->any_err = DSOS_ERR_CLIENT;
 			break;
 		}
 		if (schema_res.error) {
-			fprintf(stderr, "schema_create_1 failed on client %d with error %d\n",
-				i, rpc_err);
 			res->any_err = schema_res.error;
+			cont->error = schema_res.error;
+			strcpy(cont->err_msg, schema_res.dsos_schema_res_u.error_msg);
 			xdr_free((xdrproc_t)xdr_dsos_schema_res, (char *)&schema_res);
 			break;
 		}
@@ -1057,9 +1128,14 @@ dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dso
 		xdr_free((xdrproc_t)xdr_dsos_schema_res, (char *)&schema_res);
 	}
 	if (res->any_err)
-		dschema = NULL;
+		goto err_1;
 	dsos_spec_free(spec);
 	return dschema;
+ err_1:
+	dsos_spec_free(spec);
+ err_0:
+	dsos_schema_free(dschema);
+	return NULL;
 }
 
 static int
@@ -1068,19 +1144,34 @@ schema_by_name_complete_fn(dsos_client_t client,
 			   dsos_res_t *res)
 {
 	enum dsos_error derr = 0;
-	struct dsos_schema_res *sres =
-		&request->schema_by_name.res;
+	struct dsos_schema_res *sres = &request->schema_by_name.res;
+	struct schema_by_name_rqst_s *rqst = &request->schema_by_name;
 
 	if (request->rpc_err) {
 		derr = RPC_ERROR(request->rpc_err);
 	} else {
 		derr = sres->error;
-		if (derr == 0 && request->schema_by_name.schema->schema == NULL) {
-			/* We only need to instantiate one local instance of the schema */
-			request->schema_by_name.schema->schema =
+		if (derr == 0 && rqst->schema->schema == NULL) {
+			/*
+			 * We only need to instantiate one local
+			 * instance of the schema
+			 */
+			rqst->schema->schema =
 				dsos_schema_from_spec(sres->dsos_schema_res_u.spec);
-			if (!request->schema_by_name.schema->schema)
+			if (!rqst->schema->schema)
 				derr = errno;
+		} else {
+			/*
+			 * Make certain this schema's UUID matches the one
+			 * we instantiated for the first schema. Otherwise,
+			 * we have different schema with the same name.
+			 */
+			uuid_t uuid;
+			sos_schema_uuid(rqst->schema->schema, uuid);
+			if (uuid_compare(sres->dsos_schema_res_u.spec->uuid,
+					 uuid))
+				/* We received a remote schema with a mismatched UUID */
+				derr = EEXIST;
 		}
 		request->schema_by_name.schema->handles[client->client_id] =
 			sres->dsos_schema_res_u.spec->id;
@@ -1088,7 +1179,8 @@ schema_by_name_complete_fn(dsos_client_t client,
 	if (!res->any_err)
 		res->any_err = derr;
 	res->res[client->client_id] = derr;
-	xdr_free((xdrproc_t)xdr_dsos_schema_res, (char *)&request->schema_by_name.res);
+	xdr_free((xdrproc_t)xdr_dsos_schema_res,
+		 (char *)&request->schema_by_name.res);
 	return 0;
 }
 
@@ -1107,7 +1199,7 @@ dsos_schema_by_name(dsos_container_t cont, const char *name)
 		goto err_0;
 	return schema;
 err_0:
-	free(schema);
+	dsos_schema_free(schema);
 	return NULL;
 }
 
@@ -1130,7 +1222,10 @@ schema_by_uuid_complete_fn(dsos_client_t client,
 	} else {
 		derr = sres->error;
 		if (derr == 0 && request->schema_by_uuid.schema->schema == NULL) {
-			/* We only need to instantiate one local instance of the schema */
+			/*
+			 * We only need to instantiate one local
+			 * instance of the schema
+			 */
 			request->schema_by_uuid.schema->schema =
 				dsos_schema_from_spec(sres->dsos_schema_res_u.spec);
 			if (!request->schema_by_uuid.schema->schema)
@@ -1411,12 +1506,16 @@ part_by_uuid_complete_fn(dsos_client_t client,
 	} else {
 		derr = sres->error;
 		if (derr == 0 && request->schema_by_uuid.schema->schema == NULL) {
-			/* We only need to instantiate one local instance of the schema */
+			/*
+			 * We only need to instantiate one local
+			 * instance of the schema.
+			 */
 			request->schema_by_uuid.schema->schema =
 				dsos_schema_from_spec(sres->dsos_schema_res_u.spec);
 			if (!request->schema_by_uuid.schema->schema)
 				derr = errno;
 		}
+
 		request->schema_by_uuid.schema->handles[client->client_id] =
 			sres->dsos_schema_res_u.spec->id;
 	}
@@ -1512,6 +1611,102 @@ err_0:
 	return NULL;
 }
 
+/* dsos_part_state_set */
+static int
+part_state_set_complete_fn(dsos_client_t client,
+			dsos_client_request_t request,
+			dsos_res_t *res)
+{
+	int derr = 0;
+
+	if (request->rpc_err) {
+		derr = RPC_ERROR(request->rpc_err);
+	} else {
+		derr = request->part_state_set.res;
+	}
+	if (!res->any_err)
+		res->any_err = derr;
+	res->res[client->client_id] = derr;
+	xdr_free((xdrproc_t)xdr_int, (char *)&request->part_state_set.res);
+	return 0;
+}
+
+int dsos_part_state_set(dsos_part_t part, sos_part_state_t state)
+{
+	dsos_res_t res;
+	int rc;
+	dsos_res_init(part->cont->sess, &res);
+	rc = submit_wait(part->cont->sess, -1, part_state_set_complete_fn, &res,
+			 REQ_PART_STATE_SET, part, state);
+	if (rc)
+		return rc;
+	return res.any_err;
+}
+
+static int
+part_chown_complete_fn(dsos_client_t client,
+		       dsos_client_request_t request,
+		       dsos_res_t *res)
+{
+	int derr = 0;
+
+	if (request->rpc_err) {
+		derr = RPC_ERROR(request->rpc_err);
+	} else {
+		derr = request->part_chown.res;
+	}
+	if (!res->any_err)
+		res->any_err = derr;
+
+	res->res[client->client_id] = derr;
+	xdr_free((xdrproc_t)xdr_int, (char *)&request->part_chown.res);
+	return 0;
+}
+
+int dsos_part_chown(dsos_part_t part, uid_t uid, gid_t gid)
+{
+	dsos_res_t res;
+	int rc;
+	dsos_res_init(part->cont->sess, &res);
+	rc = submit_wait(part->cont->sess, -1, part_chown_complete_fn, &res,
+			 REQ_PART_CHOWN, part, uid, gid);
+	if (rc)
+		return rc;
+	return res.any_err;
+}
+
+static int
+part_chmod_complete_fn(dsos_client_t client,
+		       dsos_client_request_t request,
+		       dsos_res_t *res)
+{
+	int derr = 0;
+
+	if (request->rpc_err) {
+		derr = RPC_ERROR(request->rpc_err);
+	} else {
+		derr = request->part_chmod.res;
+	}
+	if (!res->any_err)
+		res->any_err = derr;
+
+	res->res[client->client_id] = derr;
+	xdr_free((xdrproc_t)xdr_int, (char *)&request->part_chmod.res);
+	return 0;
+}
+
+int dsos_part_chmod(dsos_part_t part, int mode)
+{
+	dsos_res_t res;
+	int rc;
+	dsos_res_init(part->cont->sess, &res);
+	rc = submit_wait(part->cont->sess, -1, part_chmod_complete_fn, &res,
+			 REQ_PART_CHMOD, part, mode);
+	if (rc)
+		return rc;
+	return res.any_err;
+}
+
 const char *dsos_part_name(dsos_part_t part)
 {
 	return part->spec->name;
@@ -1525,6 +1720,11 @@ const char *dsos_part_desc(dsos_part_t part)
 const char *dsos_part_path(dsos_part_t part)
 {
 	return part->spec->path;
+}
+
+void dsos_part_uuid(dsos_part_t part, uuid_t uuid)
+{
+	uuid_copy(uuid, part->spec->uuid);
 }
 
 uid_t dsos_part_uid(dsos_part_t part)
@@ -2205,6 +2405,9 @@ query_select_complete_fn(dsos_client_t client,
 						      sres->dsos_query_select_res_u.select.key_attr_id);
 			if (!request->query_select.query->key_attr)
 				derr = DSOS_ERR_ATTR;
+		}
+		if (derr) {
+			strcpy(request->query_select.query->err_msg, sres->dsos_query_select_res_u.error_msg);
 		}
 	}
 	if (!res->any_err)

@@ -145,7 +145,8 @@ void sos_config_iter_free(sos_config_iter_t iter);
 sos_config_t sos_config_first(sos_config_iter_t iter);
 sos_config_t sos_config_next(sos_config_iter_t iter);
 void sos_config_print(const char *path, FILE *fp);
-int sos_begin_x(sos_t sos, struct timespec *ts);
+int sos_begin_x_wait(sos_t sos, struct timespec *ts);
+int sos_begin_x(sos_t sos);
 void sos_end_x(sos_t sos);
 /** @} */
 /** @} */

@@ -55,9 +55,11 @@ import sys
 import copy
 import binascii
 import uuid
+import grp
+import pwd
 from sosdb.DataSet import DataSet
 cimport numpy as np
-import pandas as pd
+from pandas import DataFrame, DatetimeIndex, Timestamp
 import json
 
 #
@@ -230,15 +232,120 @@ cdef class SosObject:
         else:
             raise Exception("Error {0}".format[self.error])
 
+cdef class Permission:
+    cdef int c_mask
+    translate = {
+        0o1   : [ '-', 'x' ],
+        0o2   : [ '-', 'w' ],
+        0o4   : [ '-', 'r' ],
+        0o10  : [ '-', 'x' ],
+        0o20  : [ '-', 'w' ],
+        0o40  : [ '-', 'r' ],
+        0o100 : [ '-', 'x' ],
+        0o200 : [ '-', 'w' ],
+        0o400 : [ '-', 'r' ]
+    }
+    def __init__(self, mask):
+        self.c_mask = 0
+        if type(mask) == str:
+            o = 0
+            for m in self.translate:
+                xlat = self.translate[m]
+                if mask[o] == xlat[1]:
+                    self.c_mask |= m
+                o += 0
+        elif type(mask) == int:
+            self.c_mask = mask
+        else:
+             raise ValueError("The initialization value must be of type str or int")
+
+    def mode(self):
+        return self.c_mask
+
+    def __str__(self):
+        s = ''
+        for m in self.translate:
+            if 0 != (int(m) & self.c_mask):
+                s = self.translate[m][1] + s
+            else:
+                s = self.translate[m][0] + s
+        return s
+
 cdef class Session:
+    """A Session is an interface to a D/SOS cluster.
+
+    Example:
+    sess = Sos.Session("cluster.conf")
+    sess.open("my-container")
+
+    """
     cdef dsos_session_t c_session
     def __init__(self, config_file):
+        """Create a D/SOS session with a cluster
+
+        A D/SOS cluster is defined by a configuration file
+        that lists the hosts that are part of the cluster.
+
+        An example configuration file follows:
+
+        # A cluster configuration file simply
+        # lists the hosts
+        host-1
+        host-2
+        host-3
+        host-4
+
+        All other configuration is managed with the RPC
+        port mapper, see rpcbind(8) and rpcinfo(8).
+
+        Positional Parameters:
+        - Path to the configuration file
+
+        Example:
+
+        from sosdb import Sos
+        sess = Sos.Session('/etc/dsos.conf')
+
+        """
         self.c_session = dsos_session_open(config_file.encode())
         if self.c_session == NULL:
             raise ValueError("The cluster defined in {0} " \
                              "could not be attached.".format(config_file))
 
     def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660):
+        """Open a container in a D/SOS cluster
+
+        Open and optionally create a container in a D/SOS cluster.
+        The only required parameter is the container path and/or name.
+        An optional configuration file called the 'directory' can
+        be loaded at the server in order to map container names to
+        local paths. This is useful to hide the local path from the
+        client and/or to allow shared storage to host multiple dsosd
+        daemons. See dsosd(8) for more information.
+
+        Positional Parameters:
+        - Path/name of the container in the cluster
+
+        Keyword Parameters:
+        o_perm - A permissions bitmask requested for the container. By default
+                 the permisions are PERM_RW. If the PERM_CREAT flag
+                 is specified, the container will be created if it does
+                 not already exist.
+        o_mode - The mode bits in octal for creating the container. By
+                 default these are 0o660.
+
+        Returns a handle to the Container object.
+
+        Example:
+
+        # Attempt to open the container 'aContainer'. If it doesn't exist,
+        # create it.
+        from sosdb import Sos
+        sess = Sos.Session('/etc/dsos.conf')
+        cont = sess.open('aContainer', o_perm = Sos.PERM_CREAT | Sos.PERM_RW,
+                         o_mode = 0o660)
+
+        """
         cdef dsos_container_t c_cont
         c_cont = dsos_container_open(<dsos_session_t>self.c_session,
                                      path.encode('utf-8'),
@@ -250,6 +357,15 @@ cdef class Session:
         cont.assign(c_cont)
         cont.assign_session(self.c_session)
         return cont
+
+cdef class DsosSchema(Schema):
+    cdef DsosContainer dcont
+    cdef dsos_schema_t c_dschema
+    def __init__(self, cont):
+        Schema.__init__(self)
+        self.dcont = cont
+        self.c_dschema = <dsos_schema_t>NULL
+        self.dcont = None
 
 cdef class DsosContainer:
     cdef object session
@@ -270,89 +386,27 @@ cdef class DsosContainer:
     def __init__(self, session):
         self.session = <Session>session
 
+    def error(self):
+        """Return a tuple of server error data
+
+        Returns a tuple of ( error_no, error_msg )
+        This is the detail of data from the error
+        obtained from the dsosd server.
+        """
+        cdef char *msg
+        cdef int rc
+        rc = dsos_container_error(self.c_cont, &msg)
+        return (rc, msg.decode())
+
     def path(self):
+        """Return the container path/name"""
         return self.path_
-
-    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, create=False,
-             backend=SOS_BE_MMOS):
-        """Open the container
-
-        If the container cannot be opened (or created) an Exception
-        is thrown with an error string based on the errno. Note that if
-        the container does not exist and PERM_CREAT is not specified, the
-        exception will indicate File Not Found.
-
-        Positional Parameters:
-
-        - The path to the container
-
-        Keyword Parameters:
-
-        o_perm - The permisions, one of SOS_PERM_RW or SOS_PERM_RD
-        o_mode - The file creation mode if o_perm includes SOS_PERM_CREAT
-        create - True to create the container if it does not exist
-        backend - One of BE_MMOS (Memory Mapped Object Store) or
-                  BE_LSOS (Log Structured Object Store)
-        """
-        if self.c_cont != NULL:
-            self.abort(EBUSY)
-        self.path_ = path
-        if create:
-            o_perm |= SOS_PERM_CREAT
-        if backend == SOS_BE_LSOS:
-            o_perm |= SOS_BE_LSOS
-        self.o_perm = o_perm | backend
-        self.o_mode = o_mode
-        self.c_cont = dsos_container_open(<dsos_session_t>self.session.c_session,
-                                          path.encode('utf-8'),
-                                          <sos_perm_t>o_perm, o_mode)
-        if self.c_cont == NULL:
-            raise self.abort(errno)
-
-    def create(self, path, o_mode=0660, backend=SOS_BE_MMOS):
-        """Create the container
-
-        This is a convenience method that calls open with
-        o_perm |= SOS_PERM_CREAT. See the open() method for
-        more information.
-
-        Positional Parameters:
-
-        - The path to the container
-
-        Keyword Parameters:
-
-        o_mode - The file creation mode, default is 0660
-        """
-        cdef dsos_container_t c_cont
-        cdef int c_perm = SOS_PERM_CREAT | SOS_PERM_RW
-        cdef int c_mode = o_mode
-        if self.c_cont != NULL:
-            self.abort(EBUSY)
-        self.path_ = path
-        if backend == SOS_BE_LSOS:
-            c_perm |= SOS_BE_LSOS
-        c_cont = dsos_container_open(<dsos_session_t>self.session.c_session,
-                                     path.encode(),
-                                     <sos_perm_t>c_perm, c_mode)
-        if c_cont == NULL:
-            raise self.abort(errno)
-        dsos_container_close(c_cont)
 
     def close(self):
         """Close a container
 
         Closes the container. If the container is not open, an
         exception is thrown.
-
-        if the 'commit' keyword parameter is set to SOS_COMMIT_ASYNC,
-        the method will not return until all outstanding data has been
-        written to stable storage.
-
-        Keyword Parameters:
-
-        commit - SOS_COMMIT_SYNC or SOS_COMMIT_ASYNC, The default is
-                 SOS_COMMIT_ASYNC.
 
         """
         if self.c_cont == NULL:
@@ -363,24 +417,52 @@ cdef class DsosContainer:
     def commit(self):
         """Commit objects in memory to storage
 
-        Commits outstanding data to stable storage. If the 'commit'
-        keyword parameter is set to SOS_COMMIT_SYNC, the method will
-        not return until all oustanding data has been written to
-        storage.
+        If the container is not open, an
+        exception is thrown.
 
-        Keyword Parameters:
-
-        commit - SOS_COMMIT_ASYNC (default) or SOS_COMMIT_SYNC
         """
+        if self.c_cont == NULL:
+            self.abort(EINVAL)
         dsos_container_commit(self.c_cont)
 
+    def schema_add(self, Schema schema):
+        """Add a SOS schema to a D/SOS container
+
+        Add a schema to a D/SOS container and return
+        the DsosSchema created. The DsosSchema is used
+        to create new objects in the container.
+
+        If the schema could not be created, a ValueError
+        exception is thrown.
+
+        Parameters:
+        - The Schema object
+        """
+        cdef dsos_schema_t c_dschema
+        cdef dsos_res_t c_res
+        cdef char *msg;
+        cdef int err;
+        dschema = DsosSchema(self)
+        c_dschema = dsos_schema_create(self.c_cont, schema.c_schema, &c_res)
+        if c_dschema != NULL:
+            dschema.c_dschema = c_dschema
+            dschema.c_schema = dsos_schema_local(c_dschema)
+        else:
+            err = dsos_container_error(self.c_cont, &msg)
+            raise ValueError(f"Error {err} {msg.decode()}")
+        return dschema
+
     def schema_query(self):
+        """Return the schema mames present in the contain
+
+        Returns a list of the schema names present in the container
+        """
         cdef int i
         cdef dsos_name_array_t schemas = dsos_schema_query(self.c_cont);
         names = []
         for i in range(0, schemas.count):
             name = schemas.names[i]
-            name = name.encode()
+            name = name.decode()
             names.append(name)
         dsos_name_array_free(schemas);
         return names
@@ -401,7 +483,8 @@ cdef class DsosContainer:
         cdef dsos_schema_t c_schema = \
             dsos_schema_by_name(<dsos_container_t>self.c_cont, name.encode())
         if c_schema != NULL:
-            s = Schema()
+            s = DsosSchema(self)
+            s.c_dschema = c_schema
             s.c_schema = dsos_schema_local(c_schema)
             return s
 
@@ -423,7 +506,8 @@ cdef class DsosContainer:
         cdef dsos_schema_t c_schema = \
             dsos_schema_by_uuid(<dsos_container_t>self.c_cont, uuid_.bytes)
         if c_schema != NULL:
-            s = Schema()
+            s = DsosSchema(self)
+            s.c_dschema = c_schema
             s.c_schema = dsos_schema_local(c_schema)
             return s
         return None
@@ -442,7 +526,7 @@ cdef class DsosContainer:
         names = []
         for i in range(0, parts.count):
             name = parts.names[i]
-            name = name.encode()
+            name = name.decode()
             names.append(name)
         dsos_name_array_free(parts);
         return names
@@ -458,7 +542,7 @@ cdef class DsosContainer:
             - The name of the partition
 
         Returns:
-            DsosParition objet or None if the partition does not exist, or
+            DsosPartition objet or None if the partition does not exist, or
             for which the does not have read permission
         """
         cdef dsos_part_t c_part = \
@@ -480,7 +564,7 @@ cdef class DsosContainer:
             - The Universally Unique ID (UUID) of the partition
 
         Returns:
-            DsosParition objet or None if the partition does not exist, or
+            DsosPartition objet or None if the partition does not exist, or
             for which the does not have read permission
         """
         cdef dsos_part_t c_part = \
@@ -491,71 +575,199 @@ cdef class DsosContainer:
             return p
         return None
 
-    def query(self, sql, options=None):
-        cdef dsos_query_t c_query = dsos_query_create(self.c_cont)
-        cdef sos_schema_t c_schema
-        cdef sos_obj_t c_obj
-        cdef int c_rc
-        cdef int c_rec_count
-        cdef sos_attr_t c_attr
-        cdef char *c_str = <char *>malloc(1024)
-        c_rc = dsos_query_select(c_query, sql.encode())
-        if c_rc != 0:
-                print(f"Error {c_rc} returned by select clause '{sql}'")
-                return c_rc
-        c_schema = dsos_query_schema(c_query)
-        col_name_list = []
-        col_id_list = []
-        c_attr = sos_schema_attr_first(c_schema)
-        while c_attr != NULL:
-            if sos_attr_type(c_attr) != SOS_TYPE_JOIN:
-                col_name_list.append(sos_attr_name(c_attr))
-                col_id_list.append(sos_attr_id(c_attr))
-            c_attr = sos_schema_attr_next(c_attr)
+    def insert_df(self, DsosSchema dschema, df):
+        """Insert a Pandas DataFrame into the database
 
-        c_rec_count = 0
-        c_obj = dsos_query_next(c_query)
-        c_rc = 0
-        while c_obj != NULL:
-            for i in col_id_list:
-                sos_obj_attr_by_id_to_str(c_obj, <int>col_id_list[i], c_str, 1024)
-                print(f"{c_str.decode()} ", end="")
-            print("")
-            sos_obj_put(c_obj)
-            c_rec_count += 1
-            c_obj = dsos_query_next(c_query)
+        The schema parameter specifies the object that will be created
+        from the data in the df parameter. Each column in DataFrame will be
+        associated with an attribute in schema by name; i.e. any
+        column in the DataFrame that is intended to be stored must have an
+        accompanying attribute in schema.
 
-        free(c_str)
-        return 0
+        Positional Parameters:
+
+        - The schema that objects created for rows in the DataFrame
+        will use. The schema must already exist in the container. See
+        the schema_by_name(), and schema_by_uuid() methods for
+        information on how to acquire a schema handle. See the
+        Schema.from_template(), and DsosContainer.schmema_add()
+        methods for information on how to create a new schema.
+
+        - The DataFrame object to be stored.
+
+        Returns:
+        - The number of rows created in the container.
+        """
+        cdef dsos_res_t res
+        cdef Object obj
+        obj_idx = []
+        df_idx = []
+        # Create a map of columns in the DataFrame to Attributes in the object
+        for idx in range(0, len(df.columns)):
+            name = df.columns[idx]
+            if name in dschema.attr_iter():
+                attr = dschema[name]
+                obj_idx.append(attr.attr_id())
+                df_idx.append(idx+1) # skip index at start of row
+
+        cdef int rc
+        rc = dsos_transaction_begin(self.c_cont, NULL)
+        if rc != 0:
+            raise ValueError(f"Error {rc} attempting to start a transaction")
+        row_count = 0
+        try:
+            for row in df.itertuples():
+                obj = dschema.malloc()
+                for idx in range(0, len(df_idx)):
+                    obj[obj_idx[idx]] = row[df_idx[idx]]
+                rc = dsos_obj_create(self.c_cont, NULL,
+                        <dsos_schema_t>dschema.c_dschema,
+                        <sos_obj_t>obj.c_obj)
+                if rc == 0:
+                    row_count += 1
+        except Exception as e:
+            print(row)
+            print(idx)
+            print(len(obj_idx), obj_idx[idx])
+            print(len(df_idx), df_idx[idx])
+            print(row[df_idx[idx]])
+            rc = dsos_transaction_end(self.c_cont)
+            raise e
+        rc = dsos_transaction_end(self.c_cont)
+        if rc != 0:
+            raise ValueError(f"Error {rc} attempting to complete transaction")
+        return row_count
+
+    def query(self, row_limit = 4096):
+        """Returns an SqlQuery object for this container
+
+        Keyword Parameters:
+        row_limit - Sets the maximum number of rows returned by each
+                    call to next(). The default is 4096 rows.
+        """
+        return SqlQuery(self, row_limit)
+
+cdef class DsosPartState:
+    cdef int state_
+    def __init__(self, state):
+        if type(state) == str:
+            if state.lower() == "offline":
+                self.state_ == PART_STATE_OFFLINE
+            elif state.lower() == "primary":
+                self.state_ == PART_STATE_PRIMARY
+            elif state.lower() == "active":
+                self.state_ == PART_STATE_ACTIVE
+            elif state.lower() == "busy":
+                self.state_ == PART_STATE_BUSY
+            elif state.lower() == "detached":
+                self.state_ == PART_STATE_DETACHED
+            else:
+                raise ValueError(f"Invalid state {state}")
+        elif type(state) == int:
+            self.state_ = state
+        else:
+            raise ValueError("The state parameter must be a string or an integer")
+
+    def state(self):
+        return self.state_
+
+    def __str__(self):
+        if self.state_ == PART_STATE_OFFLINE:
+            return "OFFLINE"
+        elif self.state_ == PART_STATE_PRIMARY:
+            return "PRIMARY"
+        elif self.state_ == PART_STATE_ACTIVE:
+            return "ACTIVE"
+        elif self.state_ == PART_STATE_BUSY:
+            return "BUSY"
+        elif self.state_ == PART_STATE_DETACHED:
+            return "DETACHED"
+        else:
+            raise ValueError(f"Invalid state {self.state_}")
 
 cdef class DsosPartition:
     cdef dsos_part_t c_part
     def __init__(self):
         self.c_part = NULL
 
-    def name(self):
+    cpdef name(self):
         """Return the partition name"""
-        return dsos_part_name(self.c_part)
+        return dsos_part_name(self.c_part).decode()
 
-    def desc(self):
-        """Return the parition description"""
-        return dsos_part_desc(self.c_part)
+    cpdef state(self):
+        """Return the partition state"""
+        state = dsos_part_state(self.c_part)
+        return DsosPartState(state)
 
-    def path(self):
-        """Return the path to the paritition"""
-        return dsos_part_path(self.c_part)
+    cpdef desc(self):
+        """Return the partition description"""
+        return dsos_part_desc(self.c_part).decode()
 
-    def uid(self):
+    cpdef uuid(self):
+        """Returns the partition UUID"""
+        cdef unsigned char c_uuid[17]
+        memset(c_uuid, 0, 17)
+        dsos_part_uuid(self.c_part, c_uuid)
+        return uuid.UUID(bytes=c_uuid)
+
+    cpdef path(self):
+        """Return the path to the partition"""
+        return dsos_part_path(self.c_part).decode()
+
+    cpdef uid(self):
         """Returns the partition user-id"""
         return dsos_part_uid(self.c_part)
 
-    def gid(self):
+    cpdef gid(self):
         """Returns the partition group-id"""
         return dsos_part_gid(self.c_part)
 
-    def perm(self):
+    cpdef perm(self):
         """Returns the partition's permission bits"""
         return dsos_part_perm(self.c_part)
+
+    cpdef chown(self, uid, gid):
+        """Set the user and group owner ship for the partition
+
+        Parameters:
+        - The user id number
+        - The group id number
+
+        Returns:
+        0      - Success
+        EINVAL - The session is no longer valid
+        ENOENT - The partition doesn't exist on the server
+        """
+        return dsos_part_chown(self.c_part, int(uid), int(gid))
+
+    cpdef chmod(self, mode):
+        """Set the access mode bits in the partition
+
+        Parameters:
+        - The access mode. If this is a string, it has a format as follows:
+          "rw-rw-rw-". If this is an integer, it is an octal number.
+
+        Returns:
+        0      - Success
+        EINVAL - The session is no longer valid
+        ENOENT - The partition doesn't exist on the server
+        """
+        p = Permission(mode)
+        return dsos_part_chmod(self.c_part, p.mode())
+
+    def __str__(self):
+        p = Permission(self.perm())
+        try:
+            pwe = pwd.getpwnam(self.uid())
+            uid = pwe.pw_uid
+        except:
+            uid = self.uid()
+        try:
+            gr = grp.getgrnam(self.gid())
+            gid = gr.gr_gid
+        except:
+            gid = self.gid()
+        return f'{self.name()} {self.state()} {self.uuid()} {uid} {gid} {p} "{self.desc()}"'
 
 cdef class SchemaIter(SosObject):
     """Implements a Schema iterator
@@ -718,8 +930,7 @@ cdef class Container(SosObject):
         """Create the container
 
         This is a convenience method that calls open with
-        o_perm |= SOS_PERM_CREAT. See the open() method for
-        more information.
+        o_perm |= PERM_CREAT.
 
         Positional Parameters:
 
@@ -727,7 +938,7 @@ cdef class Container(SosObject):
 
         Keyword Parameters:
 
-        o_mode - The file creation mode, default is 0660
+        o_mode - The file creation mode, default is 0o660
         """
         cdef int c_perm = SOS_PERM_CREAT | SOS_PERM_RW
         cdef int c_mode = o_mode
@@ -826,20 +1037,20 @@ cdef class Container(SosObject):
         will block until the owning process ends the
         transaction
 
-	Positional Parameters:
+        Positional Parameters:
 
-	- The time in seconds to wait to acquire the transaction. If
+        - The time in seconds to wait to acquire the transaction. If
           the transaction cannot be acquired within the specified
           timeout, a TimeoutError exception is thrown.
- 
+
         """
         cdef timespec ts
         if timeout:
             ts.tv_sec = timeout
             ts.tv_nsec = 0
-            sos_begin_x(self.c_cont, &ts)
+            sos_begin_x_wait(self.c_cont, &ts)
         else:
-            sos_begin_x(self.c_cont, NULL)
+            sos_begin_x_wait(self.c_cont, NULL)
 
     def end(self):
         """End a transaction on the container
@@ -1070,12 +1281,13 @@ cdef class Partition(SosObject):
         return sos_part_path(self.c_part).decode('utf-8')
 
     def desc(self):
-        """Returns the parition description"""
+        """Returns the partition description"""
         return sos_part_desc(self.c_part).decode('utf-8')
 
     def uuid(self):
-        """Returns the parition UUID"""
-        cdef uuid_t c_uuid
+        """Returns the partition UUID"""
+        cdef unsigned char c_uuid[17]
+        memset(c_uuid, 0, 17)
         sos_part_uuid(self.c_part, c_uuid)
         return uuid.UUID(bytes=c_uuid)
 
@@ -1140,11 +1352,11 @@ cdef class Partition(SosObject):
         -- The path to the partition
 
         Keyword Arguments:
-        o_perm - The SOS access mode, the default is SOS_PERM_RW
-        o_mode - The partition access rights, default is 0660. Only used
+        o_perm - The SOS access mode, the default is PERM_RW
+        o_mode - The partition access rights, default is 0o660. Only used
                 if o_perm includes SOS_PART_CREAT and the partition does
                 not already exist.
-        desc   - If o_perm contains SOS_PERM_CREAT, this is the description
+        desc   - If o_perm contains PERM_CREAT, this is the description
                 given to the new partition
         """
         cdef int c_perm
@@ -1516,6 +1728,14 @@ cdef class Schema(SosObject):
         """Returns the name of the schema"""
         return sos_schema_name(self.c_schema).decode('utf-8')
 
+    def malloc(self):
+        """Allocate a new memory object of this type"""
+        cdef sos_obj_t c_obj = sos_obj_malloc(self.c_schema)
+        if c_obj == NULL:
+            self.abort()
+        o = Object()
+        return o.assign(c_obj)
+
     def alloc(self):
         """Allocate a new object of this type in the container"""
         cdef sos_obj_t c_obj = sos_obj_new(self.c_schema)
@@ -1546,6 +1766,8 @@ cdef class Schema(SosObject):
         cdef int i
         cdef sos_attr_t c_attr
         cdef sos_index_t c_idx
+        if self.c_schema == NULL:
+            return None
         s = '{{ "name" : "{0}",\n  "attrs" : ['.format(sos_schema_name(self.c_schema))
         for i in range(sos_schema_attr_count(self.c_schema)):
             c_attr = sos_schema_attr_by_id(self.c_schema, i)
@@ -4456,6 +4678,10 @@ cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
             raise ValueError("Error assigning {0} to timestamp. "\
                              "The time value of a floating point "\
                              "number must be non-negative".format(val))
+    elif typ == Timestamp:
+        ts = int(val.to_datetime64())
+        secs = ts / 1000000000L
+        usecs = ts % 1000000000L
     elif typ == np.datetime64:
         ts = val.astype('int')
         secs = ts / 1000000L
@@ -6025,13 +6251,13 @@ cdef class QueryInputer:
             col_name = sos_attr_name(res_acc[attr_idx].attr).decode()
             pdres[col_name] = result[attr_idx]
             if index == col_name:
-                df_idx = pd.DatetimeIndex(result[attr_idx])
+                df_idx = DatetimeIndex(result[attr_idx])
         if index and df_idx is None:
             raise ValueError("The index column {0} is not present in the result".format(index))
         if df_idx is not None:
-            res = pd.DataFrame(pdres, index=df_idx)
+            res = DataFrame(pdres, index=df_idx)
         else:
-            res = pd.DataFrame(pdres)
+            res = DataFrame(pdres)
         free(res_acc)
         return res
 
@@ -6558,6 +6784,37 @@ cdef class Query:
         return self.make_row(cursor)
 
 cdef class SqlQuery:
+    """The SqlQuery class implements a NoSQL interface to a DSOS
+    container. The NoSQL syntax is similar to SQL but does not
+    implement some features of SQL such as JOIN as well as certain
+    aggregates. It does, however, implement other aggregates well
+    suited to timeseries metric data anaytics for which DSOS was
+    designed.
+
+    The design of the interface is to make querying data as simple
+    possible and provide data formatted for use by SciPy and Pandas;
+    specifically all data is returned as a Pandas DataFrame.
+
+    The following example submits a query and iterates through all
+    data matching the query in the container:
+
+    from sosdb import Sos
+    sess = Sos.Session('myCluster')
+    cont = sess.open('myContainer')
+    query = cont.query()
+    query.select('select * from meminfo
+                  where (job_id == 1234)
+                        and
+                        (timestamp >= 1653766000
+                         and
+                        timestamp <= 1653769600)')
+    # Iterate through all data matching the query
+    for df in query:
+        # print the Pandas DataFrame
+        print(df)
+
+    """
+
     DEFAULT_ARRAY_LIMIT = 256
     cdef DsosContainer cont
     cdef int c_start
@@ -6573,6 +6830,19 @@ cdef class SqlQuery:
     cdef nda_setter_opt c_res_acc
 
     def __init__(self, DsosContainer cont, int row_limit, int max_array=256):
+        """Create an SqlQuery object
+
+        Positioal Parameters:
+        - The DsosContainer object
+        - The number of rows in the DataFrame returned by each call to next()
+
+        Keyword Parameters:
+        max_array - The maximum size of arrays in each column. The default is
+                    256 elements.
+
+        Returns:
+        An SqlQuery object.
+        """
         self.cont = cont
         self.c_row_limit = row_limit
         self.c_col_count = 0
@@ -6613,8 +6883,17 @@ cdef class SqlQuery:
         if self.c_objects == NULL:
             raise MemoryError("Insufficient memory")
 
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        df = self.next()
+        if df is not None:
+            return df
+        raise StopIteration
+
     def next(self):
-        """Return a dataframe for the next batch of query results"""
+        """Return a Pandas DataFrame for the next batch of query results"""
         cdef sos_obj_t c_o
         cdef sos_value_s v_
         cdef sos_value_t v
@@ -6711,13 +6990,15 @@ cdef class SqlQuery:
             col_name = sos_attr_name(self.c_res_acc[col_no].attr).decode()
             pdres[col_name] = self.result[col_no]
             if 'timestamp' == col_name:
-                df_idx = pd.DatetimeIndex(self.result[col_no])
+                df_idx = DatetimeIndex(self.result[col_no])
         if df_idx is not None:
-            res = pd.DataFrame(pdres, index=df_idx)
+            res = DataFrame(pdres, index=df_idx)
         else:
-            res = pd.DataFrame(pdres)
+            res = DataFrame(pdres)
         return res
 
+    def err_msg(self):
+        return dsos_query_errmsg(<dsos_query_t>self.c_query).decode()
 
     @property
     def capacity(self):

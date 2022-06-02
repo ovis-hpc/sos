@@ -500,7 +500,7 @@ int __sos_value_is_min(sos_value_t v);
 void __sos_init_array_values(sos_schema_t schema, sos_obj_t obj);
 size_t __sos_obj_array_size(sos_obj_t obj);
 size_t __sos_obj_total_size(sos_obj_t obj);
-sos_part_t __sos_part_find_by_uuid(sos_t sos, uuid_t uuid);
+sos_part_t __sos_part_find_by_uuid(sos_t sos, const uuid_t uuid);
 sos_part_t __sos_part_find_by_ods(sos_t sos, ods_t ods);
 
 extern FILE *__ods_log_fp;

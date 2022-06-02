@@ -68,14 +68,14 @@ struct dsos_attr_spec {
 };
 
 struct dsos_schema_spec_attr {
-	dsos_schema_name name;
-	int type;
-	int size;
-	dsos_attr_spec join_list<>;
-	int indexed;
-	string idx_type<128>;
-	string key_type<128>;
-	string idx_args<128>;
+    dsos_schema_name name;
+    int type;
+    int size;
+    dsos_attr_spec join_list<>;
+    int indexed;
+    string idx_type<128>;
+    string key_type<128>;
+string idx_args<128>;
 };
 
 struct dsos_schema_spec {
@@ -227,10 +227,13 @@ program SOSDB {
 
         /* Partition Operations */
         dsos_part_res PART_CREATE(dsos_container_id, dsos_part_spec) = 30;
-        dsos_part_res PART_FIND_BY_ID(dsos_container_id, dsos_part_id) = 31;
+	dsos_part_res PART_FIND_BY_ID(dsos_container_id, dsos_part_id) = 31; /* deprecated */
         dsos_part_res PART_FIND_BY_NAME(dsos_container_id, string) = 32;
         dsos_part_res PART_FIND_BY_UUID(dsos_container_id, string) = 33;
         dsos_part_query_res PART_QUERY(dsos_container_id) = 34;
+	int PART_STATE_SET(dsos_container_id, dsos_part_id, long part_state) = 35;
+	int PART_CHOWN(dsos_container_id, dsos_part_id, long user_id, long group_id) = 36;
+	int PART_CHMOD(dsos_container_id, dsos_part_id, long perm) = 37;
 
         /* Iterator operations */
         dsos_iter_res ITER_CREATE(dsos_container_id, dsos_schema_id, dsos_attr_name) = 40;

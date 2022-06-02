@@ -626,7 +626,7 @@ sos_part_t __sos_part_find_by_ods(sos_t sos, ods_t ods)
 	return part;
 }
 
-sos_part_t __sos_part_find_by_uuid(sos_t sos, uuid_t uuid)
+sos_part_t __sos_part_find_by_uuid(sos_t sos, const uuid_t uuid)
 {
 	sos_part_t part;
 	sos_part_iter_t iter = sos_part_iter_new(sos);
@@ -1137,6 +1137,31 @@ sos_part_t sos_part_by_name(sos_t sos, const char *name)
 	if (part)
 		sos_part_get(part);
 	pthread_mutex_unlock(&sos->lock);
+	return part;
+}
+
+/**
+ * \brief Find a partition by UUID
+ *
+ * Returns the partition handle for the partition with the name
+ * specified by the \c name parameter.
+ *
+ * The application should call sos_part_put() when finished with the
+ * partition object.
+ *
+ * \param sos The container handle
+ * \param name The name of the partition
+ * \retval Partition handle
+ * \retval NULL if the partition was not found
+ */
+sos_part_t sos_part_by_uuid(sos_t sos, const uuid_t uuid)
+{
+	sos_part_t part;
+	pthread_mutex_lock(&sos->lock);
+	part = __sos_part_find_by_uuid(sos, uuid);
+	if (part)
+		sos_part_get(part);
+ 	pthread_mutex_unlock(&sos->lock);
 	return part;
 }
 
