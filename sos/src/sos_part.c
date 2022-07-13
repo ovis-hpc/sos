@@ -1627,7 +1627,8 @@ static int64_t uuid_comparator(void *a, const void *b, void *arg)
 
 struct uuid_entry {
 	uuid_t dst_uuid;	/* the destination uuid */
-	uuid_t src_uuid;	/* the destination uuid */
+	uuid_t src_uuid;	/* the object uuid */
+	size_t use_count;	/* the number of times the src_uuid was present */
 	struct ods_rbn rbn;	/* node with source uuid as key */
 };
 
@@ -1795,4 +1796,72 @@ size_t sos_part_remap_schema_uuid(sos_part_t part, const char *dst_path, const c
 	else
 		errno = 0;
 	return uarg.updated_count;
+}
+
+struct print_obj_iter_args_s {
+	struct ods_rbt *rbt;
+	long visited_count;	/* number of objects visited */
+};
+
+static int __query_uuid_callback_fn(sos_part_t part, ods_obj_t ods_obj, sos_obj_t sos_obj, void *arg)
+{
+	struct remap_obj_iter_args_s *uarg = arg;
+	struct ods_rbn *rbn;
+	struct uuid_entry *ue;
+
+	rbn = ods_rbt_find(uarg->rbt, SOS_OBJ(ods_obj)->schema_uuid);
+	if (!rbn) {
+		ue = malloc(sizeof *ue);
+		if (!ue)
+			return 1;
+		ue->use_count= 1;
+		uuid_copy(ue->src_uuid, SOS_OBJ(ods_obj)->schema_uuid);
+		ods_rbn_init(&ue->rbn, ue->src_uuid);
+		ods_rbt_ins(uarg->rbt, &ue->rbn);
+		goto out;
+	}
+	ue = container_of(rbn, struct uuid_entry, rbn);
+	ue->use_count += 1;
+out:
+        ods_obj_put(ods_obj);
+        uarg->visited_count += 1;
+	return 0;
+}
+
+sos_part_uuid_entry_t sos_part_query_schema_uuid(sos_part_t part, size_t *count)
+{
+	struct print_obj_iter_args_s uarg;
+	struct ods_rbt rbt;
+	struct ods_rbn *rbn;
+	sos_part_uuid_entry_t uuid_array;
+	int i;
+
+	ods_rbt_init(&rbt, uuid_comparator, NULL);
+	uarg.rbt = &rbt;
+	uarg.visited_count = 0;
+
+	int rc = sos_part_obj_iter(part, NULL, __query_uuid_callback_fn, &uarg);
+	if (rc) {
+		errno  = rc;
+		return NULL;
+	}
+
+	long uuid_array_count = ods_rbt_card(&rbt);
+	uuid_array = calloc(ods_rbt_card(&rbt), sizeof(struct sos_part_uuid_entry_s));
+	i = 0;
+	while (!ods_rbt_empty(&rbt)) {
+		rbn = ods_rbt_min(&rbt);
+		struct uuid_entry *ue = container_of(rbn, struct uuid_entry, rbn);
+		ods_rbt_del(&rbt, rbn);
+		if (uuid_array) {
+			uuid_copy(uuid_array[i].uuid, ue->src_uuid);
+			uuid_array[i].count = ue->use_count;
+		}
+		free(ue);
+		i++;
+	}
+	if (uuid_array)
+		*count = uuid_array_count;
+
+	return uuid_array;
 }

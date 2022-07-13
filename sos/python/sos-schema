@@ -50,6 +50,7 @@ import argparse
 from sosdb import Sos
 import json
 import os
+import uuid
 
 def add_schema(cont, path):
     try:
@@ -61,10 +62,12 @@ def add_schema(cont, path):
     except Exception as ex:
         print(str(ex))
 
-def query_schema(cont, schema_name, verbose=False):
+def query_schema(cont, schema_name=None, uuid_str=None, verbose=False):
     count = 0
     for s in cont.schema_iter():
         if schema_name is not None and s.name() != schema_name:
+            continue
+        if uuid_str is not None and s.uuid() != uuid.UUID(uuid_str):
             continue
         count += 1
         print(f"{s.name()} '{s.uuid()}'")
@@ -106,6 +109,8 @@ if __name__ == "__main__":
                         help="The path to the container.")
     parser.add_argument("-s", "--schema", metavar="NAME", dest="schema", default=None,
                          help="The schema name")
+    parser.add_argument("-u", "--uuid", metavar="NAME", dest="uuid", default=None,
+                         help="The schema UUID string")
     parser.add_argument("-v", "--verbose", action="store_true",
                          help="Print the schema and all of its attributes")
     actions = parser.add_mutually_exclusive_group(required=True)
@@ -151,7 +156,12 @@ if __name__ == "__main__":
             print(str(ex))
 
     if args.query:
-        query_schema(cont, args.schema, verbose=args.verbose)
+        if args.schema:
+            query_schema(cont, schema_name=args.schema, verbose=args.verbose)
+        elif args.uuid:
+            query_schema(cont, uuid_str=args.uuid, verbose=args.verbose)
+        else:
+            query_schema(cont, verbose=args.verbose)
 
     if args.add:
         add_schema(cont, args.add)

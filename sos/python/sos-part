@@ -51,6 +51,7 @@ import errno
 import argparse
 import pwd
 import grp
+import uuid
 from sosdb import Sos
 
 def fmt_size(size):
@@ -222,6 +223,9 @@ if __name__ == "__main__":
                          help="Replace the schema UUID in a partition. "
                          "Used when importing a partition that was populated "
                          "using a different schema dictionary.")
+    actions.add_argument("--show-schema", action="store_true",
+                         help="Show the set of schema UUID that are "
+                         "used by objects in the partition.")
     args = parser.parse_args()
 
     #
@@ -434,5 +438,22 @@ if __name__ == "__main__":
                       "valid JSON.")
             elif err != 0:
                 print(f"Error {err} was returned remapping the partition's UUID")
+        sys.exit(1)
+    #
+    # Show a partition's schema UUID
+    #
+    if args.show_schema:
+        part = Sos.Partition()
+        try:
+            part.open(args.path)
+        except:
+            print(f"The partition '{args.path}' could not be opened")
+            sys.exit(1)
+        uuid_list = part.query_schema_uuid()
+        print("Schema UUID                          Use Count")
+        print("------------------------------------ ------------")
+        for entry in uuid_list:
+            u = uuid.UUID(bytes=entry[0][0:16])
+            print(str(u), entry[1])
         sys.exit(1)
     sys.exit(0)

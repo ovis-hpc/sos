@@ -533,6 +533,11 @@ cdef extern from "sos/sos.h":
         pass
     ctypedef sos_part_s *sos_part_t
 
+    cdef struct sos_part_uuid_entry_s:
+        uuid_t uuid
+        long count
+    ctypedef sos_part_uuid_entry_s *sos_part_uuid_entry_t
+
     sos_part_t sos_part_open(const char *path, int o_perm, int o_mode, const char *desc)
     int sos_part_chown(sos_part_t part, uid_t uid, gid_t gid)
     int sos_part_chmod(sos_part_t part, int perm)
@@ -567,6 +572,7 @@ cdef extern from "sos/sos.h":
     int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
                           sos_part_obj_iter_fn_t fn, void *arg)
     size_t sos_part_remap_schema_uuid(sos_part_t part, const char *dst_path, const char *src_path)
+    sos_part_uuid_entry_t sos_part_query_schema_uuid(sos_part_t part, size_t *count)
 
     cdef enum sos_byte_order_e:
         SOS_OBJ_BE,

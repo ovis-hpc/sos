@@ -471,6 +471,7 @@ int __sos_config_init(sos_t sos);
 sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj);
 ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock);
 void __sos_schema_free(sos_schema_t schema);
+void __sos_schema_print(ods_obj_t schema_obj, FILE *fp);
 void __sos_part_primary_set(sos_t sos, ods_obj_t part_obj);
 sos_part_t __sos_primary_obj_part(sos_t sos);
 int __sos_part_create(const char *part_path, const char *part_desc,

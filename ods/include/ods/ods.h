@@ -542,10 +542,18 @@ void ods_obj_iter_pos_init(ods_obj_iter_pos_t pos);
  */
 int ods_obj_iter(ods_t ods, ods_obj_iter_pos_t pos, ods_obj_iter_fn_t iter_fn, void *arg);
 
+/**
+ * \brief Returns the number of objects in the container
+ *
+ * \param ods The ODS container handle
+ */
 ods_atomic_t ods_obj_count(ods_t ods);
 
-/*
- * Take a reference on an object
+/**
+ * \brief Take a reference on an object
+ *
+ * \param obj The object handle
+ * \returns Pointer to the \c obj parameter
  */
 ods_obj_t ods_obj_get(ods_obj_t obj);
 

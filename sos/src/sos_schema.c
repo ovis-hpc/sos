@@ -1968,6 +1968,7 @@ void __sos_schema_print(ods_obj_t schema_obj, FILE *fp)
 	}
 	fprintf(fp, "\n    ]\n");
 	fprintf(fp, "  }");
+	fflush(fp);
  err_0:
 	free(attr_names);
 	return;
@@ -2049,18 +2050,6 @@ int sos_schema_export(const char *path_arg, FILE *fp)
 		ods_obj_put(udata);
 		goto err_1;
 	}
-
-#if 0
-	if (!is_supported_version(SOS_SCHEMA_UDATA(udata)->version, SOS_LATEST_VERSION)) {
-		errno = EPROTO;
-		sos_error("Schema ODS in %s is an unsupported version expected %llX, got %llx\n",
-			  path_arg,
-			  SOS_LATEST_VERSION,
-			  SOS_SCHEMA_UDATA(udata)->version);
-		ods_obj_put(udata);
-		goto err_1;
-	}
-#endif
 	ods_obj_put(udata);
 
 	/* Open the index on the schema objects */

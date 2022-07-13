@@ -1383,6 +1383,22 @@ cdef class Partition(SosObject):
                                                        src_path.encode())
         return (count, errno)
 
+    def query_schema_uuid(self):
+        """Query the schema present in a partition
+
+        Obtain a list of all unique schema being used in a partition
+        and return this as a list of (uuid_t, use_count) tuples.
+        """
+        cdef sos_part_uuid_entry_t c_uuid_array
+        cdef size_t c_count
+        cdef int i
+        uuid = []
+        c_uuid_array = sos_part_query_schema_uuid(self.c_part, &c_count)
+        for i in range(0, c_count):
+            uuid.append( (c_uuid_array[i].uuid, c_uuid_array[i].count) )
+        free(c_uuid_array)
+        return uuid
+
     def state_set(self, new_state):
         """Set the partition state"""
         cdef int rc
