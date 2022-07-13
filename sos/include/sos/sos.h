@@ -508,6 +508,23 @@ typedef struct sos_part_obj_iter_pos_s {
 void sos_part_obj_iter_pos_init(sos_part_obj_iter_pos_t pos);
 int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
 		      sos_part_obj_iter_fn_t fn, void *arg);
+typedef struct sos_part_uuid_entry_s {
+	uuid_t uuid;		/*! The uuid_t */
+	long count;		/*! Number of objects with this UUID */
+} *sos_part_uuid_entry_t;
+
+/**
+ * \brief Query the schema UUID present in the partition
+ *
+ * Return an array of the schema UUID present in the partition
+ * and the number of objects using each UUID.
+ *
+ * \param part The partition handle
+ * \param count Pointer to receive the number of entries returned
+ * \returns Array of uuid entries or NULL if no objects are present.
+ */
+sos_part_uuid_entry_t sos_part_query_schema_uuid(sos_part_t part, size_t *count);
+
 /** @} */
 /** @} */
 
