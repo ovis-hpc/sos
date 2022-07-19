@@ -14,7 +14,7 @@ sos_schema_t dsos_schema_from_spec(struct dsos_schema_spec *spec)
 	int attr_id, rc;
 	sos_schema_t schema;
 
-	schema = sos_schema_new(spec->name);
+	schema = sos_schema_create(spec->name, spec->uuid);
 	if (!schema)
 		return NULL;
 	for (attr_id = 0; attr_id < spec->attrs.attrs_len; attr_id += 1) {

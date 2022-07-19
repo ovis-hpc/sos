@@ -163,8 +163,9 @@ cdef extern from "sys/time.h":
         int64_t tv_nsec
 
 cdef extern from "stdio.h":
-    cdef struct FILE:
+    cdef struct _IO_FILE:
         pass
+ctypedef _IO_FILE FILE
 
 cdef extern from "unistd.h":
     ctypedef long gid_t

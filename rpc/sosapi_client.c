@@ -1169,9 +1169,14 @@ schema_by_name_complete_fn(dsos_client_t client,
 			uuid_t uuid;
 			sos_schema_uuid(rqst->schema->schema, uuid);
 			if (uuid_compare(sres->dsos_schema_res_u.spec->uuid,
-					 uuid))
+					 uuid)) {
 				/* We received a remote schema with a mismatched UUID */
 				derr = EEXIST;
+				g_last_err = derr;
+				snprintf(g_last_errmsg, sizeof(g_last_errmsg),
+					 "%s: schema UUID mismatch on client %d\n",
+					 __func__, client->client_id);
+			}
 		}
 		request->schema_by_name.schema->handles[client->client_id] =
 			sres->dsos_schema_res_u.spec->id;
@@ -1199,6 +1204,7 @@ dsos_schema_by_name(dsos_container_t cont, const char *name)
 		goto err_0;
 	return schema;
 err_0:
+	errno = res.any_err;
 	dsos_schema_free(schema);
 	return NULL;
 }
