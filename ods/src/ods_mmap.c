@@ -1353,6 +1353,7 @@ static ods_ref_t ods_mmap_alloc(ods_t ods_, size_t sz)
 		return 0;
 	}
 
+	__ods_lock(ods_);
 	__pgt_lock(ods);
 
 	/* Get and/or refresh the page table */
@@ -1376,7 +1377,7 @@ static ods_ref_t ods_mmap_alloc(ods_t ods_, size_t sz)
 	if (__ods_debug && ref)
 		assert(ref_valid(ods, ref));
 	__pgt_unlock(ods);
-
+	__ods_unlock(ods_);
 	return ref;
 }
 
@@ -1657,6 +1658,7 @@ static uint32_t ods_mmap_ref_status(ods_t ods_, ods_ref_t ref)
 	ods_pg_t pg;
 	uint32_t status = 0;
 
+	__ods_lock(ods_);
 	__pgt_lock(ods);
 
 	if (!ref_valid(ods, ref)) {
@@ -1680,6 +1682,7 @@ static uint32_t ods_mmap_ref_status(ods_t ods_, ods_ref_t ref)
 	}
  out:
 	__pgt_unlock(ods);
+	__ods_unlock(ods_);
 	return status;
 }
 
@@ -1689,9 +1692,11 @@ static uint32_t ods_mmap_ref_status(ods_t ods_, ods_ref_t ref)
 static void ods_mmap_delete(ods_t ods_, ods_ref_t ref)
 {
 	ods_mmap_t ods = (ods_mmap_t)ods_;
+	__ods_lock(ods_);
 	__pgt_lock(ods);
 	free_ref(ods, ref);
 	__pgt_unlock(ods);
+	__ods_unlock(ods_);
 }
 
 static void ods_mmap_dump(ods_t ods_, FILE *fp)
@@ -1840,6 +1845,7 @@ static void ods_mmap_release_dead_locks(ods_t ods_)
 	int id;
 
 	__ods_lock(ods_);
+	__pgt_lock(ods);
 	pgt = pgt_get(ods);
 	if (!pgt)
 		goto out;
@@ -1852,6 +1858,7 @@ static void ods_mmap_release_dead_locks(ods_t ods_)
 		check_lock(mtx, 1);
 	}
  out:
+	__pgt_unlock(ods);
 	__ods_unlock(ods_);
 }
 
