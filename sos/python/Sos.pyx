@@ -705,10 +705,10 @@ cdef class DsosPartition:
 
     cpdef uuid(self):
         """Returns the partition UUID"""
-        cdef unsigned char c_uuid[17]
-        memset(c_uuid, 0, 17)
+        cdef uuid_t c_uuid
         dsos_part_uuid(self.c_part, c_uuid)
-        return uuid.UUID(bytes=c_uuid)
+        pyobj = c_uuid
+        return uuid.UUID(bytes=pyobj[0:16])
 
     cpdef path(self):
         """Return the path to the partition"""
@@ -1286,10 +1286,10 @@ cdef class Partition(SosObject):
 
     def uuid(self):
         """Returns the partition UUID"""
-        cdef unsigned char c_uuid[17]
-        memset(c_uuid, 0, 17)
+        cdef uuid_t c_uuid
         sos_part_uuid(self.c_part, c_uuid)
-        return uuid.UUID(bytes=c_uuid)
+        pyobj = c_uuid
+        return uuid.UUID(bytes=pyobj[0:16])
 
     def desc_set(self, desc):
         """Set the paritition's description."""
