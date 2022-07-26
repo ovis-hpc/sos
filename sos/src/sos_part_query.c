@@ -88,11 +88,11 @@ const char *pretty_file_size(off_t size)
 	size_t str_cnt = sizeof(sz_strs) / sizeof(sz_strs[0]);
 
 	for (i = 0; i < str_cnt; i++) {
-		if (size < 1000 || str_cnt == 4) {
+		if (size < 1024 || str_cnt == 4) {
 			sprintf(buf, "%ld%c", size, sz_strs[i]);
 			return buf;
 		}
-		size = size / 1000;
+		size = size / 1024;
 	}
 	return NULL;		/* NB: can't happen */
 }

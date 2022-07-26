@@ -55,21 +55,21 @@ import uuid
 from sosdb import Sos
 
 def fmt_size(size):
-    if size < 1000.0:
+    if size < 1024.0:
         return "{0:8}B".format(int(size))
-    size /= 1000.0
-    if size < 1000.0:
+    size /= 1024.0
+    if size < 1024.0:
         return "{0:8.1f}K".format(size)
-    size /= 1000.0
-    if size < 1000.0:
+    size /= 1024.0
+    if size < 1024.0:
         return "{0:8.1f}M".format(size)
-    size /= 1000.0
-    if size < 1000.0:
+    size /= 1024.0
+    if size < 1024.0:
         return "{0:8.1f}G".format(size)
-    size /= 1000.0
-    if size < 1000.0:
+    size /= 1024.0
+    if size < 1024.0:
         return "{0:8.1f}T".format(size)
-    size /= 1000.0
+    size /= 1024.0
     return "{0:8.1f}P".format(size)
 
 class Permission:
@@ -96,26 +96,29 @@ class Permission:
                 s = self.translate[m][0] + s
         return s
 
-def print_table(p, hdr=True, ftr=False):
+def print_table(p, hdr=True, ftr=False, verbose=False):
     if hdr:
         if int(p.state()) != Sos.PART_STATE_DETACHED:
             print("{0:18} {1:10} ".format("Name", "State"), end='')
         print("{0:24} {1:24} {2:12} {3:10} {4:36}".
                 format("User", "Group", "Permissions", "Size", "Description"), end='')
+        if verbose:
+            print(" {0:36}".format("UUID"), end='')
         if int(p.state()) != Sos.PART_STATE_DETACHED:
-            print(" {0:20}".format("Path"))
-        else:
-            print("")
+            print(" {0:20}".format("Path"), end='')
+        print("")
+
     if hdr or ftr:
         if int(p.state()) != Sos.PART_STATE_DETACHED:
             print("{0} {1} ".format('-'.ljust(18,'-'), '-'.ljust(10,'-')), end='')
         print("{0} {1} {2} {3} {4}".
                 format('-'.ljust(24, '-'), '-'.ljust(24, '-'), '-'.ljust(12, '-'),
                        '-'.ljust(10,'-'), '-'.ljust(36,'-')), end='')
+        if verbose:
+            print(" {0}".format('-'.ljust(36, '-')), end='')
         if int(p.state()) != Sos.PART_STATE_DETACHED:
-            print(" {0}".format('-'.ljust(20,'-')))
-        else:
-            print("")
+            print(" {0}".format('-'.ljust(20, '-')), end='')
+        print("")
 
     if ftr:
         return
@@ -139,10 +142,11 @@ def print_table(p, hdr=True, ftr=False):
         print("{0:18} {1:10} ".format(p.name(), str(p.state())), end='')
     print("{0:24} {1:24} {2:12} {3:10} {4:36}". \
             format(uid, gid, str(perm), fmt_size(stat.size), p.desc()), end='')
+    if verbose:
+        print(" {0:36}".format(str(p.uuid())), end='')
     if int(p.state()) != Sos.PART_STATE_DETACHED:
-        print(" {0}".format(p.path()))
-    else:
-        print("")
+        print(" {0}".format(p.path()), end='')
+    print("")
 
 def print_json(p, hdr=True, ftr=False):
     if ftr:
@@ -155,21 +159,22 @@ def print_json(p, hdr=True, ftr=False):
     stat = p.stat()
     uid = p.uid()
     gid = p.gid()
-    perm = p.perm()
+    perm = Permission(p.perm())
     accessed = dt.datetime.fromtimestamp(stat.accessed)
     accessed = accessed.strftime("%m/%d/%y %H:%M:%S")
     modified = dt.datetime.fromtimestamp(stat.modified)
     modified = modified.strftime("%m/%d/%y %H:%M:%S")
     print(f'{{ "name": "{p.name()}, "state" : "{str(p.state())}", '
-          f'"uid" : {uid}, "gid" : {gid}, "perm" : {oct(perm)}, '
+          f'"uid" : {uid}, "gid" : {gid}, "perm" : "{str(perm)}", '
           f'"access" : "{accessed}", "modified" : "{modified}", '
-          f'"size" : "{fmt_size(stat.size)}", "path" : "{p.path()}", '
-          f'"description" : "{p.desc()}"}}', end='')
+          f'"size" : {stat.size}, "path" : "{p.path()}", '
+          f'"description" : "{p.desc()}", ',
+          f'"UUID" : "{str(p.uuid())}"}}', end='')
 
-def print_partition(p, hdr=True, ftr=False, fmt='table'):
+def print_partition(p, hdr=True, ftr=False, verbose=False, fmt='table'):
 
     if fmt == 'table':
-        print_table(p, hdr, ftr)
+        print_table(p, hdr, ftr, verbose)
     else:
         print_json(p, hdr, ftr)
 
@@ -203,6 +208,8 @@ if __name__ == "__main__":
     parser.add_argument("--new-dir", metavar="PATH",
                         help="Path to the template directory definining the "
                         "schema UUID that will replace the current UUID.")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Use with --query to show the partition UUID")
 
     actions = parser.add_mutually_exclusive_group(required=True)
     actions.add_argument("--query", action="store_true",
@@ -247,9 +254,9 @@ if __name__ == "__main__":
             pi = cont.part_iter()
             hdr = True
             for p in pi:
-                print_partition(p, hdr, fmt=args.fmt)
+                print_partition(p, hdr, fmt=args.fmt, verbose=args.verbose)
                 hdr = False
-            print_partition(p, hdr=False, ftr=True, fmt=args.fmt)
+            print_partition(p, hdr=False, ftr=True, fmt=args.fmt, verbose=args.verbose)
             sys.exit(0)
         try:
             p = Sos.Partition()
