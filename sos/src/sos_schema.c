@@ -1067,7 +1067,7 @@ sos_obj_t sos_array_obj_new(sos_t sos, sos_type_t type, size_t count)
 	union sos_obj_ref_s obj_ref;
 	obj_ref.ref.obj = ods_obj_ref(array_obj);
 	uuid_copy(obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
-	return __sos_init_obj(sos, schema, array_obj, obj_ref);
+	return __sos_init_obj(sos, schema, part, array_obj, obj_ref);
 }
 
 /**
@@ -1441,46 +1441,49 @@ int sos_obj_commit_part(sos_obj_t obj, sos_part_t part)
 {
 	ods_obj_t ods_obj;
 	enum sos_part_state_e state;
+	int rc = 0;
 
 	if (obj->obj->ods)
 		/* Object is already committed */
 		return 0;
 
+	pthread_mutex_lock(&obj->sos->lock);
 	if (!part) {
 		part = __sos_primary_obj_part(obj->sos);
-		if (!part)
-			return ENOSPC;
+		if (!part) {
+			rc = ENOSPC;
+			goto out_0;
+		}
 	}
 	state = sos_part_state(part);
 	if (!(state == SOS_PART_STATE_PRIMARY || state == SOS_PART_STATE_ACTIVE))
 		return ENOSPC;
 
 	ods_obj = __sos_obj_new(part->obj_ods, obj->size, &obj->sos->lock);
-	if (!ods_obj)
-		return ENOMEM;
+	if (!ods_obj) {
+	       rc = ENOMEM;
+	       goto out_0;
+	}
 
 	memcpy(ods_obj->as.ptr, obj->obj->as.ptr, obj->size);
 	free(obj->obj);
+	obj->part = sos_part_get(part);
 	obj->obj = ods_obj;
 	uuid_copy(obj->obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 	obj->obj_ref.ref.obj = ods_obj_ref(ods_obj);
 	ods_obj_update(ods_obj);
-	return 0;
+ out_0:
+	pthread_mutex_unlock(&obj->sos->lock);
+	return rc;
 }
 
 int sos_obj_commit(sos_obj_t obj)
 {
-	sos_part_t part;
-
 	if (obj->obj->ods)
 		/* Object is already commited */
 		return 0;
 
-	part = __sos_primary_obj_part(obj->sos);
-	if (!part)
-		return ENOSPC;
-
-	return sos_obj_commit_part(obj, part);
+	return sos_obj_commit_part(obj, NULL);
 }
 
 void __sos_schema_close(sos_t sos, sos_schema_t schema)

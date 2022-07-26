@@ -234,7 +234,7 @@ ods_idx_t _open_or_creat(sos_t sos, char *path,
 	return NULL;
 }
 
-static int __sos_index_reopen(sos_index_t index)
+int __sos_index_reopen(sos_index_t index)
 {
 	ods_idx_ref_t idx_ref;
 	sos_part_t part;
@@ -245,8 +245,6 @@ static int __sos_index_reopen(sos_index_t index)
 	int rc = 0;
 
 	/* Close all the existing ODS */
-	sos_part_put(index->primary_part);
-	index->primary_part = NULL;
 	while (!LIST_EMPTY(&index->active_idx_list)) {
 		idx_ref = LIST_FIRST(&index->active_idx_list);
 		LIST_REMOVE(idx_ref, entry);
@@ -265,19 +263,18 @@ static int __sos_index_reopen(sos_index_t index)
 		}
 		sprintf(tmp_path, "%s/%s_idx", sos_part_path(part), index->name);
 		idx = _open_or_creat(index->sos, tmp_path,
-							sos_part_be_get(part),
-							SOS_IDX(index->idx_obj)->mode,
-							SOS_IDX(index->idx_obj)->idx_type,
-							SOS_IDX(index->idx_obj)->key_type,
-							SOS_IDX(index->idx_obj)->args);
+				     sos_part_be_get(part),
+				     SOS_IDX(index->idx_obj)->mode,
+				     SOS_IDX(index->idx_obj)->idx_type,
+				     SOS_IDX(index->idx_obj)->key_type,
+				     SOS_IDX(index->idx_obj)->args);
 		if (!idx) {
 			rc = errno;
+			sos_error("The index %s could not be "
+				  "opened or created.\n",
+				  tmp_path);
 			sos_part_put(part);
 			goto err_0;
-		}
-		if (sos_part_state(part) == SOS_PART_STATE_PRIMARY) {
-			index->primary_idx = idx;
-			index->primary_part = sos_part_get(part);
 		}
 		ods_idx_ref = malloc(sizeof *ods_idx_ref);
 		if (!ods_idx_ref) {
@@ -289,6 +286,7 @@ static int __sos_index_reopen(sos_index_t index)
 		LIST_INSERT_HEAD(&index->active_idx_list, ods_idx_ref, entry);
 	}
 	sos_part_iter_free(iter);
+	index->part_gn = index->sos->part_gn;
 	return 0;
  err_1:
 	ods_idx_close(idx, ODS_COMMIT_SYNC);
@@ -298,10 +296,6 @@ static int __sos_index_reopen(sos_index_t index)
 		LIST_REMOVE(ods_idx_ref, entry);
 		ods_idx_close(ods_idx_ref->idx, ODS_COMMIT_ASYNC);
 		sos_part_put(ods_idx_ref->part);
-	}
-	if (index->primary_idx) {
-		sos_part_put(index->primary_part);
-		index->primary_part = NULL;
 	}
 	sos_part_iter_free(iter);
 	return rc;
@@ -370,10 +364,6 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 			sos_part_put(part);
 			goto err_3;
 		}
-		if (sos_part_state(part) == SOS_PART_STATE_PRIMARY) {
-			index->primary_idx = idx;
-			index->primary_part = sos_part_get(part);
-		}
 		ods_idx_ref = malloc(sizeof *ods_idx_ref);
 		if (!ods_idx_ref) {
 			errno = ENOMEM;
@@ -384,6 +374,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		LIST_INSERT_HEAD(&index->active_idx_list, ods_idx_ref, entry);
 	}
 	index->idx_obj = idx_obj;
+	index->part_gn = index->sos->part_gn;
 	ods_unlock(sos->idx_ods, 0);
 	sos_part_iter_free(iter);
 	return index;
@@ -400,8 +391,6 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		ods_idx_close(ods_idx_ref->idx, ODS_COMMIT_ASYNC);
 		sos_part_put(ods_idx_ref->part);
 	}
-	if (index->primary_idx)
-		sos_part_put(index->primary_part);
 	free(index);
  err_0:
 	sos_part_iter_free(iter);
@@ -411,7 +400,12 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 
 int sos_index_rt_opt_set(sos_index_t idx, sos_index_rt_opt_t opt, ...)
 {
-	return ods_idx_rt_opts_set(idx->primary_idx, opt);
+	ods_idx_ref_t iref;
+	int rc;
+	LIST_FOREACH(iref, &idx->active_idx_list, entry) {
+		rc = ods_idx_rt_opts_set(iref->idx, opt);
+	}
+	return rc;
 }
 
 struct sos_visit_cb_ctxt_s {
@@ -457,11 +451,18 @@ static ods_visit_action_t visit_cb(ods_idx_t idx, ods_key_t key, ods_idx_data_t 
  */
 int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, void *arg)
 {
+	int rc = 0;
+	ods_idx_ref_t iref;
 	struct sos_visit_cb_ctxt_s *ctxt = malloc(sizeof(*ctxt));
 	ctxt->index = index;
 	ctxt->cb_fn = cb_fn;
 	ctxt->arg = arg;
-	return ods_idx_visit(index->primary_idx, key, visit_cb, ctxt);
+	LIST_FOREACH(iref, &index->active_idx_list, entry) {
+		int irc = ods_idx_visit(iref->idx, key, visit_cb, ctxt);
+		if (irc && !rc)
+			rc = irc;
+	}
+	return rc;
 }
 
 /**
@@ -472,22 +473,24 @@ int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, v
  * \param obj The object to which the key will refer
  * \retval 0 Success
  * \retval EINVAL The object or index is invalid
+ * \retval ENOSPC The index for the object partition is missing
  * \retval !0 A Unix error code
  */
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
 	if (!ods_ref_valid(obj->obj->ods, obj->obj_ref.ref.obj))
 		return EINVAL;
-	/* Ensure that the primary partition hasn't changed */
-	sos_part_t part = __sos_primary_obj_part(index->sos);
-	if (part != index->primary_part) {
+	if (index->part_gn != index->sos->part_gn) {
 		int rc = __sos_index_reopen(index);
 		if (rc)
 			return rc;
 	}
 	sos_obj_commit(obj);
 	ods_obj_update(obj->obj);
-	return ods_idx_insert(index->primary_idx, key, obj->obj_ref.idx_data);
+	ods_idx_t idx = __sos_idx_find(index, obj);
+	if (idx)
+		return ods_idx_insert(idx, key, obj->obj_ref.idx_data);
+	return ENOSPC;
 }
 
 /**
@@ -507,7 +510,10 @@ int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
 	ods_idx_data_t data;
 	data = obj->obj_ref.idx_data;
-	return ods_idx_delete(index->primary_idx, key, &data);
+	ods_idx_t idx = __sos_idx_find(index, obj);
+	if (!idx)
+		return ENOENT;
+	return ods_idx_delete(idx, key, &data);
 }
 
 /**
@@ -551,7 +557,7 @@ int sos_index_find_ref(sos_index_t index, sos_key_t key, sos_obj_ref_t *ref)
 	int rc = ENOENT;
 	ods_idx_ref_t idx_ref;
 	LIST_FOREACH(idx_ref, &index->active_idx_list, entry) {
-		rc = ods_idx_find(index->primary_idx, key, &ref->idx_data);
+		rc = ods_idx_find(idx_ref->idx, key, &ref->idx_data);
 		if (!rc)
 			return rc;
 	}
@@ -761,7 +767,6 @@ int sos_index_close(sos_index_t index, sos_commit_t flags)
 	ods_idx_ref_t idx_ref;
 	if (!index)
 		return EINVAL;
-	sos_part_put(index->primary_part);
 	while (!LIST_EMPTY(&index->active_idx_list)) {
 		idx_ref = LIST_FIRST(&index->active_idx_list);
 		LIST_REMOVE(idx_ref, entry);
@@ -786,7 +791,8 @@ int sos_index_close(sos_index_t index, sos_commit_t flags)
  */
 size_t sos_index_key_size(sos_index_t index)
 {
-	return ods_idx_key_size(index->primary_idx);
+	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
+	return ods_idx_key_size(iref->idx);
 }
 
 /**
@@ -818,7 +824,8 @@ sos_key_t sos_index_key_new(sos_index_t index, size_t size)
  */
 int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str)
 {
-	return ods_key_from_str(index->primary_idx, key, str);
+	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
+	return ods_key_from_str(iref->idx, key, str);
 }
 
 /**
@@ -830,9 +837,10 @@ int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str)
  */
 const char *sos_index_key_to_str(sos_index_t index, sos_key_t key)
 {
-	size_t keylen = ods_idx_key_str_size(index->primary_idx, key);
+	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
+	size_t keylen = ods_idx_key_str_size(iref->idx, key);
 	char *keystr = malloc(keylen);
-	return ods_key_to_str(index->primary_idx, key, keystr, keylen);
+	return ods_key_to_str(iref->idx, key, keystr, keylen);
 }
 
 /**
@@ -847,12 +855,15 @@ const char *sos_index_key_to_str(sos_index_t index, sos_key_t key)
  */
 int64_t sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b)
 {
-	return ods_key_cmp(index->primary_idx, a, b);
+	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
+	return ods_key_cmp(iref->idx, a, b);
 }
 
 void sos_index_print(sos_index_t index, FILE *fp)
 {
-	ods_idx_print(index->primary_idx, (fp ? fp : stdout));
+	ods_idx_ref_t iref;
+	LIST_FOREACH(iref, &index->active_idx_list, entry)
+		ods_idx_print(iref->idx, (fp ? fp : stdout));
 }
 
 struct sos_container_index_iter_s {
@@ -944,7 +955,10 @@ void sos_container_index_list(sos_t sos, FILE *fp)
  */
 int sos_index_commit(sos_index_t index, sos_commit_t flags)
 {
-	ods_idx_commit(index->primary_idx, flags);
+	ods_idx_ref_t iref;
+	LIST_FOREACH(iref, &index->active_idx_list, entry) {
+		ods_idx_commit(iref->idx, flags);
+	}
 	return 0;
 }
 
@@ -956,9 +970,14 @@ int sos_index_commit(sos_index_t index, sos_commit_t flags)
  */
 off_t sos_index_size(sos_index_t index)
 {
-	struct ods_idx_stat_s sb;
-	ods_idx_stat(index->primary_idx, &sb);
-	return sb.size;
+	ods_idx_ref_t iref;
+	off_t size = 0;
+	LIST_FOREACH(iref, &index->active_idx_list, entry) {
+		struct ods_idx_stat_s isb;
+		ods_idx_stat(iref->idx, &isb);
+		size += isb.size;
+	}
+	return size;
 }
 
 /**
@@ -980,8 +999,20 @@ const char *sos_index_name(sos_index_t index)
  */
 int sos_index_stat(sos_index_t index, sos_index_stat_t sb)
 {
+	ods_idx_ref_t iref;
+	int rc = 0;
 	if (!index || !sb)
 		return EINVAL;
-	return ods_idx_stat(index->primary_idx, (ods_idx_stat_t)sb);
+	memset(sb, 0, sizeof(*sb));
+	LIST_FOREACH(iref, &index->active_idx_list, entry) {
+		struct ods_idx_stat_s osb;
+		rc = ods_idx_stat(iref->idx, &osb);
+		if (rc)
+			return rc;
+		sb->cardinality += osb.cardinality;
+		sb->duplicates += osb.duplicates;
+		sb->size += osb.size;
+	}
+	return 0;
 }
 

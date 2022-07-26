@@ -805,9 +805,10 @@ int sos_iter_inf(sos_iter_t i, sos_key_t key)
  */
 int64_t sos_iter_key_cmp(sos_iter_t iter, sos_key_t key)
 {
+	ods_idx_ref_t iref = LIST_FIRST(&iter->index->active_idx_list);
 	int64_t rc;
 	ods_key_t iter_key = ods_iter_key(iter->pos->iter);
-	rc = ods_key_cmp(iter->index->primary_idx, iter_key, key);
+	rc = ods_key_cmp(iref->idx, iter_key, key);
 	ods_obj_put(iter_key);
 	return rc;
 }

@@ -190,6 +190,7 @@ typedef struct sos_obj_data_s {
 struct sos_obj_s {
 	ods_atomic_t ref_count;
 	sos_t sos;
+	sos_part_t part;
 	sos_schema_t schema;
 	sos_obj_ref_t obj_ref;
 	ods_obj_t obj;
@@ -237,12 +238,14 @@ typedef struct ods_idx_ref_s {
 struct sos_index_s {
 	char name[SOS_INDEX_NAME_LEN];
 	sos_t sos;
+#if 0
 	/*
 	 * The primary index. All inserts go here.
 	 */
 	ods_idx_t primary_idx;
 	sos_part_t primary_part;
-
+#endif
+	ods_atomic_t part_gn;		/* partition generation number */
 	ods_obj_t idx_obj;
 
 	/*
@@ -456,9 +459,9 @@ typedef struct sos_iter_s {
  * Internal routines
  */
 sos_schema_t __sos_get_ischema(sos_type_t type);
-sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema,
+sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, sos_part_t part,
 			 ods_obj_t ods_obj, sos_obj_ref_t obj_ref);
-sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
+sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, sos_part_t part, ods_obj_t ods_obj,
 				 sos_obj_ref_t obj_ref);
 void __sos_obj_put_no_lock(sos_obj_t obj);
 int sos_iter_pos_put_no_lock(sos_iter_t iter, const sos_pos_t pos);
@@ -503,6 +506,7 @@ size_t __sos_obj_array_size(sos_obj_t obj);
 size_t __sos_obj_total_size(sos_obj_t obj);
 sos_part_t __sos_part_find_by_uuid(sos_t sos, const uuid_t uuid);
 sos_part_t __sos_part_find_by_ods(sos_t sos, ods_t ods);
+ods_idx_t __sos_idx_find(sos_index_t index, sos_obj_t obj);
 
 extern FILE *__ods_log_fp;
 extern uint64_t __ods_log_mask;

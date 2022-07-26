@@ -216,6 +216,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <pthread.h>
+#include <ftw.h>
 
 #include <sos/sos.h>
 #include <ods/ods.h>
@@ -334,8 +335,8 @@ static int __uid_gid_check(uid_t uid, gid_t gid)
 	int n_gids = 0;
 	gid_t *gid_list = NULL;
 
-        bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
-        if (bufsize == -1) {
+	bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+	if (bufsize == -1) {
 		/* Can't get it ... guess */
 		bufsize = 16384;
 	}
@@ -739,7 +740,7 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 	SOS_PART_UDATA(part->udata_obj)->is_busy = 0;
 	ods_obj_update(part->udata_obj);
 	ods_obj_update(part->ref_obj);
- 	ods_unlock(sos->part_ref_ods, 0);
+	ods_unlock(sos->part_ref_ods, 0);
 	ods_commit(sos->part_ref_ods, ODS_COMMIT_SYNC);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
@@ -784,14 +785,20 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 	for (part_obj = __sos_part_ref_first(sos);
 	     part_obj; part_obj = __sos_part_ref_next(sos, part_obj)) {
 		new = 1;
-		/* Check if we already have this partition */
+		/* Check if we already have this partition in thelist*/
 		TAILQ_FOREACH(part, &sos->part_list, entry) {
-			if (strcmp(ods_path(part->obj_ods), SOS_PART_REF(part_obj)->path))
+			if (strcmp(ods_path(part->obj_ods), SOS_PART_REF(part_obj)->path)) {
 				continue;
+			}
 			new = 0;
 		}
-		if (!new)
+		if (!new) {
+			if (SOS_PART_REF(part_obj)->state == SOS_PART_STATE_PRIMARY) {
+				sos->primary_part = part;
+				sos_ref_get(&part->ref_count, "primary_part");
+			}
 			continue;
+		}
 		part = __sos_part_open(sos, part_obj, euid, egid, acc);
 		if (!part) {
 			if (errno == EPERM) {
@@ -813,6 +820,7 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 	}
 	if (part_obj)
 		ods_obj_put(part_obj);
+	sos->part_gn = SOS_PART_REF_UDATA(sos->part_ref_udata)->gen;
 	return rc;
 }
 
@@ -833,28 +841,21 @@ int __sos_open_partitions(sos_t sos, char *tmp_path, uid_t euid, gid_t egid, int
 sos_part_t __sos_primary_obj_part(sos_t sos)
 {
 	sos_part_t part = NULL;
+ retry:
+	if (sos->part_gn
+	    && sos->part_gn == SOS_PART_REF_UDATA(sos->part_ref_udata)->gen
+	    && sos->primary_part) {
+		part = sos->primary_part;
+		goto out_0;
+	}
 
-	if ((NULL != sos->primary_part) &&
-	    (SOS_PART_REF(sos->primary_part->ref_obj)->state == SOS_PART_STATE_PRIMARY))
-		return sos->primary_part;
-
-	pthread_mutex_lock(&sos->lock);
 	ods_lock(sos->part_ref_ods, 0, NULL);
-	if (sos->part_gn != SOS_PART_REF_UDATA(sos->part_ref_udata)->gen) {
-		int rc = __refresh_part_list(sos, 0, 0, 06);
-		if (rc)
-			goto out;
-	}
-	TAILQ_FOREACH(part, &sos->part_list, entry) {
-		if (SOS_PART_REF(part->ref_obj)->state == SOS_PART_STATE_PRIMARY) {
-			sos->primary_part = part;
-			sos_ref_get(&part->ref_count, "primary_part");
-			goto out;
-		}
-	}
- out:
+	int rc = __refresh_part_list(sos, 0, 0, 06);
 	ods_unlock(sos->part_ref_ods, 0);
-	pthread_mutex_unlock(&sos->lock);
+	if (!rc && sos->primary_part)
+		goto retry;
+
+ out_0:
 	return part;
 }
 
@@ -1161,7 +1162,7 @@ sos_part_t sos_part_by_uuid(sos_t sos, const uuid_t uuid)
 	part = __sos_part_find_by_uuid(sos, uuid);
 	if (part)
 		sos_part_get(part);
- 	pthread_mutex_unlock(&sos->lock);
+	pthread_mutex_unlock(&sos->lock);
 	return part;
 }
 
@@ -1509,6 +1510,21 @@ static int __sos_remove_directory(const char *dir)
 	return 0;
 }
 
+static struct stat __part_sb;
+static int collect_part_stats(const char *path, const struct stat *sb,
+			      int typeflags, struct FTW *ftw)
+{
+	__part_sb.st_size += sb->st_size;
+	if (__part_sb.st_atime < sb->st_atime)
+		__part_sb.st_atime = sb->st_atime;
+	if (__part_sb.st_mtime < sb->st_mtime)
+		__part_sb.st_mtime = sb->st_mtime;
+	if (__part_sb.st_ctime < sb->st_ctime)
+		__part_sb.st_ctime = sb->st_ctime;
+
+	return 0;
+}
+
 /**
  * \brief Return size and access data for the partition
  *
@@ -1521,18 +1537,20 @@ static int __sos_remove_directory(const char *dir)
 int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
 {
 	int rc = 0;
-	struct stat sb;
 
 	if (!part || !stat || !part->obj_ods)
 		return EINVAL;
-	rc = ods_stat(part->obj_ods, &sb);
+
+	memset(&__part_sb, 0, sizeof(__part_sb));
+	rc = nftw(sos_part_path(part), collect_part_stats,
+		  1024, FTW_DEPTH | FTW_PHYS);
 	if (rc)
 		goto out;
 
-	stat->size = sb.st_size;
-	stat->modified = sb.st_mtime;
-	stat->accessed = sb.st_atime;
-	stat->changed = sb.st_ctime;
+	stat->size = __part_sb.st_size;
+	stat->modified = __part_sb.st_mtime;
+	stat->accessed = __part_sb.st_atime;
+	stat->changed = __part_sb.st_ctime;
  out:
 	return rc;
 }
@@ -1565,7 +1583,7 @@ static int __part_obj_iter_cb(ods_t ods, ods_ref_t obj_ref, void *arg)
 		}
 		uuid_copy(ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 		ref.ref.obj = obj_ref;
-		sos_obj = __sos_init_obj(part->sos, schema, ods_obj, ref);
+		sos_obj = __sos_init_obj(part->sos, schema, part, ods_obj, ref);
 		if (!sos_obj)
 			sos_warn("SOS object could not be instantiated in attached partition.");
 	}
@@ -1758,8 +1776,8 @@ static int __remap_callback_fn(sos_part_t part, ods_obj_t ods_obj, sos_obj_t sos
 	ods_obj_update(ods_obj);
 	uarg->updated_count += 1;
 out:
-        ods_obj_put(ods_obj);
-        uarg->visited_count += 1;
+	ods_obj_put(ods_obj);
+	uarg->visited_count += 1;
 	return 0;
 }
 
@@ -1823,8 +1841,8 @@ static int __query_uuid_callback_fn(sos_part_t part, ods_obj_t ods_obj, sos_obj_
 	ue = container_of(rbn, struct uuid_entry, rbn);
 	ue->use_count += 1;
 out:
-        ods_obj_put(ods_obj);
-        uarg->visited_count += 1;
+	ods_obj_put(ods_obj);
+	uarg->visited_count += 1;
 	return 0;
 }
 

@@ -593,8 +593,9 @@ void sos_end_x(sos_t sos)
  */
 void sos_index_info(sos_index_t index, FILE *fp)
 {
-	ods_idx_info(index->primary_idx, fp);
-	ods_info(ods_idx_ods(index->primary_idx), fp, ODS_INFO_ALL);
+	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
+	ods_idx_info(iref->idx, fp);
+	ods_info(ods_idx_ods(iref->idx), fp, ODS_INFO_ALL);
 }
 
 /**
@@ -607,7 +608,8 @@ void sos_index_info(sos_index_t index, FILE *fp)
  */
 int sos_index_verify(sos_index_t index, FILE *fp)
 {
-	return ods_idx_verify(index->primary_idx, fp);
+	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
+	return ods_idx_verify(iref->idx, fp);
 }
 
 int print_schema(struct ods_rbn *n, void *fp_, int level)
@@ -1248,7 +1250,7 @@ out:
 /*
  * This function steals the reference count of the input ods_obj
  */
-sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
+sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, sos_part_t part, ods_obj_t ods_obj,
 				 sos_obj_ref_t obj_ref)
 {
 	sos_obj_t sos_obj;
@@ -1274,6 +1276,7 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 		return NULL;
 	uuid_copy(SOS_OBJ(ods_obj)->schema_uuid, schema->data->uuid);
 	sos_obj->sos = sos;
+	sos_obj->part = part;
 	sos_obj->obj = ods_obj;
 	sos_obj->obj_ref = obj_ref;
 	ods_atomic_inc(&schema->data->ref_count);
@@ -1287,13 +1290,13 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, ods_obj_t ods_o
 	return sos_obj;
 }
 
-sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, ods_obj_t ods_obj,
+sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, sos_part_t part, ods_obj_t ods_obj,
 			 sos_obj_ref_t obj_ref)
 {
 	sos_obj_t sos_obj;
 	if (sos)
 		pthread_mutex_lock(&sos->lock);
-	sos_obj = __sos_init_obj_no_lock(sos, schema, ods_obj, obj_ref);
+	sos_obj = __sos_init_obj_no_lock(sos, schema, part, ods_obj, obj_ref);
 	if (sos)
 		pthread_mutex_unlock(&sos->lock);
 	return sos_obj;
@@ -1339,7 +1342,7 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 	memset(ods_obj->as.ptr, 0, schema->data->obj_sz);
 	uuid_copy(obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 	obj_ref.ref.obj = ods_obj_ref(ods_obj);
-	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj, obj_ref);
+	sos_obj = __sos_init_obj(schema->sos, schema, NULL, ods_obj, obj_ref);
 	if (!sos_obj)
 		goto err_1;
 	/* Initialize array attributes to zero length */
@@ -1395,7 +1398,7 @@ sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_
 		uuid_copy(obj_ref.ref.part_uuid, SOS_PART_UDATA(part->udata_obj)->uuid);
 	obj_ref.ref.obj = ods_obj_ref(ods_obj);
  	memcpy(&ods_obj->as.bytes[sizeof(struct sos_obj_data_s)], data, data_size);
-	sos_obj = __sos_init_obj(schema->sos, schema, ods_obj, obj_ref);
+	sos_obj = __sos_init_obj(schema->sos, schema, NULL, ods_obj, obj_ref);
 	if (!sos_obj)
 		goto err_1;
 	return sos_obj;
@@ -1431,7 +1434,7 @@ sos_obj_t sos_obj_malloc(sos_schema_t schema)
 	if (!ods_obj)
 		goto err_0;
 	memset(ods_obj->as.ptr, 0, schema->data->obj_sz + array_data_sz);
-	return __sos_init_obj(NULL, schema, ods_obj, obj_ref);
+	return __sos_init_obj(NULL, schema, NULL, ods_obj, obj_ref);
 err_0:
 	return NULL;
 }
@@ -1571,7 +1574,6 @@ sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref)
 		return NULL;
 	}
 	ods_obj = ods_ref_as_obj(part->obj_ods, ref.ref.obj);
-	sos_part_put(part);
 	if (!ods_obj) {
 		errno = ENOENT;
 		return NULL;
@@ -1583,7 +1585,7 @@ sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref)
 	if (!schema)
 		return NULL;
 
-	return __sos_init_obj(sos, schema, ods_obj, ref);
+	return __sos_init_obj(sos, schema, part, ods_obj, ref);
 }
 
 /**
@@ -1668,6 +1670,7 @@ void sos_obj_put(sos_obj_t obj)
 			return;
 		}
 		ods_obj_put(obj->obj);
+		sos_part_put(obj->part);
 		pthread_mutex_lock(&sos->lock);
 		LIST_REMOVE(obj, entry);
 		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
@@ -1683,6 +1686,23 @@ void __sos_obj_put_no_lock(sos_obj_t obj)
 		ods_obj_put(obj->obj);
 		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
 	}
+}
+
+/*
+ * Find the ODS index from the partition in which an object
+ * is allocated.
+ */
+ods_idx_t __sos_idx_find(sos_index_t index, sos_obj_t obj)
+{
+	ods_idx_ref_t iref;
+	sos_part_t part = obj->part;
+	if (part) {
+		LIST_FOREACH(iref, &index->active_idx_list, entry) {
+			if (iref->part == part)
+				return iref->idx;
+		}
+	}
+	return NULL;
 }
 
 /**
@@ -1719,7 +1739,13 @@ int sos_obj_remove(sos_obj_t obj)
 			return ENOMEM;
 		}
 		ods_key_set(key, sos_value_as_key(value), key_sz);
-		rc = ods_idx_delete(index->primary_idx, key, &obj->obj_ref.idx_data);
+		ods_idx_t idx = __sos_idx_find(index, obj);
+		if (idx) {
+			rc = ods_idx_delete(idx, key, &obj->obj_ref.idx_data);
+		} else {
+			rc = ENOENT;
+			sos_error("The ODS idx for the object partition is missing.");
+		}
 		sos_key_put(key);
 		sos_value_put(value);
 		if (rc)
