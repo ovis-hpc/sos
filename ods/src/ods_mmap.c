@@ -310,9 +310,12 @@ static int init_obj(int obj_fd)
 static void __lock_init(ods_lock_t *lock)
 {
 	pthread_mutexattr_t attr;
-	pthread_mutexattr_init(&attr);
-	pthread_mutexattr_setpshared(&attr, 1);
-	pthread_mutex_init(&lock->mutex, &attr);
+	int rc = pthread_mutexattr_init(&attr);
+	assert(rc == 0);
+	rc = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+	assert(rc == 0);
+	rc = pthread_mutex_init(&lock->mutex, &attr);
+	assert(rc == 0);
 }
 
 static struct timespec default_wait = {
@@ -1886,7 +1889,7 @@ static int ods_mmap_destroy(ods_t ods)
 	return status;
 }
 
-int ods_mmap_begin(ods_t ods_, struct timespec *wait)
+static int ods_mmap_begin(ods_t ods_, struct timespec *wait)
 {
 	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_pgt_t pgt;
@@ -1929,7 +1932,7 @@ int ods_mmap_begin(ods_t ods_, struct timespec *wait)
 	return rc;
 }
 
-int ods_mmap_end(ods_t ods_)
+static int ods_mmap_end(ods_t ods_)
 {
 	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_pgt_t pgt;
@@ -1950,7 +1953,7 @@ int ods_mmap_end(ods_t ods_)
 	return rc;
 }
 
-pid_t ods_mmap_test(ods_t ods_)
+static pid_t ods_mmap_test(ods_t ods_)
 {
 	ods_mmap_t ods = (ods_mmap_t)ods_;
 	ods_pgt_t pgt;
