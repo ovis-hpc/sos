@@ -1,4 +1,4 @@
-/*
+/* -*- c-basic-offset : 8 -*-
  * Copyright (c) 2020 Open Grid Computing, Inc. All rights reserved.
  *
  * See the file COPYING at the top of this source tree for the terms
@@ -168,6 +168,11 @@ int ods_idx_destroy(const char *path)
 	return ods_destroy(path);
 }
 
+const char *ods_idx_path(ods_idx_t idx)
+{
+	return ods_path(idx->ods);
+}
+
 ods_idx_t ods_idx_open(const char *path, ods_perm_t o_flags)
 {
 	ods_idx_t idx;
@@ -211,7 +216,6 @@ ods_idx_t ods_idx_open(const char *path, ods_perm_t o_flags)
  err_0:
 	free(idx);
 	return NULL;
-
 }
 
 int ods_idx_stat(ods_idx_t idx, ods_idx_stat_t stat)

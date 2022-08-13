@@ -1276,7 +1276,10 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, sos_part_t part
 		return NULL;
 	uuid_copy(SOS_OBJ(ods_obj)->schema_uuid, schema->data->uuid);
 	sos_obj->sos = sos;
-	sos_obj->part = part;
+	if (part)
+		sos_obj->part = sos_part_get(part);
+	else
+		part = NULL;
 	sos_obj->obj = ods_obj;
 	sos_obj->obj_ref = obj_ref;
 	ods_atomic_inc(&schema->data->ref_count);
@@ -1762,7 +1765,7 @@ int sos_obj_remove(sos_obj_t obj)
  * function should only be called after all attributes that have
  * indexes have had their values set.
  *
-  * \param obj	Handle for the object to add
+ * \param obj	Handle for the object to add
  *
  * \retval 0	Success
  * \retval -1	An error occurred. Refer to errno for detail.

@@ -1111,6 +1111,7 @@ static sos_part_t __sos_part_by_name(sos_t sos, const char *name)
 		if (0 == strcmp(sos_part_name(part), name))
 			goto out;
 	}
+	errno = ENOENT;
 	part = NULL;
  out:
 	return part;
@@ -1643,11 +1644,16 @@ static int64_t uuid_comparator(void *a, const void *b, void *arg)
 	return uuid_compare(a, b);
 }
 
+/*
+ * UUID entry structure used to maintain fast lookup for UUID
+ * remapping and schema lookup
+ */
 struct uuid_entry {
-	uuid_t dst_uuid;	/* the destination uuid */
-	uuid_t src_uuid;	/* the object uuid */
-	size_t use_count;	/* the number of times the src_uuid was present */
-	struct ods_rbn rbn;	/* node with source uuid as key */
+	uuid_t dst_uuid;	/* The destination uuid */
+	uuid_t src_uuid;	/* The object uuid */
+	size_t use_count;	/* The number of times the src_uuid was present - */
+	sos_schema_t schema;	/* The container schema for this schema UUID */
+	struct ods_rbn rbn;	/* Node with source uuid as key */
 };
 
 static struct ods_rbt *__load_map(const char *dst_path, const char *src_path)
@@ -1882,4 +1888,78 @@ sos_part_uuid_entry_t sos_part_query_schema_uuid(sos_part_t part, size_t *count)
 		*count = uuid_array_count;
 
 	return uuid_array;
+}
+
+struct reindex_obj_iter_args_s {
+	struct ods_rbt *rbt;
+	sos_part_reindex_callback_fn cb_fn;
+	void *cb_arg;
+	size_t cb_obj_count;
+	long visited_count;	/* Number of objects visited */
+};
+
+static int __reindex_obj_callback_fn(sos_part_t part, ods_obj_t ods_obj, sos_obj_t sos_obj, void *arg)
+{
+	struct reindex_obj_iter_args_s *uarg = arg;
+	int rc = 0;
+
+	if (!sos_obj)
+		return ENOENT;
+
+	sos_obj_index(sos_obj);
+	sos_obj_put(sos_obj);
+	uarg->visited_count += 1;
+	if (0 == (uarg->visited_count % uarg->cb_obj_count))
+		rc = uarg->cb_fn(part, uarg->cb_arg, uarg->visited_count);
+	return rc;
+}
+
+size_t sos_part_reindex(sos_part_t part,
+			sos_part_reindex_callback_fn callback_fn, void *callback_arg,
+			size_t obj_count)
+{
+	char path[PATH_MAX-8];
+	char tmp_obj_path[PATH_MAX];
+	char tmp_pg_path[PATH_MAX];
+	struct reindex_obj_iter_args_s uarg;
+	struct ods_rbt rbt;
+	sos_schema_t s;
+	sos_attr_t a;
+	sos_t sos = part->sos;
+	if (!sos) {
+		errno = EINVAL;
+		return 0;
+	}
+
+	/* Destroy all of the indices in the partition */
+	pthread_mutex_lock(&sos->lock);
+	for (s = sos_schema_first(sos); s; s = sos_schema_next(s)) {
+		for (a = sos_schema_attr_first(s); a; a = sos_schema_attr_next(a)) {
+			int is_indexed = sos_attr_is_indexed(a);
+			if (!is_indexed)
+				continue;
+			sprintf(path, "%s/%s_%s_idx", sos_part_path(part),
+				sos_schema_name(s), sos_attr_name(a));
+			sprintf(tmp_pg_path, "%s.BE", path);
+			(void)unlink(tmp_pg_path);
+
+			snprintf(tmp_obj_path, PATH_MAX, "%s.DAT", (char *)path); /* lsos */
+			(void)unlink(tmp_obj_path);
+
+			snprintf(tmp_obj_path, PATH_MAX, "%s.OBJ", (char *)path); /* mmap */
+			(void)unlink(tmp_obj_path);
+		}
+	}
+	pthread_mutex_unlock(&sos->lock);
+	ods_rbt_init(&rbt, uuid_comparator, NULL);
+	uarg.rbt = &rbt;
+	uarg.visited_count = 0;
+	uarg.cb_fn = callback_fn;
+	uarg.cb_arg = callback_arg;
+	uarg.cb_obj_count = obj_count;
+
+	int rc = sos_part_obj_iter(part, NULL, __reindex_obj_callback_fn, &uarg);
+	if (rc)
+		errno = rc;
+	return uarg.visited_count;
 }

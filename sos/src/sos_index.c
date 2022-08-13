@@ -464,7 +464,6 @@ int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, v
 	}
 	return rc;
 }
-
 /**
  * \brief Add an object to an index
  *

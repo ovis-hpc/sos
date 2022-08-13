@@ -159,6 +159,12 @@ int ods_idx_destroy(const char *path);
 ods_idx_t ods_idx_open(const char *path, ods_perm_t o_perm);
 
 /**
+ * \brief Return the filesystem location of the index.
+ * \returns The path
+ */
+const char *ods_idx_path(ods_idx_t idx);
+
+/**
  * \brief Set run-time index option
  *
  * Set options that affect the behavior of the index API.  Run-time

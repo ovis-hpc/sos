@@ -56,3 +56,8 @@ bin_PROGRAMS += sos_part_modify
 sos_part_migrate_SOURCES = sos_part_migrate.c
 sos_part_migrate_LDADD = ../../ods/src/libods.la libsos.la -luuid
 bin_PROGRAMS += sos_part_migrate
+
+sos_part_reindex_SOURCES = sos_part_reindex.c
+sos_part_reindex_LDADD = ../../ods/src/libods.la libsos.la -luuid
+bin_PROGRAMS += sos_part_reindex
+

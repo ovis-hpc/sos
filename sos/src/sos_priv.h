@@ -238,13 +238,6 @@ typedef struct ods_idx_ref_s {
 struct sos_index_s {
 	char name[SOS_INDEX_NAME_LEN];
 	sos_t sos;
-#if 0
-	/*
-	 * The primary index. All inserts go here.
-	 */
-	ods_idx_t primary_idx;
-	sos_part_t primary_part;
-#endif
 	ods_atomic_t part_gn;		/* partition generation number */
 	ods_obj_t idx_obj;
 
@@ -488,6 +481,7 @@ ods_obj_t __sos_part_data_next(sos_t sos, ods_obj_t part_obj);
 void __sos_part_obj_put(sos_t sos, ods_obj_t part_obj);
 ods_obj_t __sos_part_obj_get(sos_t sos, ods_obj_t part_obj);
 int __sos_schema_open(sos_t sos, sos_schema_t schema);
+void __sos_schema_close(sos_t sos, sos_schema_t schema);
 int64_t __sos_schema_name_cmp(void *a, const void *b, void *);
 int64_t __sos_schema_id_cmp(void *a, const void *b, void *);
 void __sos_schema_reset(sos_t sos);

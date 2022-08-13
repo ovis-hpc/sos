@@ -525,6 +525,41 @@ typedef struct sos_part_uuid_entry_s {
  */
 sos_part_uuid_entry_t sos_part_query_schema_uuid(sos_part_t part, size_t *count);
 
+/**
+ * \brief The callback function periodically invoked by the
+ * sos_part_reindex() function.
+ *
+ * \param part The partition handle
+ * \param arg The callback_arg provided by the caller to the
+ * sos_part_reindex() function.
+ * \return !0 to cease iterating or zero to continue iterating
+ */
+typedef int (*sos_part_reindex_callback_fn)(sos_part_t part, void *arg, uint64_t obj_count);
+
+/**
+ * \brief Reindex all of the objects in a partition
+ *
+ * This function iterates through all of the objects in a partition
+ * and re-indexes them. If the partition is large, this function may
+ * take a very long time; so a callback function can be specified that
+ * is called every \c obj_count times an object is visited/re-indexed.
+ * This is convenient for providing a way to report status to the
+ * caller.
+ *
+ * The partition must be part of a container in order to be
+ * re-indexed
+ *
+ * \param part The partition handle.
+ * \param callback_fn The callback function. This may be NULL
+ * \param callback_arg A parameter provided to the callback function
+ * \param obj_count The number of objects to skip for each invocation
+ * of the callback function.
+ * \returns The number of objects reindexed.
+ */
+size_t sos_part_reindex(sos_part_t part,
+			sos_part_reindex_callback_fn callback_fn, void *callback_arg,
+			size_t obj_count);
+
 /** @} */
 /** @} */
 
@@ -676,6 +711,7 @@ sos_obj_t sos_index_find_min(sos_index_t index, sos_key_t *pkey);
 sos_obj_t sos_index_find_max(sos_index_t index, sos_key_t *pkey);
 int sos_index_commit(sos_index_t index, sos_commit_t flags);
 int sos_index_close(sos_index_t index, sos_commit_t flags);
+int sos_obj_index_reset(sos_obj_t obj);
 size_t sos_index_key_size(sos_index_t index);
 sos_key_t sos_index_key_new(sos_index_t index, size_t size);
 int sos_index_key_from_str(sos_index_t index, sos_key_t key, const char *str);
