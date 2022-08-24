@@ -169,6 +169,7 @@ typedef struct dsos_client_request_s {
 
 struct dsos_client_s {
 	CLIENT *client;
+	char *host;
 	pthread_mutex_t rpc_lock;
 	int client_id;
 	int shutdown;
@@ -874,9 +875,9 @@ static int send_request(dsos_client_t client, dsos_client_request_t rqst)
 	return 0;
  rpc_err:
 	snprintf(g_last_errmsg, sizeof(g_last_errmsg),
-		 "%s: failed on client %d with "
+		 "%s: failed on client %s[%d] with "
 		 "RPC error %d\n", op_name,
-		 client->client_id, rqst->rpc_err);
+		 client->host, client->client_id, rqst->rpc_err);
 	g_last_err = RPC_ERROR(rqst->rpc_err);
 	return RPC_ERROR(rqst->rpc_err);
  op_err:
@@ -984,6 +985,7 @@ dsos_session_t dsos_session_open(const char *config_file)
 		pthread_mutex_init(&client->rpc_lock, NULL);
 		client->client = clnt;
 		client->client_id = i;
+		client->host = strdup(session->hosts[i]);
 		client->shutdown = 0;
 		client->request_count = 0;
 		client->queue_depth = 0;
@@ -1015,7 +1017,7 @@ void dsos_container_commit(dsos_container_t cont)
 	;
 }
 
-int dsos_container_error(dsos_container_t cont, const char** err_msg)
+int dsos_container_error(dsos_container_t cont, char** err_msg)
 {
 	if (err_msg)
 		*err_msg = cont->err_msg;

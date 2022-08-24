@@ -1152,7 +1152,7 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 
 /*
  * Run through the attributes check if the where condition could
- * possible match
+ * possibly match
  */
 static int limit_check(struct ast *ast, sos_obj_t obj)
 {
@@ -1170,7 +1170,7 @@ static int limit_check(struct ast *ast, sos_obj_t obj)
 			v = sos_value_init(&v_, obj, limits->attr);
 			assert(v);
 			int rc = sos_value_cmp(v, limits->max_v);
-			if (rc >= 0) {
+			if (rc > 0) {
 				if (rc == 0) {
 					ast->succ_key[idx] = AST_KEY_MAX;
 				} else if (idx == 0) {
