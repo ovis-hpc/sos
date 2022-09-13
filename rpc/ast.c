@@ -335,7 +335,7 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 		term->kind = ASTV_CONST;
 		term->value = sos_value_init_const(&term->value_,
 						   SOS_TYPE_CHAR_ARRAY,
-						   strlen(token_str)+1,
+						   strlen(token_str),
 						   token_str);
 		break;
 	case ASTT_INTEGER:
@@ -1170,7 +1170,7 @@ static int limit_check(struct ast *ast, sos_obj_t obj)
 			v = sos_value_init(&v_, obj, limits->attr);
 			assert(v);
 			int rc = sos_value_cmp(v, limits->max_v);
-			if (rc > 0) {
+			if (rc >= 0) {
 				if (rc == 0) {
 					ast->succ_key[idx] = AST_KEY_MAX;
 				} else if (idx == 0) {
