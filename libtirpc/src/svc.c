@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2009, Sun Microsystems, Inc.
  * All rights reserved.
@@ -85,6 +84,21 @@ static void __xprt_do_unregister (SVCXPRT * xprt, bool_t dolock);
 /* ***************  SVCXPRT related stuff **************** */
 
 /*
+ * Cleanup all open transports
+ */
+void xprt_cleanup()
+{
+	int i;
+	rwlock_wrlock(&svc_fd_lock);
+	for (i = 0; i < svc_max_pollfd; ++i) {
+		if (svc_pollfd[i].fd != -1) {
+			__xprt_unregister_unlocked(__svc_xports[svc_pollfd[i].fd]);
+		}
+	}
+	rwlock_unlock(&svc_fd_lock);
+}
+
+/*
  * Activate a transport handle.
  */
 void
@@ -102,7 +116,7 @@ xprt_register (xprt)
     {
       __svc_xports = (SVCXPRT **) calloc (_rpc_dtablesize(), sizeof (SVCXPRT *));
       if (__svc_xports == NULL)
-            goto unlock;
+	    goto unlock;
     }
   if (sock < _rpc_dtablesize())
     {
@@ -112,31 +126,31 @@ xprt_register (xprt)
       __svc_xports[sock] = xprt;
       if (sock < FD_SETSIZE)
 	{
-          FD_SET (sock, &svc_fdset);
+	  FD_SET (sock, &svc_fdset);
 	  svc_maxfd = max (svc_maxfd, sock);
 	}
 
       /* Check if we have an empty slot */
       for (i = 0; i < svc_max_pollfd; ++i)
-        if (svc_pollfd[i].fd == -1)
-          {
-            svc_pollfd[i].fd = sock;
-            svc_pollfd[i].events = (POLLIN | POLLPRI |
-                                    POLLRDNORM | POLLRDBAND);
-            goto unlock;
-          }
+	if (svc_pollfd[i].fd == -1)
+	  {
+	    svc_pollfd[i].fd = sock;
+	    svc_pollfd[i].events = (POLLIN | POLLPRI |
+				    POLLRDNORM | POLLRDBAND);
+	    goto unlock;
+	  }
 
       new_svc_pollfd = (struct pollfd *) realloc (svc_pollfd,
-                                                  sizeof (struct pollfd)
-                                                  * (svc_max_pollfd + 1));
+						  sizeof (struct pollfd)
+						  * (svc_max_pollfd + 1));
       if (new_svc_pollfd == NULL) /* Out of memory */
-        goto unlock;
+	goto unlock;
       svc_pollfd = new_svc_pollfd;
       ++svc_max_pollfd;
 
       svc_pollfd[svc_max_pollfd - 1].fd = sock;
       svc_pollfd[svc_max_pollfd - 1].events = (POLLIN | POLLPRI |
-                                               POLLRDNORM | POLLRDBAND);
+					       POLLRDNORM | POLLRDBAND);
     }
 unlock:
   rwlock_unlock (&svc_fd_lock);
@@ -177,18 +191,18 @@ __xprt_do_unregister (xprt, dolock)
       __svc_xports[sock] = NULL;
       if (sock < FD_SETSIZE)
 	{
-          FD_CLR (sock, &svc_fdset);
+	  FD_CLR (sock, &svc_fdset);
 	  if (sock >= svc_maxfd)
-       	    {
-              for (svc_maxfd--; svc_maxfd >= 0; svc_maxfd--)
-                if (__svc_xports[svc_maxfd])
-                  break;
-            }
+	    {
+	      for (svc_maxfd--; svc_maxfd >= 0; svc_maxfd--)
+		if (__svc_xports[svc_maxfd])
+		  break;
+	    }
 	}
 
       for (i = 0; i < svc_max_pollfd; ++i)
-        if (svc_pollfd[i].fd == sock)
-          svc_pollfd[i].fd = -1;
+	if (svc_pollfd[i].fd == sock)
+	  svc_pollfd[i].fd = -1;
     }
   if (dolock)
     rwlock_unlock (&svc_fd_lock);
@@ -740,7 +754,7 @@ svc_getreq_common (fd)
        * If so, then break.
        */
       rwlock_rdlock (&svc_fd_lock);
-      
+
       if (xprt != __svc_xports[fd])
 	{
 	  rwlock_unlock (&svc_fd_lock);
@@ -771,14 +785,14 @@ svc_getreq_poll (pfdp, pollretval)
 
       if (p->fd != -1 && p->revents)
 	{
-          /* fd has input waiting */
-          if (p->revents & POLLNVAL)
+	  /* fd has input waiting */
+	  if (p->revents & POLLNVAL)
 	    xprt_unregister (__svc_xports[p->fd]);
-          else
-            svc_getreq_common (p->fd);
+	  else
+	    svc_getreq_common (p->fd);
 
-          if (++fds_found >= pollretval)
-            break;
+	  if (++fds_found >= pollretval)
+	    break;
 	}
     }
 }

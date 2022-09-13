@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2009, Sun Microsystems, Inc.
  * All rights reserved.
@@ -81,7 +80,7 @@ static void svc_vc_rendezvous_ops(SVCXPRT *);
 static void svc_vc_ops(SVCXPRT *);
 static bool_t svc_vc_control(SVCXPRT *xprt, const u_int rq, void *in);
 static bool_t svc_vc_rendezvous_control (SVCXPRT *xprt, const u_int rq,
-				   	     void *in);
+					     void *in);
 
 struct cf_rendezvous { /* kept in xprt->xp_p1 for rendezvouser */
 	u_int sendsize;
@@ -306,7 +305,7 @@ makefd_xprt(fd, sendsize, recvsize)
 	svc_vc_ops(xprt);  /* truely deals with calls */
 	xprt->xp_port = 0;  /* this is a connection, not a rendezvouser */
 	xprt->xp_fd = fd;
-        if (__rpc_fd2sockinfo(fd, &si) && __rpc_sockinfo2netid(&si, &netid))
+	if (__rpc_fd2sockinfo(fd, &si) && __rpc_sockinfo2netid(&si, &netid))
 		xprt->xp_netid = strdup(netid);
 
 	xprt_register(xprt);
@@ -340,6 +339,21 @@ again:
 			goto again;
 		return (FALSE);
 	}
+
+	/* Create a new process to handle this connection's RPC */
+	pid_t pid = fork();
+	if (pid) {
+		/* Clock the new socket in the parent */
+		close(sock);
+		return (FALSE);
+	}
+
+	/*
+	 * Close all open xprts in the child so our poll loop won't
+	 * compete with the parent
+	 */
+	xprt_cleanup();
+
 	/*
 	 * make a new transporter (re-uses xprt)
 	 */
@@ -453,7 +467,7 @@ svc_vc_control(xprt, rq, in)
 	struct svc_rderrhandler *inp, *outp;
 	switch (rq) {
 		case SVCSET_RDERRHANDLER:
-	 		inp = (struct svc_rderrhandler *)in;
+			inp = (struct svc_rderrhandler *)in;
 			 if (xprt->xp_p2 == NULL)
 				outp = malloc(sizeof *inp);
 			else

@@ -234,6 +234,19 @@ extern void	svc_unreg(const rpcprog_t, const rpcvers_t);
 #endif
 
 /*
+ * Transport cleanup
+ *
+ * void xprt_cleanup()
+ */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void xprt_cleanup();
+#ifdef __cplusplus
+}
+#endif
+
+/*
  * Transport registration.
  *
  * xprt_register(xprt)

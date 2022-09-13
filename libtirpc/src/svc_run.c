@@ -43,14 +43,43 @@
 #include <rpc/rpc.h>
 #include "rpc_com.h"
 #include <sys/select.h>
+#include <sys/wait.h>
+
+void *wait_proc(void *arg)
+{
+  int wstatus;
+  pthread_t t = pthread_self();
+  pthread_setname_np(t, "svc_run:waitpid");
+  for (;;) {
+    pid_t pid = waitpid(-1, &wstatus, 0);
+    if (pid == -1)
+      {
+	if (errno != ECHILD)
+	  {
+	    fprintf (stderr, "wait_proc: waitpid returned with error %d\n", errno);
+	  }
+	sleep(10);
+	continue;
+      }
+  }
+  return NULL;
+}
 
 void
 svc_run()
 {
-  int i;
+  int i, quit;
   struct pollfd *my_pollfd = NULL;
   int last_max_pollfd = 0;
+  pthread_t wait_thread;
 
+  /* Add a thread to wait for exiting children */
+  i = pthread_create(&wait_thread, NULL, wait_proc, NULL);
+  if (i)
+    {
+      warn ("svc_run: - could not create wait thread\n");
+      return;
+    }
   for (;;) {
     int max_pollfd = svc_max_pollfd;
     if (max_pollfd == 0 && svc_pollfd == NULL)
@@ -70,12 +99,19 @@ svc_run()
           my_pollfd = new_pollfd;
           last_max_pollfd = max_pollfd;
         }
-
+      quit = 1;
       for (i = 0; i < max_pollfd; ++i)
         {
           my_pollfd[i].fd = svc_pollfd[i].fd;
+          if (svc_pollfd[i].fd != -1)
+            quit = 0;
           my_pollfd[i].events = svc_pollfd[i].events | POLLRDHUP;
           my_pollfd[i].revents = 0;
+        }
+      if (quit)
+        {
+          /* Exiting because pollfd is empty */
+          break;
         }
 
       switch (i = poll (my_pollfd, max_pollfd, -1))
