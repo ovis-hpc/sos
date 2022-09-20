@@ -46,18 +46,18 @@ typedef unsigned long dsos_schema_id;
 typedef unsigned long dsos_part_id;
 
 /* Type for API that return an object list */
-typedef struct dsos_obj_entry *dsos_obj_link;
 struct dsos_obj_entry {
     dsos_container_id cont_id;
     dsos_part_id part_id;
     dsos_schema_id schema_id;
     dsos_obj_value value;
-    dsos_obj_link next;
+    dsos_obj_entry *next;
 };
 
-union dsos_obj_list_res switch (int error) {
+typedef dsos_obj_entry *dsos_obj_array;
+union dsos_obj_array_res switch (int error) {
     case 0:
-        dsos_obj_link obj_list;
+        dsos_obj_entry obj_array<>;
     default:
         void;
 };
@@ -165,8 +165,7 @@ union dsos_query_select_res switch (int error) {
 
 struct dsos_query_next_result {
     int format; /* The format of the data in the object list */
-    int count;  /* Number of records in the object list */
-    dsos_obj_link obj_list;
+    dsos_obj_entry obj_array<>;
 };
 
 union dsos_query_next_res switch (int error) {
@@ -238,17 +237,17 @@ program SOSDB {
         /* Iterator operations */
         dsos_iter_res ITER_CREATE(dsos_container_id, dsos_schema_id, dsos_attr_name) = 40;
         int ITER_DELETE(dsos_container_id, dsos_iter_id) = 41;
-        dsos_obj_list_res ITER_BEGIN(dsos_container_id, dsos_iter_id) = 42;
-        dsos_obj_list_res ITER_END(dsos_container_id, dsos_iter_id) = 43;
-        dsos_obj_list_res ITER_FIND_GLB(dsos_container_id, dsos_iter_id) = 44;
-        dsos_obj_list_res ITER_FIND_LUB(dsos_container_id, dsos_iter_id) = 45;
-        dsos_obj_list_res ITER_NEXT(dsos_container_id, dsos_iter_id) = 46;
-        dsos_obj_list_res ITER_PREV(dsos_container_id, dsos_iter_id) = 47;
-        dsos_obj_list_res ITER_FIND(dsos_container_id, dsos_iter_id) = 48;
+        dsos_obj_array_res ITER_BEGIN(dsos_container_id, dsos_iter_id) = 42;
+        dsos_obj_array_res ITER_END(dsos_container_id, dsos_iter_id) = 43;
+        dsos_obj_array_res ITER_FIND_GLB(dsos_container_id, dsos_iter_id) = 44;
+        dsos_obj_array_res ITER_FIND_LUB(dsos_container_id, dsos_iter_id) = 45;
+        dsos_obj_array_res ITER_NEXT(dsos_container_id, dsos_iter_id) = 46;
+        dsos_obj_array_res ITER_PREV(dsos_container_id, dsos_iter_id) = 47;
+        dsos_obj_array_res ITER_FIND(dsos_container_id, dsos_iter_id) = 48;
 	dsos_iter_stats_res ITER_STATS(dsos_container_id, dsos_iter_id) = 49;
 
         /* Object operations */
-        dsos_obj_create_res OBJ_CREATE(dsos_obj_link) = 50;
+        dsos_obj_create_res OBJ_CREATE(dsos_obj_array) = 50;
         int OBJ_DELETE(dsos_container_id, dsos_obj_id) = 51;
 
         /* Query operations */

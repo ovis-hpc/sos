@@ -151,6 +151,7 @@ struct dsos_iter {
 	dsos_container_id cont_id;
 	dsos_schema_id schema_id;
 	sos_iter_t iter;
+	uint32_t count;		/* number of objects to return at a time */
 	struct ods_rbn rbn;
 };
 
@@ -180,6 +181,7 @@ struct dsos_query {
 		DSOSQ_STATE_NEXT,
 		DSOSQ_STATE_EMPTY
 	} state;
+	uint32_t count;		/* number of objects to return at a time */
 	dsos_container_id cont_id;
 	struct ast *ast;
 	struct ods_rbn rbn;
@@ -1252,7 +1254,7 @@ out_0:
 	return TRUE;
 }
 
-bool_t obj_create_1_svc(dsos_obj_link obj_list, dsos_obj_create_res *res, struct svc_req *req)
+bool_t obj_create_1_svc(dsos_obj_array obj_array, dsos_obj_create_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
@@ -1260,7 +1262,7 @@ bool_t obj_create_1_svc(dsos_obj_link obj_list, dsos_obj_create_res *res, struct
 	struct dsos_schema *schema;
 	dsos_obj_entry *obj_e;
 
-	obj_e = obj_list;
+	obj_e = obj_array;
 	while (obj_e) {
 		client = get_client(obj_e->cont_id);
 		if (!client) {
@@ -1401,36 +1403,34 @@ out_0:
 	return TRUE;
 }
 
-static int __make_obj_list(dsos_obj_list_res *result, struct dsos_iter *diter)
+static int __make_obj_array(dsos_obj_array_res *result, struct dsos_iter *diter)
 {
-	int count = 5;
+	int count;
+	int rc = 0;
 	struct dsos_obj_entry *entry = NULL;
 	result->error = DSOS_ERR_ITER_EMPTY;
-	int rc = 0;
-	while (!rc && count) {
+	count = 0;
+	while (!rc && count < diter->count) {
 		result->error = 0;
 		sos_obj_t obj = sos_iter_obj(diter->iter);
 		if (!obj) {
 			result->error = errno;
 			goto err_0;
 		}
-		if (entry) {
-			entry->next = malloc(sizeof *entry);
-			entry = entry->next;
-		} else {
-			entry = malloc(sizeof *entry);
-			result->dsos_obj_list_res_u.obj_list = entry;
-		}
+		entry = &result->dsos_obj_array_res_u.obj_array.obj_array_val[count];
 		entry->next = NULL;
+		result->dsos_obj_array_res_u.obj_array.obj_array_len = count + 1;
+
 		entry->cont_id = diter->cont_id;
 		entry->schema_id = diter->schema_id;
-		count --;
+
 		void *obj_data = sos_obj_ptr(obj);
 		entry->value.dsos_obj_value_len = sos_obj_size(obj);
 		entry->value.dsos_obj_value_val = malloc(entry->value.dsos_obj_value_len);
 		memcpy(entry->value.dsos_obj_value_val, obj_data, entry->value.dsos_obj_value_len);
 		sos_obj_put(obj);
-		if (count)
+		count ++;
+		if (count < diter->count)
 			rc = sos_iter_next(diter->iter);
 	}
 	return 0;
@@ -1438,7 +1438,7 @@ err_0:
 	return -1;
 }
 
-bool_t iter_begin_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_list_res *res, struct svc_req *req)
+bool_t iter_begin_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
@@ -1462,7 +1462,7 @@ bool_t iter_begin_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_l
 
 	rc = sos_iter_begin(diter->iter);
 	if (!rc) {
-		rc = __make_obj_list(res, diter);
+		rc = __make_obj_array(res, diter);
 	} else {
 		res->error = rc;
 	}
@@ -1472,7 +1472,7 @@ out_0:
 	return TRUE;
 }
 
-bool_t iter_end_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_list_res *res, struct svc_req *req)
+bool_t iter_end_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
@@ -1496,7 +1496,7 @@ bool_t iter_end_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_lis
 
 	rc = sos_iter_end(diter->iter);
 	if (!rc) {
-		rc = __make_obj_list(res, diter);
+		rc = __make_obj_array(res, diter);
 	} else {
 		res->error = rc;
 	}
@@ -1506,7 +1506,7 @@ out_0:
 	return TRUE;
 }
 
-bool_t iter_next_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_list_res *res, struct svc_req *req)
+bool_t iter_next_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
@@ -1530,7 +1530,7 @@ bool_t iter_next_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_li
 
 	rc = sos_iter_next(diter->iter);
 	if (!rc) {
-		rc = __make_obj_list(res, diter);
+		rc = __make_obj_array(res, diter);
 	} else {
 		res->error = rc;
 	}
@@ -1540,25 +1540,25 @@ out_0:
 	return TRUE;
 }
 
-bool_t iter_prev_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
+bool_t iter_prev_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
 	return TRUE;
 }
-bool_t iter_find_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
+bool_t iter_find_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
 	return TRUE;
 }
-bool_t iter_find_glb_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
+bool_t iter_find_glb_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
 	return TRUE;
 }
-bool_t iter_find_lub_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_list_res *res, struct svc_req *req)
+bool_t iter_find_lub_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
@@ -1673,19 +1673,22 @@ out_0:
 	return TRUE;
 }
 
-#define QUERY_OBJECT_COUNT	4096
-static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
-				dsos_query_next_res *result)
+#define QUERY_OBJECT_COUNT	(65536)
+static int __make_query_obj_array(struct dsos_session *client, struct ast *ast,
+				  dsos_query_next_res *result)
 {
 	enum ast_eval_e eval;
 	sos_iter_t iter = ast->sos_iter;
 	int count = QUERY_OBJECT_COUNT;
 	struct dsos_obj_entry *entry = NULL;
 	result->error = DSOS_ERR_QUERY_EMPTY;
-	int rc = 0;
+	int obj_id, rc = 0;
 	memset(result, 0, sizeof(*result));
+	result->dsos_query_next_res_u.result.obj_array.obj_array_val =
+		calloc(count, sizeof(dsos_obj_entry));
 	ast_attr_entry_t attr_e;
 
+	obj_id = 0;
 	while (!rc && count) {
 		sos_obj_t obj = sos_iter_obj(iter);
 		if (!obj) {
@@ -1709,14 +1712,8 @@ static int __make_query_obj_list(struct dsos_session *client, struct ast *ast,
 			sos_obj_attr_copy(result_obj, attr_e->res_attr, obj, attr_e->sos_attr);
 		}
 		result->error = 0;
-		if (entry) {
-			entry->next = malloc(sizeof *entry);
-			entry = entry->next;
-		} else {
-			entry = malloc(sizeof *entry);
-			result->dsos_query_next_res_u.result.obj_list = entry;
-		}
-		result->dsos_query_next_res_u.result.count += 1;
+		entry = &result->dsos_query_next_res_u.result.obj_array.obj_array_val[obj_id++];
+		result->dsos_query_next_res_u.result.obj_array.obj_array_len += 1;
 		result->dsos_query_next_res_u.result.format = 0;
 		entry->next = NULL;
 		entry->cont_id = client->handle;
@@ -1784,7 +1781,7 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 		}
 		if (rc)
 			goto empty;
-		rc = __make_query_obj_list(client, query->ast, res);
+		rc = __make_query_obj_array(client, query->ast, res);
 		if (!rc)
 			query->state = DSOSQ_STATE_NEXT;
 		else
@@ -1794,7 +1791,7 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 		rc = sos_iter_next(query->ast->sos_iter);
 		if (rc)
 			goto empty;
-		rc = __make_query_obj_list(client, query->ast, res);
+		rc = __make_query_obj_array(client, query->ast, res);
 		if (rc)
 			goto empty;
 		break;

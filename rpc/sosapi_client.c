@@ -2080,10 +2080,11 @@ static int iter_obj_add(dsos_iter_t iter, int client_id)
 	dsos_container_id cont_id = iter->cont->handles[client_id];
 	dsos_iter_id iter_id = iter->handles[client_id];
 	enum clnt_stat rpc_err = 0;
-	dsos_obj_list_res obj_res;
+	dsos_obj_array_res obj_res;
 	dsos_obj_entry *obj_e;
 	int count = 0;
 	dsos_client_t client = &iter->cont->sess->clients[client_id];
+
 	memset(&obj_res, 0, sizeof(obj_res));
 	pthread_mutex_lock(&client->rpc_lock);
 	switch (iter->action) {
@@ -2106,10 +2107,12 @@ static int iter_obj_add(dsos_iter_t iter, int client_id)
 	if (obj_res.error)
 		return obj_res.error;
 
+	if (!obj_res.dsos_obj_array_res_u.obj_array.obj_array_len)
+		return ENOENT;
+
 	/* Build the objects from the list */
-	obj_e = obj_res.dsos_obj_list_res_u.obj_list;
-	while (obj_e) {
-		dsos_obj_entry *next_obj_e = obj_e->next;
+	for (count = 0; count < obj_res.dsos_obj_array_res_u.obj_array.obj_array_len; count++) {
+		obj_e = &obj_res.dsos_obj_array_res_u.obj_array.obj_array_val[count];
 
 		dsos_obj_ref_t obj_ref = malloc(sizeof *obj_ref);
 		assert(obj_ref);
@@ -2125,13 +2128,7 @@ static int iter_obj_add(dsos_iter_t iter, int client_id)
 		ods_rbt_ins(&iter->obj_tree, &obj_ref->rbn);
 		iter->counts[client_id] += 1;
 		count += 1;
-		free(obj_e->value.dsos_obj_value_val);
-		free(obj_e);
-
-		obj_e = next_obj_e;
 	}
-	if (!count)
-		return ENOENT;
 	return 0;
 }
 
@@ -2444,11 +2441,15 @@ query_next_complete_fn(dsos_client_t client,
 		       dsos_res_t *res)
 {
 	dsos_obj_entry *obj_e;
+	u_int count;
 
-	/* Build the objects from the list */
-	obj_e = request->query_next.res.dsos_query_next_res_u.result.obj_list;
-	while (obj_e) {
-		dsos_obj_entry *next_obj_e = obj_e->next;
+	/* Build the objects from the array */
+	for (count = 0;
+	     count < request->
+		     query_next.res.dsos_query_next_res_u.result.obj_array.obj_array_len;
+	     count++) {
+		obj_e = &request->query_next.res.dsos_query_next_res_u.
+			result.obj_array.obj_array_val[count];
 		dsos_obj_ref_t obj_ref = malloc(sizeof *obj_ref);
 		assert(obj_ref);
 		obj_ref->client_id = request->client->client_id;
@@ -2464,7 +2465,6 @@ query_next_complete_fn(dsos_client_t client,
 		ods_rbt_ins(&request->query_next.query->obj_tree, &obj_ref->rbn);
 		pthread_mutex_unlock(&request->query_next.query->obj_tree_lock);
 		request->query_next.query->counts[obj_ref->client_id] += 1;
-		obj_e = next_obj_e;
 	}
 	xdr_free((xdrproc_t)xdr_dsos_query_next_res, (char *)&request->query_next.res);
 	return 0;
