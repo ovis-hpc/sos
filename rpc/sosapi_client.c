@@ -969,7 +969,8 @@ dsos_session_t dsos_session_open(const char *config_file)
 		CLIENT *clnt = clnt_create(session->hosts[i], SOSDB, SOSVERS, "tcp");
 		if (clnt == NULL) {
 			fprintf(stderr, "Error creating client %d\n", i);
-			exit (1);
+			errno = ENOTCONN;
+			return NULL;
 		}
 		struct timeval timeout = {
 			600, 0
