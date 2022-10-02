@@ -1166,7 +1166,7 @@ int main(int argc, char *argv[])
 	if (history_path[0] == '\0')
 		snprintf(history_path, sizeof(history_path), "%s/%s", h_path, h_file);
 	rc = read_history(history_path);
-	if (rc)
+	if (rc && rc != ENOENT)
 		printf("warning: read_history returned %d\n", rc);
 
 	if (attach_file) {
@@ -1195,7 +1195,8 @@ int main(int argc, char *argv[])
 		s = stripwhite(line);
 		if (*s) {
 			add_history(s);
-			execute_line(s);
+			if (*s != '#')
+				execute_line(s);
 		}
 		free(line);
 	}
