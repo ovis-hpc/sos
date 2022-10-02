@@ -41,7 +41,7 @@
 #define ODS_COMMIT_BUFLEN (128 * 1024)
 #define ODS_PAGE_DIRTY	1
 #define ODS_PAGE_CLEAN	2
-#define LSOS_DEFAULT_MAP_SIZE (4 * 1024 * 1024)
+#define LSOS_DEFAULT_MAP_SIZE (1024 * 1024)
 
 static void read_map_pages(ods_map_t map);
 static size_t ref_size(ods_lsos_t ods, ods_ref_t ref);
@@ -721,7 +721,11 @@ static void commit_map_pages(ods_map_t map)
 	}
 	if (commit_buf) {
 		flush_commit_buffer(map, commit_buf, commit_fileoff, commit_bufoff);
-		msync(map->ods->pg_table, map->ods->pg_sz, MS_SYNC);
+		int rc = msync(map->ods->pg_table, map->ods->pg_sz, MS_SYNC);
+		if (rc) {
+			ods_lerror("Error %d in %s msyncing map %p of length %ld MB\n",
+				   rc, __func__, map->ods->pg_table, map->ods->pg_sz);
+		}
 		free(commit_buf);
 	}
 }
@@ -1180,8 +1184,10 @@ static int ods_lsos_extend(ods_t ods_, size_t sz)
 	ods->pg_gen = ods->pg_table->pg_gen;
 
 	rc = msync(ods->pg_table, ods->pg_sz, MS_SYNC);
-	assert(rc == 0);
-	rc = 0;
+	if (rc) {
+		ods_lerror("Error %d in %s msyncing map %p of length %ld MB\n",
+			   rc, __func__, ods->pg_table, ods->pg_sz);
+	}
  out:
 	__pgt_unlock(ods);
 	__ods_unlock(ods_);

@@ -903,7 +903,11 @@ static int del_map_fn(struct ods_rbn *rbn, void *arg, int l)
 	struct del_fn_arg_s *darg = arg;
 	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
 	LIST_INSERT_HEAD(darg->del_q, map, entry);
-	msync(map->data, map->map.len, MS_ASYNC | MS_INVALIDATE);
+	int rc = msync(map->data, map->map.len, MS_ASYNC | MS_INVALIDATE);
+	if (rc) {
+		ods_lerror("Error %d in %s msyncing map %p of length %ld\n",
+			   rc, __func__, map->data, map->map.len);
+	}
 	return 0;
 }
 
@@ -1590,7 +1594,11 @@ static void free_pages(ods_mmap_t ods, uint64_t pg_no)
 static int commit_map_fn(struct ods_rbn *rbn, void *arg, int l)
 {
 	ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
-	msync(map->data, map->map.len, (int)(unsigned long)arg);
+	int rc = msync(map->data, map->map.len, (int)(unsigned long)arg);
+	if (rc) {
+		ods_lerror("Error %d in %s msyncing map %p of length %ld\n",
+			   rc, __func__, map->data, map->map.len);
+	}
 	return 0;
 }
 
@@ -2141,7 +2149,11 @@ static int q4_del_fn(struct ods_rbn *rbn, void *arg, int l)
 		 * cycle, delete the map
 		 */
 		LIST_INSERT_HEAD(darg->del_q, map, entry);
-		msync(map->data, map->map.len, MS_ASYNC | MS_INVALIDATE);
+		int rc = msync(map->data, map->map.len, MS_ASYNC | MS_INVALIDATE);
+		if (rc) {
+			ods_lerror("Error %d in %s msyncing map %p of length %ld\n",
+				   rc, __func__, map->data, map->map.len);
+		}
 	}
 	return 0;
 }
@@ -2158,7 +2170,11 @@ static uint64_t ods_mmap_flush_data(ods_t ods_, int keep_time)
 		__ods_lock(ods_);
 		ODS_RBT_FOREACH(rbn, &ods->map_tree) {
 			ods_map_t map = container_of(rbn, struct ods_map_s, rbn);
-			msync(map->data, map->map.len, MS_ASYNC | MS_INVALIDATE);
+			int rc = msync(map->data, map->map.len, MS_ASYNC | MS_INVALIDATE);
+			if (rc) {
+				ods_lerror("Error %d in %s msyncing map %p of length %ld MB\n",
+					   rc, __func__, map->data, map->map.len);
+			}
 		}
 		__ods_unlock(ods_);
 		return 0;
