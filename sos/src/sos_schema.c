@@ -994,9 +994,10 @@ sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_
 		if (!array)
 			goto err;
 		array->count = count;
+		val->obj = NULL;
+		val->type = sos_attr_type(attr);
 		val->attr = attr;
 		val->data = (sos_value_data_t)array;
-		val->obj = NULL;
 		return val;
 	}
 

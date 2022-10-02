@@ -390,6 +390,7 @@ static cmp_fn_t cmp_fn_table[] = {
  */
 int sos_value_cmp(sos_value_t a, sos_value_t b)
 {
+	assert(a->type == b->type);
 	if (a->type < sizeof(cmp_fn_table)/sizeof(cmp_fn_table[0]))
 		return cmp_fn_table[a->type](a, b, sos_value_size(a));
 	return a == b;
