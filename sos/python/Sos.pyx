@@ -6960,29 +6960,45 @@ cdef class SqlQuery:
                 data = np.zeros([ self.c_row_count ],
                                 dtype=np.dtype('U{0}'.format(self.c_max_array)))
             elif atyp == SOS_TYPE_INT16_ARRAY:
-                data = np.zeros([ self.c_row_count, self.c_max_array ],
-                                dtype=np.dtype(np.int16))
+                data = np.empty([ self.c_row_count ], dtype=object)
+                for r in range(0, self.c_row_count):
+                    data[r] = np.zeros([ self.c_max_array ],
+                                       dtype=np.dtype(np.int16))
             elif atyp == SOS_TYPE_INT32_ARRAY:
-                data = np.zeros([ self.c_row_count, self.c_max_array ],
-                                dtype=np.dtype(np.int32))
+                data = np.empty([ self.c_row_count ], dtype=object)
+                for r in range(0, self.c_row_count):
+                    data[r] = np.zeros([ self.c_max_array ],
+                                       dtype=np.dtype(np.int32))
             elif atyp == SOS_TYPE_INT64_ARRAY:
-                data = np.zeros([ self.c_row_count, self.c_max_array ],
-                                dtype=np.dtype(np.int64))
+                data = np.empty([ self.c_row_count ], dtype=object)
+                for r in range(0, self.c_row_count):
+                    data[r] = np.zeros([ self.c_max_array ],
+                                       dtype=np.dtype(np.int64))
             elif atyp == SOS_TYPE_UINT16_ARRAY:
-                data = np.zeros([ self.c_row_count, self.c_max_array ],
-                                dtype=np.dtype(np.uint16))
+                data = np.empty([ self.c_row_count ], dtype=object)
+                for r in range(0, self.c_row_count):
+                    data[r] = np.zeros([ self.c_max_array ],
+                                       dtype=np.dtype(np.uint16))
             elif atyp == SOS_TYPE_UINT32_ARRAY:
-                data = np.zeros([ self.c_row_count, self.c_max_array ],
-                                dtype=np.dtype(np.uint32))
+                data = np.empty([ self.c_row_count ], dtype=object)
+                for r in range(0, self.c_row_count):
+                    data[r] = np.zeros([ self.c_max_array ],
+                                       dtype=np.dtype(np.uint32))
             elif atyp == SOS_TYPE_UINT64_ARRAY:
-                data = np.zeros([ self.c_row_count, self.c_max_array ],
-                                dtype=np.dtype(np.uint64))
+                data = np.empty([ self.c_row_count ], dtype=object)
+                for r in range(0, self.c_row_count):
+                    data[r] = np.zeros([ self.c_max_array ],
+                                       dtype=np.dtype(np.uint64))
             elif atyp == SOS_TYPE_FLOAT_ARRAY:
-                data = np.zeros([ self.c_row_count, self.c_max_array ],
-                                dtype=np.dtype(np.float32))
+                data = np.empty([ self.c_row_count ], dtype=object)
+                for r in range(0, self.c_row_count):
+                    data[r] = np.zeros([ self.c_max_array ],
+                                       dtype=np.dtype(np.float32))
             elif atyp == SOS_TYPE_DOUBLE_ARRAY:
-                data = np.zeros([ self.c_row_count, self.c_max_array ],
-                                dtype=np.dtype(np.float64))
+                data = np.empty([ self.c_row_count ], dtype=object)
+                for r in range(0, self.c_row_count):
+                    data[r] = np.zeros([ self.c_max_array ],
+                                       dtype=np.dtype(np.float64))
             else:
                 continue
                 # raise ValueError(f"Invalid attribute type {atyp} for DataFrame encoding")

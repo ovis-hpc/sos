@@ -295,7 +295,8 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 			default:
 				ast->result = ASTP_UNBALANCED_PAREN;
 				ast->pos = *ppos;
-				snprintf(ast->error_msg, sizeof(ast->error_msg), "Expected ')' but got '%s'", token_str);
+				snprintf(ast->error_msg, sizeof(ast->error_msg),
+					 "Expected ')' but got '%s'", token_str);
 				ast_term_destroy(ast, term);
 				term = NULL;
 				rparen = 1;
