@@ -140,7 +140,7 @@ typedef struct sos_part_udata_s {
 	char desc[SOS_PART_DESC_LEN];
 	uuid_t uuid;		/* UUID for this partition */
 	ods_atomic_t ref_count;	/* Containers that are attached to this partition */
-	uint32_t is_primary;	/* !0 if the partition is primary in a container */
+	uint32_t is_reserved;	/* not used, here for backward compatibility */
 	uint32_t is_busy;	/* !0 if another container is changing this partition */
 	uint64_t user_id;	/* user id (uid_t) */
 	uint64_t group_id;	/* group id (gid_t) */
@@ -154,6 +154,7 @@ typedef struct sos_part_udata_s {
 struct sos_part_s {
 	struct sos_ref_s ref_count;
 	sos_t sos;
+	char *path;		/* The path to the partition on disk */
 	ods_obj_t ref_obj;	/* sos_part_ref_s object */
 	ods_obj_t udata_obj;	/* sos_part_udata_s object */
 	ods_t obj_ods;		/* ODS where objects are stored */

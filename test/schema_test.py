@@ -104,7 +104,7 @@ class SchemaTest(SosTestCase):
             self.assertFalse(a.is_indexed())
 
     def test_05_many_schema(self):
-        for i in range(0, 10 * 1024):
+        for i in range(0, 512):
             schema = Sos.Schema()
             schema.from_template('schema_{0}'.format(i), attr_list)
             schema.add(self.db)

@@ -114,7 +114,7 @@ if __name__ == "__main__":
     logging.basicConfig(format=LOGFMT)
     logger.setLevel(logging.INFO)
     sos_suite = unittest.TestSuite()
-    print(len(tests))
+
     for t in tests:
         sos_suite.addTest(unittest.makeSuite(t))
 

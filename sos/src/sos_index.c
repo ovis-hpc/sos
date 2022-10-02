@@ -136,7 +136,6 @@ int sos_index_new(sos_t sos, const char *name,
 		  const char *idx_args)
 {
 	int rc;
-	char tmp_path[PATH_MAX];
 	sos_obj_ref_t idx_ref;
 	ods_obj_t idx_obj;
 	SOS_KEY(idx_key);
@@ -187,26 +186,12 @@ int sos_index_new(sos_t sos, const char *name,
 	rc = ods_idx_insert(sos->idx_idx, idx_key, idx_ref.idx_data);
 	if (rc)
 		goto err_0;
-
-	/* Indices are stored in <container>/<partition>/<name>_idx */
-	sos_part_t part = __sos_primary_obj_part(sos);
-	if (!part) {
-		errno = ENOSPC;
-		goto err_0;
-	}
-	sprintf(tmp_path, "%s/%s_idx", sos_part_path(part), name);
-	rc = ods_idx_create(tmp_path, sos->o_perm, sos->o_mode, idx_type, key_type, idx_args);
-	if (rc)
-		goto err_1;
 	ods_obj_put(idx_obj);
  out:
 	ods_unlock(sos->idx_ods, 0);
 	ods_commit(sos->idx_ods, ODS_COMMIT_SYNC);
 	ods_idx_commit(sos->idx_idx, ODS_COMMIT_SYNC);
 	return rc;
- err_1:
-	sos_ref_reset(idx_ref);
-	ods_idx_delete(sos->idx_idx, idx_key, &idx_ref.idx_data);
  err_0:
 	ods_obj_delete(idx_obj);
 	ods_obj_put(idx_obj);

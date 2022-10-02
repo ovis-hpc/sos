@@ -1276,10 +1276,11 @@ sos_obj_t __sos_init_obj_no_lock(sos_t sos, sos_schema_t schema, sos_part_t part
 		return NULL;
 	uuid_copy(SOS_OBJ(ods_obj)->schema_uuid, schema->data->uuid);
 	sos_obj->sos = sos;
-	if (part)
+	if (part) {
 		sos_obj->part = sos_part_get(part);
-	else
-		part = NULL;
+	} else {
+		sos_obj->part = NULL;
+	}
 	sos_obj->obj = ods_obj;
 	sos_obj->obj_ref = obj_ref;
 	ods_atomic_inc(&schema->data->ref_count);
@@ -1672,12 +1673,13 @@ void sos_obj_put(sos_obj_t obj)
 			free(obj);
 			return;
 		}
-		ods_obj_put(obj->obj);
-		sos_part_put(obj->part);
 		pthread_mutex_lock(&sos->lock);
 		LIST_REMOVE(obj, entry);
 		LIST_INSERT_HEAD(&sos->obj_free_list, obj, entry);
 		pthread_mutex_unlock(&sos->lock);
+
+		sos_part_put(obj->part);
+		ods_obj_put(obj->obj);
 	}
 }
 void __sos_obj_put_no_lock(sos_obj_t obj)

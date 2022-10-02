@@ -237,6 +237,7 @@ static void __sos_part_free(void *free_arg)
 	ods_obj_put(part->ref_obj);
 	if (part->obj_ods)
 		ods_close(part->obj_ods, ODS_COMMIT_ASYNC);
+	free(part->path);
 	free(part);
 }
 /**
@@ -304,7 +305,6 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 	ods_obj_t udata = ods_get_user_data(ods);
 	SOS_PART_UDATA(udata)->signature = SOS_PART_SIGNATURE;
 	strncpy(SOS_PART_UDATA(udata)->desc, part_desc, SOS_PART_DESC_LEN);
-	SOS_PART_UDATA(udata)->is_primary = 0;
 	SOS_PART_UDATA(udata)->is_busy = 0;
 	SOS_PART_UDATA(udata)->ref_count = 0;
 	SOS_PART_UDATA(udata)->user_id = euid;
@@ -422,6 +422,9 @@ static int __part_open(sos_part_t part, const char *path,
 	int rc;
 
 	assert(0 == (o_perm & SOS_PERM_CREAT));
+	if (part->path)
+		free(part->path);
+	part->path = strdup(path);
 	snprintf(tmp_path, sizeof(tmp_path), "%s/objects", path);
 	ods = ods_open(tmp_path, o_perm);
 	if (!ods)
@@ -582,33 +585,25 @@ struct iter_args {
 void __make_part_offline(sos_t sos, sos_part_t part)
 {
 	SOS_PART_REF(part->ref_obj)->state = SOS_PART_STATE_OFFLINE;
-	SOS_PART_UDATA(part->udata_obj)->is_primary = 0;
 	__sos_schema_reset(part->sos);
 }
 
 static void __make_part_active(sos_t sos, sos_part_t part)
 {
 	SOS_PART_REF(part->ref_obj)->state = SOS_PART_STATE_ACTIVE;
-	SOS_PART_UDATA(part->udata_obj)->is_primary = 0;
 	__sos_schema_reset(part->sos);
 }
 
 static int __make_part_primary(sos_t sos, sos_part_t part)
 {
-	/* Check if the requested partition is primary in any other container */
-	if (SOS_PART_UDATA(part->udata_obj)->is_primary)
-		return EBUSY;
-
 	/* Fix-up the current primary */
 	if (sos->primary_part) {
 		SOS_PART_REF(sos->primary_part->ref_obj)->state = SOS_PART_STATE_ACTIVE;
-		SOS_PART_UDATA(sos->primary_part->udata_obj)->is_primary = 0;
 		sos_ref_put(&sos->primary_part->ref_count, "primary_part");
 	}
 	/* Make part_obj primary */
 	SOS_PART_REF(part->ref_obj)->state = SOS_PART_STATE_PRIMARY;
 	SOS_PART_REF_UDATA(sos->part_ref_udata)->primary = ods_obj_ref(part->udata_obj);
-	SOS_PART_UDATA(part->udata_obj)->is_primary = 1;
 	sos->primary_part = part;
 	sos_ref_get(&sos->primary_part->ref_count, "primary_part");
 	__sos_schema_reset(part->sos);
@@ -698,20 +693,8 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 		goto out;
 	}
 	cur_state = SOS_PART_REF(part->ref_obj)->state;
-	/*
-	 * If the new state is PRIMARY, the partition in question cannot
-	 * be primary in any other container
-	 */
-	if (new_state == SOS_PART_STATE_PRIMARY
-		&& SOS_PART_UDATA(part->udata_obj)->is_primary) {
-		rc = EEXIST;
-		goto out;
-	}
-	/*
-	 * The PRIMARY partition cannot have it's state changed. It is only
-	 * changed by making another parition PRIMARY
-	 */
-	if (cur_state == SOS_PART_STATE_PRIMARY) {
+	if ((cur_state == SOS_PART_STATE_PRIMARY)
+	    && (new_state != SOS_PART_STATE_PRIMARY)) {
 		rc = EINVAL;
 		goto out;
 	}
@@ -785,12 +768,13 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 	for (part_obj = __sos_part_ref_first(sos);
 	     part_obj; part_obj = __sos_part_ref_next(sos, part_obj)) {
 		new = 1;
-		/* Check if we already have this partition in thelist*/
+		/* Check if we already have this partition in the list*/
 		TAILQ_FOREACH(part, &sos->part_list, entry) {
-			if (strcmp(ods_path(part->obj_ods), SOS_PART_REF(part_obj)->path)) {
+			if (strcmp(part->path, SOS_PART_REF(part_obj)->path)) {
 				continue;
 			}
 			new = 0;
+			break;
 		}
 		if (!new) {
 			if (SOS_PART_REF(part_obj)->state == SOS_PART_STATE_PRIMARY) {
