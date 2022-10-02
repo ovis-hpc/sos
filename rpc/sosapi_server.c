@@ -1312,6 +1312,7 @@ bool_t obj_delete_1_svc(dsos_container_id cont, dsos_obj_id obj, int *res, struc
 	return TRUE;
 }
 
+#define DSOS_ITER_OBJ_COUNT	4096
 bool_t iter_create_1_svc(dsos_container_id cont_id, dsos_schema_id schema_id, dsos_attr_name attr_name,
 			dsos_iter_res *res, struct svc_req *rqstp)
 {
@@ -1356,6 +1357,7 @@ bool_t iter_create_1_svc(dsos_container_id cont_id, dsos_schema_id schema_id, ds
 	diter->cont_id = cont_id;
 	diter->schema_id = schema_id;
 	diter->iter = iter;
+	diter->count = DSOS_ITER_OBJ_COUNT;
 	diter->handle = get_next_handle();
 	ods_rbn_init(&diter->rbn, &diter->handle);
 	ods_rbt_ins(&client->iter_tree, &diter->rbn);
@@ -1408,6 +1410,11 @@ static int __make_obj_array(dsos_obj_array_res *result, struct dsos_iter *diter)
 	int count;
 	int rc = 0;
 	struct dsos_obj_entry *entry = NULL;
+	memset(result, 0, sizeof(*result));
+	result->dsos_obj_array_res_u.obj_array.obj_array_len = 0;
+	result->dsos_obj_array_res_u.obj_array.obj_array_val =
+		calloc(diter->count, sizeof(*entry));
+	assert(result->dsos_obj_array_res_u.obj_array.obj_array_val);
 	result->error = DSOS_ERR_ITER_EMPTY;
 	count = 0;
 	while (!rc && count < diter->count) {

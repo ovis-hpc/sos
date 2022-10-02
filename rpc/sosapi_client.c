@@ -453,7 +453,7 @@ int submit_wait(dsos_session_t sess, uint64_t client_mask,
 			continue;
 		dsos_client_t client = &sess->clients[client_id];
 
-		request = malloc(sizeof *request);
+		request = calloc(1, sizeof *request);
 		if (!request)
 			goto err_0;
 
