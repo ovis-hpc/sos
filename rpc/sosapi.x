@@ -197,9 +197,9 @@ union dsos_query_destroy_res switch (int error) {
     default:
         string error_msg<>;
 };
-struct dsos_timeval {
+struct dsos_timespec {
     long tv_sec;
-    long tv_usec;
+    long tv_nsec;
 };
 union dsos_transaction_res switch (int error) {
     case 0:
@@ -214,8 +214,9 @@ program SOSDB {
         dsos_open_res OPEN(string, int, int) = 10;
         int CLOSE(dsos_container_id) = 11;
         int COMMIT(dsos_container_id) = 12;
-        dsos_transaction_res TRANSACTION_BEGIN(dsos_container_id, dsos_timeval) = 13;
+        dsos_transaction_res TRANSACTION_BEGIN(dsos_container_id, dsos_timespec) = 13;
         dsos_transaction_res TRANSACTION_END(dsos_container_id) = 14;
+        int DESTROY(dsos_container_id) = 15;
 
         /* Schema operations */
         dsos_schema_res SCHEMA_CREATE(dsos_container_id, dsos_schema_spec) = 20;

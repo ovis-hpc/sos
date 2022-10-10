@@ -79,7 +79,7 @@ extern dsos_name_array_t dsos_part_query(dsos_container_t cont);
 extern int dsos_part_chown(dsos_part_t part, uid_t uid, gid_t gid);
 extern int dsos_part_chmod(dsos_part_t part, int perm);
 
-extern int dsos_transaction_begin(dsos_container_t cont, struct timeval *timeout);
+extern int dsos_transaction_begin(dsos_container_t cont, struct timespec *timeout);
 extern int dsos_transaction_end(dsos_container_t cont);
 extern int dsos_obj_create(dsos_container_t cont, dsos_part_t part,
 	dsos_schema_t schema, sos_obj_t obj);

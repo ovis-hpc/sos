@@ -447,7 +447,7 @@ out:
 	return TRUE;
 }
 
-bool_t transaction_begin_1_svc(dsos_container_id cont, dsos_timeval tv, dsos_transaction_res *res, struct svc_req *rqstp)
+bool_t transaction_begin_1_svc(dsos_container_id cont, dsos_timespec tv, dsos_transaction_res *res, struct svc_req *rqstp)
 {
 	if (!authenticate_request(rqstp, __func__))
 		return FALSE;
@@ -1637,7 +1637,9 @@ out_0:
 	return TRUE;
 }
 
-bool_t query_select_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_query query_str, dsos_query_select_res *res, struct svc_req *rqst)
+bool_t query_select_1_svc(dsos_container_id cont_id, dsos_query_id query_id,
+			  dsos_query query_str, dsos_query_select_res *res,
+			  struct svc_req *rqst)
 {
 	if (!authenticate_request(rqst, __func__))
 		return FALSE;

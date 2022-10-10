@@ -127,7 +127,7 @@ typedef struct dsos_client_request_s {
 
 		struct transaction_begin_rqst_s {
 			dsos_container_t cont;
-			dsos_timeval timeout;
+			dsos_timespec timeout;
 			dsos_transaction_res res;
 		} transaction_begin;
 
@@ -403,7 +403,7 @@ static void format_request_va(dsos_client_request_t request, va_list ap)
 	case REQ_TRANSACTION_BEGIN:
 		memset(&request->transaction_begin.res, 0, sizeof(request->transaction_begin.res));
 		request->transaction_begin.cont = va_arg(ap, dsos_container_t);
-		request->transaction_begin.timeout = va_arg(ap, dsos_timeval);
+		request->transaction_begin.timeout = va_arg(ap, dsos_timespec);
 		break;
 	case REQ_TRANSACTION_END:
 		memset(&request->transaction_end.res, 0, sizeof(request->transaction_begin.res));
@@ -942,6 +942,13 @@ dsos_session_t dsos_session_open(const char *config_file)
 	host_count = 0;
 	while (NULL != (s = fgets(hostname, sizeof(hostname), f))) {
 		if (hostname[0] == '#')
+			/* Comment line */
+			continue;
+		if (hostname[0] == '\0')
+			/* Empty line */
+			continue;
+		if (hostname[0] == '\n')
+			/* Empty line */
 			continue;
 		host_count += 1;
 	}
@@ -956,6 +963,13 @@ dsos_session_t dsos_session_open(const char *config_file)
 	fseek(f, 0L, SEEK_SET);
 	while (NULL != (s = fgets(hostname, sizeof(hostname), f))) {
 		if (hostname[0] == '#')
+			/* Comment line */
+			continue;
+		if (hostname[0] == '\0')
+			/* Empty line */
+			continue;
+		if (hostname[0] == '\n')
+			/* Empty line */
 			continue;
 		/* Strip the newline if present */
 		char *s = strstr(hostname, "\n");
@@ -1786,13 +1800,13 @@ static void x_clear(struct timespec *ts)
  * the return code to ensure that a transaction was successffully begun.
  *
  * @param cont The container handle
- * @param timeout Pointer to a timeval structure specifying how long to
+ * @param timeout Pointer to a timespec structure specifying how long to
  *                wait. If this value is NULL, the function will wait
  *                indefinitely.
  * @return ETIMEDOUT if the timeout expires before the transaction could be opened
  * @return 0 The transaction is open
  */
-int dsos_transaction_begin(dsos_container_t cont, struct timeval *timeout)
+int dsos_transaction_begin(dsos_container_t cont, struct timespec *timeout)
 {
 	int client_id;
 	int rc = 0;
@@ -2432,6 +2446,8 @@ int dsos_query_select(dsos_query_t query, const char *clause)
 		return rc;
 	if (res.any_err == 0)
 		query->state = DSOS_QUERY_SELECT;
+	else
+		snprintf(g_last_errmsg, sizeof(g_last_errmsg), query->err_msg);
 	return res.any_err;
 }
 
