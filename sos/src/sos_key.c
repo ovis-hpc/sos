@@ -156,7 +156,17 @@ sos_key_t __sos_key_maybe_new(sos_key_t key, int required_size)
  * For example:
  *
  * int int_array[] = { 1, 2, 3, 4 };
- * sos_key_t key = sos_key_for_attr(NULL, array_attr, 4, int_array);
+ * sos_key_t key = sos_key_for_attr(NULL, array_attr, int_array, 4);
+ *
+ * If the attribute is an array, the array data is first followed by
+ * the number of elements in the array. The reason for this order is that
+ * it allows the same function call to be used for both scalars and arrays,
+ * specifically:
+ * '''
+ *      int count = (sos_attr_is_array(attr) ? array_elements(data) : 0);
+ *      sos_key_t = sos_key_for_attr(NULL, attr, data, count)
+ * '''
+ * If the attr is not ann array, then count is simply ignored.
  *
  * \param key A key to use or NULL if one is to be allocated.
  * \param attr The schema attribute describing the value of the key

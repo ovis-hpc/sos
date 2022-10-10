@@ -1129,6 +1129,40 @@ sos_type_t sos_value_type(sos_value_t v)
 	return v->type;
 }
 
+const char *sos_value_type_name(sos_type_t t)
+{
+	static const char *names[] = {
+		[SOS_TYPE_INT16] = "int16",
+		[SOS_TYPE_INT32] = "int32",
+		[SOS_TYPE_INT64] = "int64",
+		[SOS_TYPE_UINT16] = "uint16",
+		[SOS_TYPE_UINT32] = "uint32",
+		[SOS_TYPE_UINT64] = "uint64",
+		[SOS_TYPE_FLOAT] = "float",
+		[SOS_TYPE_DOUBLE] = "double",
+		[SOS_TYPE_LONG_DOUBLE] = "long_double",
+		[SOS_TYPE_TIMESTAMP] = "timestamp",
+		[SOS_TYPE_OBJ] = "obj_ref",
+		[SOS_TYPE_STRUCT] = "struct",
+		[SOS_TYPE_JOIN] = "join",
+		[SOS_TYPE_BYTE_ARRAY] = "byte_array",
+		[SOS_TYPE_CHAR_ARRAY] = "char_array",
+		[SOS_TYPE_INT16_ARRAY] = "int16_array",
+		[SOS_TYPE_INT32_ARRAY] = "int32_array",
+		[SOS_TYPE_INT64_ARRAY] = "int64_array",
+		[SOS_TYPE_UINT16_ARRAY] = "uint16_array",
+		[SOS_TYPE_UINT32_ARRAY] = "uint32_array",
+		[SOS_TYPE_UINT64_ARRAY] = "uint64_array",
+		[SOS_TYPE_FLOAT_ARRAY] = "float_array",
+		[SOS_TYPE_DOUBLE_ARRAY] = "double_array",
+		[SOS_TYPE_LONG_DOUBLE_ARRAY] = "long_double_array",
+		[SOS_TYPE_OBJ_ARRAY] = "obj_array"
+	};
+	if (t >= 0 && t <= sizeof(names) / sizeof(names[0]))
+		return names[t];
+	return "bad type";
+}
+
 /**
  * \brief Get the size of an attribute value
  *

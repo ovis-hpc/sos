@@ -336,8 +336,8 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 		term->kind = ASTV_CONST;
 		term->value = sos_value_init_const(&term->value_,
 						   SOS_TYPE_CHAR_ARRAY,
-						   strlen(token_str),
-						   token_str);
+						   token_str,
+						   strlen(token_str));
 		break;
 	case ASTT_INTEGER:
 		term = calloc(1, sizeof(*term));
@@ -373,7 +373,8 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
  * Update the attributes value min and max. If the value_term is not a
  * CONST, ignore the update
  */
-static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, struct ast_term *value_term, enum ast_token_e op)
+static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
+			      struct ast_term *value_term, enum ast_token_e op)
 {
 	struct ast_attr_limits *limits;
 	const char *attr_name;
@@ -382,10 +383,20 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 
 	/* Ignore values that are not constants */
 	if (value_term->kind != ASTV_CONST)
-		return;
+		return 0;
 
 	attr_name = sos_attr_name(attr_term->attr->attr);
 	attr_type = sos_attr_type(attr_term->attr->attr);
+
+	/* Ensure that the attribute has the same type as value */
+	if (attr_type != sos_value_type(value_term->value)) {
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			 "The attribute %s with type %s does match the constant of type %s",
+			 attr_name, sos_value_type_name(attr_type),
+			 sos_value_type_name(sos_value_type(value_term->value)));
+		ast->result = ASTP_BAD_CONST_TYPE;
+		return ast->result;
+	}
 
 	rbn = ods_rbt_find(&ast->attr_tree, attr_name);
 	if (!rbn) {
@@ -478,6 +489,7 @@ static void update_attr_limits(struct ast *ast, struct ast_term *attr_term, stru
 	default:
 		break;
 	}
+	return 0;
 }
 
 /*
@@ -829,10 +841,13 @@ static int __resolve_sos_entities(struct ast *ast)
 	struct ast_term_binop *binop;
 	LIST_FOREACH(binop, &ast->binop_list, entry) {
 		/* Update the attribute min/max values in the attr tree */
-		if (binop->lhs->kind == ASTV_ATTR)
-			update_attr_limits(ast, binop->lhs, binop->rhs, binop->op);
-		else if (binop->rhs->kind == ASTV_ATTR)
-			update_attr_limits(ast, binop->rhs, binop->lhs, binop->op);
+	 	if (binop->lhs->kind == ASTV_ATTR) {
+			if (update_attr_limits(ast, binop->lhs, binop->rhs, binop->op))
+				return ast->result;
+		} else if (binop->rhs->kind == ASTV_ATTR) {
+			if (update_attr_limits(ast, binop->rhs, binop->lhs, binop->op))
+				return ast->result;
+		}
 	}
 	/*
 	 * Run through the attributes in the 'where' clause; compute the
@@ -1100,10 +1115,10 @@ static sos_value_t ast_term_visit(struct ast *ast, struct ast_term *term, sos_ob
 		if (lhs->obj) {
 			char *s = sos_array_data(lhs, char_);
 			size_t slen = sos_array_count(lhs);
-			if (s[slen-1] != '\0' && NULL == rhs->obj) {
+			if (slen && s[slen-1] != '\0' && NULL == rhs->obj) {
 				size_t tlen = sos_array_count(rhs);
 				char *t = sos_array_data(rhs, char_);
-				if (t[tlen-1] == '\0')
+				if (tlen && t[tlen-1] == '\0')
 					rhs->data->array.count -= 1;
 			}
 		}
@@ -1518,7 +1533,7 @@ sos_key_t __sos_key_from_const(sos_key_t key, sos_attr_t attr, struct ast_attr_l
 		return sos_key_for_attr(key, attr, data->prim.timestamp_);
 	case SOS_TYPE_BYTE_ARRAY:
 	case SOS_TYPE_STRING:
-		return sos_key_for_attr(key, attr, data->array.count, data->array.data.char_);
+		return sos_key_for_attr(key, attr, data->array.data.char_, data->array.count);
 	case SOS_TYPE_OBJ:
 	case SOS_TYPE_STRUCT:
 	case SOS_TYPE_JOIN:
