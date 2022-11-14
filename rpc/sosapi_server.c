@@ -415,17 +415,53 @@ bool_t close_1_svc(uint64_t handle, int *res, struct svc_req *req)
 		return FALSE;
 	pthread_mutex_lock(&client_tree_lock);
 	rbn = ods_rbt_find(&client_tree, &handle);
-	pthread_mutex_unlock(&client_tree_lock);
 	if (!rbn)
 		goto out;
 	client = container_of(rbn, struct dsos_session, rbn);
 	session_close(client);
 	/* Remove the client from the client tree */
+	ods_rbt_del(&client_tree, rbn);
 	*res = 0;
 out:
+	pthread_mutex_unlock(&client_tree_lock);
 	return TRUE;
 }
-	/* Clean up any open iterators */
+
+bool_t destroy_1_svc(char *path, int *res, struct svc_req *req)
+{
+	struct authsys_parms *sys_cred;
+	uid_t euid;
+	gid_t egid;
+	char err_msg[256];
+	char *lpath;
+
+	if (!authenticate_request(req, __func__))
+		return FALSE;
+
+	read_directory();
+
+	/* Map the specified path to the local path */
+	lpath = get_container_path(path);
+	if (lpath)
+		path = lpath;
+
+	switch(req->rq_cred.oa_flavor) {
+	case AUTH_SYS:
+		sys_cred = (struct authsys_parms *) req->rq_clntcred;
+		euid = sys_cred->aup_uid;
+		egid = sys_cred->aup_gid;
+		syslog(LOG_INFO, "DSOS DESTROY(path %s, uid %d, gid %d)\n",
+		       path, euid, egid);
+		break;
+	default:
+		svcerr_weakauth(req->rq_xprt);
+		return FALSE;
+	}
+
+	/* TODO: Remove all files associated with the local instance of the container. */
+	*res = 0;
+	return TRUE;
+}
 
 bool_t commit_1_svc(uint64_t handle, int *res, struct svc_req *req)
 {

@@ -26,6 +26,11 @@ class SosTestCase(unittest.TestCase):
         return Sos.BE_MMOS
 
     @classmethod
+    def session(cls):
+        """Set up a D/SOS Session"""
+        cls.session = Sos.Session("test_session.cfg")
+
+    @classmethod
     def setUpDb(cls, db_name):
         global _sos_test_debug
         cls.db = Sos.Container()

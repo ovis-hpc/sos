@@ -367,6 +367,15 @@ cdef class DsosSchema(Schema):
         self.c_dschema = <dsos_schema_t>NULL
         self.dcont = None
 
+    def obj_create(self, obj_):
+        cdef int rc
+        cdef Object obj = obj_
+        rc = dsos_obj_create(self.dcont.c_cont, NULL,
+                             <dsos_schema_t>self.c_dschema,
+                             <sos_obj_t>obj.c_obj)
+        if rc:
+            raise ValueError(f"Error {rc} creating object of type {str(self)}")
+
 cdef class DsosContainer:
     cdef object session
     cdef dsos_container_t c_cont
@@ -445,11 +454,13 @@ cdef class DsosContainer:
         dschema = DsosSchema(self)
         c_dschema = dsos_schema_create(self.c_cont, schema.c_schema, &c_res)
         if c_dschema != NULL:
+            dschema.dcont = self
             dschema.c_dschema = c_dschema
             dschema.c_schema = dsos_schema_local(c_dschema)
         else:
             err = dsos_container_error(self.c_cont, &msg)
             raise ValueError(f"Error {err} {msg.decode()}")
+
         return dschema
 
     def schema_query(self):
@@ -646,6 +657,24 @@ cdef class DsosContainer:
                     call to next(). The default is 4096 rows.
         """
         return SqlQuery(self, row_limit)
+
+    def transaction_begin(self, wait_secs=None):
+        cdef int rc
+        cdef timespec tv
+        if wait_secs:
+            tv.tv_secs = int(wait_secs)
+            tv.tv_nsecs = 0
+            rc = dsos_transaction_begin(self.c_cont, &tv)
+        else:
+            rc = dsos_transaction_begin(self.c_cont, NULL)
+        if rc != 0:
+            raise ValueError(f"Error {rc} attempting to start a transaction")
+
+    def transaction_end(self):
+        cdef int rc
+        rc = dsos_transaction_end(self.c_cont)
+        if rc != 0:
+            raise ValueError(f"Error {rc} attempting to start a transaction")
 
 cdef class DsosPartState:
     cdef int state_
@@ -4629,14 +4658,14 @@ cdef set_BYTE_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int sz = len(val)
     check_len(c_data, sz)
     t = type(val)
-    if t != bytearray:
+    if t != bytearray and t != bytes:
         if t == str:
             val = val.encode()
         elif t == list:
             val = bytearray(val)
         else:
             raise ValueError(f"BYTE_ARRAY accepts only "
-                             "str, list, and bytearray, not {t}")
+                             f"str, list, and bytearray, not {t}")
     s = val
     memcpy(c_data.array.data.byte_, s, sz);
 
@@ -6876,7 +6905,7 @@ cdef class SqlQuery:
 
         c_rc = dsos_query_select(<dsos_query_t>self.c_query, sql.encode())
         if c_rc != 0:
-            raise ValueError(f"Error {c_rc} returned by select clause '{sql}'")
+            raise ValueError(f"Error {c_rc} returned by select clause '{sql}'\n{dsos_last_errmsg().decode()}")
         self.c_schema = dsos_query_schema(self.c_query)
         if self.c_schema == NULL:
             raise ValueError("The select returned no schema")

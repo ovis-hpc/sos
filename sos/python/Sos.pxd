@@ -611,6 +611,8 @@ cdef extern from "sos/sos.h":
     sos_value_data_t sos_obj_attr_data(sos_obj_t obj, sos_attr_t attr, sos_obj_t *arr_obj)
     void sos_value_put(sos_value_t value)
     int sos_value_cmp(sos_value_t a, sos_value_t b)
+    sos_type_t sos_value_type(sos_value_t value)
+    const char *sos_value_type_name(sos_type_t t)
     size_t sos_value_size(sos_value_t value)
     sos_value_data_t sos_value_data_new(sos_type_t typ, size_t count)
     void sos_value_data_del(sos_value_data_t vd)
@@ -815,6 +817,9 @@ cdef extern from "dsos.h":
         char **names
     ctypedef dsos_name_array_s *dsos_name_array_t
 
+    const char *dsos_last_errmsg()
+    const int dsos_last_error()
+
     void dsos_session_close(dsos_session_t sess)
     dsos_session_t dsos_session_open(const char *config_file)
     void dsos_container_close(dsos_container_t cont)
@@ -850,7 +855,7 @@ cdef extern from "dsos.h":
     int dsos_schema_attr_count(dsos_schema_t schema)
     sos_attr_t dsos_schema_attr_by_id(dsos_schema_t schema, int attr_id)
     sos_attr_t dsos_schema_attr_by_name(dsos_schema_t schema, const char *name)
-    int dsos_transaction_begin(dsos_container_t cont, dsos_res_t *res)
+    int dsos_transaction_begin(dsos_container_t cont, timespec *ts)
     int dsos_transaction_end(dsos_container_t cont)
     int dsos_obj_create(dsos_container_t cont, dsos_part_t part, dsos_schema_t schema, sos_obj_t obj)
     dsos_iter_t dsos_iter_create(dsos_container_t cont, dsos_schema_t schema, const char *attr_name)

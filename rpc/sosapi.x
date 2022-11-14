@@ -216,7 +216,7 @@ program SOSDB {
         int COMMIT(dsos_container_id) = 12;
         dsos_transaction_res TRANSACTION_BEGIN(dsos_container_id, dsos_timespec) = 13;
         dsos_transaction_res TRANSACTION_END(dsos_container_id) = 14;
-        int DESTROY(dsos_container_id) = 15;
+        int DESTROY(string) = 15;
 
         /* Schema operations */
         dsos_schema_res SCHEMA_CREATE(dsos_container_id, dsos_schema_spec) = 20;
