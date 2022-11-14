@@ -379,6 +379,7 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 	struct ast_attr_limits *limits;
 	const char *attr_name;
 	sos_type_t attr_type;
+	sos_type_t value_type;
 	struct ods_rbn *rbn;
 
 	/* Ignore values that are not constants */
@@ -387,15 +388,35 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 
 	attr_name = sos_attr_name(attr_term->attr->attr);
 	attr_type = sos_attr_type(attr_term->attr->attr);
+	value_type = sos_value_type(value_term->value);
 
 	/* Ensure that the attribute has the same type as value */
-	if (attr_type != sos_value_type(value_term->value)) {
-		snprintf(ast->error_msg, sizeof(ast->error_msg),
-			 "The attribute %s with type %s does match the constant of type %s",
-			 attr_name, sos_value_type_name(attr_type),
-			 sos_value_type_name(sos_value_type(value_term->value)));
-		ast->result = ASTP_BAD_CONST_TYPE;
-		return ast->result;
+	switch (attr_type) {
+	case SOS_TYPE_INT16:
+	case SOS_TYPE_UINT16:
+		if (value_type != SOS_TYPE_INT16 && value_type != SOS_TYPE_UINT16)
+			goto type_err;
+		break;
+	case SOS_TYPE_INT32:
+	case SOS_TYPE_UINT32:
+		if (value_type != SOS_TYPE_INT32 && value_type != SOS_TYPE_UINT32)
+			goto type_err;
+		break;
+	case SOS_TYPE_INT64:
+	case SOS_TYPE_UINT64:
+		if (value_type != SOS_TYPE_INT64 && value_type != SOS_TYPE_UINT64)
+			goto type_err;
+		break;
+	case SOS_TYPE_FLOAT:
+	case SOS_TYPE_DOUBLE:
+		if (value_type != SOS_TYPE_FLOAT && value_type != SOS_TYPE_DOUBLE)
+			goto type_err;
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+	case SOS_TYPE_TIMESTAMP:
+	default:
+		if (attr_type != sos_value_type(value_term->value))
+			goto type_err;
 	}
 
 	rbn = ods_rbt_find(&ast->attr_tree, attr_name);
@@ -490,6 +511,13 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 		break;
 	}
 	return 0;
+ type_err:
+	snprintf(ast->error_msg, sizeof(ast->error_msg),
+		 "The attribute %s with type %s does match the constant of type %s",
+		 attr_name, sos_value_type_name(attr_type),
+		 sos_value_type_name(sos_value_type(value_term->value)));
+	ast->result = ASTP_BAD_CONST_TYPE;
+	return ast->result;
 }
 
 /*
