@@ -414,6 +414,11 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 		break;
 	case SOS_TYPE_LONG_DOUBLE:
 	case SOS_TYPE_TIMESTAMP:
+		if (value_type != SOS_TYPE_FLOAT && value_type != SOS_TYPE_DOUBLE && value_type != SOS_TYPE_INT64
+			&& value_type != SOS_TYPE_UINT64 && value_type != SOS_TYPE_INT32 && value_type != SOS_TYPE_UINT32
+			&& value_type != SOS_TYPE_TIMESTAMP && value_type != SOS_TYPE_LONG_DOUBLE)
+			goto type_err;
+		break;
 	default:
 		if (attr_type != sos_value_type(value_term->value))
 			goto type_err;
