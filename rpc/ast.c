@@ -390,30 +390,47 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 	attr_type = sos_attr_type(attr_term->attr->attr);
 	value_type = sos_value_type(value_term->value);
 
-	/* Ensure that the attribute has the same type as value */
+	/* Ensure that the attribute type is compatible with the constant value */
 	switch (attr_type) {
 	case SOS_TYPE_INT16:
 	case SOS_TYPE_UINT16:
-		if (value_type != SOS_TYPE_INT16 && value_type != SOS_TYPE_UINT16)
-			goto type_err;
-		break;
 	case SOS_TYPE_INT32:
 	case SOS_TYPE_UINT32:
-		if (value_type != SOS_TYPE_INT32 && value_type != SOS_TYPE_UINT32)
-			goto type_err;
-		break;
 	case SOS_TYPE_INT64:
 	case SOS_TYPE_UINT64:
-		if (value_type != SOS_TYPE_INT64 && value_type != SOS_TYPE_UINT64)
+		if (value_type < SOS_TYPE_INT16 || value_type > SOS_TYPE_UINT64)
 			goto type_err;
 		break;
 	case SOS_TYPE_FLOAT:
 	case SOS_TYPE_DOUBLE:
-		if (value_type != SOS_TYPE_FLOAT && value_type != SOS_TYPE_DOUBLE)
+		switch (value_type) {
+		case SOS_TYPE_FLOAT:
+		case SOS_TYPE_DOUBLE:
+		case SOS_TYPE_INT64:
+		case SOS_TYPE_UINT64:
+		case SOS_TYPE_INT32:
+		case SOS_TYPE_UINT32:
+			break;
+		default:
 			goto type_err;
+		}
+		break;
+	case SOS_TYPE_TIMESTAMP:
+		switch (value_type) {
+		case SOS_TYPE_DOUBLE:
+		case SOS_TYPE_FLOAT:
+		case SOS_TYPE_UINT64:
+		case SOS_TYPE_INT64:
+		case SOS_TYPE_UINT32:
+		case SOS_TYPE_INT32:
+		case SOS_TYPE_TIMESTAMP:
+		case SOS_TYPE_STRING:
+			break;
+		default:
+			goto type_err;
+		}
 		break;
 	case SOS_TYPE_LONG_DOUBLE:
-	case SOS_TYPE_TIMESTAMP:
 	default:
 		if (attr_type != sos_value_type(value_term->value))
 			goto type_err;
@@ -443,14 +460,301 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 		limits = container_of(rbn, struct ast_attr_limits, rbn);
 	}
 	attr_term->attr->limits = limits;
-	/* Reinterpret the value_term based on the type of the attribute */
+	/* Cast the value_term based on the type of the attribute */
 	switch (sos_attr_type(attr_term->attr->attr)) {
+	case SOS_TYPE_INT16:
+		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_UINT64:
+			value_term->value->type = SOS_TYPE_INT16;
+			value_term->value->data->prim.int16_ =
+				(int16_t)value_term->value->data->prim.uint64_;
+			break;
+		case SOS_TYPE_INT64:
+			value_term->value->type = SOS_TYPE_INT16;
+			value_term->value->data->prim.int16_ =
+				(int16_t)value_term->value->data->prim.int64_;
+			break;
+		case SOS_TYPE_UINT32:
+			value_term->value->type = SOS_TYPE_INT16;
+			value_term->value->data->prim.int16_ =
+				(int16_t)value_term->value->data->prim.uint32_;
+			break;
+		case SOS_TYPE_INT32:
+			value_term->value->type = SOS_TYPE_INT16;
+			value_term->value->data->prim.int16_ =
+				(int16_t)value_term->value->data->prim.int32_;
+			break;
+		case SOS_TYPE_FLOAT:
+			value_term->value->type = SOS_TYPE_INT16;
+			value_term->value->data->prim.int16_ =
+				(int16_t)value_term->value->data->prim.float_;
+			break;
+		case SOS_TYPE_DOUBLE:
+			value_term->value->type = SOS_TYPE_INT16;
+			value_term->value->data->prim.int16_ =
+				(int16_t)value_term->value->data->prim.double_;
+			break;
+		default:
+			break;
+		}
+		break;
+	case SOS_TYPE_UINT16:
+		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_UINT64:
+			value_term->value->type = SOS_TYPE_UINT16;
+			value_term->value->data->prim.uint16_ =
+				(uint16_t)value_term->value->data->prim.uint64_;
+			break;
+		case SOS_TYPE_INT64:
+			value_term->value->type = SOS_TYPE_UINT16;
+			value_term->value->data->prim.uint16_ =
+				(uint16_t)value_term->value->data->prim.int64_;
+			break;
+		case SOS_TYPE_UINT32:
+			value_term->value->type = SOS_TYPE_UINT16;
+			value_term->value->data->prim.uint16_ =
+				(uint16_t)value_term->value->data->prim.uint32_;
+			break;
+		case SOS_TYPE_INT32:
+			value_term->value->type = SOS_TYPE_UINT16;
+			value_term->value->data->prim.uint16_ =
+				(uint16_t)value_term->value->data->prim.int32_;
+			break;
+		case SOS_TYPE_FLOAT:
+			value_term->value->type = SOS_TYPE_UINT16;
+			value_term->value->data->prim.uint16_ =
+				(uint16_t)value_term->value->data->prim.float_;
+			break;
+		case SOS_TYPE_DOUBLE:
+			value_term->value->type = SOS_TYPE_UINT16;
+			value_term->value->data->prim.uint16_ =
+				(uint16_t)value_term->value->data->prim.double_;
+			break;
+		default:
+			break;
+		}
+		break;
+	case SOS_TYPE_INT32:
+		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_UINT64:
+			value_term->value->type = SOS_TYPE_INT32;
+			value_term->value->data->prim.int32_ =
+				(int32_t)value_term->value->data->prim.uint64_;
+			break;
+		case SOS_TYPE_INT64:
+			value_term->value->type = SOS_TYPE_INT32;
+			value_term->value->data->prim.int32_ =
+				(int32_t)value_term->value->data->prim.int64_;
+			break;
+		case SOS_TYPE_UINT32:
+			value_term->value->type = SOS_TYPE_INT32;
+			value_term->value->data->prim.int32_ =
+				(int32_t)value_term->value->data->prim.uint32_;
+			break;
+		case SOS_TYPE_UINT16:
+			value_term->value->type = SOS_TYPE_INT32;
+			value_term->value->data->prim.int32_ =
+				(int32_t)value_term->value->data->prim.uint16_;
+			break;
+		case SOS_TYPE_INT16:
+			value_term->value->type = SOS_TYPE_INT32;
+			value_term->value->data->prim.int32_ =
+				(int32_t)value_term->value->data->prim.int16_;
+			break;
+		case SOS_TYPE_FLOAT:
+			value_term->value->type = SOS_TYPE_INT32;
+			value_term->value->data->prim.int32_ =
+				(int32_t)value_term->value->data->prim.float_;
+			break;
+		case SOS_TYPE_DOUBLE:
+			value_term->value->type = SOS_TYPE_INT32;
+			value_term->value->data->prim.int32_ =
+				(int32_t)value_term->value->data->prim.double_;
+			break;
+		default:
+			break;
+		}
+		break;
+	case SOS_TYPE_UINT32:
+		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_UINT64:
+			value_term->value->type = SOS_TYPE_UINT32;
+			value_term->value->data->prim.uint32_ =
+				(uint32_t)value_term->value->data->prim.uint64_;
+			break;
+		case SOS_TYPE_INT64:
+			value_term->value->type = SOS_TYPE_UINT32;
+			value_term->value->data->prim.uint32_ =
+				(uint32_t)value_term->value->data->prim.int64_;
+			break;
+		case SOS_TYPE_INT32:
+			value_term->value->type = SOS_TYPE_INT32;
+			value_term->value->data->prim.uint32_ =
+				(uint32_t)value_term->value->data->prim.int32_;
+			break;
+		case SOS_TYPE_UINT16:
+			value_term->value->type = SOS_TYPE_UINT32;
+			value_term->value->data->prim.uint32_ =
+				(uint32_t)value_term->value->data->prim.uint16_;
+			break;
+		case SOS_TYPE_INT16:
+			value_term->value->type = SOS_TYPE_UINT32;
+			value_term->value->data->prim.uint32_ =
+				(uint32_t)value_term->value->data->prim.int16_;
+			break;
+		case SOS_TYPE_FLOAT:
+			value_term->value->type = SOS_TYPE_UINT32;
+			value_term->value->data->prim.uint32_ =
+				(uint32_t)value_term->value->data->prim.float_;
+			break;
+		case SOS_TYPE_DOUBLE:
+			value_term->value->type = SOS_TYPE_UINT32;
+			value_term->value->data->prim.uint32_ =
+				(uint32_t)value_term->value->data->prim.double_;
+			break;
+		default:
+			break;
+		}
+		break;
+	case SOS_TYPE_INT64:
+		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_UINT64:
+			value_term->value->type = SOS_TYPE_INT64;
+			value_term->value->data->prim.int64_ =
+				(int64_t)value_term->value->data->prim.uint64_;
+			break;
+		case SOS_TYPE_UINT32:
+			value_term->value->type = SOS_TYPE_INT64;
+			value_term->value->data->prim.int64_ =
+				(int64_t)value_term->value->data->prim.uint32_;
+			break;
+		case SOS_TYPE_INT32:
+			value_term->value->type = SOS_TYPE_INT64;
+			value_term->value->data->prim.int32_ =
+				(int64_t)value_term->value->data->prim.int32_;
+			break;
+		case SOS_TYPE_UINT16:
+			value_term->value->type = SOS_TYPE_INT64;
+			value_term->value->data->prim.int64_ =
+				(int64_t)value_term->value->data->prim.uint16_;
+			break;
+		case SOS_TYPE_INT16:
+			value_term->value->type = SOS_TYPE_INT64;
+			value_term->value->data->prim.int64_ =
+				(int64_t)value_term->value->data->prim.int16_;
+			break;
+		case SOS_TYPE_FLOAT:
+			value_term->value->type = SOS_TYPE_INT64;
+			value_term->value->data->prim.int64_ =
+				(int64_t)value_term->value->data->prim.float_;
+			break;
+		case SOS_TYPE_DOUBLE:
+			value_term->value->type = SOS_TYPE_INT64;
+			value_term->value->data->prim.int64_ =
+				(int64_t)value_term->value->data->prim.double_;
+			break;
+		default:
+			break;
+		}
+		break;
+	case SOS_TYPE_UINT64:
+		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_INT64:
+			value_term->value->type = SOS_TYPE_UINT64;
+			value_term->value->data->prim.uint64_ =
+				(uint64_t)value_term->value->data->prim.int64_;
+			break;
+		case SOS_TYPE_UINT32:
+			value_term->value->type = SOS_TYPE_UINT64;
+			value_term->value->data->prim.uint64_ =
+				(uint64_t)value_term->value->data->prim.uint32_;
+			break;
+		case SOS_TYPE_INT32:
+			value_term->value->type = SOS_TYPE_UINT64;
+			value_term->value->data->prim.uint32_ =
+				(uint64_t)value_term->value->data->prim.int32_;
+			break;
+		case SOS_TYPE_UINT16:
+			value_term->value->type = SOS_TYPE_UINT64;
+			value_term->value->data->prim.uint64_ =
+				(uint64_t)value_term->value->data->prim.uint16_;
+			break;
+		case SOS_TYPE_INT16:
+			value_term->value->type = SOS_TYPE_UINT64;
+			value_term->value->data->prim.uint64_ =
+				(uint64_t)value_term->value->data->prim.int16_;
+			break;
+		case SOS_TYPE_FLOAT:
+			value_term->value->type = SOS_TYPE_UINT64;
+			value_term->value->data->prim.uint64_ =
+				(uint64_t)value_term->value->data->prim.float_;
+			break;
+		case SOS_TYPE_DOUBLE:
+			value_term->value->type = SOS_TYPE_UINT64;
+			value_term->value->data->prim.uint64_ =
+				(uint64_t)value_term->value->data->prim.double_;
+			break;
+		default:
+			break;
+		}
+		break;
 	case SOS_TYPE_DOUBLE:
 		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_FLOAT:
+			value_term->value->type = SOS_TYPE_DOUBLE;
+			value_term->value->data->prim.double_ =
+				(double)value_term->value->data->prim.float_;
+			break;
+		case SOS_TYPE_UINT64:
+			value_term->value->type = SOS_TYPE_DOUBLE;
+			value_term->value->data->prim.double_ =
+				(double)value_term->value->data->prim.uint64_;
+			break;
 		case SOS_TYPE_INT64:
 			value_term->value->type = SOS_TYPE_DOUBLE;
 			value_term->value->data->prim.double_ =
 				(double)value_term->value->data->prim.int64_;
+			break;
+		case SOS_TYPE_UINT32:
+			value_term->value->type = SOS_TYPE_DOUBLE;
+			value_term->value->data->prim.double_ =
+				(double)value_term->value->data->prim.uint32_;
+			break;
+		case SOS_TYPE_INT32:
+			value_term->value->type = SOS_TYPE_DOUBLE;
+			value_term->value->data->prim.double_ =
+				(double)value_term->value->data->prim.int32_;
+			break;
+		default:
+			break;
+		}
+		break;
+	case SOS_TYPE_FLOAT:
+		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_DOUBLE:
+			value_term->value->type = SOS_TYPE_FLOAT;
+			value_term->value->data->prim.float_ =
+				(float)value_term->value->data->prim.double_;
+			break;
+		case SOS_TYPE_UINT64:
+			value_term->value->type = SOS_TYPE_FLOAT;
+			value_term->value->data->prim.float_ =
+				(float)value_term->value->data->prim.uint64_;
+			break;
+		case SOS_TYPE_INT64:
+			value_term->value->type = SOS_TYPE_FLOAT;
+			value_term->value->data->prim.float_ =
+				(float)value_term->value->data->prim.int64_;
+			break;
+		case SOS_TYPE_UINT32:
+			value_term->value->type = SOS_TYPE_FLOAT;
+			value_term->value->data->prim.float_ =
+				(float)value_term->value->data->prim.uint32_;
+			break;
+		case SOS_TYPE_INT32:
+			value_term->value->type = SOS_TYPE_FLOAT;
+			value_term->value->data->prim.float_ =
+				(float)value_term->value->data->prim.int32_;
 			break;
 		default:
 			break;
@@ -458,10 +762,30 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 		break;
 	case SOS_TYPE_TIMESTAMP:
 		switch (sos_value_type(value_term->value)) {
+		case SOS_TYPE_STRING:
+			/* Expecting secs,usecs */
+			{
+				char *s = strtok(value_term->value->data->array.data.char_, ":.");
+				char *u = strtok(NULL, ":.");
+				if (!s || !u)
+					goto type_err;
+				value_term->value->type = SOS_TYPE_TIMESTAMP;
+				value_term->value->data->prim.timestamp_.tv.tv_sec = atoi(s);
+				value_term->value->data->prim.timestamp_.tv.tv_usec = atoi(u);
+			}
+			break;
+		case SOS_TYPE_UINT64:
 		case SOS_TYPE_INT64:
 			value_term->value->type = SOS_TYPE_TIMESTAMP;
 			value_term->value->data->prim.timestamp_.tv.tv_sec =
-				value_term->value->data->prim.int64_;
+				value_term->value->data->prim.uint64_;
+			value_term->value->data->prim.timestamp_.tv.tv_usec = 0;
+			break;
+		case SOS_TYPE_UINT32:
+		case SOS_TYPE_INT32:
+			value_term->value->type = SOS_TYPE_TIMESTAMP;
+			value_term->value->data->prim.timestamp_.tv.tv_sec =
+				value_term->value->data->prim.uint32_;
 			value_term->value->data->prim.timestamp_.tv.tv_usec = 0;
 			break;
 		case SOS_TYPE_DOUBLE:
@@ -471,6 +795,15 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 			value_term->value->data->prim.timestamp_.tv.tv_usec =
 				(uint32_t)(value_term->value->data->prim.double_ -
 					   floor(value_term->value->data->prim.double_)
+					   * 1.e6);
+			break;
+		case SOS_TYPE_FLOAT:
+			value_term->value->type = SOS_TYPE_TIMESTAMP;
+			value_term->value->data->prim.timestamp_.tv.tv_sec =
+				(uint32_t)floor(value_term->value->data->prim.float_);
+			value_term->value->data->prim.timestamp_.tv.tv_usec =
+				(uint32_t)(value_term->value->data->prim.float_ -
+					   floor(value_term->value->data->prim.float_)
 					   * 1.e6);
 			break;
 		default:
@@ -1557,6 +1890,7 @@ sos_key_t __sos_key_from_const(sos_key_t key, sos_attr_t attr, struct ast_attr_l
 	case SOS_TYPE_DOUBLE:
 		return sos_key_for_attr(key, attr, data->prim.double_);
 	case SOS_TYPE_LONG_DOUBLE:
+		return sos_key_for_attr(key, attr, data->prim.long_double_);
 	case SOS_TYPE_TIMESTAMP:
 		return sos_key_for_attr(key, attr, data->prim.timestamp_);
 	case SOS_TYPE_BYTE_ARRAY:

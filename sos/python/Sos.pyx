@@ -4726,7 +4726,7 @@ cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
     elif typ == Timestamp:
         ts = int(val.to_datetime64())
         secs = ts / 1000000000L
-        usecs = ts % 1000000000L
+        usecs = val.microsecond
     elif typ == np.datetime64:
         ts = val.astype('int')
         secs = ts / 1000000L
@@ -6978,10 +6978,14 @@ cdef class SqlQuery:
                 data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.uint64))
             elif atyp == SOS_TYPE_UINT32:
                 data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.uint32))
+            elif atyp == SOS_TYPE_UINT16:
+                data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.uint16))
             elif atyp == SOS_TYPE_INT64:
                 data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.int64))
             elif atyp == SOS_TYPE_INT32:
                 data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.int32))
+            elif atyp == SOS_TYPE_INT16:
+                data = np.zeros([ self.c_row_count ], dtype=np.dtype(np.int16))
             elif atyp == SOS_TYPE_BYTE_ARRAY:
                 data = np.zeros([ self.c_row_count ],
                                 dtype=np.dtype('U{0}'.format(self.c_max_array)))
@@ -7029,8 +7033,7 @@ cdef class SqlQuery:
                     data[r] = np.zeros([ self.c_max_array ],
                                        dtype=np.dtype(np.float64))
             else:
-                continue
-                # raise ValueError(f"Invalid attribute type {atyp} for DataFrame encoding")
+                raise ValueError(f"Invalid attribute type {atyp} for DataFrame encoding")
             self.result.append(data)
             c_attr = sos_schema_attr_next(c_attr)
             c_col_no += 1
