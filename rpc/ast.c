@@ -846,7 +846,7 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 	return 0;
  type_err:
 	snprintf(ast->error_msg, sizeof(ast->error_msg),
-		 "The attribute %s with type %s does match the constant of type %s",
+		 "The attribute %s with type %s does not match the constant of type %s",
 		 attr_name, sos_value_type_name(attr_type),
 		 sos_value_type_name(sos_value_type(value_term->value)));
 	ast->result = ASTP_BAD_CONST_TYPE;
