@@ -1059,6 +1059,18 @@ int ast_parse_where_clause(struct ast *ast, const char *expr, int *ppos)
 	return ast->result;
 }
 
+static struct ast_attr_entry_s
+*attr_alloc(sos_attr_t sos_attr, struct ast_schema_entry_s *schema_e)
+{
+	struct ast_attr_entry_s *ae = calloc(1, sizeof(*ae));
+	assert(ae);
+	ae->sos_attr = sos_attr;
+	ae->min_join_idx = UINT32_MAX;
+	ae->name = strdup(sos_attr_name(sos_attr));
+	ae->schema = schema_e;
+	return ae;
+}
+
 static int __resolve_sos_entities(struct ast *ast)
 {
 	struct ast_attr_entry_s *attr_e;
@@ -1081,12 +1093,7 @@ static int __resolve_sos_entities(struct ast *ast)
 			sos_attr_t sos_attr = sos_schema_attr_by_id(schema_e->schema, attr_id);
 			if (SOS_TYPE_JOIN != sos_attr_type(sos_attr))
 				continue;
-			struct ast_attr_entry_s *ae = calloc(1, sizeof(*ae));
-			ae->sos_attr = sos_attr;
-			ae->min_join_idx = UINT32_MAX;
-			ae->name = strdup(sos_attr_name(sos_attr));
-			ae->schema = schema_e;
-			ae->rank = 0;
+			struct ast_attr_entry_s *ae = attr_alloc(sos_attr, schema_e);
 			LIST_INSERT_HEAD(&schema_e->join_list, ae, join_link);
 		}
 	}
@@ -1202,7 +1209,7 @@ static int __resolve_sos_entities(struct ast *ast)
 	struct ast_term_binop *binop;
 	LIST_FOREACH(binop, &ast->binop_list, entry) {
 		/* Update the attribute min/max values in the attr tree */
-	 	if (binop->lhs->kind == ASTV_ATTR) {
+		if (binop->lhs->kind == ASTV_ATTR) {
 			if (update_attr_limits(ast, binop->lhs, binop->rhs, binop->op))
 				return ast->result;
 		} else if (binop->rhs->kind == ASTV_ATTR) {
@@ -1213,7 +1220,7 @@ static int __resolve_sos_entities(struct ast *ast)
 	/*
 	 * Run through the attributes in the 'where' clause; compute the
 	 * number of times attributes in the where clause appear in the join and
-	 * the attribute that has the minimum attribute index
+	 * the attribute that is closest to the front of the join.
 	 */
 	TAILQ_FOREACH(attr_e, &ast->where_list, link) {
 		attr_e->min_join_idx = UINT32_MAX;
@@ -1221,7 +1228,8 @@ static int __resolve_sos_entities(struct ast *ast)
 			join_list = sos_attr_join_list(join_attr_e->sos_attr);
 			int join_idx, join_count = join_list->count;
 			for (join_idx = 0; join_idx < join_count; join_idx++) {
-				if (join_list->data.uint32_[join_idx] == sos_attr_id(attr_e->sos_attr)) {
+				if (join_list->data.uint32_[join_idx]
+				    == sos_attr_id(attr_e->sos_attr)) {
 					join_attr_e->rank += join_count - join_idx;
 					/* If this join is preferred over ones previously found, replace it */
 					if (join_idx < attr_e->min_join_idx) {
@@ -1234,7 +1242,7 @@ static int __resolve_sos_entities(struct ast *ast)
 			}
 		}
 	}
-	struct ast_attr_entry_s *join_e;
+
 	struct ast_attr_entry_s *best_attr_e = TAILQ_FIRST(&ast->index_list);
 	if (best_attr_e)
 		goto create_iterator;
@@ -1244,6 +1252,7 @@ static int __resolve_sos_entities(struct ast *ast)
 	 * create the iterator
 	 */
 	TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
+		struct ast_attr_entry_s *join_e;
 		LIST_FOREACH(join_e, &schema_e->join_list, join_link) {
 			if (!best_attr_e) {
 				best_attr_e = join_e;
@@ -1253,29 +1262,72 @@ static int __resolve_sos_entities(struct ast *ast)
 				best_attr_e = join_e;
 		}
 	}
-	if (!best_attr_e) {
-		/* Use the attribute attribute index that appears the most in the where clause */
-		TAILQ_FOREACH(attr_e, &ast->where_list, link) {
-			if (!sos_attr_is_indexed(attr_e->sos_attr))
+	if (best_attr_e)
+		goto create_iterator;
+
+	if (!TAILQ_EMPTY(&ast->where_list))
+		goto process_where_list;
+
+	TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
+		sos_attr_t a;
+
+		/* Search for something named 'timestamp' */
+		for (a = sos_schema_attr_first(schema_e->schema); a;
+		     a = sos_schema_attr_next(a)) {
+			if (!sos_attr_is_indexed(a))
 				continue;
-			TAILQ_FOREACH(best_attr_e, &ast->where_list, link) {
-				if (!sos_attr_is_indexed(attr_e->sos_attr))
-					continue;
-				if (0 == strcmp(best_attr_e->name, attr_e->name))
-					attr_e->rank += 1;
+			if (0 == strcmp(sos_attr_name(a), "timestamp")) {
+				best_attr_e = attr_alloc(a, schema_e);
+				goto create_iterator;
 			}
 		}
-		best_attr_e = NULL;
-		TAILQ_FOREACH(attr_e, &ast->where_list, link) {
+		/* Search for something having the type TIMESTAMP */
+		for (a = sos_schema_attr_first(schema_e->schema); a;
+		     a = sos_schema_attr_next(a)) {
+			if (!sos_attr_is_indexed(a))
+				continue;
+			if (sos_attr_type(a) == SOS_TYPE_TIMESTAMP) {
+				best_attr_e = attr_alloc(a, schema_e);
+				goto create_iterator;
+			}
+		}
+		/* Pick the 1st indexed attribute in the schema */
+		for (a = sos_schema_attr_first(schema_e->schema); a;
+		     a = sos_schema_attr_next(a)) {
+			if (sos_attr_is_indexed(a))
+				continue;
+			best_attr_e = attr_alloc(a, schema_e);
+			goto create_iterator;
+		}
+	}
+
+	/* There are no indexed attributees in the schema, it cannot
+	 * be queried */
+	return ASTP_BAD_SCHEMA_NAME;
+
+ process_where_list:
+	/* Use the attribute attribute index that appears the
+	 * most in the where clause */
+	TAILQ_FOREACH(attr_e, &ast->where_list, link) {
+		if (!sos_attr_is_indexed(attr_e->sos_attr))
+			continue;
+		TAILQ_FOREACH(best_attr_e, &ast->where_list, link) {
 			if (!sos_attr_is_indexed(attr_e->sos_attr))
 				continue;
-			if (best_attr_e == NULL) {
-				best_attr_e = attr_e;
-				continue;
-			}
-			if (attr_e->rank > best_attr_e->rank)
-				best_attr_e = attr_e;
+			if (0 == strcmp(best_attr_e->name, attr_e->name))
+				attr_e->rank += 1;
 		}
+	}
+	best_attr_e = NULL;
+	TAILQ_FOREACH(attr_e, &ast->where_list, link) {
+		if (!sos_attr_is_indexed(attr_e->sos_attr))
+			continue;
+		if (best_attr_e == NULL) {
+			best_attr_e = attr_e;
+			continue;
+		}
+		if (attr_e->rank > best_attr_e->rank)
+			best_attr_e = attr_e;
 	}
 
  create_iterator:
