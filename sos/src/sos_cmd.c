@@ -570,7 +570,10 @@ void csv_row(FILE *outp, sos_schema_t schema, sos_obj_t obj)
 		} else {
 			col_str = malloc(col_len);
 		}
-		fprintf(outp, "%s", sos_obj_attr_to_str(obj, attr, col_str, col_len));
+		if (!sos_attr_is_array(attr))
+			fprintf(outp, "%s", sos_obj_attr_to_str(obj, attr, col_str, col_len));
+		else
+			fprintf(outp, "\"%s\"", sos_obj_attr_to_str(obj, attr, col_str, col_len));
 		if (col_str != str)
 			free(col_str);
 		first = 0;
