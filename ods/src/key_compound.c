@@ -183,6 +183,7 @@ static int64_t cmp(ods_key_t a, ods_key_t b)
 #if ODS_DEBUG
 			assert(0 == "unsupported compound key component");
 #endif
+			res = -1;
 			break;
 		}
 	}

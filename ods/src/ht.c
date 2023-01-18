@@ -414,7 +414,7 @@ static int insert_in_bucket(ods_idx_t o_idx, ods_key_t key,
 	return 0;
 }
 
-static int ht_insert(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
+static int ht_insert_no_lock(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 {
 	ht_t t = o_idx->priv;
 	int rc = ENOMEM;
@@ -422,10 +422,6 @@ static int ht_insert(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 	ods_obj_t ent;
 	int64_t bkt;
 	ods_key_value_t kv;
-#ifdef HT_THREAD_SAFE
-	if (ods_lock(o_idx->ods, 0, NULL))
-		return EBUSY;
-#endif
 	ent = entry_new(o_idx);
 	if (!ent)
 		goto out_0;
@@ -443,9 +439,16 @@ static int ht_insert(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
 	ods_obj_update(ent);
 	ods_obj_put(ent);
  out_0:
-#ifdef HT_THREAD_SAFE
+	return rc;
+}
+
+static int ht_insert(ods_idx_t o_idx, ods_key_t key, ods_idx_data_t data)
+{
+	int rc;
+	if (ods_lock(o_idx->ods, 0, NULL))
+		return EBUSY;
+	rc = ht_insert_no_lock(o_idx, key, data);
 	ods_unlock(o_idx->ods, 0);
-#endif
 	return rc;
 }
 
@@ -974,6 +977,7 @@ static struct ods_idx_provider ht_provider = {
 	.close = ht_close,
 	.commit = ht_commit,
 	.insert = ht_insert,
+	.insert_no_lock = ht_insert_no_lock,
 	.visit = ht_visit,
 	.update = ht_update,
 	.delete = ht_delete,

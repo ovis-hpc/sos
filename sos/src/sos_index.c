@@ -387,8 +387,11 @@ int sos_index_rt_opt_set(sos_index_t idx, sos_index_rt_opt_t opt, ...)
 {
 	ods_idx_ref_t iref;
 	int rc;
+	va_list ap;
 	LIST_FOREACH(iref, &idx->active_idx_list, entry) {
-		rc = ods_idx_rt_opts_set(iref->idx, opt);
+		va_start(ap, opt);
+		rc = ods_idx_rt_opts_set_va(iref->idx, opt, ap);
+		va_end(ap);
 	}
 	return rc;
 }

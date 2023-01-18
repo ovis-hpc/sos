@@ -484,6 +484,11 @@ static int h2bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 	return ods_idx_insert(t->idx_table[bkt].idx, new_key, data);
 }
 
+static int h2bxt_insert_no_lock(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
+{
+	return h2bxt_insert(idx, new_key, data);
+}
+
 static int h2bxt_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 {
 	int bkt;
@@ -1267,6 +1272,7 @@ static struct ods_idx_provider h2bxt_provider = {
 	.rt_opts_get = h2bxt_rt_opts_get,
 	.commit = h2bxt_commit,
 	.insert = h2bxt_insert,
+	.insert_no_lock = h2bxt_insert_no_lock,
 	.visit = h2bxt_visit,
 	.update = h2bxt_update,
 	.delete = h2bxt_delete,

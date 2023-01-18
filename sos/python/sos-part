@@ -253,6 +253,7 @@ if __name__ == "__main__":
         if cont:
             pi = cont.part_iter()
             hdr = True
+            p = None
             for p in pi:
                 print_partition(p, hdr, fmt=args.fmt, verbose=args.verbose)
                 hdr = False

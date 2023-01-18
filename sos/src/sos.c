@@ -1127,6 +1127,11 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 	ods_commit(sos->part_ref_ods, ODS_COMMIT_SYNC);
 	ods_commit(sos->schema_ods, ODS_COMMIT_SYNC);
 	ods_commit(sos->idx_ods, ODS_COMMIT_SYNC);
+	char *bi_count = getenv("SOS_BULK_INS_DEPTH");
+	char *bi_to = getenv("SOS_BULK_INS_TO");
+	if (bi_count)
+		sos_container_option_set(sos, SOS_CONT_OPT_BULK_INS,
+			atoi(bi_count), (bi_to ? atoi(bi_to) : 0));
 	return sos;
 err:
 	if (iter)
@@ -1136,6 +1141,38 @@ err:
 	return NULL;
 }
 
+/**
+ * @brief Set a container run-time option
+ *
+ * Container run-time options are not persistent and must be set each time
+ * the container is opened. Valid container options include the following:
+ * - SOS_CONT_OPT_BULK_INS Enable bulk insertion mode on the index. The
+ *   parameters to this option are as follows:
+ *   - int : The maximum number of objects to queue before flush
+ *   - int : The maximum number of seconds to wait before flushing queued objects
+ *   .
+ * .
+ * @param sos
+ * @param option
+ * @param ...
+ * @return An errno indicating success or failure
+ */
+int sos_container_option_set(sos_t sos, sos_container_option_t option, ...)
+{
+	va_list ap;
+	va_start(ap, option);
+	switch (option) {
+	case SOS_CONT_OPT_BULK_INS:
+		sos->bulk_ins_depth = va_arg(ap, int);
+		sos->bulk_ins_to = va_arg(ap, int);
+		break;
+	default:
+		va_end(ap);
+		return EINVAL;
+	}
+	va_end(ap);
+	return 0;
+}
 /**
  * \brief Verify a container
  *

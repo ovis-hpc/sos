@@ -136,6 +136,10 @@ int sos_container_lock_cleanup(const char *path);
 void sos_inuse_obj_info(sos_t sos, FILE *fp);
 void sos_free_obj_info(sos_t sos, FILE *fp);
 int sos_container_config_set(const char *path, const char *option, const char *value);
+typedef enum {
+	SOS_CONT_OPT_BULK_INS = 1,
+} sos_container_option_t;
+int sos_container_option_set(sos_t sos, sos_container_option_t option, ...);
 char *sos_container_config_get(const char *path, const char *option);
 const char *sos_container_path(sos_t sos);
 sos_perm_t sos_container_perm(sos_t sos);

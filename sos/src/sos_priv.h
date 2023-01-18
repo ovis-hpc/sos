@@ -340,6 +340,12 @@ struct sos_container_s {
 	int o_mode;
 
 	/*
+	 * Run time options
+	 */
+	int bulk_ins_to;	/* The max. number of seconds to queue insert data */
+	int bulk_ins_depth;	/* The max. depth of the insert queue */
+
+	/*
 	 * Index dictionary - Keeps track of all indices defined on
 	 * the Container.
 	 */

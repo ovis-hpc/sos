@@ -47,6 +47,7 @@
 #define _ODS_IDX_H_
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <ods/ods.h>
 
 #ifdef __cplusplus
@@ -175,7 +176,15 @@ const char *ods_idx_path(ods_idx_t idx);
  * Set the ODS_IDX_OPT_MP_UNSAFE option to indicate that the
  * application is responsible for ensuring that the index is
  * multi-process safe (see the ods_idx_lock() function). By default,
- * indices are MP Safe.
+ * indices are MP Safe. There are no arguments to this option.
+ *
+ * Set the ODS_IDX_OPT_BULK_INS option to enable automatic bulk index
+ * insertion. The index maintains a queue of key:data pairs that have
+ * been submitted for indexing with the ods_idx_insert() function.
+ * When one of the q-depth and/or q-age (oldest pair) has been reached
+ * the q is flushed and all pairs are inserted as a single opertion in
+ * the index. The argument to this option is a pointer to an ods_bulk_ins_opt_s
+ * structure.
  *
  * \param idx The index handle
  * \param opt The option id
@@ -185,8 +194,16 @@ const char *ods_idx_path(ods_idx_t idx);
  */
 #define ODS_IDX_OPT_MP_UNSAFE	1 /*! Index not multi-process safe */
 #define ODS_IDX_OPT_VISIT_ASYNC	2 /*! Make ods_idx_visit() asynchronous */
+#define ODS_IDX_OPT_BULK_INS	4 /*! Configures index bulk-insert */
+
+/** Argument to the OPT_BULK_INS option */
+struct ods_bulk_ins_opt_s {
+	int depth;			/*! Depth of the insert Q */
+	struct timespec timeout;	/*! Flush the Q when oldest element is older than timeout */
+};
 typedef uint32_t ods_idx_rt_opts_t;
 int ods_idx_rt_opts_set(ods_idx_t idx, ods_idx_rt_opts_t opt, ...);
+int ods_idx_rt_opts_set_va(ods_idx_t idx, ods_idx_rt_opts_t opt, va_list ap);
 
 /**
  * \brief Return the index run-time property flags
@@ -322,6 +339,18 @@ typedef struct ods_key_value_s {
 } *ods_key_value_t;
 #pragma pack()
 typedef ods_obj_t ods_key_t;
+typedef struct ods_kvq_s *ods_kvq_t;
+struct ods_kvq_s {
+	int size;	/*< The number elements in entry[] */
+	int current;	/*< The current entry to fill */
+	int threshold;	/*< Q-full flush threshold */
+	struct timespec last_flush;	/*< Time this Q was last flushed */
+	struct timespec timeout;	/*< Q-age flush threshold */
+	struct ods_kvq_entry_s {
+		ods_key_t key;		/*< The key to associate with data */
+		ods_idx_data_t data;	/*< The data retrieved by key */
+	} entry[0];
+};
 
 /**
  * A compound key is comprised of multiple values as follows:
@@ -377,8 +406,8 @@ typedef struct ods_comp_key_s {	/* overloads the ods_key_value_t */
 	 */
 	struct ods_key_comp_s value[0];	/* array of key components */
 } *ods_comp_key_t;
-#pragma pack()
 
+#pragma pack()
 /**
  * \brief Create an key in the ODS store
  *
@@ -594,6 +623,7 @@ typedef int64_t (*ods_idx_compare_fn_t)(ods_key_t a, ods_key_t b);
  *			specified is 0
  */
 int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data);
+int ods_idx_bulk_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data);
 
 /**
  * \brief Locate the key position and call the callback function

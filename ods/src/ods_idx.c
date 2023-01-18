@@ -18,12 +18,23 @@
 #include <time.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <ods/ods_rbt.h>
 #include <ods/ods_idx.h>
 #include <ods/ods_atomic.h>
 #include "ods_idx_priv.h"
 
-static pthread_mutex_t __ods_idx_lock;
+static void __ods_idx_flush(ods_idx_t idx);
+static pthread_mutex_t __ods_idx_lock = PTHREAD_MUTEX_INITIALIZER;
+static __thread int64_t thread_id = -1;
+static int64_t next_thread_id;
+static int64_t get_thread_id()
+{
+	if (thread_id == -1) {
+		thread_id = __sync_fetch_and_add(&next_thread_id, 1);
+	}
+	return thread_id;
+}
 
 struct ods_idx_type {
 	struct ods_idx_provider *provider;
@@ -225,6 +236,7 @@ int ods_idx_stat(ods_idx_t idx, ods_idx_stat_t stat)
 
 void ods_idx_close(ods_idx_t idx, int flags)
 {
+	__ods_idx_flush(idx);
 	if (0 == ods_atomic_dec(&idx->ref_count)) {
 		ods_ldebug("%s index is closing.\n", ods_path(idx->ods));
 		idx->idx_class->prv->close(idx);
@@ -251,13 +263,44 @@ void ods_idx_unlock(ods_idx_t idx)
 		return idx->idx_class->prv->unlock(idx);
 }
 
+int ods_idx_rt_opts_set_va(ods_idx_t idx, ods_idx_rt_opts_t opt, va_list ap)
+{	int rc;
+	struct ods_bulk_ins_opt_s *kvq_opt;
+
+	if (opt != ODS_IDX_OPT_BULK_INS) {
+		if (idx->idx_class->prv->rt_opts_set)
+			rc = idx->idx_class->prv->rt_opts_set(idx, opt, ap);
+		if (!rc)
+			idx->idx_opts |= opt;
+		return rc;
+	}
+
+	switch (opt) {
+	case ODS_IDX_OPT_BULK_INS:
+		kvq_opt = va_arg(ap, struct ods_bulk_ins_opt_s *);
+		idx->kvq_opt = *kvq_opt;
+		idx->kvq_count = 64;
+		idx->kvq = calloc(idx->kvq_count, sizeof(ods_kvq_t));
+		if (!idx->kvq)
+			rc = ENOMEM;
+		else
+			rc = 0;
+		break;
+	default:
+		rc = EINVAL;
+	}
+	if (!rc)
+		idx->idx_opts |= opt;
+	return rc;
+}
+
 int ods_idx_rt_opts_set(ods_idx_t idx, ods_idx_rt_opts_t opt, ...)
-{
+{	int rc;
 	va_list ap;
 	va_start(ap, opt);
-	if (idx->idx_class->prv->rt_opts_set)
-		return idx->idx_class->prv->rt_opts_set(idx, opt, ap);
-	return EINVAL;
+	rc = ods_idx_rt_opts_set_va(idx, opt, ap);
+	va_end(ap);
+	return rc;
 }
 
 ods_idx_rt_opts_t ods_idx_rt_opts_get(ods_idx_t idx)
@@ -279,17 +322,139 @@ int ods_idx_visit(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *a
 	return idx->idx_class->prv->visit(idx, key, cb_fn, arg);
 }
 
+static void __kvq_rebalance(ods_kvq_t kvq)
+{
+	kvq->threshold = (random() % (kvq->size / 2)) + kvq->size / 2;
+}
+
+static ods_kvq_t __ods_kvq_alloc(int count)
+{
+	int i;
+	ods_kvq_t kvq = malloc(sizeof(*kvq) + (count * sizeof(struct ods_kvq_entry_s)));
+	kvq->size = count;
+	kvq->current = 0;
+	kvq->threshold = random() % count;
+	for (i = 0; i < count; i++)
+		kvq->entry[i].key = ods_key_malloc(512);
+	clock_gettime(CLOCK_REALTIME, &kvq->last_flush);
+	__kvq_rebalance(kvq);
+	return kvq;
+}
+
+static void __ods_kvq_queue(ods_kvq_t q, ods_key_t key, ods_idx_data_t data)
+{
+	int cur = q->current;
+	ods_key_copy(q->entry[cur].key, key);
+	q->entry[cur].data = data;
+	q->current += 1;
+}
+
+static void __ods_kvq_flush_no_lock(ods_idx_t idx, ods_kvq_t q)
+{
+	int rc;
+	int i;
+	for (i = 0; i < q->current; i++) {
+		rc = idx->idx_class->prv->insert_no_lock(
+						idx,
+						q->entry[i].key,
+						q->entry[i].data
+						);
+
+		if (rc) {
+			fprintf(stderr, "Error %d flushing entry %d to index %s", rc, i, ods_path(idx->ods));
+		}
+	}
+	q->current = 0;
+	__kvq_rebalance(q);
+	clock_gettime(CLOCK_REALTIME, &q->last_flush);
+	q->current = 0;
+}
+
+static void __ods_kvq_flush(ods_idx_t idx, ods_kvq_t q)
+{
+	ods_idx_lock(idx, NULL);
+	__ods_kvq_flush_no_lock(idx, q);
+	ods_idx_unlock(idx);
+}
+
+static void __ods_idx_flush(ods_idx_t idx)
+{
+	int i;
+	if (0 == (idx->idx_opts & ODS_IDX_OPT_BULK_INS))
+		return;
+	ods_idx_lock(idx, NULL);
+	for (i = 0; i < idx->kvq_count; i++) {
+		if (idx->kvq[i])
+			__ods_kvq_flush_no_lock(idx, idx->kvq[i]);
+	}
+	ods_idx_unlock(idx);
+}
+
+int ods_idx_bulk_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
+{
+	ods_kvq_t q;
+	int rc = 0;
+	int thread_id;
+	if (!idx->o_perm)
+		return EPERM;
+	/* Find/allocate the Q for this thread */
+	thread_id = get_thread_id();
+
+	/* Check if new threads have been added */
+	ods_idx_lock(idx, NULL);
+	if (thread_id >= idx->kvq_count) {
+		int i = idx->kvq_count;
+		idx->kvq_count *= 2;
+		idx->kvq = realloc(idx->kvq, idx->kvq_count * sizeof(void *));
+		if (!idx->kvq)
+			return ENOMEM;
+		for (; i < idx->kvq_count; i++)
+			idx->kvq[i] = NULL;
+	}
+	if (!idx->kvq[thread_id]) {
+		idx->kvq[thread_id] = __ods_kvq_alloc(idx->kvq_opt.depth);
+		if (!idx->kvq[thread_id])
+			return ENOMEM;
+		q = idx->kvq[thread_id];
+		q->timeout = idx->kvq_opt.timeout;
+	} else {
+		q = idx->kvq[thread_id];
+	}
+	ods_idx_unlock(idx);
+	__ods_kvq_queue(q, key, data);
+	/* Check if the element count triggers a flush */
+	if (q->current >= q->threshold) {
+		__ods_kvq_flush(idx, q);
+		goto out;
+	}
+	/* Check if a timeout triggers a flush */
+	struct timespec ts;
+	int secs;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	secs = ts.tv_sec - q->last_flush.tv_sec;
+	if (secs > q->timeout.tv_sec ||
+	    (secs == q->timeout.tv_sec
+		&& q->timeout.tv_nsec < ts.tv_nsec)) {
+		__ods_kvq_flush(idx, q);
+	}
+out:
+	return rc;
+}
+
 int ods_idx_insert(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 {
 	if (!idx->o_perm)
 		return EPERM;
-	return idx->idx_class->prv->insert(idx, key, data);
+	if (0 == (idx->idx_opts & ODS_IDX_OPT_BULK_INS))
+		return idx->idx_class->prv->insert(idx, key, data);
+	return ods_idx_bulk_insert(idx, key, data);
 }
 
 int ods_idx_update(ods_idx_t idx, ods_key_t key, ods_idx_data_t data)
 {
 	if (!idx->o_perm)
 		return EPERM;
+	__ods_idx_flush(idx);
 	return idx->idx_class->prv->update(idx, key, data);
 }
 
@@ -297,31 +462,37 @@ int ods_idx_delete(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
 	if (!idx->o_perm)
 		return EPERM;
+	__ods_idx_flush(idx);
 	return idx->idx_class->prv->delete(idx, key, data);
 }
 
 int ods_idx_min(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 {
+	__ods_idx_flush(idx);
 	return idx->idx_class->prv->min(idx, key, data);
 }
 
 int ods_idx_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 {
+	__ods_idx_flush(idx);
 	return idx->idx_class->prv->max(idx, key, data);
 }
 
 int ods_idx_find(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
+	__ods_idx_flush(idx);
 	return idx->idx_class->prv->find(idx, key, data);
 }
 
 int ods_idx_find_lub(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
+	__ods_idx_flush(idx);
 	return idx->idx_class->prv->find_lub(idx, key, data);
 }
 
 int ods_idx_find_glb(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data)
 {
+	__ods_idx_flush(idx);
 	return idx->idx_class->prv->find_glb(idx, key, data);
 }
 
@@ -356,6 +527,7 @@ ods_iter_flags_t ods_iter_flags_get(ods_iter_t i)
 void ods_iter_delete(ods_iter_t iter)
 {
 	ods_idx_t idx = iter->idx;
+	__ods_idx_flush(idx);
 	iter->idx->idx_class->prv->iter_delete(iter);
 	assert(idx->ref_count);
 	ods_atomic_dec(&idx->ref_count);
@@ -363,46 +535,55 @@ void ods_iter_delete(ods_iter_t iter)
 
 int ods_iter_find(ods_iter_t iter, ods_key_t key)
 {
+	__ods_idx_flush(iter->idx);
 	return iter->idx->idx_class->prv->iter_find(iter, key);
 }
 
 int ods_iter_find_first(ods_iter_t iter, ods_key_t key)
 {
+	__ods_idx_flush(iter->idx);
 	return iter->idx->idx_class->prv->iter_find_first(iter, key);
 }
 
 int ods_iter_find_last(ods_iter_t iter, ods_key_t key)
 {
+	__ods_idx_flush(iter->idx);
 	return iter->idx->idx_class->prv->iter_find_last(iter, key);
 }
 
 int ods_iter_find_lub(ods_iter_t iter, ods_key_t key)
 {
+	__ods_idx_flush(iter->idx);
 	return iter->idx->idx_class->prv->iter_find_lub(iter, key);
 }
 
 int ods_iter_find_glb(ods_iter_t iter, ods_key_t key)
 {
+	__ods_idx_flush(iter->idx);
 	return iter->idx->idx_class->prv->iter_find_glb(iter, key);
 }
 
 int ods_iter_begin(ods_iter_t iter)
 {
+	__ods_idx_flush(iter->idx);
 	return iter->idx->idx_class->prv->iter_begin(iter);
 }
 
 int ods_iter_end(ods_iter_t iter)
 {
+	__ods_idx_flush(iter->idx);
 	return iter->idx->idx_class->prv->iter_end(iter);
 }
 
 int ods_iter_next(ods_iter_t iter)
 {
+	__ods_idx_flush(iter->idx);
 	return iter->idx->idx_class->prv->iter_next(iter);
 }
 
 int ods_iter_prev(ods_iter_t iter)
 {
+	__ods_idx_flush(iter->idx);
 	return iter->idx->idx_class->prv->iter_prev(iter);
 }
 
@@ -514,6 +695,7 @@ size_t ods_key_len(ods_key_t key)
 
 void ods_idx_print(ods_idx_t idx, FILE *fp)
 {
+	__ods_idx_flush(idx);
 	idx->idx_class->prv->print_idx(idx, fp);
 }
 
@@ -529,6 +711,7 @@ void ods_idx_info(ods_idx_t idx, FILE *fp)
 
 int ods_idx_verify(ods_idx_t idx, FILE *fp)
 {
+	__ods_idx_flush(idx);
 	if (idx->idx_class->prv->verify_idx)
 		return idx->idx_class->prv->verify_idx(idx, fp);
 	return 0;
@@ -559,4 +742,3 @@ static void __attribute__ ((destructor)) ods_idx_term(void)
 		free(idx_class);
 	}
 }
-

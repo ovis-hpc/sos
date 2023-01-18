@@ -370,6 +370,11 @@ static int h2htbl_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 	return ods_idx_insert(t->idx_table[bkt].idx, new_key, data);
 }
 
+static int h2htbl_insert_no_lock(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
+{
+	return h2htbl_insert(idx, new_key, data);
+}
+
 static int h2htbl_max(ods_idx_t idx, ods_key_t *key, ods_idx_data_t *data)
 {
 	int bkt;
@@ -1101,7 +1106,6 @@ int h2htbl_rt_opts_set(ods_idx_t idx, ods_idx_rt_opts_t opt, va_list ap)
 {
 	h2htbl_t t = idx->priv;
 	int i, rc;
-
 	switch (opt) {
 	case ODS_IDX_OPT_MP_UNSAFE:
 		t->rt_opts |= opt;
@@ -1153,6 +1157,7 @@ static struct ods_idx_provider h2htbl_provider = {
 	.rt_opts_get = h2htbl_rt_opts_get,
 	.commit = h2htbl_commit,
 	.insert = h2htbl_insert,
+	.insert_no_lock = h2htbl_insert_no_lock,
 	.visit = h2htbl_visit,
 	.update = h2htbl_update,
 	.delete = h2htbl_delete,

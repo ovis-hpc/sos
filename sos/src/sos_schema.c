@@ -1571,6 +1571,13 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 				goto err;
 			goto retry;
 		}
+		if (sos->bulk_ins_depth) {
+			struct ods_bulk_ins_opt_s opt;
+			opt.depth = sos->bulk_ins_depth;
+			opt.timeout.tv_sec = sos->bulk_ins_to;
+			opt.timeout.tv_nsec = 0;
+			sos_index_rt_opt_set(attr->index, ODS_IDX_OPT_BULK_INS, &opt);
+		}
 	}
  out:
 	pthread_mutex_unlock(&sos->lock);

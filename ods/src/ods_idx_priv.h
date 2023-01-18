@@ -62,6 +62,7 @@ struct ods_idx_provider {
 	ods_idx_rt_opts_t (*rt_opts_get)(ods_idx_t idx);
 	void (*commit)(ods_idx_t idx);
 	int (*insert)(ods_idx_t idx, ods_key_t uk, ods_idx_data_t data);
+	int (*insert_no_lock)(ods_idx_t idx, ods_key_t uk, ods_idx_data_t data);
 	int (*visit)(ods_idx_t idx, ods_key_t key, ods_visit_cb_fn_t cb_fn, void *ctxt);
 	int (*update)(ods_idx_t idx, ods_key_t uk, ods_idx_data_t data);
 	int (*delete)(ods_idx_t idx, ods_key_t key, ods_idx_data_t *data);
@@ -132,8 +133,16 @@ struct ods_idx {
 	struct ods_idx_class *idx_class;
 	/** The ODS object store for the index */
 	ods_t ods;
+	/** The index options */
+	int idx_opts;
 	/** The permissions the index was opened with */
 	ods_perm_t o_perm;
+	/** The optional Key-Value-Array for bulk insert */
+	struct ods_bulk_ins_opt_s kvq_opt;
+	/* Number threads, one kvq per thread */
+	int kvq_count;
+	/* Array of KVQ, one for each thread */
+	ods_kvq_t *kvq;
 	/** Place for the index to store its private data */
 	void *priv;
 };

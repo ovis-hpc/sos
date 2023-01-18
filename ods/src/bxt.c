@@ -1498,21 +1498,28 @@ static int bxt_insert_with_leaf(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t
 	return ENOMEM;
 }
 
-static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
+static int bxt_insert_no_lock(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
 {
 	bxt_t t = idx->priv;
 	ods_obj_t leaf;
 	int is_dup, ent;
 	int rc;
-	rc = __int_lock(t, NULL);
-	if (rc)
-		return rc;
 	leaf = leaf_find(t, new_key);
 	if (leaf)
 		ent = find_key_idx(t, leaf, new_key, &is_dup);
 	else
 		ent = is_dup = 0;
 	rc = bxt_insert_with_leaf(idx, new_key, data, leaf, ent, is_dup);
+	return rc;
+}
+
+static int bxt_insert(ods_idx_t idx, ods_key_t new_key, ods_idx_data_t data)
+{
+	bxt_t t = idx->priv;
+	int rc = __int_lock(t, NULL);
+	if (rc)
+		return rc;
+	rc = bxt_insert_no_lock(idx, new_key, data);
 	__int_unlock(t);
 	return rc;
 }
@@ -2819,6 +2826,7 @@ static struct ods_idx_provider bxt_provider = {
 	.rt_opts_get = bxt_rt_opts_get,
 	.commit = bxt_commit,
 	.insert = bxt_insert,
+	.insert_no_lock = bxt_insert_no_lock,
 	.visit = bxt_visit,
 	.update = bxt_update,
 	.delete = bxt_delete,
