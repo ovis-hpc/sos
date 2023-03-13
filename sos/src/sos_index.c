@@ -853,6 +853,24 @@ void sos_index_print(sos_index_t index, FILE *fp)
 		ods_idx_print(iref->idx, (fp ? fp : stdout));
 }
 
+/**
+ * @brief Verify the internal consistency of an index
+ *
+ * @param index The index handle
+ * @param fp A FILE pointer into which error information is reported
+ * @returns 0 The index is consistent
+ * @returns Consult \c fp for error message(s)
+ */
+int sos_index_verify(sos_index_t index, FILE *fp)
+{
+	int rc = 0;
+	ods_idx_ref_t iref;
+	LIST_FOREACH(iref, &index->active_idx_list, entry) {
+		if (ods_idx_verify(iref->idx, (fp ? fp : stdout)))
+			rc = -1;
+	}
+	return rc;
+}
 struct sos_container_index_iter_s {
 	sos_t sos;
 	ods_iter_t iter;

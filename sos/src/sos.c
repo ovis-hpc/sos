@@ -598,20 +598,6 @@ void sos_index_info(sos_index_t index, FILE *fp)
 	ods_info(ods_idx_ods(iref->idx), fp, ODS_INFO_ALL);
 }
 
-/**
- * @brief Verify the internal consistency of an index
- *
- * @param index The index handle
- * @param fp A FILE pointer into which error information is reported
- * @returns 0 The index is consistent
- * @returns Consult \c fp for error message(s)
- */
-int sos_index_verify(sos_index_t index, FILE *fp)
-{
-	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
-	return ods_idx_verify(iref->idx, fp);
-}
-
 int print_schema(struct ods_rbn *n, void *fp_, int level)
 {
 	FILE *fp = fp_;

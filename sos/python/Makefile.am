@@ -17,7 +17,7 @@ pkgpyexecdir = $(pkgpythondir)
 
 pkgpython_PYTHON = __init__.py DataSet.py
 
-dist_bin_SCRIPTS = sos-db sos-part sos-schema sos-import-csv sos-monitor
+dist_bin_SCRIPTS = sos-db sos-part sos-schema sos-import-csv sos-monitor sos-index
 
 Sos.c: Sos.pyx Sos.pxd
 	echo PYTHON_LDFLAGS are "$(PYTHON_LDFLAGS)"

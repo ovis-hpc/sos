@@ -84,7 +84,7 @@ static sos_filter_cond_t __sos_find_filter_condition(sos_filter_t filt,
 static sos_obj_t next_match(sos_filter_t filt);
 static sos_obj_t prev_match(sos_filter_t filt);
 
-#if 0
+#ifdef SOS_DEBUG
 static int __iter_rbn_printer(struct ods_rbn *rbn, void *-arg, int level)
 {
 	ods_key_t key = rbn->key;
@@ -380,7 +380,7 @@ static int __sos_iter_obj_ref_new(sos_iter_t sos_iter, ods_iter_t ods_iter,
 	ods_rbt_ins(&sos_iter->rbt, &new_ref->rbn);
 	if (rbn)
 		*rbn = &new_ref->rbn;
-#if 0
+#ifdef SOS_DEBUG
 	ods_rbt_verify(&sos_iter->rbt);
 	printf("----------\n");
 	ods_rbt_print(&sos_iter->rbt, __iter_rbn_printer, NULL);
@@ -402,7 +402,7 @@ static int __sos_iter_pos_iter(sos_iter_t sos_iter, ods_iter_t ods_iter)
 	sos_iter->pos = iter_obj_ref;
 	ods_rbn_init(&iter_obj_ref->rbn, iter_obj_ref->key);
 	ods_rbt_ins(&sos_iter->rbt, &iter_obj_ref->rbn);
-#if 0
+#ifdef SOS_DEBUG
 	ods_rbt_verify(&sos_iter->rbt);
 	printf("----------\n");
 	ods_rbt_print(&sos_iter->rbt, __iter_rbn_printer, NULL);
@@ -477,7 +477,7 @@ int sos_iter_next(sos_iter_t i)
 	sos_key_put(i->pos->key);
 	free(i->pos);
 	i->pos = NULL;
-#if 0
+#ifdef SOS_DEBUG
 	printf("----------\n");
 	ods_rbt_print(&i->rbt, __iter_rbn_printer, NULL);
 #endif
@@ -560,7 +560,7 @@ int sos_iter_prev(sos_iter_t i)
 	sos_key_put(i->pos->key);
 	free(i->pos);
 	i->pos = NULL;
-#if 0
+#ifdef SOS_DEBUG
 	printf("----------\n");
 	ods_rbt_print(&i->rbt, __iter_rbn_printer, NULL);
 #endif

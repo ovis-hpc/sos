@@ -725,6 +725,7 @@ int64_t sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b);
 void sos_index_print(sos_index_t index, FILE *fp);
 const char *sos_index_name(sos_index_t index);
 int sos_index_stat(sos_index_t index, sos_index_stat_t sb);
+int sos_index_verify(sos_index_t index, FILE *fp);
 void sos_container_index_list(sos_t sos, FILE *fp);
 typedef struct sos_container_index_iter_s *sos_container_index_iter_t;
 sos_container_index_iter_t sos_container_index_iter_new(sos_t sos);

@@ -4455,6 +4455,13 @@ cdef class Index(object):
         """Print the contents of the index to stdout"""
         sos_index_print(self.c_index, NULL);
 
+    def verify(self):
+        """Verify the contents of the index
+        Errors are printed to stdout
+        """
+        cdef int rc = sos_index_verify(self.c_index, NULL);
+        return rc
+
 ################################
 # Object getter functions
 ################################

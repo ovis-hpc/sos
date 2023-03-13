@@ -683,6 +683,7 @@ cdef extern from "sos/sos.h":
     const char *sos_index_key_to_str(sos_index_t index, sos_key_t key)
     int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b)
     void sos_index_print(sos_index_t index, FILE *fp)
+    int sos_index_verify(sos_index_t index, FILE *fp)
     const char *sos_index_name(sos_index_t index)
     int sos_index_stat(sos_index_t index, sos_index_stat_t sb)
     void sos_container_index_list(sos_t sos, FILE *fp)
