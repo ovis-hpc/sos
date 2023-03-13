@@ -1893,7 +1893,7 @@ static int __reindex_obj_callback_fn(sos_part_t part, ods_obj_t ods_obj, sos_obj
 	sos_obj_index(sos_obj);
 	sos_obj_put(sos_obj);
 	uarg->visited_count += 1;
-	if (0 == (uarg->visited_count % uarg->cb_obj_count))
+	if (uarg->cb_obj_count && (0 == (uarg->visited_count % uarg->cb_obj_count)))
 		rc = uarg->cb_fn(part, uarg->cb_arg, uarg->visited_count);
 	return rc;
 }

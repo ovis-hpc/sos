@@ -695,6 +695,8 @@ size_t ods_key_len(ods_key_t key)
 
 void ods_idx_print(ods_idx_t idx, FILE *fp)
 {
+	if (!fp)
+		return;
 	__ods_idx_flush(idx);
 	idx->idx_class->prv->print_idx(idx, fp);
 }
@@ -706,6 +708,9 @@ ods_t ods_idx_ods(ods_idx_t idx)
 
 void ods_idx_info(ods_idx_t idx, FILE *fp)
 {
+	if (!fp)
+		return;
+	__ods_idx_flush(idx);
 	idx->idx_class->prv->print_info(idx, fp);
 }
 

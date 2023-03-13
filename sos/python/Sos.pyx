@@ -1285,6 +1285,10 @@ cdef class PartStat(object):
     def __str__(self):
         return str(self.c_stat)
 
+cdef int __obj_reindex_cb(sos_part_t part, void *arg, uint64_t count):
+    print(f"{count} objects reindexed")
+    return 0
+
 cdef class Partition(SosObject):
     cdef sos_part_t c_part
     cdef object path_
@@ -1424,27 +1428,63 @@ cdef class Partition(SosObject):
         uuid = []
         c_uuid_array = sos_part_query_schema_uuid(self.c_part, &c_count)
         for i in range(0, c_count):
-            uuid.append( (c_uuid_array[i].uuid, c_uuid_array[i].count) )
+            pyobj = <uuid_t>c_uuid_array[i].uuid
+            uuid.append( (pyobj[0:16], c_uuid_array[i].count) )
         free(c_uuid_array)
         return uuid
 
     def state_set(self, new_state):
-        """Set the partition state"""
+        """Set the partition state
+        Arguments:
+        - The new state of the partition. The value can be either a
+          PartState object or a string that is one of "PRIMARY", "ACTIVE",
+          or "OFFLINE"
+        """
         cdef int rc
-        cdef sos_part_state_t state
+        cdef sos_part_state_t c_state
         if self.c_part == NULL:
             raise ValueError("The partition is not open")
-        if new_state.upper() == "PRIMARY":
-            state = SOS_PART_STATE_PRIMARY
-        elif new_state.upper() == "ACTIVE":
-            state = SOS_PART_STATE_ACTIVE
-        elif new_state.upper() == "OFFLINE":
-            state = SOS_PART_STATE_OFFLINE
+        if type(new_state) == PartState:
+            c_state = int(new_state)
         else:
-            raise ValueError("Invalid partition state name {0}".format(new_state))
-        rc = sos_part_state_set(self.c_part, state)
+            if new_state.upper() == "PRIMARY":
+                c_state = SOS_PART_STATE_PRIMARY
+            elif new_state.upper() == "ACTIVE":
+                c_state = SOS_PART_STATE_ACTIVE
+            elif new_state.upper() == "OFFLINE":
+                c_state = SOS_PART_STATE_OFFLINE
+            else:
+                raise ValueError("Invalid partition state name {0}".format(new_state))
+        rc = sos_part_state_set(self.c_part, c_state)
         if rc != 0:
             self.abort(rc)
+
+    def reindex(self, reindex_status_count=10000):
+        """Reindex all objects in a parition
+
+        Use this method to rebuild a parition's indices when one or
+        more indices have been found to be corrupted. The parition
+        must be attached to a container, i.e. this partition object
+        was obtained by calling container.part_by_name()
+
+        The parition is placed in the OFFLINE state while the
+        rebuild is in progress. If an error is encountered, the
+        partition is left in the OFFLINE state and an exception
+        is thrown.
+
+        Object counts are periodically printed to stdout after
+        every \c reindex_status_count objects are indexed.
+
+        Keyword Parameters:
+        reindex_status_count - The number of objects to reindex before printing status
+        """
+        cdef int c_rc
+        org_state = self.state()
+        self.state_set("OFFLINE")
+        c_rc = sos_part_reindex(self.c_part, __obj_reindex_cb,
+                                NULL, reindex_status_count)
+        self.state_set(org_state)
+        print(f"A total of {c_rc} objects were reindexed in the partition '{self.name()}'")
 
     def release(self):
         if self.c_part:
@@ -4454,6 +4494,18 @@ cdef class Index(object):
     def show(self):
         """Print the contents of the index to stdout"""
         sos_index_print(self.c_index, NULL);
+
+    def verify(self, verbose=0):
+        """Verify the contents of the index
+
+	Keyword Parameter:
+	verbose -  0 Nothing is printed
+	        -  1 The partion names containing corrupted indices are printed
+	        - >1 Corruption errors are printed to stdout
+        """
+        cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
+        cdef int c_rc = sos_index_verify(self.c_index, c_fp, verbose);
+        return c_rc
 
 ################################
 # Object getter functions

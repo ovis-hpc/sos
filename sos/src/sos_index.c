@@ -1,4 +1,4 @@
-/*
+/* -*- c-basic-offset : 8 -*-
  * Copyright (c) 2015 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2015 Sandia Corporation. All rights reserved.
  *
@@ -851,6 +851,39 @@ void sos_index_print(sos_index_t index, FILE *fp)
 	ods_idx_ref_t iref;
 	LIST_FOREACH(iref, &index->active_idx_list, entry)
 		ods_idx_print(iref->idx, (fp ? fp : stdout));
+}
+
+/**
+ * @brief Verify the internal consistency of an index
+ *
+ * @param index The index handle
+ * @param fp A FILE pointer into which error information is reported.
+ *           If this is NULL, the index errors will not be printed, but
+ *           the status of the index is returned.
+ * @param verbose -  0: errors are not printed
+ *                -  1: Names of partition containing corrupted indices
+ *                     are printed
+ *                - >1: Corruption errors are also printed.
+ *
+ * @return 0 The index is consistent
+ * @return -1 The index in one or more partitions is corrupted
+ */
+int sos_index_verify(sos_index_t index, FILE *fp, int verbose)
+{
+	int rc = 0;
+	ods_idx_ref_t iref;
+	if (!verbose)
+		fp = NULL;
+	LIST_FOREACH(iref, &index->active_idx_list, entry) {
+		if (ods_idx_verify(iref->idx, fp)) {
+			if (fp && verbose)
+				printf("Partition Name: %s, Path %s\n",
+				       sos_part_name(iref->part),
+				       sos_part_path(iref->part));
+			rc = -1;
+		}
+	}
+	return rc;
 }
 
 struct sos_container_index_iter_s {

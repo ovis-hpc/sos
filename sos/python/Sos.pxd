@@ -574,6 +574,10 @@ cdef extern from "sos/sos.h":
                           sos_part_obj_iter_fn_t fn, void *arg)
     size_t sos_part_remap_schema_uuid(sos_part_t part, const char *dst_path, const char *src_path)
     sos_part_uuid_entry_t sos_part_query_schema_uuid(sos_part_t part, size_t *count)
+    ctypedef int (*sos_part_reindex_callback_fn)(sos_part_t part, void *arg, uint64_t obj_count)
+    size_t sos_part_reindex(sos_part_t part,
+                            sos_part_reindex_callback_fn callback_fn, void *callback_arg,
+                            size_t obj_count)
 
     cdef enum sos_byte_order_e:
         SOS_OBJ_BE,
@@ -683,6 +687,7 @@ cdef extern from "sos/sos.h":
     const char *sos_index_key_to_str(sos_index_t index, sos_key_t key)
     int sos_index_key_cmp(sos_index_t index, sos_key_t a, sos_key_t b)
     void sos_index_print(sos_index_t index, FILE *fp)
+    int sos_index_verify(sos_index_t index, FILE *fp, int verify)
     const char *sos_index_name(sos_index_t index)
     int sos_index_stat(sos_index_t index, sos_index_stat_t sb)
     void sos_container_index_list(sos_t sos, FILE *fp)

@@ -70,7 +70,7 @@ def query_schema(cont, schema_name=None, uuid_str=None, verbose=False):
         if uuid_str is not None and s.uuid() != uuid.UUID(uuid_str):
             continue
         count += 1
-        print(f"{s.name()} '{s.uuid()}'")
+        print(f"{s.uuid()} {s.name()}")
         if verbose:
             print("{0:4} {1:24} {2:12} {3:32}".format("Id", "Type", "Indexed", "Name"))
             print("{0} {1} {2} {3}".\

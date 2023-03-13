@@ -52,9 +52,12 @@
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
 #include "bxt.h"
+#include "ods_log.h"
 
 /* #define ODS_DEBUG */
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
+
+#define TPRINTF(_fp_, _fmt_, ...) { if (fp) fprintf(_fp_, "%s: " _fmt_ , ods_path(t->ods), ## __VA_ARGS__); }
 
 static int split_midpoint(int order);
 static struct bxt_obj_el *alloc_el(bxt_t t);
@@ -219,12 +222,12 @@ static int verify_record(bxt_t t, ods_obj_t rec, FILE *fp)
 {
 	int rc = 0;
 	if (REC(rec)->next_ref == rec->ref) {
-		fprintf(fp, "The record's next pointer %p creates a cycle.\n",
+		TPRINTF(fp, "The record's next pointer %p creates a cycle.\n",
 			(void *)rec->ref);
 		rc = 1;
 	}
 	if (REC(rec)->prev_ref == rec->ref) {
-		fprintf(fp, "The record's prev pointer %p creates a cycle.\n",
+		TPRINTF(fp, "The record's prev pointer %p creates a cycle.\n",
 			(void *)rec->ref);
 		rc = 1;
 	}
@@ -239,34 +242,34 @@ static int verify_leaf(bxt_t t, ods_obj_t l, int is_root, FILE *fp)
 	int midpoint = split_midpoint(t->udata->order);
 
 	if (!is_root && NODE(l)->count < midpoint) {
-		fprintf(fp, "The leaf %p has only %d < %d entries\n",
+		TPRINTF(fp, "The leaf %p has only %d < %d entries\n",
 			(void *)l->ref, NODE(l)->count, midpoint);
 		rc = 1;
 	}
 	if (NODE(l)->count > t->udata->order) {
-		fprintf(fp, "The leaf %p has too many %d > %d entries\n",
+		TPRINTF(fp, "The leaf %p has too many %d > %d entries\n",
 			(void *)l->ref, NODE(l)->count, t->udata->order);
 		rc = 1;
 	}
 	for (i = 0; i < NODE(l)->count; i++) {
 		for (j = 0; j < NODE(l)->count; j++) {
 			if (L_ENT(l,i).head_ref == 0) {
-				fprintf(fp, "Leaf %p's entry %d head reference should not be NULL\n", (void *)l->ref, i);
+				TPRINTF(fp, "Leaf %p's entry %d head reference should not be NULL\n", (void *)l->ref, i);
 				rc = 1;
 				continue;
 			}
 			if (L_ENT(l,i).tail_ref == 0) {
-				fprintf(fp, "Leaf %p's entry %d tail reference should not be NULL\n", (void *)l->ref, i);
+				TPRINTF(fp, "Leaf %p's entry %d tail reference should not be NULL\n", (void *)l->ref, i);
 				rc = 1;
 				continue;
 			}
 			if (i != j && L_ENT(l,i).head_ref == L_ENT(l,j).head_ref) {
-				fprintf(fp, "Leaf %p's entry %d head_ref %p should not equal entry %d\n",
+				TPRINTF(fp, "Leaf %p's entry %d head_ref %p should not equal entry %d\n",
 					(void *)l->ref, i, (void *)L_ENT(l, i).head_ref, j);
 				rc = 1;
 			}
 			if (i != j && L_ENT(l,i).tail_ref == L_ENT(l,j).tail_ref) {
-				fprintf(fp, "Leaf %p's entry %d tail_ref %p should not equal entry %d\n",
+				TPRINTF(fp, "Leaf %p's entry %d tail_ref %p should not equal entry %d\n",
 					(void *)l->ref, i, (void *)L_ENT(l, i).tail_ref, j);
 				rc = 1;
 			}
@@ -274,7 +277,7 @@ static int verify_leaf(bxt_t t, ods_obj_t l, int is_root, FILE *fp)
 		rec_ref = L_ENT(l, i).head_ref;
 		rec = ods_ref_as_obj(t->ods, rec_ref);
 		if (!rec) {
-			fprintf(fp, "Leaf %p entry %d record reference %p is invalid.\n",
+			TPRINTF(fp, "Leaf %p entry %d record reference %p is invalid.\n",
 				(void *)l->ref, i, (void *)rec_ref);
 			rc = 1;
 			continue;
@@ -299,7 +302,7 @@ static int verify_node(bxt_t t, ods_obj_t n, FILE *fp)
 	/* Verify the node's cardinality */
 	if (!((NODE(n)->count >= midpoint) &&
 	       (NODE(n)->count <= t->udata->order))) {
-		fprintf(fp, "Node %p's cardinality is incorrect %d <= %d <= %d\n",
+		TPRINTF(fp, "Node %p's cardinality is incorrect midpoint %d <= count %d <= order %d\n",
 			(void *)n->ref,
 			midpoint, NODE(n)->count, t->udata->order);
 		rc = 1;
@@ -312,13 +315,13 @@ static int verify_node(bxt_t t, ods_obj_t n, FILE *fp)
 
 		c_ref = N_ENT(n, i).node_ref;
 		if (!c_ref) {
-			fprintf(fp, "Node %p's entry %d should not be NULL\n", (void *)n->ref, i);
+			TPRINTF(fp, "Node %p's entry %d should not be NULL\n", (void *)n->ref, i);
 			rc |= 1;
 			continue;
 		}
 		c = ods_ref_as_obj(t->ods, c_ref);
 		if (!c) {
-			fprintf(fp, "Node %p's entry %d reference %p is invalid.\n",
+			TPRINTF(fp, "Node %p's entry %d reference %p is invalid.\n",
 				(void *)n->ref, i, (void *)c_ref);
 			rc |= 1;
 			continue;
@@ -340,14 +343,14 @@ static int verify_idx(ods_idx_t idx, FILE* fp)
 
 	root = ods_ref_as_obj(t->ods, t->udata->root_ref);
 	if (!root) {
-		fprintf(fp, "The root reference %p is invalid.\n",
+		TPRINTF(fp, "The root reference %p is invalid.\n",
 			(void *)t->udata->root_ref);
 		return 1;
 	}
 
 	/* Parent should be nil */
 	if (NODE(root)->parent != 0)
-		fprintf(fp, "The root %p's parent should be NULL, not %p\n",
+		TPRINTF(fp, "The root %p's parent should be NULL, not %p\n",
 			(void *)root->ref, (void *)NODE(root)->parent);
 
 	/* Check if root is leaf */
@@ -359,14 +362,14 @@ static int verify_idx(ods_idx_t idx, FILE* fp)
 		ods_ref_t ref = N_ENT(root,i).node_ref;
 		ods_obj_t node;
 		if (!ref) {
-			fprintf(fp, "Root node %p's entry %d should not be NULL\n",
+			TPRINTF(fp, "Root node %p's entry %d should not be NULL\n",
 				(void *)root->ref, i);
 			rc |= 1;
 			continue;
 		}
 		node = ods_ref_as_obj(t->ods, ref);
 		if (!node) {
-			fprintf(fp, "Root node %p's entry %d reference %p is invalid.\n",
+			TPRINTF(fp, "Root node %p's entry %d reference %p is invalid.\n",
 				(void *)root->ref, i, (void *)ref);
 			rc |= 1;
 			continue;
@@ -497,15 +500,19 @@ ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 	int depth = 2;
 
 	if (!t->udata->root_ref)
-		return 0;
+		return NULL;
 
 	n = ods_ref_as_obj(t->ods, t->udata->root_ref);
+	if (!n)
+		goto corrupted;
 	while (!NODE(n)->is_leaf) {
 		int64_t rc;
 		depth += 1;
 		for (i = 1; i < NODE(n)->count; i++) {
 			ods_obj_t entry_key =
 				ods_ref_as_obj(t->ods, N_ENT(n,i).key_ref);
+			if (!entry_key)
+				goto corrupted;
 			rc = t->comparator(key, entry_key);
 			ods_obj_put(entry_key);
 			if (rc >= 0)
@@ -516,9 +523,16 @@ ods_obj_t leaf_find(bxt_t t, ods_key_t key)
 		ref = N_ENT(n,i-1).node_ref;
 		ods_obj_put(n);
 		n = ods_ref_as_obj(t->ods, ref);
+		if (!n)
+			goto corrupted;
 	}
 	t->udata->depth = depth;
 	return n;
+corrupted:
+	/* Corrupted index */
+	ods_lerror("The index '%s' is corrupted.\n", ods_path(t->ods));
+	errno = EINVAL;
+	return NULL;
 }
 
 static ods_obj_t rec_find(bxt_t t, ods_key_t key, int first)

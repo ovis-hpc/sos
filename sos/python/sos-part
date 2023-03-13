@@ -217,7 +217,8 @@ if __name__ == "__main__":
     actions.add_argument("--create", action="store_true",
                          help="Create a new partition. ")
     actions.add_argument("--state", metavar="STATE-NAME",
-                         choices=[ 'primary', 'active', 'offline' ],
+                         choices=[ 'primary', 'PRIMARY', 'active', 'ACTIVE',
+                                   'offline', 'OFFLINE' ],
                          help="Set the state of a partition.")
     actions.add_argument("--attach", action="store_true",
                          help="Attach a partition to a container.")
@@ -233,6 +234,10 @@ if __name__ == "__main__":
     actions.add_argument("--show-schema", action="store_true",
                          help="Show the set of schema UUID that are "
                          "used by objects in the partition.")
+    actions.add_argument("--reindex", action="store_true",
+                         help="Reindex all objects in the specified partition")
+    parser.add_argument("--reindex-status-count", type=int, metavar="OBJ-COUNT", default=10000,
+                        help="The number of objects to update before printing a status message")
     args = parser.parse_args()
 
     #
@@ -451,6 +456,9 @@ if __name__ == "__main__":
     # Show a partition's schema UUID
     #
     if args.show_schema:
+        if args.path is None:
+            print("The --path PATH argument is required for --show-schma")
+            sys.exit(1)
         part = Sos.Partition()
         try:
             part.open(args.path)
@@ -460,8 +468,37 @@ if __name__ == "__main__":
         uuid_list = part.query_schema_uuid()
         print("Schema UUID                          Use Count")
         print("------------------------------------ ------------")
+        obj_count = 0
         for entry in uuid_list:
             u = uuid.UUID(bytes=entry[0][0:16])
-            print(str(u), entry[1])
-        sys.exit(1)
+            obj_count += entry[1]
+            print(f"{str(u)} {entry[1]:>12}")
+        print("------------------------------------ ------------")
+        print(f"{'':36} {obj_count:>12}")
+        sys.exit(0)
+    #
+    # Rebuild all the indices in a partition
+    #
+    if args.reindex:
+        if not args.cont:
+            print("The container option (--cont PATH) must be specified.")
+            sys.exit(1)
+        if not args.name:
+            print("The partition name (--name PART-NAME) must be specified.")
+            sys.exit(1)
+        cont = Sos.Container()
+        try:
+            cont.open(args.cont)
+        except Exception as ex:
+            print(f" The container '{args.cont}' could not be opened.")
+            sys.exit(1)
+        part = cont.part_by_name(args.name)
+        if not part:
+            print(f"The partition '{args.name}' was not found.")
+            sys.exit(1)
+        try:
+            part.reindex(args.reindex_status_count)
+        except Exception as e:
+            print(e)
+            sys.exit(1)
     sys.exit(0)
