@@ -312,6 +312,9 @@ cdef class Session:
             raise ValueError("The cluster defined in {0} " \
                              "could not be attached.".format(config_file))
 
+    def __del__(self):
+        dsos_session_close(self.c_session)
+
     def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660):
         """Open a container in a D/SOS cluster
 
