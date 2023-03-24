@@ -1,0 +1,76 @@
+.\" Manpage for sos-index
+.\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
+.TH man 8 "17 Mar 2023" "v6" "sos-index man page"
+
+.SH NAME
+sos-index \- Manage SOS indices
+
+.SH SYNOPSIS
+sos-index [OPTION...] [NAME]
+
+.SH "DESCRIPTION"
+The sos-index command is used to query or verify indices. When verifying an index,
+if corruption is detected the name of the partition containing the corrupted index
+is printed. It is also possible to have the underlying index library print specific
+consistency errors. This is enabled with the --verbose option option.
+
+.SH "OPTIONS"
+.PP
+.IP "\fB-Q,--query \fR" 1c
+Print the name of all indices in the container. This includes all indices for all schemas.
+.IP "\fB-V,--verify \fR" 1c
+Verify the consistency of one or more indices in a container.
+This includes all index instances in all partitions attached to
+the container. If the --index NAME option is specified, only the
+index NAME will be verified.
+.IP "\fB-p,--path PATH \fR" 1c
+The \fBPATH\fR to the SOS container.
+.IP "\fB-n,--index NAME \fR" 1c
+The optional \fBNAME\fR of the index to verify.
+.IP "\fB-v,--verbose \fR" 1c
+This option can be used with the -V option to control the level of error messages
+printed when a corruption error is detected. If specified once, the partition
+name containing the corrupted index is printed. If specified more than once,
+both the partition name and the index specific corruption errors are printed.
+.PP
+.SH EXAMPLES
+.SS "Query Example"
+.PP
+.RS 4
+.nf
+$ sos-index --path=/dev/shm/SOS/ldms_data --query
+meminfo_tom_job_comp_time
+meminfo_tom_timestamp
+netdev2_tom_time_comp
+slurm2_tom_time_comp
+vmstat_tom_job_comp_time
+vmstat_tom_timestamp
+.fi
+.RE
+.PP
+.SS "Verify All Indices"
+.PP
+.RS 4
+.nf
+$ sos-index --path=/dev/shm/SOS/ldms_data --verify
+Verifying index 'meminfo_tom_job_comp_time' ... OK
+Verifying index 'meminfo_tom_timestamp' ... OK
+Verifying index 'netdev2_tom_time_comp' ... OK
+Verifying index 'slurm2_tom_time_comp' ... OK
+Verifying index 'vmstat_tom_job_comp_time' ... OK
+Verifying index 'vmstat_tom_timestamp' ... OK
+.fi
+.RE
+.PP
+.SS "Verify A Single Index"
+.PP
+.RS 4
+.nf
+$ sos-index --path=/dev/shm/SOS/ldms_data --verify --index  meminfo_tom_job_comp_time
+Verifying index 'meminfo_tom_job_comp_time' ... OK
+.fi
+.RE
+.PP
+
+.SH SEE ALSO
+ldmsd(8), ldms_quickstart(7),

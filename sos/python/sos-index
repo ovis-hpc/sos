@@ -56,8 +56,6 @@ if __name__ == "__main__":
                          help="Print all of the container's indices.")
     actions.add_argument("-V", "--verify", action="store_true",
                          help="Verify the consistency of one or all indices.")
-    actions.add_argument("-P", "--print", action="store_true", dest="dump",
-                         help="Dump the index contents to the terminal.")
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="If specified once, the partition name containing "
                         "the corrupted index is printed. If specified more than "
@@ -81,18 +79,6 @@ if __name__ == "__main__":
         for idx in idx_iter:
             print(f"{idx.name()}")
         sys.exit(0)
-
-    if args.dump:
-        if not args.index_name:
-            print("The --index option must be used with the --print option")
-            sys.exit(1)
-        idx_iter = cont.index_iter()
-        for idx in idx_iter:
-            if args.index_name:
-                if args.index_name != idx.name():
-                        continue
-            idx.show()
-            sys.exit(0)
 
     if not args.verify:
         sys.exit(0)

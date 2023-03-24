@@ -25,3 +25,5 @@ Sos.c: Sos.pyx Sos.pxd
 
 clean-local:
 	rm -f Sos.c
+
+dist_man8_MANS= sos-index.man
