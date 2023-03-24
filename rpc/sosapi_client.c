@@ -885,13 +885,21 @@ static int send_request(dsos_client_t client, dsos_client_request_t rqst)
 	return g_last_err;
 }
 
+#define REQUEST_PROC_TIMEOUT 2	/* 2 seconds */
 static void *request_proc_fn(void *arg)
 {
 	dsos_client_t client = arg;
 	dsos_client_request_t rqst;
+	struct timespec to;
 	int rc;
 next:
-	sem_wait(&client->request_sem);
+	clock_gettime(CLOCK_REALTIME, &to);
+	to.tv_nsec += REQUEST_PROC_TIMEOUT;
+	rc = sem_timedwait(&client->request_sem, &to);
+	if (client->shutdown)
+		goto out;
+	if (rc == ETIMEDOUT)
+		goto next;
 	pthread_mutex_lock(&client->request_q_lock);
 	while (!TAILQ_EMPTY(&client->request_q)) {
 		rqst = TAILQ_FIRST(&client->request_q);
@@ -907,6 +915,7 @@ next:
 	}
 	pthread_mutex_unlock(&client->request_q_lock);
 	goto next;
+out:
 	return NULL;
 }
 
@@ -922,6 +931,7 @@ void dsos_session_close(dsos_session_t sess)
 	for (client_id = 0; client_id < sess->client_count; client_id ++) {
 		client = &sess->clients[client_id];
 		void *dontcare;
+		sem_post(&client->request_sem);
 		pthread_join(client->request_thread, &dontcare);
 		auth_destroy(client->client->cl_auth);
 		clnt_destroy(client->client);

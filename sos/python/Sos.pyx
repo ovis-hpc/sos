@@ -313,7 +313,12 @@ cdef class Session:
                              "could not be attached.".format(config_file))
 
     def __del__(self):
-        dsos_session_close(self.c_session)
+        self.close()
+
+    def close(self):
+        if self.c_session != NULL:
+            dsos_session_close(self.c_session)
+            self.c_session = NULL;
 
     def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660):
         """Open a container in a D/SOS cluster
