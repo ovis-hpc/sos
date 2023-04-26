@@ -1817,6 +1817,10 @@ cdef class Schema(SosObject):
         pyobj = c_uuid
         return uuid.UUID(bytes=pyobj[0:16])
 
+    def gen(self):
+        """Return the schema version generation number"""
+        return sos_schema_gen(self.c_schema)
+
     def name(self):
         """Returns the name of the schema"""
         return sos_schema_name(self.c_schema).decode('utf-8')
@@ -1851,7 +1855,22 @@ cdef class Schema(SosObject):
         raise ValueError("The index must be a string or an integer.")
 
     def index_add(self, attr):
-        rc = sos_schema_index_add(self.c_schema, attr['name'].encode())
+        """Add an index for an attribute
+
+        Parameters:
+        - The attribute to index
+        """
+        rc = sos_schema_index_add(self.c_schema, attr.name().encode())
+        if rc != 0:
+            self.abort(rc)
+
+    def index_rem(self, attr):
+        """Remove an index for an attribute
+
+        Parameters:
+        - The attribute object
+        """
+        rc = sos_schema_index_rem(self.c_schema, attr.name().encode())
         if rc != 0:
             self.abort(rc)
 
@@ -6959,6 +6978,13 @@ cdef class SqlQuery:
             raise ValueError("The query could not be created.")
 
     def select(self, sql, options=None):
+        """Present the SQL query for processing
+
+        This presents the SQL statement to the D/SOS daemons for
+        parallel query. Use the next() method to retrieve the results
+        selected by this query.
+
+        """
         cdef int c_rc
         cdef sos_attr_t c_attr
         cdef int c_col_no
@@ -6998,7 +7024,7 @@ cdef class SqlQuery:
         raise StopIteration
 
     def next(self):
-        """Return a Pandas DataFrame for the next batch of query results"""
+        """Return a Pandas DataFrame for the next set of query results"""
         cdef sos_obj_t c_o
         cdef sos_value_s v_
         cdef sos_value_t v
@@ -7122,7 +7148,9 @@ cdef class SqlQuery:
         return res
 
     def err_msg(self):
-        return dsos_query_errmsg(<dsos_query_t>self.c_query).decode()
+        """Return the message string associated with the last query error"""
+        msg = dsos_query_errmsg(<dsos_query_t>self.c_query).decode()
+        return msg
 
     @property
     def capacity(self):

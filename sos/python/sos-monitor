@@ -59,13 +59,15 @@ t0 = 0.0
 class SchemaMonitor(object):
     def __init__(self, cont, schema):
         self.cont = cont
-        self.schema = schema
+        self.schema_name = schema.name()
         self.indices = {}
         self.cards = []
         self.dups = []
         self.sizes = []
         self.name_len = 0
+        self.refresh_schema(self.cont.schema_by_name(self.schema_name))
 
+    def refresh_schema(self, schema):
         for attr in schema:
             if attr.is_indexed():
                 nlen = len(attr.name())
@@ -78,6 +80,7 @@ class SchemaMonitor(object):
 
     def update_stats(self, stdscr, row, col):
         global t0
+        self.refresh_schema(self.cont.schema_by_name(self.schema_name))
         fmt = "{0:" + str(self.name_len+4) + "} {1:16} {2:16} {3:16} {4:16} {5:16} {6:16}"
         stdscr.addstr(row, col, fmt.format("Name",
                                            "Cardinality", "Inserts/s",
@@ -183,5 +186,3 @@ if __name__ == "__main__":
     curses.nocbreak()
     stdscr.keypad(False)
     curses.endwin()
-
-

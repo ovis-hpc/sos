@@ -365,10 +365,12 @@ int sos_schema_delete(sos_t sos, const char *name);
 sos_schema_t sos_schema_first(sos_t sos);
 sos_schema_t sos_schema_next(sos_schema_t schema);
 const char *sos_schema_name(sos_schema_t schema);
+uint32_t sos_schema_gen(sos_schema_t schema);
 void sos_schema_uuid(sos_schema_t schema, uuid_t uuid);
 int sos_schema_attr_count(sos_schema_t schema);
 int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, ...);
 int sos_schema_index_add(sos_schema_t schema, const char *name);
+int sos_schema_index_rem(sos_schema_t schema, const char *name);
 int sos_schema_index_modify(sos_schema_t schema, const char *name,
 			    const char *idx_type, const char *key_type,
 			    const char *idx_args);

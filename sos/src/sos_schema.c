@@ -147,6 +147,7 @@ static sos_schema_t __sos_schema_new(const char *name, const uuid_t uuid)
 	if (schema) {
 		schema->data = &schema->data_;
 		strcpy(schema->data->name, name);
+		schema->data->gen = 1;
 		TAILQ_INIT(&schema->attr_list);
 		TAILQ_INIT(&schema->idx_attr_list);
 		schema->ref_count = 1;
@@ -223,8 +224,15 @@ void sos_schema_free(sos_schema_t schema)
 	__sos_schema_free(schema);
 }
 
-void __sos_schema_free(sos_schema_t schema)
+void __sos_schema_release(sos_schema_t schema)
 {
+	sos_t sos = schema->sos;
+	ods_rbt_del(&schema->sos->schema_name_rbt, &schema->name_rbn);
+	ods_rbt_del(&schema->sos->schema_id_rbt, &schema->id_rbn);
+	if (sos)
+		sos->schema_count--;
+	LIST_REMOVE(schema, entry);
+
 	/* Free all of our attributes and close its indices */
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		sos_attr_t attr = TAILQ_FIRST(&schema->attr_list);
@@ -245,7 +253,11 @@ void __sos_schema_free(sos_schema_t schema)
 	/* Drop our reference on the schema object */
 	if (schema->sos && schema->schema_obj)
 		ods_obj_put(schema->schema_obj);
+}
 
+void __sos_schema_free(sos_schema_t schema)
+{
+	__sos_schema_release(schema);
 	free(schema);
 }
 
@@ -366,6 +378,21 @@ int sos_schema_attr_count(sos_schema_t schema)
 const char *sos_schema_name(sos_schema_t schema)
 {
 	return schema->data->name;
+}
+
+/**
+ * \brief Return the schema generation number
+ *
+ * Every time a schema is modified, i.e. an index is added or
+ * subtracted, the generation number is incremated. This function
+ * reports the current generation number.
+ *
+ * \param schema The schema handle
+ * \return The schema generation number
+ */
+uint32_t sos_schema_gen(sos_schema_t schema)
+{
+	return schema->data->gen;
 }
 
 /**
@@ -511,7 +538,7 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, 
 
 	if (strlen(name) >= SOS_ATTR_NAME_LEN)
 		return E2BIG;
-	if (schema->schema_obj)
+	if (schema->schema_obj && type != SOS_TYPE_JOIN)
 		return EBUSY;
 
 	/* Search the schema to see if the name is already in use */
@@ -639,9 +666,7 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, 
 /**
  * \brief Add an index to an attribute
  *
- * Marks an attribute as having a key-value index. The index is not
- * actually created until the schema containing the attribute is added
- * to the container.
+ * Marks an attribute as having a key-value index.
  *
  * \param schema	The schema handle
  * \param attr_name	The attribute name
@@ -651,13 +676,9 @@ int sos_schema_attr_add(sos_schema_t schema, const char *name, sos_type_t type, 
  */
 int sos_schema_index_add(sos_schema_t schema, const char *attr_name)
 {
-	sos_attr_t attr;
-
-	if (schema->schema_obj)
-		return EBUSY;
-
 	/* Find the attribute */
-	attr = _attr_by_name(schema, attr_name);
+	int rc = EEXIST;
+	sos_attr_t attr = _attr_by_name(schema, attr_name);
 	if (!attr)
 		return ENOENT;
 
@@ -665,9 +686,55 @@ int sos_schema_index_add(sos_schema_t schema, const char *attr_name)
 	if (!attr->data->indexed) {
 		TAILQ_INSERT_TAIL(&schema->idx_attr_list, attr, idx_entry);
 		attr->data->indexed = 1;
+		if (schema->schema_obj) {
+			ods_atomic_inc(&schema->data->gen);
+			ods_obj_update(schema->schema_obj);
+			rc = __sos_schema_open(schema->sos, schema);
+			if (rc)
+				goto out;
+		}
 		return 0;
 	}
-	return EEXIST;
+ out:
+	return rc;
+}
+
+/**
+ * \brief Remove an attribute index
+ *
+ * Disables indexing on the specified attribute. This does not
+ * remove any files associated with the index, but additional
+ * sos_obj_index for objects on this schema will not add entries
+ * for this attributes index.
+ *
+ * \param schema	The schema handle
+ * \param attr_name	The attribute name
+ * \retval 0		The index was succesfully remove
+ * \retval ENOENT	The specified attribute does not exist
+ * \retval EINVAL	One or more parameters was invalid
+ */
+int sos_schema_index_rem(sos_schema_t schema, const char *attr_name)
+{
+	/* Find the attribute */
+	int rc = ENOENT;
+	sos_attr_t attr = _attr_by_name(schema, attr_name);
+	if (!attr)
+		goto out;
+
+	if (attr->data->indexed) {
+		TAILQ_REMOVE(&schema->idx_attr_list, attr, idx_entry);
+		attr->data->indexed = 0;
+		if (schema->schema_obj) {
+			ods_atomic_inc(&schema->data->gen);
+			ods_obj_update(schema->schema_obj);
+			rc = __sos_schema_open(schema->sos, schema);
+			if (rc)
+				goto out;
+		}
+		return 0;
+	}
+ out:
+	return rc;
 }
 
 static void __toupper(char *s)
@@ -1362,20 +1429,30 @@ sos_schema_t sos_schema_dup(sos_schema_t schema)
 	return NULL;
 }
 
-sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
+int __sos_schema_reinit(sos_t sos, sos_schema_t schema, ods_obj_t schema_obj)
+{
+	int rc;
+	ods_obj_t s_obj;
+	/* Take the reference on the schema_obj that release will drop */
+	s_obj = ods_obj_get(schema_obj);
+	__sos_schema_release(schema);
+	/* __sos_schema_init inherits the reference above */
+	rc = __sos_schema_init(sos, schema, s_obj);
+	return rc;
+}
+
+int __sos_schema_init(sos_t sos, sos_schema_t schema, ods_obj_t schema_obj)
 {
 	sos_attr_t attr;
-	sos_schema_t schema;
 	int idx;
 	ods_obj_t ext_obj;
 	sos_array_t ext;
 	size_t ext_sz;
+	int rc;
 
 	if (!schema_obj)
-		return NULL;
-	schema = calloc(1, sizeof(*schema));
-	if (!schema)
-		return NULL;
+		return ENOENT;
+
 	schema->ref_count = 1;
 	TAILQ_INIT(&schema->attr_list);
 	TAILQ_INIT(&schema->idx_attr_list);
@@ -1384,13 +1461,17 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	schema->state = SOS_SCHEMA_CLOSED;
 	schema->data = schema_obj->as.ptr;
 	schema->dict = calloc(schema->data->attr_cnt, sizeof(sos_attr_t));
-	if (!schema->dict)
+	if (!schema->dict) {
+		rc = ENOMEM;
 		goto err_0;
+	}
 	for (idx = 0; idx < schema->data->attr_cnt; idx++) {
 		attr = attr_new(schema, schema->data->attr_dict[idx].type,
 				schema->data->attr_dict[idx].size);
-		if (!attr)
+		if (!attr) {
+			errno = ENOMEM;
 			goto err_1;
+		}
 		schema->dict[idx] = attr;
 		attr->data = &schema->data->attr_dict[idx];
 		if (attr->data->indexed)
@@ -1398,14 +1479,14 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 		if (attr->data->ext_ref) {
 			ext_obj = ods_ref_as_obj(ods_obj_ods(schema_obj), attr->data->ext_ref);
 			if (!ext_obj) {
-				errno = EPROTO;
+				rc = EPROTO;
 				goto err_1;
 			}
 			ext = ODS_PTR(sos_array_t, ext_obj);
 			ext_sz = SOS_JOIN_EXT_SIZE(ext->count);
 			attr->ext_ptr = malloc(ext_sz);
 			if (!attr->ext_ptr) {
-				errno = ENOMEM;
+				rc = ENOMEM;
 				goto err_1;
 			}
 			/* Instantiate the array and place a memory copy in attr */
@@ -1420,7 +1501,7 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	ods_rbt_ins(&sos->schema_id_rbt, &schema->id_rbn);
 	sos->schema_count++;
 	LIST_INSERT_HEAD(&sos->schema_list, schema, entry);
-	return schema;
+	return 0;
  err_1:
 	free(schema->dict);
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
@@ -1435,7 +1516,7 @@ sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj)
 	ods_obj_put(schema_obj);
  err_0:
 	free(schema);
-	return NULL;
+	return rc;
 }
 
 void __sos_init_array_values(sos_schema_t schema, sos_obj_t obj)
@@ -1548,8 +1629,15 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 	char idx_name[SOS_SCHEMA_NAME_LEN + SOS_ATTR_NAME_LEN + 2];
 
 	pthread_mutex_lock(&sos->lock);
-	if (schema->state == SOS_SCHEMA_OPEN)
-		goto out;
+	if (schema->state == SOS_SCHEMA_OPEN) {
+		if (schema->gen == schema->data->gen) {
+			/* Schema is already open and current */
+			goto out;
+		}
+		rc = __sos_schema_reinit(sos, schema, schema->schema_obj);
+		if (rc)
+			goto out;
+	}
 	schema->state = SOS_SCHEMA_OPEN;
 	pthread_mutex_unlock(&sos->lock);
 
@@ -1557,7 +1645,6 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 		assert(attr->data->indexed);
 	retry:
 		sprintf(idx_name, "%s_%s", schema->data->name, attr->data->name);
-		assert(attr->index == NULL);
 		attr->index = sos_index_open(sos, idx_name);
 		if (!attr->index) {
 			if (errno != ENOENT) {
@@ -1578,6 +1665,7 @@ int __sos_schema_open(sos_t sos, sos_schema_t schema)
 			opt.timeout.tv_nsec = 0;
 			sos_index_rt_opt_set(attr->index, ODS_IDX_OPT_BULK_INS, &opt);
 		}
+		schema->gen = schema->data->gen;
 	}
  out:
 	pthread_mutex_unlock(&sos->lock);
@@ -1616,8 +1704,12 @@ static sos_schema_t __schema_by_name(sos_t sos, const char *name)
 	if (0 == ods_idx_find(sos->schema_idx, key, &data)) {
 		obj_ref.idx_data = data;
 		schema_obj = ods_ref_as_obj(sos->schema_ods, obj_ref.ref.obj);
-		schema = __sos_schema_init(sos, schema_obj);
-		if (!schema) {
+		schema = calloc(1, sizeof(*schema));
+		if (!schema)
+			return NULL;
+		rc = __sos_schema_init(sos, schema, schema_obj);
+		if (rc) {
+			free(schema);
 			ods_obj_put(schema_obj);
 			return NULL;
 		}
@@ -2151,7 +2243,8 @@ void sos_schema_print(sos_schema_t schema, FILE *fp)
 	sos_attr_t attr;
 	fprintf(fp, "schema :\n");
 	fprintf(fp, "    name      : %s\n", schema->data->name);
-	fprintf(fp, "    schema_sz : %ld\n", schema->data->schema_sz);
+	fprintf(fp, "    schema_sz : %d\n", schema->data->schema_sz);
+	fprintf(fp, "    gen       : %d\n", schema->data->gen);
 	fprintf(fp, "    obj_sz    : %ld\n", schema->data->obj_sz);
 	char uuid_str[37];
 	uuid_unparse_lower(schema->data->uuid, uuid_str);

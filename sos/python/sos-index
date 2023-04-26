@@ -52,6 +52,10 @@ from sosdb import Sos
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SOS container index command")
     actions = parser.add_mutually_exclusive_group(required=True)
+    actions.add_argument("-A", "--add", action="store_true",
+                         help="Add an index for an attribute.")
+    actions.add_argument("-R", "--remove", action="store_true",
+                         help="Remove an index from an attribute.")
     actions.add_argument("-Q", "--query", action="store_true",
                          help="Print all of the container's indices.")
     actions.add_argument("-V", "--verify", action="store_true",
@@ -65,6 +69,10 @@ if __name__ == "__main__":
                         help="The path to the container.")
     parser.add_argument("-n", "--index", metavar="NAME", dest="index_name", default=None,
                         help="Verify only the specified index name.")
+    parser.add_argument("-s", "--schema", metavar="NAME", dest="schema_name", default=None,
+                        help="The schema name.")
+    parser.add_argument("-a", "--attr", metavar="NAME", dest="attr_name", default=None,
+                        help="The attribute name.")
     args = parser.parse_args()
 
     try:
@@ -73,6 +81,48 @@ if __name__ == "__main__":
     except:
         print(f"The container {args.path} could not be opened.")
         sys.exit(1)
+
+    if args.add:
+        attr = None
+        schema = None
+        if args.schema_name is None:
+            printf("The --schema NAME argument is required.")
+            sys.exit(1)
+        if args.attr_name is None:
+            printf("The --attr NAME argument is required.")
+            sys.exit(1)
+        try:
+            schema = cont.schema_by_name(args.schema_name)
+            attr = schema.attr_by_name(args.attr_name)
+            schema.index_add(attr)
+        except Exception as e:
+            if not schema:
+                print(f"The schema '{args.schema_name}' was not found in the container.")
+            elif not attr:
+                print(f"The attribute '{args.attr_name}' was not found in the schema '{args.schema_name}'")
+            else:
+                print(e)
+
+    if args.remove:
+        attr = None
+        schema = None
+        if args.schema_name is None:
+            printf("The --schema NAME argument is required.")
+            sys.exit(1)
+        if args.attr_name is None:
+            printf("The --attr NAME argument is required.")
+            sys.exit(1)
+        try:
+            schema = cont.schema_by_name(args.schema_name)
+            attr = schema.attr_by_name(args.attr_name)
+            schema.index_rem(attr)
+        except Exception as e:
+            if not schema:
+                print(f"The schema '{args.schema_name}' was not found in the container.")
+            elif not attr:
+                print(f"The attribute '{args.attr_name}' was not found in the schema '{args.schema_name}'")
+            else:
+                print(e)
 
     if args.query:
         idx_iter = cont.index_iter()
@@ -95,4 +145,3 @@ if __name__ == "__main__":
                 print(f" OK")
         else:
                 print(f" CORRUPTED")
-

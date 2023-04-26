@@ -6,19 +6,41 @@
 sos-index \- Manage SOS indices
 
 .SH SYNOPSIS
-sos-index [OPTION...] [NAME]
+sos-index [OPTION...]
 
 .SH "DESCRIPTION"
-The sos-index command is used to query or verify indices. When verifying an index,
-if corruption is detected the name of the partition containing the corrupted index
-is printed. It is also possible to have the underlying index library print specific
-consistency errors. This is enabled with the --verbose option option.
+The \fBsos-index\fR command is used to query, add, remove and verify indices.
+.SS Query
+The -Q option will print the index name for all indices in the container.
+.SS Add
+The -A option will add an index for an attribute in a schema.
+The index may already exist; if it does not it will be created.
+.PP
+Clients that share the container become aware of the new index (based on
+a schema generation number), and begin adding objects to the index.
+.SS Remove
+The -R option will remove an index for a schema attribute. Clients that
+share the container become aware of the index removal (based on
+a schema generation number), and cease adding objects to the index.
+.PP
+The -R option does not remove the index files themselves; the index can be
+added back with the -A option and will contain all objects indexed prior
+to index removal.
+.SS Verify
+When verifying an index, if corruption is detected, the name of the partition
+containing the corrupted index is printed. It is also possible to have the
+underlying index library print specific consistency errors. This is enabled
+with the --verbose option.
 
 .SH "OPTIONS"
 .PP
-.IP "\fB-Q,--query \fR" 1c
-Print the name of all indices in the container. This includes all indices for all schemas.
-.IP "\fB-V,--verify \fR" 1c
+.IP "\fB-Q,--query\fR" 1c
+Print the name of all indices in the container.
+.IOP "\fB-A,--add\fR" 1c
+Add an index to the schema specified by the -s option for the attribute specified by the -a option.
+.IOP "\fB-R,--rem\fR" 1c
+Remove an index from the schema specified by the -s option for the attribute specified by the -a option.
+.IP "\fB-V,--verify\fR" 1c
 Verify the consistency of one or more indices in a container.
 This includes all index instances in all partitions attached to
 the container. If the --index NAME option is specified, only the
@@ -26,7 +48,12 @@ index NAME will be verified.
 .IP "\fB-p,--path PATH \fR" 1c
 The \fBPATH\fR to the SOS container.
 .IP "\fB-n,--index NAME \fR" 1c
-The optional \fBNAME\fR of the index to verify.
+The optional \fBNAME\fR of the index to verify. If not specified, all indices will
+be verified.
+.IP "\fB-s,--schema NAME\fR" 1c
+The schema \fBNAME\fR, required with the -A and -R options.
+.IP "\fB-a,--attr NAME\fR" 1c
+The attribute \fBNAME\fR to index, required with the -A and -R options.
 .IP "\fB-v,--verbose \fR" 1c
 This option can be used with the -V option to control the level of error messages
 printed when a corruption error is detected. If specified once, the partition
@@ -48,6 +75,20 @@ vmstat_tom_timestamp
 .fi
 .RE
 .PP
+.SS "Add Example"
+.PP
+.RS 4
+.nf
+$ sos-index --path=/dev/shm/SOS/ldms_data --add --path /dev/shm/SOS/ldms_data -s meminfo -a instance
+.fi
+.RE
+.SS "Remove Example"
+.PP
+.RS 4
+.nf
+$ sos-index --path=/dev/shm/SOS/ldms_data --rem --path /dev/shm/SOS/ldms_data -s meminfo -a instance
+.fi
+.RE
 .SS "Verify All Indices"
 .PP
 .RS 4

@@ -3,7 +3,8 @@ PY_INCLUDES = -I$(srcdir)/../include \
 	   -I$(top_srcdir)/rpc \
 	   -I$(srcdir)/../src \
 	   -I$(top_srcdir)/ods/include \
-	   -I$(NUMPY_INCLUDE_PATH)
+	   -I$(NUMPY_INCLUDE_PATH) \
+	   -D "NPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION"
 
 pkgpyexec_LTLIBRARIES = Sos.la
 

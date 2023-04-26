@@ -279,7 +279,8 @@ typedef struct sos_schema_data_s {
 	uint32_t key_sz;	/* Size of largest indexed attribute */
 	uint64_t obj_sz;	/* Size of scalars in object */
 	uint64_t el_sz;		/* Size of each element if this is an array object */
-	uint64_t schema_sz;	/* Size of schema, not including arrays */
+	uint32_t schema_sz;	/* Size of schema, not including arrays */
+	ods_atomic_t gen;	/* Generation number */
 	struct sos_attr_data_s attr_dict[0];
 } *sos_schema_data_t;
 
@@ -294,6 +295,7 @@ struct sos_schema_s {
 	sos_schema_data_t data;
 	struct sos_schema_data_s data_;
 	sos_t sos;
+	ods_atomic_t gen;
 	enum sos_schema_state state;
 	ods_obj_t schema_obj;
 	struct ods_rbn name_rbn;
@@ -471,7 +473,8 @@ sos_value_to_str_fn_t __sos_attr_to_str_fn_for_type(sos_type_t type);
 sos_value_from_str_fn_t __sos_attr_from_str_fn_for_type(sos_type_t type);
 sos_value_key_value_fn_t __sos_attr_key_value_fn_for_type(sos_type_t type);
 int __sos_config_init(sos_t sos);
-sos_schema_t __sos_schema_init(sos_t sos, ods_obj_t schema_obj);
+int __sos_schema_init(sos_t sos, sos_schema_t schema, ods_obj_t schema_obj);
+int __sos_schema_reinit(sos_t sos, sos_schema_t schema, ods_obj_t schema_obj);
 ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock);
 void __sos_schema_free(sos_schema_t schema);
 void __sos_schema_print(ods_obj_t schema_obj, FILE *fp);

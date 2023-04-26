@@ -759,7 +759,6 @@ static void free_sos(sos_t sos, sos_commit_t flags)
 
 	/* Iterate through all the schema and free each one */
 	while (NULL != (rbn = ods_rbt_min(&sos->schema_name_rbt))) {
-		ods_rbt_del(&sos->schema_name_rbt, rbn);
 		__sos_schema_free(container_of(rbn, struct sos_schema_s, name_rbn));
 	}
 	if (sos->path)
@@ -1052,8 +1051,12 @@ sos_t sos_container_open(const char *path_arg, sos_perm_t o_perm, ...)
 		sos_obj_ref_t obj_ref;
 		obj_ref.idx_data = ods_iter_data(iter);
 		ods_obj_t schema_obj = ods_ref_as_obj(sos->schema_ods, obj_ref.ref.obj);
-		sos_schema_t schema = __sos_schema_init(sos, schema_obj);
-		if (!schema) {
+		sos_schema_t schema = calloc(1, sizeof(*schema));
+		if (!schema)
+			goto err;
+		rc = __sos_schema_init(sos, schema, schema_obj);
+		if (rc) {
+			free(schema);
 			ods_unlock(sos->schema_ods, 0);
 			goto err;
 		}
@@ -1810,6 +1813,10 @@ int sos_obj_index(sos_obj_t obj)
 		if (rc)
 			return rc;
 	}
+
+	rc = __sos_schema_open(obj->sos, obj->schema);
+	if (rc)
+			goto err;
 
 	TAILQ_FOREACH(attr, &obj->schema->idx_attr_list, idx_entry) {
 		sos_index_t index = sos_attr_index(attr);
