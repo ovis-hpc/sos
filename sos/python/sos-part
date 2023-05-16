@@ -164,7 +164,7 @@ def print_json(p, hdr=True, ftr=False):
     accessed = accessed.strftime("%m/%d/%y %H:%M:%S")
     modified = dt.datetime.fromtimestamp(stat.modified)
     modified = modified.strftime("%m/%d/%y %H:%M:%S")
-    print(f'{{ "name": "{p.name()}, "state" : "{str(p.state())}", '
+    print(f'{{ "name": "{p.name()}", "state" : "{str(p.state())}", '
           f'"uid" : {uid}, "gid" : {gid}, "perm" : "{str(perm)}", '
           f'"access" : "{accessed}", "modified" : "{modified}", '
           f'"size" : {stat.size}, "path" : "{p.path()}", '
