@@ -1043,6 +1043,20 @@ ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock)
 	return ods_obj;
 }
 
+/**
+ * \brief sos_array_new
+ *
+ * Alloates data for an array element. After the object has been
+ * committed to the container, it can not be resized. NOTE: This
+ * function may re-allocate the underlying object and therefore any
+ * sos_value_t obtained on the object become undefined after a call to
+ * this function.
+ *
+ * \param val The value in which to return the array data 
+ * \param attr The schema attribute for the array
+ * \param count The number of array elements
+ * \returns The \c val parameter pointer on success or NULL on failure
+ */
 sos_value_t sos_array_new(sos_value_t val, sos_attr_t attr, sos_obj_t obj, size_t count)
 {
 	sos_value_data_t ref_val;
