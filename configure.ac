@@ -155,6 +155,18 @@ AC_CHECK_HEADERS([arpa/inet.h fcntl.h libintl.h limits.h locale.h netdb.h netine
 AC_CHECK_LIB([pthread], [pthread_create])
 AC_CHECK_FUNCS([getrpcbyname getrpcbynumber setrpcent endrpcent getrpcent])
 
+AC_CHECK_LIB(jansson, json_loads,
+		[],
+		AC_MSG_FAILURE(libjanson not found),
+		[ $JSON_LIB64DIR_FLAG $JSON_LIBDIR_FLAG ]
+	    )
+
+AC_CHECK_LIB(uuid, uuid_generate,
+		[],
+		AC_MSG_FAILURE(libuuid not found),
+		[ $UUID_LIB64DIR_FLAG $UUID_LIBDIR_FLAG ]
+	    )
+
 AC_SUBST([SOS_SUBST_RULE],["sed \
 -e 's,[[@]]mandir[[@]],\$(mandir),g' \
 -e 's,[[@]]localedir[[@]],\$(localedir),g' \
@@ -187,8 +199,6 @@ AC_CONFIG_FILES([
 		doc/Doxyfile
 		doc/Makefile
 		man/Makefile
-		lib/Makefile
-		lib/json/Makefile
 		ods/Makefile
 		ods/include/Makefile
 		ods/src/Makefile
