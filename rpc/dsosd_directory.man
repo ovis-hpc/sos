@@ -1,0 +1,74 @@
+.\" Manpage for the dsosd directory file
+.TH man 7 "15 May 2023" "v6" "dsosd directory file man page"
+
+.SH DESCRIPTION
+The \c dsosd directory file maps container names to local filesystem
+path names. The directory is formatted as JSON and has a separate
+section for each dsosd instance.
+The format of the file is as follows:
+
+.RS 4
+.nf
+{
+  <server-id> : {
+     <container-name> : <container-path>,
+     <container-name> : <container-path>,
+     . . .
+  },
+  <server-id> : {
+     <container-name> : <container-path>,
+     <container-name> : <container-path>,
+     . . .
+  },
+  . . .
+}
+.fi
+.RE
+By default the \fI<server-id>\fR is the hostname, but this can be overridden
+with the \fIDSOSD_SERVER_ID\fR environment variable specified when starting
+\fBdsosd\fR.
+.PP
+The \fI<container name>\fR is the \fIpath\fR parameter provided to the
+\fIsos_container_open()\fR function. The \fI<container-path>\fR is the
+filesysystem path to the SOS container.
+.SH EXAMPLE
+.RS 4
+.nf
+{
+  "orion-01" : {
+    "ldms-current" : "/storage/orion-01/sos/ldms-current",
+    "ldms-january" : "/storage/orion-01/sos/january/ldms-current"
+  },
+  "orion-02" : {
+    "ldms-current" : "/storage/orion-02/sos/ldms-current",
+    "ldms-january" : "/storage/orion-02/sos/january/ldms-current"
+  },
+  "orion-03" : {
+    "ldms-current" : "/storage/orion-03/sos/ldms-current",
+    "ldms-january" : "/storage/orion-03/sos/january/ldms-current"
+  },
+  "orion-04" : {
+    "ldms-current" : "/storage/orion-04/sos/ldms-current",
+    "ldms-january" : "/storage/orion-04/sos/january/ldms-current"
+  }
+}
+.fi
+.RE
+  
+.SH ENVIRONMENT
+.SS
+The following environment variables may be used to affect the
+configuration of the dsosd daemon.
+.TP
+DSOSD_DIRECTORY The path to a JSON formatted file that maps container
+names to local filesystem paths.
+.TP
+DSOSD_SERVER_ID A logical name for this dsosd instance. If not
+specified, the hostname (as determined by gethostname) will be
+used. This name is used to determine which sections of the directory
+file apply to this dsosd instance.
+
+.SH SEE ALSO
+dsosd(8)
+
+
