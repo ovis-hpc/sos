@@ -180,8 +180,37 @@ def print_partition(p, hdr=True, ftr=False, verbose=False, fmt='table'):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Manage SOSDB partitions.")
+    actions = parser.add_mutually_exclusive_group(required=True)
+    actions.add_argument("--query", action="store_true",
+                        help="Query a partition.")
+    actions.add_argument("--create", action="store_true",
+                         help="Create a new partition. ")
+    actions.add_argument("--set", action="store_true",
+                         help="Set user-id, group-id, and permission bits"
+                            "for accessing a partition's contents")
+    actions.add_argument("--attach", action="store_true",
+                         help="Attach a partition to a container.")
+    actions.add_argument("--state", metavar="STATE-NAME",
+                         choices=[ 'primary', 'PRIMARY', 'active', 'ACTIVE',
+                                   'offline', 'OFFLINE' ],
+                         help="Set the state of a partition.")
+    actions.add_argument("--detach", action="store_true",
+                         help="Detach a partition from a container.")
+    actions.add_argument("--remap-schema", action="store_true",
+                         help="Replace the schema UUID in a partition. "
+                         "Used when importing a partition that was populated "
+                         "using a different schema dictionary.")
+    actions.add_argument("--show-schema", action="store_true",
+                         help="Show the set of schema UUID that are "
+                         "used by objects in the partition.")
+    actions.add_argument("--reindex", action="store_true",
+                         help="Reindex all objects in the specified partition")
+
     parser.add_argument("--path", metavar="DB-PATH", required=False,
                         help="Specifies the path to the partition.")
+    parser.add_argument("--cont", default=None, metavar="PATH",
+                        help="The path to the container used with the "
+                        "--attach, --detach, and --query actions.")
     parser.add_argument("--name", metavar="PART-NAME", default=None,
                         help="Specifies the parition name.")
     parser.add_argument("--mode", metavar="MODE", default=None,
@@ -197,9 +226,6 @@ if __name__ == "__main__":
                         " The default is 'MMOS'.")
     parser.add_argument("--desc", default=None,
                         help="A description for the partition.")
-    parser.add_argument("--cont", default=None, metavar="PATH",
-                        help="The path to the container used with the "
-                        "--attach, --detach, and --query actions.")
     parser.add_argument("--fmt", default='table',
                         help="The desired query output format: 'table', or 'json'.")
     parser.add_argument("--cur-dir", metavar="PATH",
@@ -210,32 +236,6 @@ if __name__ == "__main__":
                         "schema UUID that will replace the current UUID.")
     parser.add_argument("--verbose", action="store_true",
                         help="Use with --query to show the partition UUID")
-
-    actions = parser.add_mutually_exclusive_group(required=True)
-    actions.add_argument("--query", action="store_true",
-                        help="Query a partition.")
-    actions.add_argument("--create", action="store_true",
-                         help="Create a new partition. ")
-    actions.add_argument("--state", metavar="STATE-NAME",
-                         choices=[ 'primary', 'PRIMARY', 'active', 'ACTIVE',
-                                   'offline', 'OFFLINE' ],
-                         help="Set the state of a partition.")
-    actions.add_argument("--attach", action="store_true",
-                         help="Attach a partition to a container.")
-    actions.add_argument("--detach", action="store_true",
-                         help="Detach a partition from a container.")
-    actions.add_argument("--set", action="store_true",
-                         help="Set user-id, group-id, and permission bits"
-                            "for accessing a partition's contents")
-    actions.add_argument("--remap-schema", action="store_true",
-                         help="Replace the schema UUID in a partition. "
-                         "Used when importing a partition that was populated "
-                         "using a different schema dictionary.")
-    actions.add_argument("--show-schema", action="store_true",
-                         help="Show the set of schema UUID that are "
-                         "used by objects in the partition.")
-    actions.add_argument("--reindex", action="store_true",
-                         help="Reindex all objects in the specified partition")
     parser.add_argument("--reindex-status-count", type=int, metavar="OBJ-COUNT", default=10000,
                         help="The number of objects to update before printing a status message")
     args = parser.parse_args()
@@ -264,6 +264,9 @@ if __name__ == "__main__":
                 hdr = False
             print_partition(p, hdr=False, ftr=True, fmt=args.fmt, verbose=args.verbose)
             sys.exit(0)
+        if not args.path:
+            print(f"One of --cont or --path must be specified.")
+            sys.exit(1)
         try:
             p = Sos.Partition()
             p.open(args.path)

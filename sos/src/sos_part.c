@@ -221,7 +221,7 @@
 #include <sos/sos.h>
 #include <ods/ods.h>
 #include <ods/ods_idx.h>
-#include "json.h"
+#include <jansson.h>
 #include "sos_priv.h"
 
 static sos_part_t __sos_part_by_name(sos_t sos, const char *name);
@@ -1627,6 +1627,11 @@ int sos_part_obj_iter(sos_part_t part, sos_part_obj_iter_pos_t pos,
 	return ods_obj_iter(part->obj_ods, ods_pos, __part_obj_iter_cb, &args);
 }
 
+sos_part_t sos_obj_part(sos_obj_t obj)
+{
+	return obj->part;
+}
+
 static int64_t uuid_comparator(void *a, const void *b, void *arg)
 {
 	return uuid_compare(a, b);
@@ -1648,8 +1653,9 @@ static struct ods_rbt *__load_map(const char *dst_path, const char *src_path)
 {
 	FILE *dst_fp, *src_fp;
 	struct ods_rbt *rbt = NULL;
-	json_entity_t dst_e;
-	json_entity_t src_e;
+	json_t *dst_e;
+	json_t *src_e;
+	json_error_t error;
 	int rc;
 
 	dst_fp = fopen(dst_path, "r");
@@ -1659,22 +1665,23 @@ static struct ods_rbt *__load_map(const char *dst_path, const char *src_path)
 	if (!src_fp)
 		goto out_1;
 
-	rc = json_parse_file(dst_fp, &dst_e);
-	if (rc)
+	dst_e = json_loadf(dst_fp, 0, &error);
+	if (!dst_e)
 		goto out_2;
-	rc = json_parse_file(src_fp, &src_e);
-	if (rc)
+	src_e = json_loadf(src_fp, 0, &error);
+	if (!src_e)
 		goto out_3;
-	/* Iterate over the src entity and add a tree entry for each
+	/*
+	 * Iterate over the src entity and add a tree entry for each
 	 * UUID in the object
 	 */
-	json_entity_t src_uuid_dict = json_value_find(src_e, "uuids");
+	json_t *src_uuid_dict = json_object_get(src_e, "uuids");
 	if (!src_uuid_dict) {
 		/* The uuids entry is missing */
 		errno = EINVAL;
 		goto out_4;
 	}
-	json_entity_t dst_name_dict = json_value_find(dst_e, "names");
+	json_t *dst_name_dict = json_object_get(dst_e, "names");
 	if (!dst_name_dict) {
 		/* The uuids entry is missing */
 		errno = EINVAL;
@@ -1685,33 +1692,31 @@ static struct ods_rbt *__load_map(const char *dst_path, const char *src_path)
 		goto out_4;
 	ods_rbt_init(rbt, uuid_comparator, NULL);
 
-	char *src_uuid_str;
+	const char *src_uuid_str;
 	char *schema_name_str;
-	char *dst_uuid_str;
-	json_entity_t uuid_e;
-	json_entity_t name_e;
+	const char *dst_uuid_str;
+	json_t *uuid_e;
+	json_t *name_e;
 	rc = 0;
-	for (uuid_e = json_attr_first(src_uuid_dict); uuid_e; uuid_e = json_attr_next(uuid_e)) {
-		/* Get the source UUID from the source dictionary */
-		src_uuid_str = strdup(json_attr_name(uuid_e)->str);
-		if (!src_uuid_str) {
-			rc = ENOMEM;
+	json_object_foreach(src_uuid_dict, src_uuid_str, uuid_e) {
+		if (!json_is_string(uuid_e)) {
+			rc = EINVAL;
 			goto out_5;
 		}
 		/* Get the schema name from the uuid entry */
-		schema_name_str = strdup(json_value_str(json_attr_value(uuid_e))->str);
+		schema_name_str = strdup(json_string_value(uuid_e));
 		if (!schema_name_str) {
 			rc = ENOMEM;
 			goto out_5;
 		}
 		/* Lookup the destination UUID with the schema name from the source */
-		name_e = json_attr_find(dst_name_dict, schema_name_str);
+		name_e = json_object_get(dst_name_dict, schema_name_str);
 		if (!name_e) {
 			rc = ENOKEY;
 			goto out_5;
 		}
 		/* The destination schema UUID is the value of the name attribute */
-		dst_uuid_str = json_value_str(json_attr_value(name_e))->str;
+		dst_uuid_str = json_string_value(name_e);
 
 		struct uuid_entry *ue = malloc(sizeof *ue);
 		if (!ue) {
@@ -1730,9 +1735,9 @@ static struct ods_rbt *__load_map(const char *dst_path, const char *src_path)
 		rbt = NULL;
 	}
  out_4:
-	json_entity_free(src_e);
+	json_decref(src_uuid_dict);
  out_3:
-	json_entity_free(dst_e);
+	json_decref(dst_name_dict);
  out_2:
 	fclose(src_fp);
  out_1:

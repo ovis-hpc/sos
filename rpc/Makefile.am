@@ -21,7 +21,6 @@ sosapi.h : sosapi.x xdr-files
 AM_CFLAGS = -Wno-unused-variable \
 	-I$(top_srcdir)/libtirpc/tirpc \
 	-I$(srcdir)/../include \
-	-I$(top_srcdir)/lib/json \
 	-I$(top_srcdir)/ods/include \
 	-I$(top_srcdir)/sos/include \
 	-I$(top_srcdir)/sos/src
@@ -31,7 +30,6 @@ libdsos_la_SOURCES = sosapi_client.c sosapi_server.c sosapi_common.c \
 	ast.c ast.h
 
 libdsos_la_LIBADD = ../ods/src/libods.la ../sos/src/libsos.la \
-	../lib/json/libsos_json.la \
 	../libtirpc/src/libtirpc.la \
 	-ldl -lpthread -luuid -lm
 libdsos_la_CFLAGS = $(AM_CFLAGS)
@@ -41,7 +39,7 @@ dsosd_SOURCES = sosapi_server.c ../ods/src/ods_rbt.c ast.c \
 	sosapi.h ast.h \
 	../ods/include/ods/ods_rbt.h
 dsosd_CFLAGS = $(AM_CFLAGS)
-dsosd_LDADD = ../sos/src/libsos.la ../lib/json/libsos_json.la libdsos.la -lpthread -luuid -lm ../libtirpc/src/libtirpc.la
+dsosd_LDADD = ../sos/src/libsos.la libdsos.la -lpthread -luuid -lm ../libtirpc/src/libtirpc.la -ljansson
 bin_PROGRAMS += dsosd
 
 dsosql_SOURCES = dsosql.c dsosql_commands.c \
@@ -49,7 +47,7 @@ dsosql_SOURCES = dsosql.c dsosql_commands.c \
 	../ods/src/ods_rbt.c ../ods/include/ods/ods_rbt.h
 
 dsosql_CFLAGS = $(AM_CFLAGS) $(READLINE_CFLAGS)
-dsosql_LDADD = ../lib/json/libsos_json.la ../sos/src/libsos.la libdsos.la -lpthread -luuid $(READLINE_LIBS) -lm
+dsosql_LDADD = ../sos/src/libsos.la libdsos.la -lpthread -luuid $(READLINE_LIBS) -lm -ljansson
 bin_PROGRAMS += dsosql
 
 AM_YFLAGS = -d

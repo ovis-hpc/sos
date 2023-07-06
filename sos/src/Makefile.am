@@ -3,8 +3,7 @@ bin_PROGRAMS =
 
 AM_CFLAGS = -I$(srcdir)/../include \
 	-I$(top_srcdir)/ods/include \
-	-I$(top_srcdir)/sos/include \
-	-I$(top_srcdir)/lib/json
+	-I$(top_srcdir)/sos/include
 if ENABLE_DEBUG
 AM_CFLAGS += -DODS_DEBUG
 endif
@@ -21,7 +20,7 @@ libsos_la_SOURCES = sos_fn.c \
 		    sos_log.c \
 		    sos_priv.h \
 		    sos_ref.h
-libsos_la_LIBADD = ../../ods/src/libods.la ../../lib/json/libsos_json.la -ldl -lpthread -luuid
+libsos_la_LIBADD = ../../ods/src/libods.la -ldl -lpthread -luuid -ljansson
 lib_LTLIBRARIES += libsos.la
 
 sos_cmd_SOURCES = sos_cmd.c

@@ -37,7 +37,6 @@
 
 #include "dsos.h"
 #include "dsosql.h"
-#include "json.h"
 
 int output_format = TABLE;
 int query_limit = -1;

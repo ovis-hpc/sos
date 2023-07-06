@@ -13,7 +13,7 @@
 #include <sos/sos.h>
 #include "dsos.h"
 #include <ods/ods_atomic.h>
-#include "json.h"
+#include <jansson.h>
 #include "dsosql.h"
 #undef VERSION
 
@@ -405,97 +405,106 @@ int dsosql_create_schema(dsos_container_t cont, char *schema_name, char *templat
 	sos_schema_t schema;
 	dsos_schema_t dschema;
 	dsos_res_t res;
-	json_parser_t parser = json_parser_new(0);
-	json_entity_t e, i, attr, value;
-	int rc = json_parse_buffer(parser, template, strlen(template), &e);
-	if (rc) {
-		printf("Error %d parsing the schema template.\n", rc);
+	json_error_t error;
+	json_t *t, *i, *j, *attr;
+	int rc = 0;
+
+	t = json_loads(template, 0, &error);
+	if (!t) {
+		printf("Error parsing the schema template:\n");
+		printf("    %s\n", error.text);
+		printf("    %s\n", error.source);
+		printf("    %*s\n", error.column, "^");
+		rc = EINVAL;
 		goto err;
 	}
 	schema = sos_schema_new(schema_name);
 	if (!schema) {
-		printf("Error creating the schema %s\n", schema_name);
+		printf("Error %d creating the schema %s\n", errno, schema_name);
 		rc = errno;
 		goto err;
 	}
-	json_entity_t l = json_attr_find(e, "attrs");
-	if (!l) {
-		printf("The attribute list is missing from the template.\n");
+	/* Each item is a dictionary of 'name', 'type', + optional 'size' and 'join_list' */
+	if (!json_is_object(t)) {
+		rc = EINVAL;
+		printf("Thhe schema template must be a dictionary.\n");
+		goto err;
+	}
+	json_t *uuid = json_object_get(t, "uuid");
+	if (!uuid || !json_is_string(uuid)) {
+		printf("The \"uuid\" attribute is missing from the template or is not a string.\n");
 		rc = EINVAL;
 		goto err;
 	}
-	l = json_attr_value(l);
-	/* Each item is a dictionary of 'name', 'type', + optional 'size' and 'join_list' */
-	for (i = json_item_first(l); i; i = json_item_next(i)) {
-		attr = json_attr_find(i, "type");
-		json_entity_t value = json_attr_value(attr);
-		if (json_entity_type(value) != JSON_STRING_VALUE) {
-			printf("The template file has an invalid attribute 'type' value. Must be a quoted string\n");
+	json_t *attr_list = json_object_get(t, "attrs");
+	if (!attr_list || !json_is_array(attr_list)) {
+		printf("The \"attrs\" attribute is missing from the template or is not an array.\n");
+		rc = EINVAL;
+		goto err;
+	}
+	int attr_id;
+	json_array_foreach(attr_list, attr_id, attr) {
+		if (!json_is_object(attr)) {
+			printf("The attribute entry is not an object.\n");
 			rc = EINVAL;
 			goto err;
 		}
-		json_str_t str = json_value_str(value);
-		sos_type_t type = lookup_type(str->str);
-		if (!type) {
-			printf("The template file has an invalid attribute 'type' value.\n");
+
+		i = json_object_get(attr, "name");
+		if (!i || !json_is_string(i)) {
+			printf("The \"name\" attribute is missing from the object.\n");
 			rc = EINVAL;
 			goto err;
 		}
-		attr = json_attr_find(i, "name");
-		if (json_entity_type(value) != JSON_STRING_VALUE) {
-			printf("The template file has an invalid attribute 'name' value. Must be a quoted string\n");
+		const char *attr_name = json_string_value(i);
+
+		i = json_object_get(attr, "type");
+		if (!i || !json_is_string(i)) {
+			printf("The \"type\" attribute is missing from the object.\n");
 			rc = EINVAL;
 			goto err;
 		}
-		char *name = json_value_str(json_attr_value(attr))->str;
+		const char *type_str = json_string_value(i);
+		sos_type_t type = lookup_type(type_str);
 		int size = 0;
 		if (type == SOS_TYPE_STRUCT) {
-			attr = json_attr_find(i, "size");
-			if (attr) {
-				if (json_entity_type(value) != JSON_INT_VALUE) {
+			j = json_object_get(i, "size");
+			if (j) {
+				if (!json_is_integer(j)) {
 					printf("The template file has an invalid attribute 'size' value, must be an integer\n");
 					rc = EINVAL;
 					goto err;
 				}
-				size = json_value_int(json_attr_value(attr));
+				size = json_integer_value(j);
 			}
 		}
+
 		char **attr_names = NULL;
 		if (type == SOS_TYPE_JOIN) {
-			attr = json_attr_find(i, "join_attrs");
-			if (!attr) {
-				printf("The template file has an invalid or missing join_attrs value, must be an list []\n");
+			json_t *join = json_object_get(i, "join_attrs");
+			json_t *join_entry;
+			if (!join || !json_is_array(join)) {
+				printf("The template file has an invalid or missing join_attrs value, must be a list []\n");
 				rc = EINVAL;
 				goto err;
 			}
-			json_entity_t value = json_attr_value(attr);
-			if (json_entity_type(value) != JSON_LIST_VALUE) {
-				printf("The template file join_list attribute must be a list, [] of quoted strings.\n");
-				rc = EINVAL;
-				goto err;
-			}
-			json_list_t join_list = json_value_list(value);
-			size = join_list->item_count;
-			json_entity_t join_attr;
+			int item_no;
+			size = json_array_size(join);
 			attr_names = calloc(size, sizeof(char *));
-			int item_no = 0;
-			for (join_attr = json_item_first(&join_list->base);
-			     join_attr;
-			     join_attr = json_item_next(join_attr)) {
-				if (json_entity_type(join_attr) != JSON_STRING_VALUE) {
-					printf("The template file attribute join_list members muse be quoted strings.\n");
+			json_array_foreach(join, item_no, join_entry) {
+				if (!json_is_string(join_entry)) {
+					printf("The template file attribute join_list members must be quoted strings.\n");
 					rc = EINVAL;
 					goto err;
 				}
-				attr_names[item_no] = json_value_str(join_attr)->str;
-				item_no += 1;
+				attr_names[item_no] = strdup(json_string_value(join_entry));
 			}
 		}
-		rc = sos_schema_attr_add(schema, name, type, size, attr_names);
-		attr = json_attr_find(i, "index");
-		if (attr)
-			rc = sos_schema_index_add(schema, name);
+		rc = sos_schema_attr_add(schema, attr_name, type, size, attr_names);
+		if (json_object_get(i, "index"))
+			rc = sos_schema_index_add(schema, attr_name);
 	}
+	json_decref(t);
 	dschema = dsos_schema_create(cont, schema, &res);
 	printf("%p\n", dschema);
  err:
@@ -801,4 +810,3 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 	dsos_query_destroy(query);
 	return 0;
 }
-
