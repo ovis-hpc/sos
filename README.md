@@ -31,12 +31,28 @@ Configuration Options:
 Compile Dependencies
 --------------------
 
-* If --disable-python is not specified
-  * Cython >= .29 (Cython 3.0)
-  * Python >= 3.6
-
 * If --enable-doc or --enable-html is specified
   * Doxygen
+
+RPM Packages
+
+* gcc
+* make
+* autotools
+* libtool
+* openssl-devel
+* libjansson-devel
+* bison
+* flex
+* uuid-devel
+* libuuid-devel
+* jansson-devel
+
+pip3 Packagges
+
+* Cython
+* Pandas
+* Numpy
 
 Installation
 ------------
