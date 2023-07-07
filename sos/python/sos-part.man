@@ -1,0 +1,159 @@
+.\" Man page for sos-part
+.\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
+.TH man 8 "17 Mar 2023" "v6" "sos-part man page"
+
+.SH NAME
+sos-part \- Manage SOS partitions
+
+.SH SYNOPSIS
+sos-part [OPTION...] [NAME]
+
+.SH "DESCRIPTION"
+.PP
+The \fBsos-part\fR command is used to manage SOS partitions. Partitions
+are collections of structured files that contain SOS objects. The files
+that comprise a partition exist in a common subdirectory in a local
+filesystem.
+.PP
+Partitions exist separately from a container and may be \fIattached\fR
+to zero or more containers. When \fIattached\fR the partition is
+included in container object query and object index insertion.
+.PP
+.SS "Querying Partitions"
+.PP
+The set of partitions that are attached to a container may be queried
+with the --query when combined with the --cont option. If the --cont
+option is not specified, the --query must include the --path option to
+specify the filesystem path to the partition.
+.IP "\fB--fmt\fR" 1c
+Specifies the desired output format of the query data: \fIjson\fR or
+\fItable\fR (default).
+.SS "Creating Partitions"
+.PP
+Partitions are created with the --create option. After creation, the
+partition exists, but is not part of any container. The --attach option
+is used to \fIattach\fR the partition to one or more containers.
+.PP
+A container maintains a \fIstate\fR that informs the container about
+how the partition should be treated. The container partition \fIstate\fR
+is one of \fIPRIMARY, ACTIVE\fR, or \fIOFFLINE\fR. Only one partition
+in the \fBcontainer\fR can be in the \fIPRIMARY\fR state. A partition
+in this state is the default partition for object insertion and is
+included in object query requests.
+.PP
+A partition in the \fIACTIVE\fR state included in object queries and
+can be the target of object insertion if the application so chooses on
+an object by object basis.
+.PP
+A partition in the \fIOFFLINE\fR state is present in the container but
+cannot be the target of object insertion and is not included in object
+queries.
+.PP
+.IP "\fB--mode MODE\fR" 1c
+Specifies the \fBOCTAL\fR parmission bits to apply for partition access.
+See the open(3) system call for a description of these bits.
+.IP "\fB--user NAME\fR" 1c
+Specifies the user \fBUSER\fR that owns the partition. This \fBUSER\fR
+must exist on the system.
+.IP "\fB--group NAME\fR" 1c
+Specifies the group \fBGROUP\fR that owns the partition. This \fBGROUP\fR
+must exist on the system.
+.IP "\fB--desc DESC\fR" 1c
+Specifies a description string that will be used to annotate the
+partition. The value does not affect the behavior of the partition but
+is intended to provided administrators information on the contents of
+the partition.
+.SS "Attaching Partitions"
+.PP
+Partitions are attached to a container with the --attach option.  The
+initial state of the partition is \fIOFFLINE\fR. See the --state
+option for instruction on how to make the new partition \fIACTIVE\fR
+or \fIPRIMARY\fR.
+.PP
+.IP "\fB--attach\fR" 1c
+Requests that a partition be attached to a container. The initial state
+of the partition is \fIOFFLINE\fR.
+.IP "\fB--cont PATH\fR" 1c
+Specifies the \fBPATH\fR to the container to which the partition will
+be attached.
+.IP "\fB--path PATH\fR" 1c
+Specifies the \fBPATH\fR to the partition to attach.
+.PP
+.SS "Setting Partition State"
+.PP
+Set the state of a partitions in a container to ono of \fIPRIMARY\fR,
+\fIACTIVE\fR, or \fIOFFLINE\fR.
+.PP
+.IP "\fB--state STATE-NAME\fR" 1c
+Specifies the state for the partition in the container. The
+\fBSTATE-NAME\fR is one of \fIPRIMARY\fR, \fIACTIVE\fR, or
+\fIOFFLINE\fR.
+.IP "\fB--cont PATH\fR" 1c
+Specifies the \fBPATH\fR to the container containing the partition.
+.IP "\fB--name PART-NAME\fR" 1c
+Specifies the \fBPART-NAME\fR in the container that refers to the
+partition.
+.PP
+.SS "Detaching Partitions"
+.PP
+Partions can be \fIdetached\fR from a container when the data they
+contain is no longer need. Detaching a partition does not remove
+the partition files or any data from the partition.
+.PP
+The \fIPRIMARY\fR partition in a container cannot be removed.
+.IP "\fB--detach\fR" 1c
+Requests that a partition be detached from a container.
+.IP "\fB--cont PATH\fR" 1c
+Specifies the \fBPATH\fR to the container from which the partition will
+be removed.
+.IP "\fB--name PART-NAME\fR" 1c
+Specifies the partition name to detach from the container.
+
+.IP "\fB--set\fR" 1c
+.IP "\fB--remap-schema\fR" 1c
+.IP "\fB--show-schema\fR" 1c
+.IP "\fB--reindex\fR" 1c
+.IP "\fB--reindex-status-count\fR" 1c
+.IP "\fB--verbose\fR" 1c
+.PP
+.SH EXAMPLES
+.SS "Query Example"
+.PP
+.RS 4
+.nf
+$ sos-part --path=/dev/shm/SOS/ldms_data --query
+meminfo_tom_job_comp_time
+meminfo_tom_timestamp
+netdev2_tom_time_comp
+slurm2_tom_time_comp
+vmstat_tom_job_comp_time
+vmstat_tom_timestamp
+.fi
+.RE
+.PP
+.SS "Verify All Indices"
+.PP
+.RS 4
+.nf
+$ sos-part --path=/dev/shm/SOS/ldms_data --verify
+Verifying index 'meminfo_tom_job_comp_time' ... OK
+Verifying index 'meminfo_tom_timestamp' ... OK
+Verifying index 'netdev2_tom_time_comp' ... OK
+Verifying index 'slurm2_tom_time_comp' ... OK
+Verifying index 'vmstat_tom_job_comp_time' ... OK
+Verifying index 'vmstat_tom_timestamp' ... OK
+.fi
+.RE
+.PP
+.SS "Verify A Single Index"
+.PP
+.RS 4
+.nf
+$ sos-part --path=/dev/shm/SOS/ldms_data --verify --index  meminfo_tom_job_comp_time
+Verifying index 'meminfo_tom_job_comp_time' ... OK
+.fi
+.RE
+.PP
+
+.SH SEE ALSO
+ldmsd(8), ldms_quickstart(7),
