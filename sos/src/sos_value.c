@@ -522,6 +522,9 @@ void sos_value_free(sos_value_t v)
  * The reference on this value should be dropped with sos_value_put()
  * when the application is finished with the value.
  *
+ * NOTE: The value ptr returned becomes invalid if a subsequent array
+ * allocation <tt>sos_array_new<tt> results in object reallocation.
+ *
  * \param obj The object handle
  * \param attr The attribute handle
  * \returns The value of the object's attribute.
@@ -627,6 +630,9 @@ static sos_value_t __sos_join_value_init(sos_value_t val, sos_obj_t obj, sos_att
  *
  * The returned value has a reference on the parameter object <tt>obj<tt>. The
  * caller must call sos_value_put() when the value is no longer in use.
+ *
+ * NOTE: The value ptr returned becomes invalid if a subsequent array
+ * allocation <tt>sos_array_new<tt> results in object reallocation.
  *
  * \param val Pointer to the value to be initialized
  * \param obj The object handle
