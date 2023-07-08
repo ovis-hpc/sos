@@ -948,9 +948,13 @@ int sos_part_attach(sos_t sos, const char *name, const char *path)
 	head_ref = SOS_PART_REF_UDATA(sos->part_ref_udata)->head;
 	tail_ref = SOS_PART_REF_UDATA(sos->part_ref_udata)->tail;
 
-	new_part_ref = ods_obj_alloc(sos->part_ref_ods, sizeof(struct sos_part_ref_data_s));
-	if (!new_part_ref)
+	new_part_ref = ods_obj_alloc_extend(sos->part_ref_ods,
+					    sizeof(struct sos_part_ref_data_s),
+					    64*1024);
+	if (!new_part_ref) {
+		rc = ENOMEM;
 		goto err_0;
+	}
 
 	/* Make sure we can open it */
 	strncpy(SOS_PART_REF(new_part_ref)->path, path, SOS_PART_PATH_LEN);
