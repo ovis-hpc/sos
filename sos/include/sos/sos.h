@@ -231,6 +231,13 @@ typedef union sos_obj_ref_s {
 		uuid_t part_uuid;	/* The reference to the ODS */
 		ods_ref_t obj;		/* The object reference */
 	} ref;
+	struct dsos_ref_s {
+		u_long cont_id;
+		u_long client_id;
+		u_long part_id;
+		u_long schema_id;
+		ods_ref_t obj_ref;
+	} dsos_ref;
 } sos_obj_ref_t;
 static inline void sos_ref_reset(sos_obj_ref_t ref)
 {
@@ -581,7 +588,8 @@ size_t sos_part_reindex(sos_part_t part,
  * each value in the object.
  *
  * - sos_obj_new()	 Create a new object in the container
- * - sos_obj_new_with_data() Create and populate a new object with data
+ * - sos_obj_new_size()	 Create a new object with sufficient memory for array bytes
+ * - sos_obj_new_from_data() Create and populate a new object from data
  * - sos_obj_malloc() Create a memory object that lives outside a container
  * - sos_obj_delete()    Delete an object from the container
  * - sos_obj_get()	 Take a reference on an object
@@ -607,16 +615,20 @@ size_t sos_part_reindex(sos_part_t part,
 #define SOS_OBJ_LE	2
 
 sos_obj_t sos_obj_new(sos_schema_t schema);
-sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_size);
+sos_obj_t sos_obj_new_size(sos_schema_t schema, size_t reserve);
+sos_obj_t sos_obj_new_from_data(sos_schema_t schema, uint8_t *data, size_t data_size);
 sos_obj_t sos_obj_malloc(sos_schema_t schema);
 int sos_obj_commit(sos_obj_t obj);
 int sos_obj_commit_part(sos_obj_t obj, sos_part_t part);
 sos_schema_t sos_obj_schema(sos_obj_t obj);
+sos_part_t sos_obj_part(sos_obj_t obj);
 size_t sos_obj_size(sos_obj_t obj);
 int sos_obj_copy(sos_obj_t dst, sos_obj_t src);
 int sos_obj_attr_copy(sos_obj_t dst_obj, sos_attr_t dst_attr,
 					sos_obj_t src_obj, sos_attr_t src_attr);
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj);
+sos_obj_ref_t *sos_obj_ref_ptr(sos_obj_t obj);
+void sos_obj_ref_init(sos_obj_t obj, sos_obj_ref_t ref);
 sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref);
 
 sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val);

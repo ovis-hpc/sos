@@ -14,7 +14,8 @@
 #include <sys/queue.h>
 #include <syslog.h>
 #include <unistd.h>
-#include "json.h"
+#include <uuid/uuid.h>
+#include <jansson.h>
 #include "dsos.h"
 #include "sosapi.h"          /* Created by rpcgen */
 #include "sosapi_common.h"
@@ -53,9 +54,11 @@ static char *get_container_path(char *name)
 static void read_directory(void)
 {
 	const char *path = getenv("DSOSD_DIRECTORY");
-	const char *server = getenv("DSOSD_SERVER_ID");
+	const char *server_id = getenv("DSOSD_SERVER_ID");
 	char hostname[PATH_MAX];
-	json_entity_t dir, entry;
+	json_t *dir, *entry;
+	json_t *server;
+	json_error_t error;
 	struct dir_entry_s *dir_entry;
 	int rc;
 	FILE *dir_file;
@@ -67,40 +70,38 @@ static void read_directory(void)
 	dir_file = fopen(path, "r");
 	if (!dir_file)
 		return;
-	rc = json_parse_file(dir_file, &dir);
-	if (rc != 0)
+	dir = json_loadf(dir_file, 0, &error);
+	if (!dir) {
+		printf("Error parsing container directory:\n");
+		printf("    %s\n", error.text);
+		printf("    %s\n", error.source);
+		printf("    %*s\n", error.column, "^");
 		return;
+	}
 	/* Look up the container name mappings for this hostname */
-	if (!server) {
+	if (!server_id) {
 		rc = gethostname(hostname, PATH_MAX);
 		if (rc)
 			return;
-		server = hostname;
+		server_id = hostname;
 	}
-	if (json_entity_type(dir) != JSON_DICT_VALUE) {
-		printf("Expected a directory but the entry value is a %d\n",
-		       json_entity_type(dir));
+	if (!json_is_object(dir)) {
+		printf("Expected a dictionary, the directory is invalid.\n");
 		return;
 	}
-	dir = json_value_find(dir, server);
-	if (!dir)
+	server = json_object_get(dir, server_id);
+	if (!server)
 		return;
-	if (json_entity_type(dir) != JSON_DICT_VALUE) {
+	if (!json_is_object(server)) {
 		printf("Expected a directory with name %s but the entry value is a %d\n",
-		       server, json_entity_type(dir));
+		       server_id, json_typeof(server));
 		return;
 	}
-	for (entry = json_attr_first(dir); entry; entry = json_attr_next(entry)) {
-		if (json_entity_type(entry) != JSON_ATTR_VALUE) {
-			printf("Expected \"container-name\" : \"path\", but got an %d\n",
-			       json_entity_type(entry));
-			continue;
-		}
-		json_str_t name = json_attr_name(entry);
-		json_entity_t path = json_attr_value(entry);
-		if (json_entity_type(path) != JSON_STRING_VALUE) {
-			printf("Expected a string but the directory entry value is a %d\n",
-			       json_entity_type(path));
+	const char *name;
+	json_object_foreach(server, name, entry) {
+		if (!json_is_string(entry)) {
+			printf("Expected \"<container-name>\" : \"<container-path>\", "
+			       "but the entry is not a string\n");
 			continue;
 		}
 		dir_entry = malloc(sizeof(*dir_entry));
@@ -108,8 +109,12 @@ static void read_directory(void)
 			printf("%s[%d] : Memory allocation failure\n", __func__, __LINE__);
 			continue;
 		}
-		dir_entry->name = name->str;
-		dir_entry->path = path->value.str_->str;
+		dir_entry->name = strdup(name);
+		if (!dir_entry->name)
+			assert(0 == "Memory allocation failure.");
+		dir_entry->path = strdup(json_string_value(entry));
+		if (!dir_entry->path)
+			assert(0 == "Memory allocation failure.");
 		ods_rbn_init(&dir_entry->rbn, dir_entry->name);
 		ods_rbt_ins(&dir_tree, &dir_entry->rbn);
 	}
@@ -312,6 +317,7 @@ open_1_svc(char *path, int perm, int mode, dsos_open_res *res,  struct svc_req *
 	char err_msg[256];
 	sos_t sos;
 	char *lpath;
+	struct svc_rderrhandler rderr;
 
 	if (!authenticate_request(req, __func__))
 		return FALSE;
@@ -385,21 +391,6 @@ open_1_svc(char *path, int perm, int mode, dsos_open_res *res,  struct svc_req *
 	res->error = 0;
 	res->dsos_open_res_u.cont = client->handle;
 	pthread_mutex_unlock(&client_tree_lock);
-#if 0
-	{
-		int mode = RPC_SVC_MT_AUTO;
-		int max = 20;      /* Set maximum number of threads to 20 */
-		if (!rpc_control(RPC_SVC_MTMODE_SET, &mode)) {
-			printf("RPC_SVC_MTMODE_SET: failed\n");
-			exit(1);
-		}
-		if (!rpc_control(RPC_SVC_THRMAX_SET, &max)) {
-			printf("RPC_SVC_THRMAX_SET: failed\n");
-			exit(1);
-		}
-	}
-#endif
-	struct svc_rderrhandler rderr;
 	rderr.rderr_fn = rderr_handler;
 	rderr.rderr_arg = client;
 	SVC_CONTROL(req->rq_xprt, SVCSET_RDERRHANDLER, &rderr);
@@ -1312,7 +1303,7 @@ bool_t obj_create_1_svc(dsos_obj_array obj_array, dsos_obj_create_res *res, stru
 		}
 		clock_gettime(CLOCK_REALTIME, &client->acc_time);
 		sos_obj_t obj =
-			sos_obj_new_with_data(
+			sos_obj_new_from_data(
 				schema->schema,
 				obj_e->value.dsos_obj_value_val,
 				obj_e->value.dsos_obj_value_len);
@@ -1340,7 +1331,15 @@ out_0:
 	return TRUE;
 }
 
-bool_t obj_delete_1_svc(dsos_container_id cont, dsos_obj_id obj, int *res, struct svc_req *req)
+bool_t obj_delete_1_svc(dsos_obj_array obj_array, int *res, struct svc_req *req)
+{
+	if (!authenticate_request(req, __func__))
+		return FALSE;
+	*res = ENOTSUP;
+	return TRUE;
+}
+
+bool_t obj_update_1_svc(dsos_obj_array obj_array, int *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
@@ -1589,19 +1588,19 @@ bool_t iter_prev_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_array
 		return FALSE;
 	return TRUE;
 }
-bool_t iter_find_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_array_res *res, struct svc_req *req)
+bool_t iter_find_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
 	return TRUE;
 }
-bool_t iter_find_glb_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_array_res *res, struct svc_req *req)
+bool_t iter_find_glb_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
 	return TRUE;
 }
-bool_t iter_find_lub_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_array_res *res, struct svc_req *req)
+bool_t iter_find_lub_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
@@ -1725,17 +1724,19 @@ static int __make_query_obj_array(struct dsos_session *client, struct ast *ast,
 	enum ast_eval_e eval;
 	sos_iter_t iter = ast->sos_iter;
 	int count = QUERY_OBJECT_COUNT;
+	sos_obj_t obj;
 	struct dsos_obj_entry *entry = NULL;
-	result->error = DSOS_ERR_QUERY_EMPTY;
 	int obj_id, rc = 0;
+	ast_attr_entry_t attr_e;
+
 	memset(result, 0, sizeof(*result));
+	result->error = DSOS_ERR_QUERY_EMPTY;
 	result->dsos_query_next_res_u.result.obj_array.obj_array_val =
 		calloc(count, sizeof(dsos_obj_entry));
-	ast_attr_entry_t attr_e;
 
 	obj_id = 0;
 	while (!rc && count) {
-		sos_obj_t obj = sos_iter_obj(iter);
+		obj = sos_iter_obj(iter);
 		if (!obj) {
 			result->error = errno;
 			goto err_0;
@@ -1756,13 +1757,26 @@ static int __make_query_obj_array(struct dsos_session *client, struct ast *ast,
 		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
 			sos_obj_attr_copy(result_obj, attr_e->res_attr, obj, attr_e->sos_attr);
 		}
+		struct dsos_part *dpart;
+		sos_part_t part = sos_obj_part(obj);
+		uuid_t uuid;
+		sos_part_uuid(part, uuid);
+		struct ods_rbn *rbn = ods_rbt_find(&client->part_uuid_tree, uuid);
+		if (rbn)
+			dpart = container_of(rbn, struct dsos_part, uuid_rbn);
+		else
+			goto out;
+
 		result->error = 0;
 		entry = &result->dsos_query_next_res_u.result.obj_array.obj_array_val[obj_id++];
 		result->dsos_query_next_res_u.result.obj_array.obj_array_len += 1;
 		result->dsos_query_next_res_u.result.format = 0;
 		entry->next = NULL;
 		entry->cont_id = client->handle;
+		entry->part_id = dpart->spec.id;
 		entry->schema_id = 0;
+		sos_obj_ref_t ref = sos_obj_ref(obj);
+		entry->obj_ref = ref.ref.obj;
 		count --;
 		void *obj_data = sos_obj_ptr(result_obj);
 		entry->value.dsos_obj_value_len = sos_obj_size(result_obj);

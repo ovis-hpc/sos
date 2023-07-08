@@ -408,7 +408,7 @@ static ods_visit_action_t visit_cb(ods_idx_t idx, ods_key_t key, ods_idx_data_t 
 	int rc = (ods_visit_action_t)visit_arg->cb_fn(visit_arg->index,
 						      key, (sos_idx_data_t *)data,
 						      found, visit_arg->arg);
-	free(arg);
+	free(visit_arg);
 	return rc;
 }
 /**
@@ -441,12 +441,16 @@ int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, v
 {
 	int rc = 0;
 	ods_idx_ref_t iref;
-	struct sos_visit_cb_ctxt_s *ctxt = malloc(sizeof(*ctxt));
-	ctxt->index = index;
-	ctxt->cb_fn = cb_fn;
-	ctxt->arg = arg;
 	LIST_FOREACH(iref, &index->active_idx_list, entry) {
+		struct sos_visit_cb_ctxt_s *ctxt = malloc(sizeof *ctxt);
+		ctxt->index = index;
+		ctxt->cb_fn = cb_fn;
+		ctxt->arg = arg;
 		int irc = ods_idx_visit(iref->idx, key, visit_cb, ctxt);
+		if (irc != SOS_VISIT_NOP) {
+			rc = irc;
+			break;
+		}
 		if (irc && !rc)
 			rc = irc;
 	}
@@ -465,6 +469,12 @@ int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, v
  */
 int sos_index_insert(sos_index_t index, sos_key_t key, sos_obj_t obj)
 {
+	int rc;
+	if (NULL == obj->obj->ods) {
+		rc = sos_obj_commit(obj);
+		if (rc)
+			return rc;
+	}
 	if (!ods_ref_valid(obj->obj->ods, obj->obj_ref.ref.obj))
 		return EINVAL;
 	if (index->part_gn != index->sos->part_gn) {

@@ -1337,19 +1337,23 @@ sos_obj_t __sos_init_obj(sos_t sos, sos_schema_t schema, sos_part_t part, ods_ob
  *
  * This call will automatically extend the size of the backing store
  * to accomodate the new object. This call will fail if there is
- * insufficient disk space. Use the sos_obj_index() to add the object
- * to all indices defined by its object class.
+ * insufficient disk space.
  *
- * See the sos_schema_by_name() function call for information on how to
- * obtain a schema handle.
+ * The \c reserve parameter requests that storage be reserved for
+ * arrays members of the object. This allows for the application to
+ * avoid reallocating the object should the arrays allocated in the
+ * object with the sos_array_new() function require additional space.
  *
- * \param schema	The schema handle
+ * Use the sos_obj_index() to add the object to all indices defined
+ * by its object class (schema).
+ *
+ * \param schema The schema handle
+ * \param reserve Count of bytes to reserve for arrays
  * \returns Pointer to the new object
  * \returns NULL if there is an error
  */
-#define ARRAY_RESERVE 256
 
-sos_obj_t sos_obj_new(sos_schema_t schema)
+sos_obj_t sos_obj_new_size(sos_schema_t schema, size_t reserve)
 {
 	ods_obj_t ods_obj;
 	sos_obj_t sos_obj;
@@ -1365,7 +1369,7 @@ sos_obj_t sos_obj_new(sos_schema_t schema)
 		errno = ENOSPC;
 		return NULL;
 	}
-	size_t array_data_sz = schema->data->array_cnt * ARRAY_RESERVE;
+	size_t array_data_sz = reserve;
 	ods_obj = ods_obj_malloc(schema->data->obj_sz + array_data_sz);
 	if (!ods_obj)
 		goto err_0;
@@ -1385,6 +1389,13 @@ err_0:
 	return NULL;
 }
 
+#define DEFAULT_ARRAY_RESERVE 256
+sos_obj_t sos_obj_new(sos_schema_t schema)
+{
+	size_t reserve = schema->data->array_cnt * DEFAULT_ARRAY_RESERVE;
+	return sos_obj_new_size(schema, reserve);
+}
+
 /**
  * @brief Create a new object and populate it with data
  *
@@ -1397,7 +1408,7 @@ err_0:
  * @param data_size The data size in bytes
  * @return sos_obj_t The object handle
  */
-sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_size)
+sos_obj_t sos_obj_new_from_data(sos_schema_t schema, uint8_t *data, size_t data_size)
 {
 	ods_obj_t ods_obj;
 	sos_obj_t sos_obj;
@@ -1459,7 +1470,7 @@ sos_obj_t sos_obj_malloc(sos_schema_t schema)
 		errno = EINVAL;
 		return NULL;
 	}
-	size_t array_data_sz = schema->data->array_cnt * ARRAY_RESERVE;
+	size_t array_data_sz = schema->data->array_cnt * DEFAULT_ARRAY_RESERVE;
 	ods_obj = ods_obj_malloc(schema->data->obj_sz + array_data_sz);
 	if (!ods_obj)
 		goto err_0;
@@ -1572,6 +1583,13 @@ sos_obj_ref_t sos_obj_ref(sos_obj_t obj)
 	if (!obj)
 		return NULL_REF;
 	return obj->obj_ref;
+}
+
+sos_obj_ref_t *sos_obj_ref_ptr(sos_obj_t obj)
+{
+	if (!obj)
+		return NULL;
+	return &obj->obj_ref;
 }
 
 static int ref_is_null(sos_obj_ref_t ref)

@@ -277,8 +277,10 @@ typedef struct sos_schema_data_s {
 	uint32_t attr_cnt;	/* Count of attributes in object class */
 	uint32_t array_cnt;	/* Count of array attributes in the object class */
 	uint32_t key_sz;	/* Size of largest indexed attribute */
-	uint64_t obj_sz;	/* Size of scalars in object */
-	uint64_t el_sz;		/* Size of each element if this is an array object */
+	uint32_t obj_sz;	/* Size of scalars in object */
+	uint32_t reserved_0;
+	uint32_t el_sz;		/* Size of each element if this is an array object */
+	uint32_t reserved_1;
 	uint32_t schema_sz;	/* Size of schema, not including arrays */
 	ods_atomic_t gen;	/* Generation number */
 	struct sos_attr_data_s attr_dict[0];

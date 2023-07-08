@@ -22,11 +22,11 @@ enum dsos_error {
 
 static inline double dsos_diff_timespec_s(struct timespec start, struct timespec end)
 {
-        uint64_t nsecs_start, nsecs_end;
+	uint64_t nsecs_start, nsecs_end;
 
-        nsecs_start = start.tv_sec * 1000000000 + start.tv_nsec;
-        nsecs_end = end.tv_sec * 1000000000 + end.tv_nsec;
-        return (double)(nsecs_end - nsecs_start) / 1e9;
+	nsecs_start = start.tv_sec * 1000000000 + start.tv_nsec;
+	nsecs_end = end.tv_sec * 1000000000 + end.tv_nsec;
+	return (double)(nsecs_end - nsecs_start) / 1e9;
 }
 
 typedef struct dsos_result_s {
@@ -41,6 +41,7 @@ typedef struct dsos_schema_s *dsos_schema_t;
 typedef struct dsos_part_s *dsos_part_t;
 typedef struct dsos_iter_s *dsos_iter_t;
 typedef struct dsos_query_s *dsos_query_t;
+
 typedef struct dsos_name_array_s {
 	int count;
 	char **names;
@@ -53,6 +54,7 @@ extern void dsos_container_commit(dsos_container_t cont);
 extern dsos_container_t dsos_container_open(dsos_session_t sess, const char *path, sos_perm_t perm, int mode);
 extern int dsos_container_error(dsos_container_t cont, char **msg);
 extern dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dsos_res_t *res);
+extern void dsos_schema_free(dsos_schema_t schema);
 extern dsos_schema_t dsos_schema_by_name(dsos_container_t cont, const char *name);
 extern dsos_schema_t dsos_schema_by_uuid(dsos_container_t cont, const uuid_t uuid);
 extern dsos_name_array_t dsos_schema_query(dsos_container_t cont);
@@ -83,15 +85,21 @@ extern int dsos_transaction_begin(dsos_container_t cont, struct timespec *timeou
 extern int dsos_transaction_end(dsos_container_t cont);
 extern int dsos_obj_create(dsos_container_t cont, dsos_part_t part,
 	dsos_schema_t schema, sos_obj_t obj);
+extern int dsos_obj_update(dsos_container_t cont, sos_obj_t obj);
 extern sos_obj_t dsos_obj_new(dsos_schema_t schema);
 extern dsos_iter_t dsos_iter_create(dsos_container_t cont, dsos_schema_t schema, const char *attr_name);
+extern void dsos_iter_delete(dsos_iter_t iter);
+extern sos_obj_t dsos_iter_obj(dsos_iter_t iter);
+extern sos_key_t dsos_iter_key(dsos_iter_t iter, sos_obj_t obj);
+extern sos_attr_t dsos_iter_attr(dsos_iter_t iter);
+extern dsos_schema_t dsos_iter_schema(dsos_iter_t iter);
 extern sos_obj_t dsos_iter_begin(dsos_iter_t iter);
 extern sos_obj_t dsos_iter_end(dsos_iter_t iter);
 extern sos_obj_t dsos_iter_next(dsos_iter_t iter);
 extern sos_obj_t dsos_iter_prev(dsos_iter_t iter);
-extern int dsos_iter_find_glb(dsos_iter_t iter, sos_key_t key);
-extern int dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key);
-extern int dsos_iter_find(dsos_iter_t iter, sos_key_t key);
+extern sos_obj_t dsos_iter_find_glb(dsos_iter_t iter, sos_key_t key);
+extern sos_obj_t dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key);
+extern sos_obj_t dsos_iter_find(dsos_iter_t iter, sos_key_t key);
 typedef struct dsos_iter_stats_s {
 	uint64_t cardinality;
 	uint64_t duplicates;

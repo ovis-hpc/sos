@@ -227,17 +227,18 @@ void sos_schema_free(sos_schema_t schema)
 void __sos_schema_release(sos_schema_t schema)
 {
 	sos_t sos = schema->sos;
-	ods_rbt_del(&schema->sos->schema_name_rbt, &schema->name_rbn);
-	ods_rbt_del(&schema->sos->schema_id_rbt, &schema->id_rbn);
-	if (sos)
+	if (sos) {
+		ods_rbt_del(&schema->sos->schema_name_rbt, &schema->name_rbn);
+		ods_rbt_del(&schema->sos->schema_id_rbt, &schema->id_rbn);
 		sos->schema_count--;
-	LIST_REMOVE(schema, entry);
+		LIST_REMOVE(schema, entry);
+	}
 
 	/* Free all of our attributes and close its indices */
 	while (!TAILQ_EMPTY(&schema->attr_list)) {
 		sos_attr_t attr = TAILQ_FIRST(&schema->attr_list);
 		TAILQ_REMOVE(&schema->attr_list, attr, entry);
-		if (schema->sos && attr->index)
+		if (sos && attr->index)
 			sos_index_close(attr->index, ODS_COMMIT_ASYNC);
 		free(attr->key_type);
 		free(attr->idx_type);
@@ -251,7 +252,7 @@ void __sos_schema_release(sos_schema_t schema)
 		free(schema->dict);
 
 	/* Drop our reference on the schema object */
-	if (schema->sos && schema->schema_obj)
+	if (sos && schema->schema_obj)
 		ods_obj_put(schema->schema_obj);
 }
 
@@ -999,6 +1000,9 @@ int sos_attr_is_array(sos_attr_t attr)
  *
  * This function is intended to be used when the schema of the object
  * is well known by the application.
+ *
+ * NOTE: The ptr returned becomes invalid if a subsequent array
+ * allocation <tt>sos_array_new<tt> results in object reallocation.
  *
  * \param obj The object handle
  * \retval void * pointer to the objects's internal data
@@ -2259,7 +2263,7 @@ void sos_schema_print(sos_schema_t schema, FILE *fp)
 	fprintf(fp, "    name      : %s\n", schema->data->name);
 	fprintf(fp, "    schema_sz : %d\n", schema->data->schema_sz);
 	fprintf(fp, "    gen       : %d\n", schema->data->gen);
-	fprintf(fp, "    obj_sz    : %ld\n", schema->data->obj_sz);
+	fprintf(fp, "    obj_sz    : %d\n", schema->data->obj_sz);
 	char uuid_str[37];
 	uuid_unparse_lower(schema->data->uuid, uuid_str);
 

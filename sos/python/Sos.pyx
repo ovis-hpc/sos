@@ -184,7 +184,7 @@ def export_schema(path, dir_path):
     its schema ODS corrupted.
 
     Parameters:
-    - container-path	Path to the container
+    - container-path    Path to the container
     - export-path Path  Path to a file that will contain JSON formatted
                         schema templates
 
@@ -683,6 +683,93 @@ cdef class DsosContainer:
         rc = dsos_transaction_end(self.c_cont)
         if rc != 0:
             raise ValueError(f"Error {rc} attempting to start a transaction")
+
+    def attr_iter(self, DsosSchema schema, attr_name):
+        """Create an iterator for \c attr_name in \c schema
+
+        Positional Parameters:
+        - The DsosSchema containing the attribute \c attr_name
+        - The \c attr_name string
+
+        Returns:
+        A DsosIterator object
+
+        Throws:
+        ValueError if there is an error
+        """
+        cdef sos_attr_t c_attr
+        cdef dsos_iter_t c_iter
+        c_attr = dsos_schema_attr_by_name(schema.c_dschema, attr_name.encode())
+        if c_attr == NULL:
+            raise ValueError(f"The attribute {attr_name} does not exist "
+                             "in the schema {schema.name()}")
+        c_iter = dsos_iter_create(self.c_cont, schema.c_dschema, attr_name.encode())
+        if c_iter == NULL:
+            raise ValueError(f"Could not create the attribute {attr_name} "
+                             "for the schema {schema.name()}")
+
+        a = schema.attr_by_name(attr_name)
+        i = DsosIterator()
+        i.assign(self.c_cont, schema.c_dschema, c_attr, c_iter)
+        return i
+
+cdef class DsosIterator:
+    cdef dsos_iter_t c_iter
+    cdef dsos_schema_t c_schema
+    cdef dsos_container_t c_cont
+    cdef sos_attr_t c_attr
+    cdef Object o
+
+    def __init__(self):
+        self.c_cont = NULL
+        self.c_schema = NULL
+        self.c_attr = NULL
+        self.c_iter = NULL
+
+    cdef assign(self, dsos_container_t c_cont, dsos_schema_t c_schema,
+                sos_attr_t c_attr, dsos_iter_t c_iter):
+        self.c_cont = c_cont
+        self.c_schema = c_schema
+        self.c_attr = c_attr
+        self.c_iter = c_iter
+        self.o = None
+
+    def begin(self):
+        cdef sos_obj_t c_obj
+        c_obj = dsos_iter_begin(self.c_iter)
+        if c_obj != NULL:
+            self.o = Object()
+            return True
+        return False
+
+    def end(self):
+        cdef sos_obj_t c_obj
+        c_obj = dsos_iter_end(self.c_iter)
+        if c_obj != NULL:
+            self.o = Object()
+            return True
+        return False
+
+    def next(self):
+        cdef sos_obj_t c_obj
+        o = self.o
+        c_obj = dsos_iter_next(self.c_iter)
+        if c_obj != NULL:
+            self.o = Object()
+            self.o.assign(c_obj)
+        else:
+            self.o = None
+        return o
+
+    def __iter__(self):
+        self.begin()
+        return self
+
+    def __next__(self):
+        o = self.next()
+        if o is not None:
+            return o
+        raise StopIteration
 
 cdef class DsosPartState:
     cdef int state_
@@ -1604,10 +1691,12 @@ cdef class Schema(SosObject):
           "attrs" : [ <attr-def ]
         }
 
-        The <schema-name> must be unique within the container. The
-        <uuid> is a globally unique identifier for the schema. The
-        uuidgen command can be used to generate these values. Each
-        <attr-def> is a dictionary defining a SOS schema attribute as
+        The <schema-name> must be unique within the container.
+
+        The <uuid> is a globally unique identifier for the schema. The
+        uuidgen command can be used to generate these values.
+
+        Each <attr-def> is a dictionary defining a SOS schema attribute as
         follows:
 
         {
@@ -4525,10 +4614,10 @@ cdef class Index(object):
     def verify(self, verbose=0):
         """Verify the contents of the index
 
-	Keyword Parameter:
-	verbose -  0 Nothing is printed
-	        -  1 The partion names containing corrupted indices are printed
-	        - >1 Corruption errors are printed to stdout
+        Keyword Parameter:
+        verbose -  0 Nothing is printed
+                -  1 The partion names containing corrupted indices are printed
+                - >1 Corruption errors are printed to stdout
         """
         cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
         cdef int c_rc = sos_index_verify(self.c_index, c_fp, verbose);
