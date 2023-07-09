@@ -1,4 +1,4 @@
-AC_INIT(libtirpc, 1.3.2)
+AC_INIT(libdsosrpc, 1.3.2)
 AM_INIT_AUTOMAKE([silent-rules])
 AM_SILENT_RULES([yes])
 AC_CONFIG_SRCDIR([src/auth_des.c])
@@ -98,6 +98,6 @@ AC_CHECK_LIB([pthread], [pthread_create])
 AC_CHECK_FUNCS([getrpcbyname getrpcbynumber setrpcent endrpcent getrpcent])
 
 AC_CONFIG_FILES([Makefile src/Makefile man/Makefile doc/Makefile])
-AC_OUTPUT(libtirpc.pc)
+AC_OUTPUT(libdsosrpc.pc)
 
 

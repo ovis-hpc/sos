@@ -215,5 +215,5 @@ AC_CONFIG_FILES([
 		rpm/sosdb.spec
 ])
 
-AC_OUTPUT(libtirpc/libtirpc.pc)
+AC_OUTPUT(libtirpc/libdsosrpc.pc)
 AC_OUTPUT

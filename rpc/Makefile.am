@@ -30,7 +30,7 @@ libdsos_la_SOURCES = sosapi_client.c sosapi_server.c sosapi_common.c \
 	ast.c ast.h
 
 libdsos_la_LIBADD = ../ods/src/libods.la ../sos/src/libsos.la \
-	../libtirpc/src/libtirpc.la \
+	../libtirpc/src/libdsosrpc.la \
 	-ldl -lpthread -luuid -lm
 libdsos_la_CFLAGS = $(AM_CFLAGS)
 lib_LTLIBRARIES += libdsos.la
@@ -39,7 +39,7 @@ dsosd_SOURCES = sosapi_server.c ../ods/src/ods_rbt.c ast.c \
 	sosapi.h ast.h \
 	../ods/include/ods/ods_rbt.h
 dsosd_CFLAGS = $(AM_CFLAGS)
-dsosd_LDADD = ../sos/src/libsos.la libdsos.la -lpthread -luuid -lm ../libtirpc/src/libtirpc.la -ljansson
+dsosd_LDADD = ../sos/src/libsos.la libdsos.la -lpthread -luuid -lm ../libtirpc/src/libdsosrpc.la -ljansson
 bin_PROGRAMS += dsosd
 
 dsosql_SOURCES = dsosql.c dsosql_commands.c \

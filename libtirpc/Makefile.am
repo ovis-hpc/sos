@@ -46,7 +46,7 @@ nobase_include_HEADERS += \
 endif
 
 pkgconfigdir=$(libdir)/pkgconfig
-pkgconfig_DATA = libtirpc.pc
+pkgconfig_DATA = libdsosrpc.pc
 
 CLEANFILES	       = cscope.* *~
-DISTCLEANFILES	       = Makefile.in libtirpc*.tar.gz
+DISTCLEANFILES	       = Makefile.in libdsosrpc*.tar.gz
