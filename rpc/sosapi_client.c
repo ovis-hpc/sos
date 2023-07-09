@@ -2761,6 +2761,7 @@ query_next_complete_fn(dsos_client_t client,
 	dsos_obj_entry *obj_e;
 	u_int count, entry_count;
 	sos_obj_t obj;
+	sos_obj_ref_t *obj_ref;
 
 	/* Build the objects from the array */
 	entry_count = request->query_next.res.dsos_query_next_res_u.result.obj_array.obj_array_len;
@@ -2770,7 +2771,12 @@ query_next_complete_fn(dsos_client_t client,
 		obj = sos_obj_new_from_data(request->query_next.query->schema,
 					    obj_e->value.dsos_obj_value_val,
 					    obj_e->value.dsos_obj_value_len);
-
+		obj_ref = sos_obj_ref_ptr(obj);
+		obj_ref->dsos_ref.client_id = client->client_id;
+		obj_ref->dsos_ref.cont_id = obj_e->cont_id;
+		obj_ref->dsos_ref.part_id = obj_e->part_id;
+		obj_ref->dsos_ref.schema_id = obj_e->schema_id;
+		obj_ref->dsos_ref.obj_ref = 0;
 		pthread_mutex_lock(&request->query_next.query->obj_tree_lock);
 		cache_sos_object(&request->query_next.query->obj_tree,
 			      obj, request->query_next.query->key_attr);

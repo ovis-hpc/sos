@@ -31,6 +31,8 @@ enum ast_token_e {
 	ASTT_FROM,          /* 'from' */
 	ASTT_ORDER_BY,      /* 'order_by' */
 	ASTT_WHERE,         /* 'where' */
+	ASTT_LIMIT,	    /* 'limit' */
+	ASTT_RESAMPLE,	    /* 'resample' */
 	ASTT_NAME,          /* An alphanumeric name that doesn't match
 			     * any of the above */
 };
@@ -130,6 +132,9 @@ struct ast {
 	char *iter_attr_name;
 	struct ast_attr_entry_s *iter_attr_e;
 	sos_schema_t result_schema;
+	int result_count;	/* Number of objects returned so far */
+	int result_limit;	/* Maximum objects returned */
+	double resample_width;	/* Resample bin width */
 
 	/* Key used to position iterator */
 	sos_key_t key;

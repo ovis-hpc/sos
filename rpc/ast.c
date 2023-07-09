@@ -39,9 +39,11 @@ static int key_word_comparator(const void *a_, const void *b_)
 static struct ast_key_word_s key_words[] = {
 	{ "and", ASTT_AND },
 	{ "from", ASTT_FROM },
+	{ "limit", ASTT_LIMIT },
 	{ "not", ASTT_NOT },
 	{ "or", ASTT_OR },
 	{ "order_by", ASTT_ORDER_BY },
+	{ "resample", ASTT_RESAMPLE },
 	{ "select", ASTT_SELECT },
 	{ "where", ASTT_WHERE },
 };
@@ -1005,6 +1007,59 @@ int ast_parse_order_by_clause(struct ast *ast, const char *expr, int *ppos)
 	return ast->result;
 }
 
+int ast_parse_limit_clause(struct ast *ast, const char *expr, int *ppos)
+{
+	char *token_str;
+	enum ast_token_e token;
+	struct ast_term *term;
+
+	token = ast_lex(ast, expr, ppos, &token_str);
+	if (token != ASTT_INTEGER) {
+		ast->result = ASTP_ERROR;
+		ast->pos = *ppos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			 "Expected an integer record count but found '%s'", token_str);
+		goto out;
+	}
+	ast->result_limit = strtol(token_str, NULL, 0);
+	if (ast->result_limit <= 0) {
+		ast->result = ASTP_ERROR;
+		ast->pos = *ppos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			 "The limit result count must be > 0, found '%s'", token_str);
+		goto out;
+	}
+ out:
+	return ast->result;
+}
+
+int ast_parse_resample_clause(struct ast *ast, const char *expr, int *ppos)
+{
+	char *token_str;
+	enum ast_token_e token;
+	struct ast_term *term;
+
+	token = ast_lex(ast, expr, ppos, &token_str);
+	if (token != ASTT_INTEGER && token != ASTT_FLOAT) {
+		ast->result = ASTP_ERROR;
+		ast->pos = *ppos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			 "Expected an integer or double valued "
+			 "resample interval but found '%s'", token_str);
+		goto out;
+	}
+	ast->resample_width = strtod(token_str, NULL);
+	if (ast->resample_width <= 0.0) {
+		ast->result = ASTP_ERROR;
+		ast->pos = *ppos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			 "The resample bin width must be > 0.0, found '%s'", token_str);
+		goto out;
+	}
+ out:
+	return ast->result;
+}
+
 int ast_parse_where_clause(struct ast *ast, const char *expr, int *ppos)
 {
 	char *token_str;
@@ -1448,6 +1503,12 @@ int ast_parse(struct ast *ast, char *expr)
 		case ASTT_WHERE:
 			rc = ast_parse_where_clause(ast, expr, &pos);
 			break;
+		case ASTT_LIMIT:
+			rc = ast_parse_limit_clause(ast, expr, &pos);
+			break;
+		case ASTT_RESAMPLE:
+			rc = ast_parse_resample_clause(ast, expr, &pos);
+			break;
 		default:
 			rc = EINVAL;
 			ast->result = ASTP_ERROR;
@@ -1590,6 +1651,7 @@ static int limit_check(struct ast *ast, sos_obj_t obj)
 	struct sos_value_s v_;
 	sos_value_t v;
 	sos_attr_t attr;
+
 	for (idx = 0; idx < ast->key_count; idx++) {
 		limits = ast->key_limits[idx];
 		if (!limits)
@@ -1665,10 +1727,13 @@ enum ast_eval_e ast_eval(struct ast *ast, sos_obj_t obj)
 	    return AST_EVAL_EMPTY;
 
 	if (ast->where) {
-		if (sos_value_true(ast_term_visit(ast, ast->where, obj)))
+		if (sos_value_true(ast_term_visit(ast, ast->where, obj))) {
+			ast->result_count += 1;
 			return AST_EVAL_MATCH;
+		}
 		return AST_EVAL_NOMATCH;
 	}
+	ast->result_count += 1;
 	return AST_EVAL_MATCH;
 }
 

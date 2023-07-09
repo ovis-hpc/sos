@@ -1762,10 +1762,13 @@ static int __make_query_obj_array(struct dsos_session *client, struct ast *ast,
 		uuid_t uuid;
 		sos_part_uuid(part, uuid);
 		struct ods_rbn *rbn = ods_rbt_find(&client->part_uuid_tree, uuid);
-		if (rbn)
+		if (rbn) {
 			dpart = container_of(rbn, struct dsos_part, uuid_rbn);
-		else
-			goto out;
+		} else {
+			dpart = cache_part(client, part);
+			if (!dpart)
+				goto out;
+		}
 
 		result->error = 0;
 		entry = &result->dsos_query_next_res_u.result.obj_array.obj_array_val[obj_id++];
@@ -1786,6 +1789,8 @@ static int __make_query_obj_array(struct dsos_session *client, struct ast *ast,
 		sos_obj_put(result_obj);
 		if (count)
 			rc = sos_iter_next(iter);
+		if (ast->result_limit && ast->result_count >= ast->result_limit)
+			rc = ENOENT;
 	}
 out:
 	return 0;
@@ -1823,6 +1828,10 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
 		goto out_0;
 	}
+
+	if (query->ast->result_limit && query->ast->result_count >= query->ast->result_limit)
+		goto empty;
+
 	switch (query->state) {
 	case DSOSQ_STATE_INIT:
 		sprintf(err_msg,
