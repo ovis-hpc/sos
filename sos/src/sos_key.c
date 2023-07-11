@@ -1150,6 +1150,15 @@ size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec)
 	return key_len;
 }
 
+void sos_comp_key_free(sos_comp_key_spec_t spec, size_t count)
+{
+	int i;
+	for (i = 0; i < count; i++) {
+		sos_value_data_del(spec[i].data);
+	}
+	free(spec);
+}
+
 /**
  * \brief Split a key into its component parts.
  *

@@ -1033,6 +1033,12 @@ int ast_parse_limit_clause(struct ast *ast, const char *expr, int *ppos)
 	return ast->result;
 }
 
+static int64_t bin_cmp(void *a, const void *b, void *arg)
+{
+	struct ast *ast = arg;
+	return sos_iter_key_cmp(ast->sos_iter, (sos_key_t)a, (sos_key_t)b);
+}
+
 int ast_parse_resample_clause(struct ast *ast, const char *expr, int *ppos)
 {
 	char *token_str;
@@ -1048,14 +1054,15 @@ int ast_parse_resample_clause(struct ast *ast, const char *expr, int *ppos)
 			 "resample interval but found '%s'", token_str);
 		goto out;
 	}
-	ast->resample_width = strtod(token_str, NULL);
-	if (ast->resample_width <= 0.0) {
+	ast->bin_width = strtod(token_str, NULL);
+	if (ast->bin_width <= 0.0) {
 		ast->result = ASTP_ERROR;
 		ast->pos = *ppos;
 		snprintf(ast->error_msg, sizeof(ast->error_msg),
 			 "The resample bin width must be > 0.0, found '%s'", token_str);
 		goto out;
 	}
+	ods_rbt_init(&ast->bin_tree, bin_cmp, ast);
  out:
 	return ast->result;
 }

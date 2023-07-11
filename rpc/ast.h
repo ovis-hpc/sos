@@ -128,13 +128,15 @@ struct ast {
 	/* The SOS container */
 	sos_t sos;
 	sos_iter_t sos_iter;
-	sos_schema_t sos_iter_schema;
+ 	sos_schema_t sos_iter_schema;
 	char *iter_attr_name;
 	struct ast_attr_entry_s *iter_attr_e;
 	sos_schema_t result_schema;
 	int result_count;	/* Number of objects returned so far */
 	int result_limit;	/* Maximum objects returned */
-	double resample_width;	/* Resample bin width */
+	double bin_width;	/* Resample bin width */
+	struct ods_rbt bin_tree;/* Tree of bin objects */
+	ods_idx_t bin_cmp_arg;
 
 	/* Key used to position iterator */
 	sos_key_t key;

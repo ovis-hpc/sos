@@ -409,7 +409,6 @@ size_t sos_obj_attr_value_set_va(sos_obj_t sos_obj, sos_attr_t attr, va_list ap)
 size_t sos_obj_attr_by_name_set(sos_obj_t sos_obj, const char *attr_name, ...);
 size_t sos_obj_attr_by_id_set(sos_obj_t sos_obj, int attr_id, ...);
 size_t sos_obj_attr_set(sos_obj_t sos_obj, sos_attr_t attr, ...);
-sos_value_t sos_obj_attr_value_get(sos_obj_t sos_obj, sos_attr_t attr);
 /** @} */
 /** @} */
 
@@ -808,6 +807,7 @@ int sos_key_join_size_va(sos_attr_t join_attr, va_list ap);
 int sos_key_split(sos_key_t key, sos_attr_t join_attr, ...);
 int sos_comp_key_set(sos_key_t key, size_t len, sos_comp_key_spec_t key_spec);
 sos_comp_key_spec_t sos_comp_key_get(sos_key_t key, size_t *len);
+void sos_comp_key_free(sos_comp_key_spec_t spec, size_t count);
 size_t sos_comp_key_size(size_t len, sos_comp_key_spec_t key_spec);
 size_t sos_key_size(sos_key_t key);
 size_t sos_key_len(sos_key_t key);
@@ -849,7 +849,7 @@ typedef struct sos_filter_s *sos_filter_t;
 sos_iter_t sos_index_iter_new(sos_index_t index);
 sos_iter_t sos_attr_iter_new(sos_attr_t attr);
 void sos_iter_free(sos_iter_t iter);
-int64_t sos_iter_key_cmp(sos_iter_t iter, sos_key_t other);
+int64_t sos_iter_key_cmp(sos_iter_t iter, sos_key_t a_key, sos_key_t b_key);
 int sos_iter_find(sos_iter_t iter, sos_key_t key);
 int sos_iter_find_first(sos_iter_t iter, sos_key_t key);
 int sos_iter_find_last(sos_iter_t iter, sos_key_t key);
