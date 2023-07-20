@@ -190,6 +190,8 @@ ods_idx_t ods_idx_open(const char *path, ods_perm_t o_flags)
 	struct ods_idx_class *idx_class;
 	struct ods_idx_meta_data *udata;
 	ods_obj_t obj;
+	int rc;
+
 	idx = calloc(1, sizeof *idx);
 	if (!idx)
 		return NULL;
@@ -204,19 +206,28 @@ ods_idx_t ods_idx_open(const char *path, ods_perm_t o_flags)
 	udata = ods_obj_as_ptr(obj);
 	if (strcmp(udata->signature, ODS_IDX_SIGNATURE)) {
 		/* This file doesn't point to an index */
+		ods_lerror("The signature in the file '%s' does not match"
+			   " '%s', this is a corrupted index.\n",
+			   path, ODS_IDX_SIGNATURE);
 		errno = EBADF;
 		goto err_2;
 	}
 	idx_class = get_idx_class(udata->type_name, udata->key_name);
 	if (!idx_class) {
 		/* The libraries necessary to handle this index
-		   type/key combinationare not present */
+		   type/key combination are not present */
+		ods_lerror("The index class '%s' with type name '%s' "
+			   "in the index file '%s' could not be found\n",
+			   udata->type_name, udata->key_name, path);
 		errno = ENOENT;
 		goto err_2;
 	}
 	idx->idx_class = idx_class;
-	if (idx_class->prv->open(idx))
+	rc = idx_class->prv->open(idx);
+	if (rc) {
+		ods_lerror("Error %d opening the index '%s'.\n", rc, path);
 		goto err_2;
+	}
 	ods_obj_put(obj);
 	idx->ref_count = 1;
 	return idx;
