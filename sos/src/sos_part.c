@@ -224,6 +224,7 @@
 #include <jansson.h>
 #include "sos_priv.h"
 
+static int __part_detach(sos_t sos, const char *name);
 static sos_part_t __sos_part_by_name(sos_t sos, const char *name);
 static sos_part_t __sos_part_by_path(sos_t sos, const char *path);
 static sos_part_t __sos_part_first(sos_part_iter_t iter);
@@ -754,12 +755,20 @@ ods_obj_t __sos_part_ref_next(sos_t sos, ods_obj_t part_obj)
 	return next_obj;
 }
 
+struct deleted_part {
+	char *name;
+	LIST_ENTRY(deleted_part) entry;
+};
+
 static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 {
+	struct deleted_part *dpart;
 	sos_part_t part;
 	ods_obj_t part_obj;
 	int new;
 	int rc = 0;
+	LIST_HEAD(deleted_part_head, deleted_part) del_part_list =
+		LIST_HEAD_INITIALIZER(del_part_list);
 
 	if (sos->primary_part) {
 		sos_ref_put(&sos->primary_part->ref_count, "primary_part");
@@ -785,9 +794,25 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 		}
 		part = __sos_part_open(sos, part_obj, euid, egid, acc);
 		if (!part) {
-			if (errno == EPERM) {
+			switch (errno) {
+			case EPERM:
+				/* Ignore partitions this user can't open */
 				continue;
-			} else {
+			case ENOENT:
+				/* The partition was removed from the
+				 * filesystem, but not detached from
+				 * the container */
+				dpart = malloc(sizeof(*dpart));
+				if (!dpart)
+					continue;
+				dpart->name = strdup(SOS_PART_REF(part_obj)->name);
+				if (!dpart->name) {
+					free(dpart);
+					continue;
+				}
+				LIST_INSERT_HEAD(&del_part_list, dpart, entry);
+				continue;
+			default:
 				sos_error("Error %d opening the partition '%s' "
 					  "at path '%s'.\n",
 					  errno,
@@ -800,7 +825,15 @@ static int __refresh_part_list(sos_t sos, uid_t euid, gid_t egid, int acc)
 			sos->primary_part = part;
 			sos_ref_get(&part->ref_count, "primary_part");
 		}
-		rc = 0;
+	}
+	/* Detach partitions found to be missing */
+	while (!LIST_EMPTY(&del_part_list)) {
+		dpart = LIST_FIRST(&del_part_list);
+		LIST_REMOVE(dpart, entry);
+		sos_error("Removing missing partition '%s'\n", dpart->name);
+		(void)__part_detach(sos, dpart->name);
+		free(dpart->name);
+		free(dpart);
 	}
 	if (part_obj)
 		ods_obj_put(part_obj);
@@ -1003,25 +1036,12 @@ err_0:
 	return rc;
 }
 
-/**
- * @brief Detach a partition from a container
- *
- * Detaches the partition from the container.
- *
- * @param sos The container handle
- * @param name The name of the partition
- * @retval 0 The partition was successfully detached
- * @retval ENOENT The partition is not attached
- */
-int sos_part_detach(sos_t sos, const char *name)
+static int __part_detach(sos_t sos, const char *name)
 {
 	sos_part_t part;
 	ods_ref_t prev_ref, next_ref;
 	ods_obj_t part_ref;
 	int rc = 0;
-
-	pthread_mutex_lock(&sos->lock);
-	ods_lock(sos->part_ref_ods, 0, NULL);
 
 	/* Find the partition reference  */
 	for (part_ref = __sos_part_ref_first(sos);
@@ -1071,6 +1091,26 @@ int sos_part_detach(sos_t sos, const char *name)
 	ods_obj_delete(part_ref);
 	ods_obj_put(part_ref);
 out:
+	return rc;
+}
+
+/**
+ * @brief Detach a partition from a container
+ *
+ * Detaches the partition from the container.
+ *
+ * @param sos The container handle
+ * @param name The name of the partition
+ * @retval 0 The partition was successfully detached
+ * @retval ENOENT The partition is not attached
+ */
+int sos_part_detach(sos_t sos, const char *name)
+{
+	int rc;
+
+	pthread_mutex_lock(&sos->lock);
+	ods_lock(sos->part_ref_ods, 0, NULL);
+	rc = __part_detach(sos, name);
 	ods_unlock(sos->part_ref_ods, 0);
 	pthread_mutex_unlock(&sos->lock);
 	return rc;
