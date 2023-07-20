@@ -1863,7 +1863,7 @@ static int __make_query_obj_array(struct dsos_session *client, struct ast *ast,
 			rc = ENOENT;
 	}
 out:
-	return 0;
+	return result->error;
 err_0:
 	return -1;
 }
@@ -1932,7 +1932,7 @@ out:
 		sos_obj_put(be->obj);
 		free(be);
 	}
-	return 0;
+	return result->error;
 err_0:
 	return -1;
 }
