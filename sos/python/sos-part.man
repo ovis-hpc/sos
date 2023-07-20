@@ -155,5 +155,23 @@ Verifying index 'meminfo_tom_job_comp_time' ... OK
 .RE
 .PP
 
+.SH ENVIRONMENT
+.SS ODS_LOG_MASK
+This environment variable specifies what log messages are printed by
+the SOS libraries. The value is a bit mask as follows:
+.TS
+box;
+l l .
+Value | Description
+_
+0     | No messages are logged
+1     | \fBFatal\fR errors (i.e. the process will exit)
+2     | \fBErrors\fR
+4     | \fBWarnings\fR
+8     | \fBInformational\fR messages
+16    | \fBDebug\fR messages
+255   | \fBAll\fR messages are logged
+.TE
+
 .SH SEE ALSO
-ldmsd(8), ldms_quickstart(7),
+sos-index(8), sos-schema(8), sos-monitor(8), sos-import-csv(8)

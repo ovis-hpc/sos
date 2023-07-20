@@ -9,7 +9,7 @@ endif
 
 
 if ENABLE_DOC
-SUBDIRS += doc man
+SUBDIRS += doc
 endif
 
 # Make rule for RPM on RHEL7

@@ -114,4 +114,5 @@ Verifying index 'meminfo_tom_job_comp_time' ... OK
 .PP
 
 .SH SEE ALSO
-ldmsd(8), ldms_quickstart(7),
+sos-part(8), sos-schema(8), sos-monitor(8), sos-import-csv(8)
+

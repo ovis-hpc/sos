@@ -198,7 +198,6 @@ AC_CONFIG_FILES([
 		Makefile
 		doc/Doxyfile
 		doc/Makefile
-		man/Makefile
 		ods/Makefile
 		ods/include/Makefile
 		ods/src/Makefile

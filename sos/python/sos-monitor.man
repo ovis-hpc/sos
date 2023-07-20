@@ -1,0 +1,49 @@
+.\" Man page for sos-monitor
+.\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
+.TH man 8 "20 July 2023" "v6" "sos-monitor man page"
+
+.SH NAME
+sos-monitor \- Show Index Insert Data for a Schema
+
+.SH SYNOPSIS
+sos-monitor --path PATH --schema NAME [--refresh INT]
+
+.SH DESCRIPTION
+.PP
+The \fBsos-monitor\fR command is a curses application that shows index
+insert rates for all indices defined in the specified schema. Typing
+any key will cause the application to exit.
+.PP
+.SH OPTIONS
+.PP
+.IP "\fB--path PATH\fR" 1c
+Specifies the \fIPATH\fR to the container.
+.IP "\fB--schema NAME\fR" 1c
+Specifies the schema \fINAME\fR to monitor.
+.IP "\fB--refresh INT\fR" 1c
+Specifies that the window is updated every \fIINT\fR seconds. The
+default interval is 1 second.
+.SH EXAMPLES
+.RS 0
+.nf
+$ sos-monitor --path database --schema meminfo
+.fi
+.RE
+.PP
+.RS 0
+.nf
+Monitoring schema meminfo in container database at 2023-07-20 10:22:45.192586
+
+Name              Cardinality      Inserts/s        Duplicates       Inserts/s        Size             Bytes/s         
+time_job_comp           3,962,974               0               0               0     953,745,408               0
+time_comp_job           3,962,974               0               0               0     912,850,944               0
+job_comp_time           3,962,974               0               0               0     907,608,064               0
+job_time_comp           3,962,974               0               0               0     936,968,192               0
+comp_time_job           3,962,974               0               0               0   1,227,948,032               0
+comp_job_time           3,962,974               0               0               0   1,004,601,344               0
+.fi
+.RE
+.PP
+.SH SEE ALSO
+sos-index(8), sos-part(8), sos-schema(8), sos-import-csv(8)
+

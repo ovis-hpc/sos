@@ -1,0 +1,205 @@
+.\" Man page for sos-schema
+.\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
+.TH man 8 "20 July 2023" "v6" "sos-schema man page"
+
+.SH NAME
+sos-schema \- Manage SOS Schema
+
+.SH SYNOPSIS
+sos-schema [OPTION...]
+
+.SH "DESCRIPTION"
+.PP
+The \fBsos-schema\fR command is used to manage SOS schema. Schema
+define the format of objects in a container. This format includes the
+attributes in the object that will be indexed.
+.PP
+A schema is defined outside the container as a text file called a
+\fBtemplate\fR. The \fBtemplate\fR file is JSON dictionary, for example:
+.RS 4
+.nf
+{
+  "name": \fIschema-name-string\fR,
+  "uuid": \fIuuid-string\fR
+  "attrs": [
+    {
+      "name": \fIattribute-name\fR,
+      "type": \fIattribute-type\fR,
+    },
+    . . .
+    {
+      "name": \fIjoin-attr-name\fR,
+      "type": "JOIN",
+      "index": {},
+      "join_attrs": [
+        \fIattr-name\fR,
+        \fIattr-name\fR,
+        \fI. . .\fR
+      ]
+    }
+  ]
+}
+.fi
+.RE
+.PP
+In the template above, the last attribute is called a \fIJOIN\fR. A
+\fIJOIN\fR attribute occupies no space in the object, but allows a
+collection of attributes to be used as a key in an index.
+.PP
+The \fIUUID\fR is a Universally Unique ID computed using
+\fBlibuuid\fR. The attribute names, types, and indices are used to
+compute this value.
+.PP
+A template may also contain multiple schema definitions.
+.PP
+.RS 4
+.nf
+{
+  "schemas" : [
+    { \fIschema-dictionary\fR },
+    { \fIschema-dictionary\fR },
+    . . .
+  ]
+}
+.fi
+.RE
+.PP
+.SH OPTIONS
+.PP
+.IP "\fB--path PATH\fR" 1c
+Specifies the \fBPATH\fR to the container.
+.IP "\fB--query\fR" 1c
+Query the schema defined in the container. Use with the --verbose
+option to provide detail information for each schema.
+.IP "\fB--add PATH\fR" 1c
+Adds a single schema defined in the \fItemplate\fI file \fIPATH\fR to the container.
+.IP "\fB--export PATH\fR" 1c
+Export all schema defined in the container to a multi-schema
+\fItemplate\fR file at \fBPATH\fR.
+.IP "\fB--import PATH\fR" 1c
+Add all schema defined in multi-schema \fItemplate\fR file at
+\fBPATH\fR to the container.
+.IP "\fB--verbase\fR" 1c
+When querying schema provide detail information of the schema
+contents. Absent this option, only the schema name are printed.
+.IP "\fB--schema NAME\fR" 1c
+Used with the --query option to print information only for the schema \fINAME\fR.
+.IP "\fB--uuid UUID\fR" 1c
+Used with the --query option to print information only for the schema
+with the Universally Unique ID \fIUUID\fR.
+.SH EXAMPLES
+.SS "Query Schema"
+.PP
+.RS 4
+.nf
+$ sos-schema --path database --query
+12354914-a519-48ea-a410-d2e86ca5dc4b        0 vmstat
+d2641326-77a2-48cf-99d3-83a37dbdf65e        0 meminfo
+3ac614f6-ec43-4498-8bc6-b5c58a7e1f0d        0 lustre_client
+. . .
+.fi
+.RE
+.PP
+In this example, the first column is the \fIUUID\fR, the second is the
+schema \fIgeneration\fR number, and the third is the schema name. The
+\fIgeneration\fR number is incremented whenever indices are added to
+or removed from the schema. See the \fBsos-index\fR command for
+information on how indices can be added and removed.
+.PP
+.SS "Query Verbose"
+.PP
+.RS 4
+.nf
+$ sos-schema --path database --query --verbose --schema meminfo
+d2641326-77a2-48cf-99d3-83a37dbdf65e        0 meminfo
+Id   Type                     Indexed      Name                            
+---- ------------------------ ------------ --------------------------------
+   0 TIMESTAMP                             timestamp
+   1 UINT64                                component_id
+   2 UINT64                                job_id
+   3 UINT64                                app_id
+   4 UINT64                                MemTotal
+   5 UINT64                                MemFree
+   . . .
+  51 JOIN                                  time_job_comp [timestamp+job_id+component_id]
+  52 JOIN                                  time_comp_job [timestamp+component_id+job_id]
+  53 JOIN                                  job_comp_time [job_id+component_id+timestamp]
+  54 JOIN                                  job_time_comp [job_id+timestamp+component_id]
+  55 JOIN                                  comp_time_job [component_id+timestamp+job_id]
+  56 JOIN                                  comp_job_time [component_id+job_id+timestamp]
+.fi
+.RE
+.PP
+.SS "Query Verbose"
+.PP
+Query the details for a single schema.
+.RS 4
+.nf
+$ sos-schema --path database --query --verbose --schema meminfo
+d2641326-77a2-48cf-99d3-83a37dbdf65e        0 meminfo
+Id   Type                     Indexed      Name                            
+---- ------------------------ ------------ --------------------------------
+   0 TIMESTAMP                             timestamp
+   1 UINT64                                component_id
+   2 UINT64                                job_id
+   3 UINT64                                app_id
+   4 UINT64                                MemTotal
+   5 UINT64                                MemFree
+   . . .
+  51 JOIN                                  time_job_comp [timestamp+job_id+component_id]
+  52 JOIN                                  time_comp_job [timestamp+component_id+job_id]
+  53 JOIN                                  job_comp_time [job_id+component_id+timestamp]
+  54 JOIN                                  job_time_comp [job_id+timestamp+component_id]
+  55 JOIN                                  comp_time_job [component_id+timestamp+job_id]
+  56 JOIN                                  comp_job_time [component_id+job_id+timestamp]
+.fi
+.RE
+.PP
+.SS "Add a Single Schema"
+.PP
+Add a single schema to the container.
+.RS 4
+.nf
+$ sos-schema --path database --add schema-template.json
+.fi
+.RE
+.PP
+.SS "Export All Schema in a Container"
+.PP
+Export all schema in a container to a JSON template file. This is
+useful for adding schema defined in one container to another.
+.RS 4
+.nf
+$ sos-schema --path database --export multi-schema-template.json
+.fi
+.RE
+.PP
+.SS "Import Schema"
+.PP
+Import all schema defined in a JSON template file to a container.
+.RS 4
+.nf
+$ sos-schema --path database --import multi-schema-template.json
+.fi
+.RE
+.PP
+.SH ENVIRONMENT
+.SS ODS_LOG_MASK
+This environment variable specifies what log messages are printed by
+the SOS libraries. The value is a bit mask as follows:
+.TS
+box;
+l l .
+Value | Description
+_
+0     | No messages are logged
+1     | \fBFatal\fR errors (i.e. the process will exit)
+2     | \fBErrors\fR
+4     | \fBWarnings\fR
+8     | \fBInformational\fR messages
+16    | \fBDebug\fR messages
+255   | \fBAll\fR messages are logged
+.TE
+
+.SH SEE ALSO
+sos-index(8), sos-part(8), sos-monitor(8), sos-import-csv(8)
