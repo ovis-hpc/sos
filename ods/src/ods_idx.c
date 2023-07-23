@@ -209,7 +209,7 @@ ods_idx_t ods_idx_open(const char *path, ods_perm_t o_flags)
 		ods_lerror("The signature in the file '%s' does not match"
 			   " '%s', this is a corrupted index.\n",
 			   path, ODS_IDX_SIGNATURE);
-		errno = EBADF;
+		errno = EINVAL;
 		goto err_2;
 	}
 	idx_class = get_idx_class(udata->type_name, udata->key_name);
@@ -219,7 +219,7 @@ ods_idx_t ods_idx_open(const char *path, ods_perm_t o_flags)
 		ods_lerror("The index class '%s' with type name '%s' "
 			   "in the index file '%s' could not be found\n",
 			   udata->type_name, udata->key_name, path);
-		errno = ENOENT;
+		errno = EPFNOSUPPORT;
 		goto err_2;
 	}
 	idx->idx_class = idx_class;

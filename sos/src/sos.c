@@ -1173,26 +1173,50 @@ int sos_container_option_set(sos_t sos, sos_container_option_t option, ...)
  */
 int sos_container_verify(sos_t sos)
 {
-	char path[PATH_MAX];
+	char tmp_path[PATH_MAX];
+	sos_part_t part;
+	sos_part_iter_t part_iter;
+	ods_iter_t idx_iter;
 	sos_obj_ref_t idx_ref;
 	ods_idx_t idx;
+	ods_obj_t idx_obj;
 	int rc, res = 0;
-	ods_iter_t iter = ods_iter_new(sos->idx_idx);
-	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_next(iter)) {
-		idx_ref.idx_data = ods_iter_data(iter);
-		ods_obj_t idx_obj = ods_ref_as_obj(sos->idx_ods, idx_ref.ref.obj);
-		fprintf(stdout, "Verifying %s\n", SOS_IDX(idx_obj)->name);
-		snprintf(path, PATH_MAX, "%s/%s_idx", sos->path, SOS_IDX(idx_obj)->name);
-		idx = ods_idx_open(path, sos->o_perm);
-		ods_obj_put(idx_obj);
-		if (!idx) {
-			sos_error("Error %d opening %s\n", errno, path);
-			goto out;
+	part_iter = sos_part_iter_new(sos);
+	if (!part_iter)
+		return errno;
+	idx_iter = ods_iter_new(sos->idx_idx);
+	if (!idx_iter)
+		return errno;
+	for (part = sos_part_first(part_iter); part; part = sos_part_next(part_iter)) {
+		if (sos_part_state(part) == SOS_PART_STATE_OFFLINE) {
+			sos_part_put(part);
+			continue;
 		}
-		res = ods_idx_verify(idx, stdout);
+		for (rc = ods_iter_begin(idx_iter); !rc; rc = ods_iter_next(idx_iter)) {
+			idx_ref.idx_data = ods_iter_data(idx_iter);
+			idx_obj = ods_ref_as_obj(sos->idx_ods, idx_ref.ref.obj);
+			sprintf(tmp_path, "%s/%s_idx", sos_part_path(part), SOS_IDX(idx_obj)->name);
+			printf("Verifying %s ... ", tmp_path);
+			fflush(stdout);
+			idx = ods_idx_open(tmp_path, sos->o_perm);
+			ods_obj_put(idx_obj);
+			if (!idx) {
+				printf("OPEN error %d\n", errno);
+				res = errno;
+				continue;
+			}
+			rc = ods_idx_verify(idx, stdout);
+			if (rc) {
+				res = rc;
+				printf("VERIFY error %d\n", rc);
+			} else {
+				printf("OK\n");
+			}
+		}
+		sos_part_put(part);
 	}
-out:
-	ods_iter_delete(iter);
+	ods_iter_delete(idx_iter);
+	sos_part_iter_free(part_iter);
 	return res;
 }
 

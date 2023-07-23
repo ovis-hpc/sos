@@ -116,7 +116,7 @@ int ods_lock_cleanup(const char *path)
 {
 	ods_t ods = ods_open(path, ODS_PERM_RD, 0660);
 	if (!ods)
-		return ENOENT;
+		return errno;
 	int rc = ods->lock_cleanup(path);
 	ods_close(ods, ODS_COMMIT_ASYNC);
 	return rc;

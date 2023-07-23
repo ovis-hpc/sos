@@ -541,7 +541,8 @@ static ods_pgt_t pgt_map(ods_mmap_t ods)
 		goto err_0;
 
 	/* Check the Page Table signature */
-	if (memcmp(pgt_map->base.be_signature, ODS_PGT_SIGNATURE, sizeof(pgt_map->base.be_signature))) {
+	if (memcmp(pgt_map->base.be_signature,
+		   ODS_PGT_SIGNATURE, sizeof(pgt_map->base.be_signature))) {
 		ods_lerror("The file '%s' is not a Page Table file\n", ods->base.path);
 		errno = EINVAL;
 		goto err_1;
@@ -2048,7 +2049,8 @@ ods_t ods_mmap_open(const char *path, ods_perm_t o_perm, int o_mode)
 	char *base = strdup(path);
 	if (!base)
 		return NULL;
-	sprintf(tmp_path, "%s/.%s.lock", dirname((char *)dir), basename((char *)base));
+	sprintf(tmp_path, "%s/.%s.lock", dirname((char *)dir),
+		basename((char *)base));
 	free(dir);
 	free(base);
 	mode_t oumask = umask(0);

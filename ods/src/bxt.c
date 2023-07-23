@@ -305,7 +305,8 @@ static int verify_node(bxt_t t, ods_obj_t n, FILE *fp)
 		TPRINTF(fp, "Node %p's cardinality is incorrect midpoint %d <= count %d <= order %d\n",
 			(void *)n->ref,
 			midpoint, NODE(n)->count, t->udata->order);
-		rc = 1;
+		/* Don't verify children as the references are likely garbage */
+		return 1;
 	}
 
 	/* Verify the node's children */
