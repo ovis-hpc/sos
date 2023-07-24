@@ -45,8 +45,9 @@ enum ast_parse_e {
 	ASTP_BAD_ATTR_NAME,
 	ASTP_BAD_ATTR_TYPE,
 	ASTP_BAD_CONST_TYPE,
+	ASTP_BAD_OP_NAME,
 	ASTP_SYNTAX,
-	ASTP_ENOMEM
+	ASTP_ENOMEM,
 };
 
 typedef struct ast_attr_entry_s *ast_attr_entry_t;
@@ -77,15 +78,18 @@ struct ast_term_binop {
 	LIST_ENTRY(ast_term_binop) entry;
 };
 
+struct ast;
 typedef struct ast_schema_entry_s *ast_schema_entry_t;
 struct ast_attr_entry_s {
 	const char *name;
-	sos_attr_t sos_attr;    /* attribute in source object */
+	sos_attr_t src_attr;    /* attribute in source object */
 	sos_attr_t res_attr;    /* attribute in query result object */
 	sos_attr_t join_attr;   /* Best join-attr this attribute appears */
 	int  join_attr_idx;	/* Position the attribute appears in the join */
 	unsigned min_join_idx;
 	int  rank;
+	void (*op)(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+		   sos_obj_t res_obj, sos_obj_t src_obj);
 	struct ast_term *binop;	/* The expression that this attr appears in */
 	ast_schema_entry_t schema;
 	struct ast_term_attr *value_attr;

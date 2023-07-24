@@ -48,6 +48,331 @@ static struct ast_key_word_s key_words[] = {
 	{ "where", ASTT_WHERE },
 };
 
+struct operator_s {
+	const char *key;
+	void (*op)(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+		   sos_obj_t res_obj, sos_obj_t src_obj);
+};
+
+static int op_comparator(const void *a_, const void *b_)
+{
+	const char *a = a_;
+	struct operator_s const *b = b_;
+	return strcasecmp(a, b->key);
+}
+
+void avg_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+	       sos_obj_t res_obj, sos_obj_t src_obj)
+{
+	struct sos_value_s res_v_, src_v_;
+	sos_value_t res_v, src_v;
+	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
+	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
+	switch(sos_attr_type(ae->res_attr)) {
+	case SOS_TYPE_INT16:
+		res_v->data->prim.int16_ =
+			((res_v->data->prim.int16_ * count) +
+			 src_v->data->prim.int16_) / (count + 1);
+		break;
+	case SOS_TYPE_INT32:
+		res_v->data->prim.int32_ =
+			((res_v->data->prim.int32_ * count) +
+			 src_v->data->prim.int32_) / (count + 1);
+		break;
+	case SOS_TYPE_INT64:
+		res_v->data->prim.int64_ =
+			((res_v->data->prim.int64_ * count) +
+			 src_v->data->prim.int64_) / (count + 1);
+		break;
+	case SOS_TYPE_UINT16:
+		res_v->data->prim.uint16_ =
+			((res_v->data->prim.uint16_ * count) +
+			 src_v->data->prim.uint16_) / (count + 1);
+		break;
+	case SOS_TYPE_UINT32:
+		res_v->data->prim.uint32_ =
+			((res_v->data->prim.uint32_ * count) +
+			 src_v->data->prim.uint32_) / (count + 1);
+		break;
+	case SOS_TYPE_UINT64:
+		res_v->data->prim.uint64_ =
+			((res_v->data->prim.uint64_ * count) +
+			 src_v->data->prim.uint64_) / (count + 1);
+		break;
+	case SOS_TYPE_FLOAT:
+		res_v->data->prim.float_ =
+			((res_v->data->prim.float_ * count) +
+			 src_v->data->prim.float_) / (count + 1);
+		break;
+	case SOS_TYPE_DOUBLE:
+		res_v->data->prim.double_ =
+			((res_v->data->prim.double_ * count) +
+			 src_v->data->prim.double_) / (count + 1);
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		res_v->data->prim.long_double_ =
+			((res_v->data->prim.long_double_ * count) +
+			 src_v->data->prim.long_double_) / (count + 1);
+		break;
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+	case SOS_TYPE_OBJ_ARRAY:
+		break;
+	}
+}
+
+void sum_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+	       sos_obj_t res_obj, sos_obj_t src_obj)
+{
+	struct sos_value_s res_v_, src_v_;
+	sos_value_t res_v, src_v;
+	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
+	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
+	switch(sos_attr_type(ae->res_attr)) {
+	case SOS_TYPE_INT16:
+		res_v->data->prim.int16_ +=
+			src_v->data->prim.int16_;
+		break;
+	case SOS_TYPE_INT32:
+		res_v->data->prim.int32_ +=
+			src_v->data->prim.int32_;
+		break;
+	case SOS_TYPE_INT64:
+		res_v->data->prim.int64_ +=
+			src_v->data->prim.int64_;
+		break;
+	case SOS_TYPE_UINT16:
+		res_v->data->prim.uint16_ +=
+			src_v->data->prim.uint16_;
+		break;
+	case SOS_TYPE_UINT32:
+		res_v->data->prim.uint32_ +=
+			src_v->data->prim.uint32_;
+		break;
+	case SOS_TYPE_UINT64:
+		res_v->data->prim.uint64_ +=
+			src_v->data->prim.uint64_;
+		break;
+	case SOS_TYPE_FLOAT:
+		res_v->data->prim.float_ +=
+			src_v->data->prim.float_;
+		break;
+	case SOS_TYPE_DOUBLE:
+		res_v->data->prim.double_ +=
+			src_v->data->prim.double_;
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		res_v->data->prim.long_double_ +=
+			src_v->data->prim.long_double_;
+		break;
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+	case SOS_TYPE_OBJ_ARRAY:
+		break;
+	}
+}
+
+void first_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+		 sos_obj_t res_obj, sos_obj_t src_obj)
+{
+	/* Do nothing. The first object is already there */
+}
+
+void last_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+		 sos_obj_t res_obj, sos_obj_t src_obj)
+{
+	/* Erf */
+}
+
+void min_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+	       sos_obj_t res_obj, sos_obj_t src_obj)
+{
+	struct sos_value_s res_v_, src_v_;
+	sos_value_t res_v, src_v;
+	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
+	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
+	switch(sos_attr_type(ae->res_attr)) {
+	case SOS_TYPE_INT16:
+		if (res_v->data->prim.int16_ > src_v->data->prim.int16_)
+			res_v->data->prim.int16_ = src_v->data->prim.int16_;
+		break;
+	case SOS_TYPE_INT32:
+		if (res_v->data->prim.int32_ > src_v->data->prim.int32_)
+			res_v->data->prim.int32_ = src_v->data->prim.int32_;
+		break;
+	case SOS_TYPE_INT64:
+		if (res_v->data->prim.int64_ > src_v->data->prim.int64_)
+			res_v->data->prim.int64_ = src_v->data->prim.int64_;
+		break;
+	case SOS_TYPE_UINT16:
+		if (res_v->data->prim.uint16_ > src_v->data->prim.uint16_)
+			res_v->data->prim.uint16_ = src_v->data->prim.uint16_;
+		break;
+	case SOS_TYPE_UINT32:
+		if (res_v->data->prim.uint32_ > src_v->data->prim.uint32_)
+			res_v->data->prim.uint32_ = src_v->data->prim.uint32_;
+		break;
+	case SOS_TYPE_UINT64:
+		if (res_v->data->prim.uint32_ > src_v->data->prim.uint32_)
+			res_v->data->prim.uint32_ = src_v->data->prim.uint32_;
+		break;
+	case SOS_TYPE_FLOAT:
+		if (res_v->data->prim.float_ > src_v->data->prim.float_)
+			res_v->data->prim.float_ = src_v->data->prim.float_;
+		break;
+	case SOS_TYPE_DOUBLE:
+		if (res_v->data->prim.double_ > src_v->data->prim.double_)
+			res_v->data->prim.double_ = src_v->data->prim.double_;
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		if (res_v->data->prim.long_double_
+		    > src_v->data->prim.long_double_)
+			res_v->data->prim.long_double_ =
+				src_v->data->prim.long_double_;
+		break;
+	case SOS_TYPE_TIMESTAMP:
+		if (res_v->data->prim.timestamp_.fine.secs <
+		    src_v->data->prim.timestamp_.fine.secs)
+			break;
+		if ((res_v->data->prim.timestamp_.fine.secs ==
+		     src_v->data->prim.timestamp_.fine.secs)
+		    && (res_v->data->prim.timestamp_.fine.secs <
+			src_v->data->prim.timestamp_.fine.secs))
+			break;
+		res_v->data->prim.timestamp_.fine =
+			src_v->data->prim.timestamp_.fine;
+		break;
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+	case SOS_TYPE_OBJ_ARRAY:
+		break;
+	}
+}
+
+void max_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+	       sos_obj_t res_obj, sos_obj_t src_obj)
+{
+	struct sos_value_s res_v_, src_v_;
+	sos_value_t res_v, src_v;
+	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
+	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
+	switch(sos_attr_type(ae->res_attr)) {
+	case SOS_TYPE_INT16:
+		if (res_v->data->prim.int16_ < src_v->data->prim.int16_)
+			res_v->data->prim.int16_ = src_v->data->prim.int16_;
+		break;
+	case SOS_TYPE_INT32:
+		if (res_v->data->prim.int32_ < src_v->data->prim.int32_)
+			res_v->data->prim.int32_ = src_v->data->prim.int32_;
+		break;
+	case SOS_TYPE_INT64:
+		if (res_v->data->prim.int64_ < src_v->data->prim.int64_)
+			res_v->data->prim.int64_ = src_v->data->prim.int64_;
+		break;
+	case SOS_TYPE_UINT16:
+		if (res_v->data->prim.uint16_ < src_v->data->prim.uint16_)
+			res_v->data->prim.uint16_ = src_v->data->prim.uint16_;
+		break;
+	case SOS_TYPE_UINT32:
+		if (res_v->data->prim.uint32_ < src_v->data->prim.uint32_)
+			res_v->data->prim.uint32_ = src_v->data->prim.uint32_;
+		break;
+	case SOS_TYPE_UINT64:
+		if (res_v->data->prim.uint32_ < src_v->data->prim.uint32_)
+			res_v->data->prim.uint32_ = src_v->data->prim.uint32_;
+		break;
+	case SOS_TYPE_FLOAT:
+		if (res_v->data->prim.float_ < src_v->data->prim.float_)
+			res_v->data->prim.float_ = src_v->data->prim.float_;
+		break;
+	case SOS_TYPE_DOUBLE:
+		if (res_v->data->prim.double_ < src_v->data->prim.double_)
+			res_v->data->prim.double_ = src_v->data->prim.double_;
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		if (res_v->data->prim.long_double_
+		    < src_v->data->prim.long_double_)
+			res_v->data->prim.long_double_ =
+				src_v->data->prim.long_double_;
+		break;
+	case SOS_TYPE_TIMESTAMP:
+		if (res_v->data->prim.timestamp_.fine.secs >
+		    src_v->data->prim.timestamp_.fine.secs)
+			break;
+		if ((res_v->data->prim.timestamp_.fine.secs ==
+		     src_v->data->prim.timestamp_.fine.secs)
+		    && (res_v->data->prim.timestamp_.fine.secs >
+			src_v->data->prim.timestamp_.fine.secs))
+			break;
+		res_v->data->prim.timestamp_.fine =
+			src_v->data->prim.timestamp_.fine;
+		break;
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+	case SOS_TYPE_OBJ_ARRAY:
+		break;
+	}
+}
+
+static struct operator_s operators[] = {
+	{ "avg", avg_op },
+	{ "first", first_op },
+	{ "last", last_op },
+	{ "max", max_op },
+	{ "min", min_op },
+	{ "sum", sum_op },
+};
+
 static void ast_enomem(struct ast *ast, int pos)
 {
 	ast->result = ASTP_ENOMEM;
@@ -200,7 +525,8 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 		struct ast_key_word_s *kw;
 		rc = 0;
 		while ((isalnum(*s)
-			|| *s == '_' || *s == '$' || *s == '#' || *s == '.')
+			|| *s == '_' || *s == '$' || *s == '#' || *s == '.'
+			|| *s == '(' || *s == ')')
 		       && rc < sizeof(keyword) - 1) {
 			keyword[rc++] = *s;
 			s++;
@@ -227,7 +553,7 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 
 /*
  * Attribute names may encode a schema name as follows:
- *      <schema_name> '[' <attr_name> ']'
+ *     <op> '(' <schema_name> '[' <attr_name> ']' ')'
  * If the <attr_name> alone is specified, the default schema is used.
  */
 static enum ast_parse_e parse_attr(struct ast *ast, const char *name, struct ast_term_attr *value_attr)
@@ -926,6 +1252,41 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 	return term;
 }
 
+/*
+ * Strip off operation name from the attribute name
+ */
+int handle_op(struct ast_attr_entry_s *ae, char **token_str)
+{
+	struct operator_s *op;
+	char *token = *token_str;
+	char *op_name;
+	char *paren = strstr(token, "(");
+	if (!paren)
+		return 0;
+	/* Strip the operation name and attach it's 'op' function to
+	 * the attribute */
+	op_name = token;
+	*paren = '\0';
+
+	/* Operator lookup */
+	op = bsearch(op_name,
+		     operators, sizeof(operators) / sizeof(operators[0]),
+		     sizeof (struct operator_s),
+		     op_comparator);
+	if (!op)
+		return EINVAL;
+
+	ae->op = op->op;
+
+	/* clean up attribute name */
+	token = strdup(++paren);
+	*token_str = token;
+	while (*token != '\0' && *token != ')')
+		token++;
+	*token = '\0';
+	return 0;
+}
+
 int ast_parse_select_clause(struct ast *ast, const char *expr, int *ppos)
 {
 	char *token_str;
@@ -937,6 +1298,10 @@ int ast_parse_select_clause(struct ast *ast, const char *expr, int *ppos)
 	     token == ASTT_NAME || token == ASTT_ASTERISK;
 	     token = ast_lex(ast, expr, &next_pos, &token_str)) {
 		struct ast_attr_entry_s *ae = calloc(1, sizeof *ae);
+		if (handle_op(ae, &token_str)) {
+			ast->result = ASTP_BAD_OP_NAME;
+			break;
+		}
 		ae->name = strdup(token_str);
 		*ppos = next_pos;	/* consume this token */
 		TAILQ_INSERT_TAIL(&ast->select_list, ae, link);
@@ -1126,7 +1491,7 @@ static struct ast_attr_entry_s
 {
 	struct ast_attr_entry_s *ae = calloc(1, sizeof(*ae));
 	assert(ae);
-	ae->sos_attr = sos_attr;
+	ae->src_attr = sos_attr;
 	ae->min_join_idx = UINT32_MAX;
 	ae->name = strdup(sos_attr_name(sos_attr));
 	ae->schema = schema_e;
@@ -1178,7 +1543,7 @@ static int __resolve_sos_entities(struct ast *ast)
 					continue;
 				attr_e = calloc(1, sizeof(*attr_e));
 				attr_e->name = strdup(sos_attr_name(attr));
-				attr_e->sos_attr = attr;
+				attr_e->src_attr = attr;
 				attr_e->schema = schema_e;
 				TAILQ_INSERT_TAIL(&ast->select_list, attr_e, link);
 			}
@@ -1197,19 +1562,19 @@ static int __resolve_sos_entities(struct ast *ast)
 
 	TAILQ_FOREACH(attr_e, &ast->select_list, link) {
 		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
-			attr_e->sos_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
+			attr_e->src_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
 			attr_e->schema = schema_e;
-			if (attr_e->sos_attr)
+			if (attr_e->src_attr)
 				break;
 		}
-		if (!attr_e->sos_attr) {
+		if (!attr_e->src_attr) {
 			ast->result = ASTP_BAD_ATTR_NAME;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
 				 "The '%s' attribute was not found in any schema in the 'from' clause.",
 				 attr_e->name);
 			return ast->result;
 		}
-		int rc = sos_schema_attr_add(res_schema, attr_e->name, sos_attr_type(attr_e->sos_attr));
+		int rc = sos_schema_attr_add(res_schema, attr_e->name, sos_attr_type(attr_e->src_attr));
 		assert(!rc);
 		sos_attr_t res_attr = sos_schema_attr_by_name(res_schema, attr_e->name);
 		attr_e->res_attr = res_attr;
@@ -1221,22 +1586,22 @@ static int __resolve_sos_entities(struct ast *ast)
 	 */
 	TAILQ_FOREACH(attr_e, &ast->where_list, link) {
 		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
-			attr_e->sos_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
+			attr_e->src_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
 			assert(attr_e->value_attr);
-			attr_e->value_attr->attr = attr_e->sos_attr;
-			if (attr_e->sos_attr) {
+			attr_e->value_attr->attr = attr_e->src_attr;
+			if (attr_e->src_attr) {
 				attr_e->schema = schema_e;
 				break;
 			}
 		}
-		if (!attr_e->sos_attr) {
+		if (!attr_e->src_attr) {
 			ast->result = ASTP_BAD_ATTR_NAME;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
 				 "The '%s' attribute was not found in any schema in the 'from' clause.",
 				 attr_e->name);
 			return ast->result;
 		}
-		if (SOS_TYPE_JOIN == sos_attr_type(attr_e->sos_attr)) {
+		if (SOS_TYPE_JOIN == sos_attr_type(attr_e->src_attr)) {
 			ast->result = ASTP_BAD_ATTR_TYPE;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
 				 "The '%s' attribute is SOS_TYPE_JOIN and "
@@ -1251,15 +1616,15 @@ static int __resolve_sos_entities(struct ast *ast)
 	 */
 	TAILQ_FOREACH(attr_e, &ast->index_list, link) {
 		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
-			attr_e->sos_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
+			attr_e->src_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
 			assert(attr_e->value_attr);
-			attr_e->value_attr->attr = attr_e->sos_attr;
-			if (attr_e->sos_attr) {
+			attr_e->value_attr->attr = attr_e->src_attr;
+			if (attr_e->src_attr) {
 				attr_e->schema = schema_e;
 				break;
 			}
 		}
-		if (!attr_e->sos_attr) {
+		if (!attr_e->src_attr) {
 			ast->result = ASTP_BAD_ATTR_NAME;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
 				 "The '%s' attribute was not found in any schema in the 'from' clause.",
@@ -1287,15 +1652,15 @@ static int __resolve_sos_entities(struct ast *ast)
 	TAILQ_FOREACH(attr_e, &ast->where_list, link) {
 		attr_e->min_join_idx = UINT32_MAX;
 		LIST_FOREACH(join_attr_e, &attr_e->schema->join_list, join_link) {
-			join_list = sos_attr_join_list(join_attr_e->sos_attr);
+			join_list = sos_attr_join_list(join_attr_e->src_attr);
 			int join_idx, join_count = join_list->count;
 			for (join_idx = 0; join_idx < join_count; join_idx++) {
 				if (join_list->data.uint32_[join_idx]
-				    == sos_attr_id(attr_e->sos_attr)) {
+				    == sos_attr_id(attr_e->src_attr)) {
 					join_attr_e->rank += join_count - join_idx;
 					/* If this join is preferred over ones previously found, replace it */
 					if (join_idx < attr_e->min_join_idx) {
-						attr_e->join_attr = attr_e->sos_attr;
+						attr_e->join_attr = attr_e->src_attr;
 						attr_e->join_attr_idx = join_idx;
 						attr_e->min_join_idx = join_idx;
 					}
@@ -1371,10 +1736,10 @@ static int __resolve_sos_entities(struct ast *ast)
 	/* Use the attribute attribute index that appears the
 	 * most in the where clause */
 	TAILQ_FOREACH(attr_e, &ast->where_list, link) {
-		if (!sos_attr_is_indexed(attr_e->sos_attr))
+		if (!sos_attr_is_indexed(attr_e->src_attr))
 			continue;
 		TAILQ_FOREACH(best_attr_e, &ast->where_list, link) {
-			if (!sos_attr_is_indexed(attr_e->sos_attr))
+			if (!sos_attr_is_indexed(attr_e->src_attr))
 				continue;
 			if (0 == strcmp(best_attr_e->name, attr_e->name))
 				attr_e->rank += 1;
@@ -1382,7 +1747,7 @@ static int __resolve_sos_entities(struct ast *ast)
 	}
 	best_attr_e = NULL;
 	TAILQ_FOREACH(attr_e, &ast->where_list, link) {
-		if (!sos_attr_is_indexed(attr_e->sos_attr))
+		if (!sos_attr_is_indexed(attr_e->src_attr))
 			continue;
 		if (best_attr_e == NULL) {
 			best_attr_e = attr_e;
@@ -1395,13 +1760,13 @@ static int __resolve_sos_entities(struct ast *ast)
  create_iterator:
 	/* Create the SOS iterator using the best attribute */
 	ast->iter_attr_e = best_attr_e;
-	ast->sos_iter = sos_attr_iter_new(best_attr_e->sos_attr);
+	ast->sos_iter = sos_attr_iter_new(best_attr_e->src_attr);
 	if (!ast->sos_iter)
 		return errno;
 	ast->sos_iter_schema = sos_schema_by_name(ast->sos, best_attr_e->schema->name);
-	if (SOS_TYPE_JOIN == sos_attr_type(best_attr_e->sos_attr)) {
+	if (SOS_TYPE_JOIN == sos_attr_type(best_attr_e->src_attr)) {
 		/* Ensure all attributes in the join and the join attr are in the result schema */
-		sos_array_t ja = sos_attr_join_list(best_attr_e->sos_attr);
+		sos_array_t ja = sos_attr_join_list(best_attr_e->src_attr);
 		char **join_list = calloc(ja->count, sizeof(char *));
 		assert(join_list);
 		int i, rc;
@@ -1427,7 +1792,7 @@ static int __resolve_sos_entities(struct ast *ast)
 			if (!resa) {
 				attr_e = calloc(1, sizeof(*attr_e));
 				attr_e->name = strdup(sos_attr_name(jaa));
-				attr_e->sos_attr = jaa;
+				attr_e->src_attr = jaa;
 				int rc = sos_schema_attr_add(res_schema, sos_attr_name(jaa), sos_attr_type(jaa),
 								sos_attr_size(jaa), NULL);
 				attr_e->res_attr = sos_schema_attr_by_name(res_schema, sos_attr_name(jaa));
@@ -1436,14 +1801,14 @@ static int __resolve_sos_entities(struct ast *ast)
 			}
 		}
 		rc = sos_schema_attr_add(res_schema,
-					sos_attr_name(best_attr_e->sos_attr),
+					sos_attr_name(best_attr_e->src_attr),
 					SOS_TYPE_JOIN,
 					ja->count, join_list
 					);
 		attr_e = calloc(1, sizeof(*attr_e));
-		attr_e->name = strdup(sos_attr_name(best_attr_e->sos_attr));
-		attr_e->sos_attr = best_attr_e->sos_attr;
-		attr_e->res_attr = sos_schema_attr_by_name(res_schema, sos_attr_name(best_attr_e->sos_attr));
+		attr_e->name = strdup(sos_attr_name(best_attr_e->src_attr));
+		attr_e->src_attr = best_attr_e->src_attr;
+		attr_e->res_attr = sos_schema_attr_by_name(res_schema, sos_attr_name(best_attr_e->src_attr));
 		TAILQ_INSERT_TAIL(&ast->select_list, attr_e, link);
 		assert(0 == rc);
 		free(join_list);
@@ -1455,15 +1820,15 @@ static int __resolve_sos_entities(struct ast *ast)
 		sos_attr_t res_a = sos_schema_attr_by_name(res_schema, best_attr_e->name);
 		if (!res_a) {
 			sos_schema_attr_add(res_schema,
-					sos_attr_name(best_attr_e->sos_attr),
-					sos_attr_type(best_attr_e->sos_attr),
-					sos_attr_size(best_attr_e->sos_attr),
+					sos_attr_name(best_attr_e->src_attr),
+					sos_attr_type(best_attr_e->src_attr),
+					sos_attr_size(best_attr_e->src_attr),
 					NULL
 					);
 			attr_e = calloc(1, sizeof(*attr_e));
-			attr_e->name = strdup(sos_attr_name(best_attr_e->sos_attr));
-			attr_e->sos_attr = best_attr_e->sos_attr;
-			attr_e->res_attr = sos_schema_attr_by_name(res_schema, sos_attr_name(best_attr_e->sos_attr));
+			attr_e->name = strdup(sos_attr_name(best_attr_e->src_attr));
+			attr_e->src_attr = best_attr_e->src_attr;
+			attr_e->res_attr = sos_schema_attr_by_name(res_schema, sos_attr_name(best_attr_e->src_attr));
 			TAILQ_INSERT_TAIL(&ast->select_list, attr_e, link);
 		}
 	}

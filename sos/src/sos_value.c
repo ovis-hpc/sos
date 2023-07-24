@@ -379,7 +379,7 @@ static cmp_fn_t cmp_fn_table[] = {
 };
 
 /**
- * \brief Compare two value
+ * \brief Compare two values
  *
  * Compares <tt>a</tt> and <tt>b</tt> and returns <0 if a < b, 0 if
  * a == b, and >0 if a > b

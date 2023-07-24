@@ -1706,7 +1706,7 @@ bool_t query_select_1_svc(dsos_container_id cont_id, dsos_query_id query_id,
 		sos_attr_t res_key_attr =
 			sos_schema_attr_by_name(query->ast->result_schema,
 						sos_attr_name(query->
-							      ast->iter_attr_e->sos_attr));
+							      ast->iter_attr_e->src_attr));
 		res->dsos_query_select_res_u.select.key_attr_id = sos_attr_id(res_key_attr);
 		res->dsos_query_select_res_u.select.spec = dsos_spec_from_schema(query->ast->result_schema);
 	}
@@ -1728,7 +1728,7 @@ static int resample_object(struct ast *ast, sos_obj_t obj)
 {
 	SOS_KEY(res_key);
 	sos_key_t iter_key = sos_iter_key(ast->sos_iter); /* This is the source object key */
-	sos_attr_t iter_attr = ast->iter_attr_e->sos_attr;
+	sos_attr_t iter_attr = ast->iter_attr_e->src_attr;
 	uint32_t timestamp, remainder;
 	size_t count;
 	sos_value_t join_attrs;
@@ -1740,7 +1740,7 @@ static int resample_object(struct ast *ast, sos_obj_t obj)
 	sos_comp_key_spec_t res_spec = sos_comp_key_get(res_key, &count);
 
 	/* Create a bin-key from the object */
-	switch (sos_attr_type(ast->iter_attr_e->sos_attr)) {
+	switch (sos_attr_type(ast->iter_attr_e->src_attr)) {
 	case SOS_TYPE_JOIN:
 		for (i = 0; i < count; i++) {
 			if (res_spec[i].type != SOS_TYPE_TIMESTAMP)
@@ -1762,11 +1762,17 @@ static int resample_object(struct ast *ast, sos_obj_t obj)
 	/* Find the bin for this object */
 	rbn = ods_rbt_find(&ast->bin_tree, res_key);
 	if (rbn) {
-		struct bin_tree_entry *be = container_of(rbn, struct bin_tree_entry, rbn);
+		struct bin_tree_entry *be =
+			container_of(rbn, struct bin_tree_entry, rbn);
 		assert(be->obj);
 		sos_key_put(res_key);
+		/* Apply resample op to the values in the object */
+		ast_attr_entry_t attr_e;
+		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
+			if (attr_e->op)
+				attr_e->op(ast, attr_e, be->count, be->obj, obj);
+		}
 		be->count += 1;
-		/* Average the values of all numeric attributes in the object */
 		sos_obj_put(obj);
 	} else {
 		struct bin_tree_entry *be = calloc(1, sizeof(*be));
@@ -1777,7 +1783,8 @@ static int resample_object(struct ast *ast, sos_obj_t obj)
 		sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
 		ast_attr_entry_t attr_e;
 		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
-			sos_obj_attr_copy(result_obj, attr_e->res_attr, obj, attr_e->sos_attr);
+			sos_obj_attr_copy(result_obj, attr_e->res_attr,
+					  obj, attr_e->src_attr);
 		}
 		be->obj = result_obj;
 		be->count = 1;
@@ -1825,7 +1832,8 @@ static int __make_query_obj_array(struct dsos_session *client, struct ast *ast,
 		}
 		sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
 		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
-			sos_obj_attr_copy(result_obj, attr_e->res_attr, obj, attr_e->sos_attr);
+			sos_obj_attr_copy(result_obj, attr_e->res_attr,
+					  obj, attr_e->src_attr);
 		}
 		struct dsos_part *dpart;
 		sos_part_t part = sos_obj_part(obj);
