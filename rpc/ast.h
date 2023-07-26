@@ -189,4 +189,6 @@ extern enum ast_eval_e ast_eval(struct ast *ast, sos_obj_t obj);
 extern enum ast_eval_e ast_eval_limits(struct ast *ast, sos_obj_t obj);
 extern struct ast_term *ast_find_term(struct ast_term *term, const char *name);
 extern int ast_start_key(struct ast *ast, sos_key_t start_key);
+extern int ast_resample_obj_add(struct ast *ast, sos_obj_t obj);
+extern sos_obj_t ast_resample_obj_next(struct ast *ast);
 #endif

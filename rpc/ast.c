@@ -67,6 +67,8 @@ void bin_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 	struct sos_value_s res_v_, src_v_;
 	sos_value_t res_v, src_v;
 	uint32_t timestamp, remainder;
+	if (count)
+		return;
 	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
 	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
 	switch(sos_attr_type(ae->res_attr)) {
@@ -87,6 +89,8 @@ void avg_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 {
 	struct sos_value_s res_v_, src_v_;
 	sos_value_t res_v, src_v;
+	if (!count)
+		return;
 	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
 	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
 	switch(sos_attr_type(ae->res_attr)) {
@@ -160,6 +164,8 @@ void sum_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 {
 	struct sos_value_s res_v_, src_v_;
 	sos_value_t res_v, src_v;
+	if (!count)
+		return;
 	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
 	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
 	switch(sos_attr_type(ae->res_attr)) {
@@ -242,6 +248,8 @@ void min_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 {
 	struct sos_value_s res_v_, src_v_;
 	sos_value_t res_v, src_v;
+	if (!count)
+		return;
 	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
 	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
 	switch(sos_attr_type(ae->res_attr)) {
@@ -319,6 +327,8 @@ void max_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 {
 	struct sos_value_s res_v_, src_v_;
 	sos_value_t res_v, src_v;
+	if (!count)
+		return;
 	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
 	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
 	switch(sos_attr_type(ae->res_attr)) {
@@ -400,6 +410,101 @@ static struct operator_s operators[] = {
 	{ "min", min_op },
 	{ "sum", sum_op },
 };
+
+struct bin_tree_entry {
+	sos_key_t bin_k;	/* key for the bin */
+	sos_obj_t res_obj;	/* result object in this bin */
+	uint32_t count;		/* Number of objects in this bin */
+	struct ods_rbn rbn;
+};
+
+int ast_resample_obj_add(struct ast *ast, sos_obj_t obj)
+{
+	SOS_KEY(res_key);
+	sos_key_t iter_key = sos_iter_key(ast->sos_iter); /* This is the source object key */
+	sos_attr_t iter_attr = ast->iter_attr_e->src_attr;
+	uint32_t timestamp, remainder;
+	size_t count;
+	sos_value_t join_attrs;
+	struct ods_rbn *rbn;
+	int rc, id, i;
+	rc = sos_key_copy(res_key, iter_key);
+	if (!rc)
+		goto out;
+	sos_comp_key_spec_t res_spec = sos_comp_key_get(res_key, &count);
+
+	/* Create a bin-key from the object */
+	switch (sos_attr_type(ast->iter_attr_e->src_attr)) {
+	case SOS_TYPE_JOIN:
+		for (i = 0; i < count; i++) {
+			if (res_spec[i].type != SOS_TYPE_TIMESTAMP)
+				continue;
+			timestamp = res_spec[i].data->prim.timestamp_.fine.secs;
+			remainder = timestamp % (uint32_t)ast->bin_width;
+			timestamp -= remainder;
+			res_spec[i].data->prim.timestamp_.fine.secs = timestamp;
+			res_spec[i].data->prim.timestamp_.fine.usecs = 0;
+		}
+		rc = sos_comp_key_set(res_key, count, res_spec);
+		sos_comp_key_free(res_spec, count);
+		break;
+	case SOS_TYPE_TIMESTAMP:
+		break;
+	default:
+		assert(0 == "Invalid resample bin key type");
+	}
+	/* Find the bin for this object */
+	rbn = ods_rbt_find(&ast->bin_tree, res_key);
+	if (rbn) {
+		struct bin_tree_entry *be =
+			container_of(rbn, struct bin_tree_entry, rbn);
+		assert(be->res_obj);
+		sos_key_put(res_key);
+		/* Apply resample op to the values in the object */
+		ast_attr_entry_t attr_e;
+		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
+			if (attr_e->op)
+				attr_e->op(ast, attr_e, be->count, be->res_obj, obj);
+		}
+		be->count += 1;
+		sos_obj_put(obj);
+	} else {
+		struct bin_tree_entry *be = calloc(1, sizeof(*be));
+		be->bin_k = sos_key_new(sos_key_size(res_key));
+		sos_key_copy(be->bin_k, res_key);
+		sos_key_put(res_key);
+		ods_rbn_init(&be->rbn, be->bin_k);
+		sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
+		ast_attr_entry_t attr_e;
+		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
+			sos_obj_attr_copy(result_obj, attr_e->res_attr,
+					  obj, attr_e->src_attr);
+		}
+		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
+			if (attr_e->op)
+				attr_e->op(ast, attr_e, 0, result_obj, obj);
+		}
+		be->res_obj = result_obj;
+		be->count = 1;
+		ods_rbt_ins(&ast->bin_tree, &be->rbn);
+	}
+out:
+	return rc;
+}
+
+sos_obj_t ast_resample_obj_next(struct ast *ast)
+{
+	sos_obj_t obj;
+	if (ods_rbt_empty(&ast->bin_tree))
+		return NULL;
+	struct ods_rbn *rbn = ods_rbt_min(&ast->bin_tree);
+	struct bin_tree_entry *be = container_of(rbn, struct bin_tree_entry, rbn);
+	ods_rbt_del(&ast->bin_tree, rbn);
+	sos_key_put(be->bin_k);
+	obj = be->res_obj;
+	free(be);
+	return obj;
+}
 
 static void ast_enomem(struct ast *ast, int pos)
 {
