@@ -61,6 +61,27 @@ static int op_comparator(const void *a_, const void *b_)
 	return strcasecmp(a, b->key);
 }
 
+void bin_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+	       sos_obj_t res_obj, sos_obj_t src_obj)
+{
+	struct sos_value_s res_v_, src_v_;
+	sos_value_t res_v, src_v;
+	uint32_t timestamp, remainder;
+	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
+	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
+	switch(sos_attr_type(ae->res_attr)) {
+	case SOS_TYPE_TIMESTAMP:
+		timestamp = src_v->data->prim.timestamp_.fine.secs;
+		remainder = timestamp % (uint32_t)ast->bin_width;
+		timestamp -= remainder;
+		res_v->data->prim.timestamp_.fine.secs = timestamp;
+		res_v->data->prim.timestamp_.fine.usecs = 0;
+		break;
+	default:
+		break;
+	}
+}
+
 void avg_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 	       sos_obj_t res_obj, sos_obj_t src_obj)
 {
@@ -207,7 +228,13 @@ void first_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 void last_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 		 sos_obj_t res_obj, sos_obj_t src_obj)
 {
-	/* Erf */
+	struct sos_value_s res_v_, src_v_;
+	sos_value_t res_v, src_v;
+	res_v = sos_value_init(&res_v_, res_obj, ae->res_attr);
+	src_v = sos_value_init(&src_v_, src_obj, ae->src_attr);
+
+	/* Replace the current bin value with the latest value */
+	res_v->data->prim = src_v->data->prim;
 }
 
 void min_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
@@ -366,6 +393,7 @@ void max_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 
 static struct operator_s operators[] = {
 	{ "avg", avg_op },
+	{ "bin", bin_op },
 	{ "first", first_op },
 	{ "last", last_op },
 	{ "max", max_op },

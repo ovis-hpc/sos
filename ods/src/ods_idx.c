@@ -171,6 +171,7 @@ int ods_idx_create(const char *path, int perm, int mode,
 	return errno;
  err_1:
 	ods_close(ods, ODS_COMMIT_ASYNC);
+	ods_destroy(path);
 	return errno;
 }
 

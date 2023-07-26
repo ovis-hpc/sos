@@ -1719,7 +1719,7 @@ out_0:
 
 struct bin_tree_entry {
 	sos_key_t bin_k;	/* key for the bin */
-	sos_obj_t obj;		/* object in this bin */
+	sos_obj_t res_obj;	/* result object in this bin */
 	uint32_t count;		/* Number of objects in this bin */
 	struct ods_rbn rbn;
 };
@@ -1764,13 +1764,13 @@ static int resample_object(struct ast *ast, sos_obj_t obj)
 	if (rbn) {
 		struct bin_tree_entry *be =
 			container_of(rbn, struct bin_tree_entry, rbn);
-		assert(be->obj);
+		assert(be->res_obj);
 		sos_key_put(res_key);
 		/* Apply resample op to the values in the object */
 		ast_attr_entry_t attr_e;
 		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
 			if (attr_e->op)
-				attr_e->op(ast, attr_e, be->count, be->obj, obj);
+				attr_e->op(ast, attr_e, be->count, be->res_obj, obj);
 		}
 		be->count += 1;
 		sos_obj_put(obj);
@@ -1786,7 +1786,7 @@ static int resample_object(struct ast *ast, sos_obj_t obj)
 			sos_obj_attr_copy(result_obj, attr_e->res_attr,
 					  obj, attr_e->src_attr);
 		}
-		be->obj = result_obj;
+		be->res_obj = result_obj;
 		be->count = 1;
 		ods_rbt_ins(&ast->bin_tree, &be->rbn);
 	}
@@ -1930,14 +1930,16 @@ out:
 		entry->cont_id = client->handle;
 		entry->part_id = 0;
 		entry->schema_id = 0;
-		ref = sos_obj_ref(be->obj);
+		ref = sos_obj_ref(be->res_obj);
 		entry->obj_ref = ref.ref.obj;
-		obj_data = sos_obj_ptr(be->obj);
-		entry->value.dsos_obj_value_len = sos_obj_size(be->obj);
-		entry->value.dsos_obj_value_val = malloc(entry->value.dsos_obj_value_len);
-		memcpy(entry->value.dsos_obj_value_val, obj_data, entry->value.dsos_obj_value_len);
+		obj_data = sos_obj_ptr(be->res_obj);
+		entry->value.dsos_obj_value_len = sos_obj_size(be->res_obj);
+		entry->value.dsos_obj_value_val =
+			malloc(entry->value.dsos_obj_value_len);
+		memcpy(entry->value.dsos_obj_value_val, obj_data,
+		       entry->value.dsos_obj_value_len);
 		sos_key_put(be->bin_k);
-		sos_obj_put(be->obj);
+		sos_obj_put(be->res_obj);
 		free(be);
 	}
 	return result->error;

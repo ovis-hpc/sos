@@ -141,7 +141,7 @@ int ods_lock_info(const char *path, FILE *fp)
 {
 	ods_t ods = ods_open(path, ODS_PERM_RD, 0660);
 	if (!ods)
-		return ENOENT;
+		return errno;
 	int rc = ods->lock_info(path, fp);
 	ods_close(ods, ODS_COMMIT_ASYNC);
 	return rc;

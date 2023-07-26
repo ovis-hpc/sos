@@ -155,12 +155,14 @@ static int init_pgtbl(int pg_fd)
 		return -1;
 
 	memset(&pgt, 0, sizeof pgt);
-	memcpy(pgt.base.be_signature, ODS_PGT_SIGNATURE, sizeof(pgt.base.be_signature));
+	memcpy(pgt.base.be_signature, ODS_PGT_SIGNATURE,
+	       sizeof(pgt.base.be_signature));
 	pgt.base.be_vers.major = ODS_VER_MAJOR;
 	pgt.base.be_vers.minor = ODS_VER_MINOR;
 	pgt.base.be_vers.fix = ODS_VER_FIX;
 	pgt.base.be_type = ODS_BE_MMAP;
-	strncpy((char *)pgt.base.be_vers.commit_id, ODS_COMMIT_ID, sizeof(pgt.base.be_vers.commit_id));
+	strncpy((char *)pgt.base.be_vers.commit_id, ODS_COMMIT_ID,
+		sizeof(pgt.base.be_vers.commit_id));
 	pgt.pg_gen = 1;
 	pgt.pg_count = count;
 	pgt.pg_free = 1;
@@ -541,17 +543,22 @@ static ods_pgt_t pgt_map(ods_mmap_t ods)
 		goto err_0;
 
 	/* Check the Page Table signature */
-	if (memcmp(pgt_map->base.be_signature,
-		   ODS_PGT_SIGNATURE, sizeof(pgt_map->base.be_signature))) {
-		ods_lerror("The file '%s' is not a Page Table file\n", ods->base.path);
+	if (memcmp(pgt_map->base.be_signature, ODS_PGT_SIGNATURE,
+		   sizeof(pgt_map->base.be_signature))) {
+		ods_lerror("The signature in the file '%s' does not match"
+			   " '%s', this is a corrupted Page Table.\n",
+			   ods->base.path, ODS_PGT_SIGNATURE);
 		errno = EINVAL;
 		goto err_1;
 	}
 
 	/* Check the ODS version to see if the container is compatible */
 	if (pgt_map->base.be_vers.major != ODS_VER_MAJOR) {
-		ods_lerror("Unsupported container version %d.%d.%d; this library is version %d.%d.%d\n",
-			   pgt_map->base.be_vers.major, pgt_map->base.be_vers.minor, pgt_map->base.be_vers.fix,
+		ods_lerror("Unsupported container version %d.%d.%d; "
+			   "this library is version %d.%d.%d\n",
+			   pgt_map->base.be_vers.major,
+			   pgt_map->base.be_vers.minor,
+			   pgt_map->base.be_vers.fix,
 			   ODS_VER_MAJOR, ODS_VER_MINOR, ODS_VER_FIX);
 		errno = EINVAL;
 		goto err_1;

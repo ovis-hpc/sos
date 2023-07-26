@@ -554,8 +554,11 @@ static ods_pgt_t pgt_map(ods_lsos_t ods)
 		goto err_0;
 
 	/* Check the Page Table signature */
-	if (memcmp(pgt_map->base.be_signature, ODS_PGT_SIGNATURE, sizeof(pgt_map->base.be_signature))) {
-		ods_lerror("The file '%s' is not a Page Table file\n", ods->base.path);
+	if (memcmp(pgt_map->base.be_signature, ODS_PGT_SIGNATURE,
+		   sizeof(pgt_map->base.be_signature))) {
+		ods_lerror("The signature in the file '%s' does not match"
+			   " '%s', this is a corrupted Page Table.\n",
+			   ods->base.path, ODS_PGT_SIGNATURE);
 		errno = EINVAL;
 		goto err_1;
 	}
