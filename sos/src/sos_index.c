@@ -939,13 +939,17 @@ sos_index_t sos_container_index_iter_next(sos_container_index_iter_t iter)
 {
 	sos_obj_ref_t idx_ref;
 	sos_index_t idx;
-	int rc = ods_iter_next(iter->iter);
+	int rc;
+ next:
+	rc = ods_iter_next(iter->iter);
 	if (rc)
 		return NULL;
 	idx_ref.idx_data = ods_iter_data(iter->iter);
 	ods_obj_t idx_obj = ods_ref_as_obj(iter->sos->idx_ods, idx_ref.ref.obj);
 	idx = sos_index_open(iter->sos, SOS_IDX(idx_obj)->name);
 	ods_obj_put(idx_obj);
+	if (!idx)
+		goto next;
 	return idx;
 }
 
