@@ -157,7 +157,7 @@ AC_CHECK_FUNCS([getrpcbyname getrpcbynumber setrpcent endrpcent getrpcent])
 
 AC_CHECK_LIB(jansson, json_loads,
 		[],
-		AC_MSG_FAILURE(libjanson not found),
+		AC_MSG_FAILURE(libjansson not found),
 		[ $JSON_LIB64DIR_FLAG $JSON_LIBDIR_FLAG ]
 	    )
 
