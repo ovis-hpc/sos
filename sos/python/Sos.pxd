@@ -878,7 +878,7 @@ cdef extern from "dsos.h":
     dsos_query_t dsos_query_create(dsos_container_t cont)
     void dsos_query_destroy(dsos_query_t query)
     int dsos_query_select(dsos_query_t query, const char *clause)
-    char *dsos_query_errmsg(dsos_query_t query)
+    const char *dsos_query_errmsg(dsos_query_t query)
     sos_obj_t dsos_query_next(dsos_query_t query)
     sos_schema_t dsos_query_schema(dsos_query_t query)
     void dsos_name_array_free(dsos_name_array_t name)
