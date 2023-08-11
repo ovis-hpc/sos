@@ -1562,24 +1562,40 @@ cdef class Partition(SosObject):
         must be attached to a container, i.e. this partition object
         was obtained by calling container.part_by_name()
 
-        The parition is placed in the OFFLINE state while the
-        rebuild is in progress. If an error is encountered, the
-        partition is left in the OFFLINE state and an exception
-        is thrown.
-
         Object counts are periodically printed to stdout after
         every \c reindex_status_count objects are indexed.
 
         Keyword Parameters:
-        reindex_status_count - The number of objects to reindex before printing status
+        reindex_status_count - The number of objects to reindex before printing
+                               status
         """
         cdef int c_rc
         org_state = self.state()
-        self.state_set("OFFLINE")
         c_rc = sos_part_reindex(self.c_part, __obj_reindex_cb,
                                 NULL, reindex_status_count)
         self.state_set(org_state)
         print(f"A total of {c_rc} objects were reindexed in the partition '{self.name()}'")
+
+
+    def verify(self, path, fp):
+        """Verify the signature of all ODS in the partition
+
+        Use this method to provide a quick means to determine if any
+        ODS in the partition are corrupted. The parition will not be
+        opened or otherwise verified, only the ODS signature (first 8B
+        of the file) are checked.
+
+        Paramters:
+        -- The path to the paritition
+        -- File pointer to log messages to
+
+        Returns:
+        !0 if any errors were encounted.
+        """
+        cdef FILE *c_fp = fdopen(fp.fileno(), "w")
+        rc = sos_part_verify(path.encode(), c_fp);
+        fclose(c_fp);
+        return rc
 
     def release(self):
         if self.c_part:
@@ -4621,6 +4637,7 @@ cdef class Index(object):
         """
         cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
         cdef int c_rc = sos_index_verify(self.c_index, c_fp, verbose);
+        fclose(c_fp);
         return c_rc
 
 ################################

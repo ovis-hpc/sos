@@ -487,6 +487,7 @@ sos_part_t _sos_part_get(sos_part_t part, const char *func, int line);
 #define sos_part_get(_p_) _sos_part_get(_p_, __func__, __LINE__)
 void sos_part_put(sos_part_t part);
 int sos_part_stat(sos_part_t part, sos_part_stat_t stat);
+int sos_part_verify(char *path, FILE *fp);
 uid_t sos_part_uid(sos_part_t part);
 gid_t sos_part_gid(sos_part_t part);
 int sos_part_perm(sos_part_t part);

@@ -172,7 +172,6 @@ def print_json(p, hdr=True, ftr=False):
           f'"UUID" : "{str(p.uuid())}"}}', end='')
 
 def print_partition(p, hdr=True, ftr=False, verbose=False, fmt='table'):
-
     if fmt == 'table':
         print_table(p, hdr, ftr, verbose)
     else:
@@ -205,6 +204,8 @@ if __name__ == "__main__":
                          "used by objects in the partition.")
     actions.add_argument("--reindex", action="store_true",
                          help="Reindex all objects in the specified partition")
+    actions.add_argument("--verify", action="store_true",
+                         help="Verify the signature in all ODS in the parittion")
 
     parser.add_argument("--path", metavar="DB-PATH", required=False,
                         help="Specifies the path to the partition.")
@@ -262,7 +263,12 @@ if __name__ == "__main__":
             for p in pi:
                 print_partition(p, hdr, fmt=args.fmt, verbose=args.verbose)
                 hdr = False
-            print_partition(p, hdr=False, ftr=True, fmt=args.fmt, verbose=args.verbose)
+            if p:
+                print_partition(p, hdr=False, ftr=True, fmt=args.fmt,
+                                verbose=args.verbose)
+            else:
+                print("There are no partitions user "
+                      f"{os.geteuid()} group {os.getegid()} is authorized to view")
             sys.exit(0)
         if not args.path:
             print(f"One of --cont or --path must be specified.")
@@ -504,4 +510,14 @@ if __name__ == "__main__":
         except Exception as e:
             print(e)
             sys.exit(1)
+    #
+    # Verify the partition ODS
+    #
+    if args.verify:
+        if not args.path:
+            print("The partition path (--path PATH) must be specified.")
+            sys.exit(1)
+        part = Sos.Partition()
+        part.verify(args.path, sys.stdout)
+
     sys.exit(0)

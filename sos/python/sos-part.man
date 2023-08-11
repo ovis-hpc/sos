@@ -131,30 +131,25 @@ vmstat_tom_timestamp
 .fi
 .RE
 .PP
-.SS "Verify All Indices"
+.SS "Verify A Partition"
 .PP
+The --verify parameter does a quick evaluation of all of the ODS
+containers in a partition to determine if they are valid by examining
+a \fIsignature\fR that exists in the first 8B of every ODS
+container. This \fIsignature\fR must match the expected value or the
+file is reported as invalid. This option does not require a container.
+.PP
+This verification does not do a deep analysis of the container. To
+perform this function, please see the sos-index(8) command.
 .RS 4
 .nf
-$ sos-part --path=/dev/shm/SOS/ldms_data --verify
-Verifying index 'meminfo_tom_job_comp_time' ... OK
-Verifying index 'meminfo_tom_timestamp' ... OK
-Verifying index 'netdev2_tom_time_comp' ... OK
-Verifying index 'slurm2_tom_time_comp' ... OK
-Verifying index 'vmstat_tom_job_comp_time' ... OK
-Verifying index 'vmstat_tom_timestamp' ... OK
+$ sos-part --path /dev/shm/SOS/ldms_data/1688848249 --verify
+'/dev/shm/SOS/ldms_data/1688848249/bad_signature.BE' has an invalid ODS signature, expected 'ODS_BE_1'
+'/dev/shm/SOS/ldms_data/1688848249/short.BE' could not read the ODS signature, bytes returned 6, expected 8, errno = 2
 .fi
 .RE
 .PP
-.SS "Verify A Single Index"
-.PP
-.RS 4
-.nf
-$ sos-part --path=/dev/shm/SOS/ldms_data --verify --index  meminfo_tom_job_comp_time
-Verifying index 'meminfo_tom_job_comp_time' ... OK
-.fi
-.RE
-.PP
-
+In the example above, there exist two files in the partition that are not valid ODS containers.
 .SH ENVIRONMENT
 .SS ODS_LOG_MASK
 This environment variable specifies what log messages are printed by

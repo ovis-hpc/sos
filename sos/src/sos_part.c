@@ -1572,7 +1572,7 @@ int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
 
 	memset(&__part_sb, 0, sizeof(__part_sb));
 	rc = nftw(sos_part_path(part), collect_part_stats,
-		  1024, FTW_DEPTH | FTW_PHYS);
+		  16, FTW_DEPTH | FTW_PHYS);
 	if (rc)
 		goto out;
 
@@ -1582,6 +1582,100 @@ int sos_part_stat(sos_part_t part, sos_part_stat_t stat)
 	stat->changed = __part_sb.st_ctime;
  out:
 	return rc;
+}
+
+static int check_sig_err;
+static FILE *check_sig_fp;
+static int check_signature(const char *path, const struct stat *sb,
+			      int typeflags, struct FTW *ftw)
+{
+#define ODS_OBJ_SIGNATURE "OBJSTORE"
+#define ODS_BE_SIGNATURE "ODS_BE_1"
+	char *ext;
+	int fd, cnt;
+	char buf[sizeof(ODS_BE_SIGNATURE)]; /* All signatures are the same size */
+
+	ext = strstr(path, ".BE");
+	if (!ext) {
+		ext = strstr(path, ".OBJ");
+		if (!ext)
+			return 0;
+	}
+
+	/* Open the file */
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		if (check_sig_fp) {
+			fprintf(check_sig_fp, "'%s' could not be opened, "
+				"errno = %d\n",
+				path, errno);
+		}
+		check_sig_err = 1;
+		goto out;
+	}
+	/* Read the signature */
+	cnt = read(fd, buf, sizeof(buf)-1);
+	if (cnt < sizeof(buf)-1) {
+		if (check_sig_fp) {
+			fprintf(check_sig_fp,
+				"'%s' could not read the ODS signature, "
+				"bytes returned %d, expected %zd, errno = %d\n",
+				path, cnt, sizeof(buf)-1, errno);
+		}
+		check_sig_err = 1;
+		goto out;
+	}
+	/* Check the page file */
+	ext = strstr(path, ".BE");
+	if (ext && ext[3] == '\0') {
+		if (memcmp(buf, ODS_BE_SIGNATURE, sizeof(ODS_BE_SIGNATURE)-1)) {
+			if (check_sig_fp) {
+				fprintf(check_sig_fp,
+					"'%s' has an invalid ODS signature, "
+					"expected '%s'\n", path, ODS_BE_SIGNATURE);
+			}
+			check_sig_err = 1;
+		}
+		goto out;
+	}
+	/* Check the object file */
+	ext = strstr(path, ".OBJ");
+	if (ext && ext[4] == '\0') {
+		if (memcmp(buf, ODS_OBJ_SIGNATURE, sizeof(ODS_OBJ_SIGNATURE)-1)) {
+			if (check_sig_fp) {
+				fprintf(check_sig_fp,
+					"'%s' has an invalid ODS signature, "
+					"expected '%s'\n", path, ODS_OBJ_SIGNATURE);
+			}
+			check_sig_err = 1;
+		}
+	}
+ out:
+	close(fd);
+	return 0;
+}
+
+/**
+ * \brief Check the signature on all ODS in the partition
+ *
+ * This function is not thread safe.
+ *
+ * \param path The path to the partition
+ * \param fp FILE pointer to which errors will be logged
+ * \retval 0 Success
+ * \retval !0 One or more ODS in the partition have corrupted signatures
+ */
+int sos_part_verify(char *path, FILE *fp)
+{
+	if (!path)
+		return EINVAL;
+
+	check_sig_err = 0;
+	check_sig_fp = fp;
+	(void)nftw(path, check_signature,
+		   16, FTW_DEPTH | FTW_PHYS);
+
+	return check_sig_err;
 }
 
 struct part_obj_iter_args_s {
@@ -1964,6 +2058,13 @@ size_t sos_part_reindex(sos_part_t part,
 		return 0;
 	}
 
+	/* Cannot reindex the primary partition */
+	sos_part_state_t state = sos_part_state(part);
+	if (state != SOS_PART_STATE_ACTIVE) {
+		errno = EINVAL;
+		return 0;
+	}
+
 	/* Destroy all of the indices in the partition */
 	pthread_mutex_lock(&sos->lock);
 	for (s = sos_schema_first(sos); s; s = sos_schema_next(s)) {
@@ -1976,13 +2077,16 @@ size_t sos_part_reindex(sos_part_t part,
 			sprintf(tmp_pg_path, "%s.BE", path);
 			(void)unlink(tmp_pg_path);
 
-			snprintf(tmp_obj_path, PATH_MAX, "%s.DAT", (char *)path); /* lsos */
+			/* lsos */
+			snprintf(tmp_obj_path, PATH_MAX, "%s.DAT", (char *)path);
 			(void)unlink(tmp_obj_path);
 
-			snprintf(tmp_obj_path, PATH_MAX, "%s.OBJ", (char *)path); /* mmap */
+			/* mmap */
+			snprintf(tmp_obj_path, PATH_MAX, "%s.OBJ", (char *)path);
 			(void)unlink(tmp_obj_path);
 		}
 	}
+
 	pthread_mutex_unlock(&sos->lock);
 	ods_rbt_init(&rbt, uuid_comparator, NULL);
 	uarg.rbt = &rbt;
