@@ -1487,7 +1487,7 @@ int __sos_schema_init(sos_t sos, sos_schema_t schema, ods_obj_t schema_obj)
 		attr = attr_new(schema, schema->data->attr_dict[idx].type,
 				schema->data->attr_dict[idx].size);
 		if (!attr) {
-			errno = ENOMEM;
+			rc = ENOMEM;
 			goto err_1;
 		}
 		schema->dict[idx] = attr;

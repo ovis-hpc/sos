@@ -1,4 +1,4 @@
-/*
+/* -*- c-basic-offset : 8 -*-
  * Copyright (c) 2014 Open Grid Computing, Inc. All rights reserved.
  * Copyright (c) 2014 Sandia Corporation. All rights reserved.
  * Under the terms of Contract DE-AC04-94AL85000, there is a non-exclusive

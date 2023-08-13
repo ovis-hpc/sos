@@ -386,7 +386,7 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 int sos_index_rt_opt_set(sos_index_t idx, sos_index_rt_opt_t opt, ...)
 {
 	ods_idx_ref_t iref;
-	int rc;
+	int rc = 0;
 	va_list ap;
 	LIST_FOREACH(iref, &idx->active_idx_list, entry) {
 		va_start(ap, opt);

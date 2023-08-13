@@ -276,7 +276,8 @@ void ods_idx_unlock(ods_idx_t idx)
 }
 
 int ods_idx_rt_opts_set_va(ods_idx_t idx, ods_idx_rt_opts_t opt, va_list ap)
-{	int rc;
+{
+	int rc = 0;
 	struct ods_bulk_ins_opt_s *kvq_opt;
 
 	if (opt != ODS_IDX_OPT_BULK_INS) {

@@ -205,7 +205,7 @@ if __name__ == "__main__":
     actions.add_argument("--reindex", action="store_true",
                          help="Reindex all objects in the specified partition")
     actions.add_argument("--verify", action="store_true",
-                         help="Verify the signature in all ODS in the parittion")
+                         help="Verify the signature in all ODS in the partition")
 
     parser.add_argument("--path", metavar="DB-PATH", required=False,
                         help="Specifies the path to the partition.")

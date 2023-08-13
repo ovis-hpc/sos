@@ -289,6 +289,8 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 	uid_t euid = geteuid();
 	gid_t egid = getegid();
 
+	if (strlen(part_desc) >= SOS_PART_DESC_LEN)
+		return ENAMETOOLONG;
 	rc = stat(part_path, &sb);
 	if (rc == 0)
 		return EEXIST;
@@ -297,7 +299,9 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 				| (o_mode & S_IRGRP ? S_IXGRP : 0));
 	if (rc)
 		return errno;
-	sprintf(tmp_path, "%s/objects", part_path);
+	rc = snprintf(tmp_path, sizeof(tmp_path), "%s/objects", part_path);
+	if (rc >= sizeof(tmp_path))
+		return ENAMETOOLONG;
 	ods = ods_open(tmp_path, o_perm | ODS_PERM_RW | ODS_PERM_CREAT, o_mode);
 	if (!ods) {
 		rc = errno;
@@ -305,7 +309,7 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 	}
 	ods_obj_t udata = ods_get_user_data(ods);
 	SOS_PART_UDATA(udata)->signature = SOS_PART_SIGNATURE;
-	strncpy(SOS_PART_UDATA(udata)->desc, part_desc, SOS_PART_DESC_LEN);
+	strcpy(SOS_PART_UDATA(udata)->desc, part_desc);
 	SOS_PART_UDATA(udata)->is_busy = 0;
 	SOS_PART_UDATA(udata)->ref_count = 0;
 	SOS_PART_UDATA(udata)->user_id = euid;
@@ -990,8 +994,12 @@ int sos_part_attach(sos_t sos, const char *name, const char *path)
 	}
 
 	/* Make sure we can open it */
-	strncpy(SOS_PART_REF(new_part_ref)->path, path, SOS_PART_PATH_LEN);
-	strncpy(SOS_PART_REF(new_part_ref)->name, name, SOS_PART_NAME_LEN);
+	if (strlen(path) >= SOS_PART_PATH_LEN)
+		return ENAMETOOLONG;
+	strcpy(SOS_PART_REF(new_part_ref)->path, path);
+	if (strlen(name) >= SOS_PART_NAME_LEN)
+		return ENAMETOOLONG;
+	strcpy(SOS_PART_REF(new_part_ref)->name, name);
 	SOS_PART_REF(new_part_ref)->state = SOS_PART_STATE_OFFLINE;
 	part = __sos_part_open(sos, new_part_ref, 0, 0, 06);
 	if (!part)
@@ -1410,8 +1418,9 @@ const char *sos_part_desc(sos_part_t part)
  */
 void sos_part_desc_set(sos_part_t part, const char *desc)
 {
-	strncpy(SOS_PART_UDATA(part->udata_obj)->desc,
-		desc, sizeof(SOS_PART_UDATA(part->udata_obj)->desc));
+	if (strlen(desc) >= sizeof(SOS_PART_UDATA(part->udata_obj)->desc))
+		return;
+	strcpy(SOS_PART_UDATA(part->udata_obj)->desc, desc);
 	ods_obj_update(part->udata_obj);
 }
 /**

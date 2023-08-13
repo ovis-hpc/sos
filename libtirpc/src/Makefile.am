@@ -5,6 +5,7 @@
 ## program built.  We also don't bother trying to assemble code, or
 ## anything like that.
 
+CFLAGS := $(filter-out -Werror, ${CFLAGS})
 noinst_HEADERS = rpc_com.h debug.h clnt_fd_locks.h nis.h libtirpc.map
 
 AM_CPPFLAGS = -I$(top_srcdir)/libtirpc/tirpc -include config.h -DPORTMAP -DINET6 \

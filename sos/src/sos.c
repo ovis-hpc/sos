@@ -639,14 +639,15 @@ void sos_container_info(sos_t sos, FILE *fp)
 static int show_locks(const char *path, const struct stat *sb,
 			int typeflags, struct FTW *ftw)
 {
-	size_t len;
+	size_t len = strlen(path);
 	char tmp_path[PATH_MAX];
 
-	strncpy(tmp_path, path, PATH_MAX);
-	len = strlen(tmp_path);
+	if (strlen(path) >= PATH_MAX)
+		return ENAMETOOLONG;
+	strcpy(tmp_path, path);
 	if (strcmp(&tmp_path[len-3], ".BE"))
 		return 0;
-	/* strip the .PG, ods_lock_info will append it */
+	/* strip the .BE, ods_lock_info will append it */
 	tmp_path[len-3] = '\0';
 	ods_lock_info(tmp_path, stdout);
 	return 0;
@@ -655,11 +656,12 @@ static int show_locks(const char *path, const struct stat *sb,
 static int release_locks(const char *path, const struct stat *sb,
 			 int typeflags, struct FTW *ftw)
 {
-	size_t len;
+	size_t len = strlen(path);
 	char tmp_path[PATH_MAX];
 
-	strncpy(tmp_path, path, PATH_MAX);
-	len = strlen(tmp_path);
+	if (len >= PATH_MAX)
+		return ENAMETOOLONG;
+	strcpy(tmp_path, path);
 	if (strcmp(&tmp_path[len-3], ".BE"))
 		return 0;
 	/* strip the .PG, ods_lock_cleanup will append it */

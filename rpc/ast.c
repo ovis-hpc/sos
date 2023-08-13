@@ -544,6 +544,7 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 			return ASTT_DQSTRING;
 		}
 		strncpy(token_str, s, sizeof(token_str));
+		token_str[sizeof(token_str)-1] = '\0';
 		return ASTT_ERR;
 	}
 	/* SQuoted string */
@@ -559,6 +560,7 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 			return ASTT_SQSTRING;
 		}
 		strncpy(token_str, s, sizeof(token_str));
+		token_str[sizeof(token_str)-1] = '\0';
 		return ASTT_ERR;
 	}
 	if (*s == '-' || *s == '+' || isdigit(*s)) {
@@ -590,6 +592,7 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 			return ASTT_INTEGER;
 		}
 		strncpy(token_str, s, sizeof(token_str));
+		token_str[sizeof(token_str)-1] = '\0';
 		return ASTT_ERR;
 	}
 	if (s[0] == '*') {
