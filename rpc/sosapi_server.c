@@ -1707,6 +1707,7 @@ bool_t query_select_1_svc(dsos_container_id cont_id, dsos_query_id query_id,
 			sos_schema_attr_by_name(query->ast->result_schema,
 						sos_attr_name(query->
 							      ast->iter_attr_e->src_attr));
+		assert(res_key_attr);
 		res->dsos_query_select_res_u.select.key_attr_id = sos_attr_id(res_key_attr);
 		res->dsos_query_select_res_u.select.spec = dsos_spec_from_schema(query->ast->result_schema);
 	}
@@ -1836,6 +1837,7 @@ static int __make_query_obj_bins(struct dsos_session *client, struct ast *ast,
 		rc = ast_resample_obj_add(ast, obj);
 		if (!rc)
 			rc = sos_iter_next(iter);
+		count--;
 	}
 out:
 	obj_id = 0;

@@ -67,7 +67,7 @@ typedef struct ods_map_s {
 
 	struct map_key_s {
 		loff_t off;		/* Map offset */
-		size_t len;		/* This length of this map in Bytes */
+		size_t len;		/* The length of this map in bytes */
 	} map;
 	struct ods_rbn rbn;		/* Active map tree */
 	LIST_ENTRY(ods_map_s) entry;	/* Queued for deletion */
