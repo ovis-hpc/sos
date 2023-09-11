@@ -5544,10 +5544,12 @@ cdef class Object(object):
         cdef sos_attr_t c_attr
         cdef sos_value_data_t c_data
         if self.c_obj == NULL:
-            raise ValueError("No SOS object assigned to Object")
+            # Fall back to Python's default __getattr__
+            return super().__getattr__(name)
         c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name.encode())
         if c_attr == NULL:
-            raise ValueError("Object has no attribute with name '{0}'".format(name))
+            # Fall back to Python's default __getattr__
+            return super().__getattr__(name)
         arr_obj = NULL
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
         res = self.get_py_value(self.c_obj, c_attr, c_data)
@@ -5593,10 +5595,14 @@ cdef class Object(object):
     def __setattr__(self, name, val):
         cdef sos_attr_t c_attr
         if self.c_obj == NULL:
-            raise ValueError("No SOS object assigned to Object")
+            # Fall back to Python's default __getattr__
+            super().__setattr__(name, val)
+            return
         c_attr = sos_schema_attr_by_name(sos_obj_schema(self.c_obj), name.encode())
         if c_attr == NULL:
-            raise ObjAttrError(name)
+            # Fall back to Python's default __getattr__
+            super().__setattr__(name, val)
+            return
         if 0 == sos_attr_is_array(c_attr):
             self.set_py_value(c_attr, val)
         else:
