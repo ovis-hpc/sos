@@ -618,6 +618,7 @@ sos_obj_t sos_obj_new(sos_schema_t schema);
 sos_obj_t sos_obj_new_size(sos_schema_t schema, size_t reserve);
 sos_obj_t sos_obj_new_from_data(sos_schema_t schema, uint8_t *data, size_t data_size);
 sos_obj_t sos_obj_malloc(sos_schema_t schema);
+sos_obj_t sos_obj_malloc_size(sos_schema_t schema, size_t reserve);
 int sos_obj_commit(sos_obj_t obj);
 int sos_obj_commit_part(sos_obj_t obj, sos_part_t part);
 sos_schema_t sos_obj_schema(sos_obj_t obj);
