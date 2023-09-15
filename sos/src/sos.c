@@ -1489,6 +1489,23 @@ err_0:
  */
 sos_obj_t sos_obj_malloc(sos_schema_t schema)
 {
+	return sos_obj_malloc_size(schema, DEFAULT_ARRAY_RESERVE);
+}
+
+/**
+ * \brief Allocate a SOS object in memory, with array reserve
+ *
+ * This call allocates a memory based object with array reserve that is not
+ * stored in the container.
+ *
+ * \param schema        The schema handle
+ * \param reserve       The size (in bytes) of the additional memory reserved
+ *                      for arrays in the object.
+ * \returns Pointer to the new object
+ * \returns NULL if there is an error
+ */
+sos_obj_t sos_obj_malloc_size(sos_schema_t schema, size_t reserve)
+{
 	ods_obj_t ods_obj;
 	sos_obj_ref_t obj_ref = NULL_REF;
 	if (!schema)
@@ -1496,7 +1513,7 @@ sos_obj_t sos_obj_malloc(sos_schema_t schema)
 		errno = EINVAL;
 		return NULL;
 	}
-	size_t array_data_sz = schema->data->array_cnt * DEFAULT_ARRAY_RESERVE;
+	size_t array_data_sz = schema->data->array_cnt * reserve;
 	ods_obj = ods_obj_malloc(schema->data->obj_sz + array_data_sz);
 	if (!ods_obj)
 		goto err_0;
