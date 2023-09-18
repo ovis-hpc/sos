@@ -2431,7 +2431,6 @@ static int iter_obj_add(dsos_iter_t iter, int client_id)
 		pthread_mutex_unlock(&iter->obj_tree_lock);
 
 		iter->counts[client_id] += 1;
-		count += 1;
 	}
 	return 0;
 }
