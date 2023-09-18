@@ -1588,23 +1588,65 @@ bool_t iter_prev_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_obj_array
 		return FALSE;
 	return TRUE;
 }
-bool_t iter_find_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
+
+static bool_t __iter_find(dsos_container_id cont, dsos_iter_id iter_id,
+			  dsos_bytes bytes, dsos_obj_array_res *res, struct
+			  svc_req *req,
+			  int (*iter_fn)(sos_iter_t, sos_key_t))
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
+	struct dsos_session *client;
+	struct dsos_iter *diter;
+	int rc;
+	sos_key_t key;
+
+	client = get_client(cont);
+	if (!client) {
+		res->error = DSOS_ERR_CLIENT;
+		goto out_0;
+	}
+
+	diter = get_iter(client, iter_id);
+	if (!diter) {
+		res->error = DSOS_ERR_ITER;
+		goto out_1;
+	}
+
+	clock_gettime(CLOCK_REALTIME, &client->acc_time);
+
+	key = sos_key_new(bytes.dsos_bytes_len);
+	if (!key) {
+		res->error = DSOS_ERR_MEMORY;
+		goto out_1;
+	}
+	sos_key_set(key, bytes.dsos_bytes_val, bytes.dsos_bytes_len);
+
+	rc = iter_fn(diter->iter, key);
+	if (!rc) {
+		rc = __make_obj_array(res, diter);
+	} else {
+		res->error = rc;
+	}
+out_2:
+	free(key);
+out_1:
+	put_client(client);
+out_0:
 	return TRUE;
 }
-bool_t iter_find_glb_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
+
+bool_t iter_find_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
 {
-	if (!authenticate_request(req, __func__))
-		return FALSE;
-	return TRUE;
+	return __iter_find(cont, iter_id, bytes, res, req, sos_iter_find);
 }
-bool_t iter_find_lub_1_svc(dsos_container_id cont, dsos_iter_id iter, dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
+bool_t iter_find_glb_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
 {
-	if (!authenticate_request(req, __func__))
-		return FALSE;
-	return TRUE;
+	return __iter_find(cont, iter_id, bytes, res, req, sos_iter_inf);
+}
+bool_t iter_find_lub_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
+{
+	return __iter_find(cont, iter_id, bytes, res, req, sos_iter_sup);
 }
 
 bool_t iter_stats_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_iter_stats_res *res, struct svc_req *req)

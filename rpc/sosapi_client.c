@@ -2345,11 +2345,18 @@ static int iter_obj_find(dsos_iter_t iter, int client_id, sos_key_t key)
 	bytes.dsos_bytes_val = malloc(bytes.dsos_bytes_len);
 	if (!bytes.dsos_bytes_val)
 		return ENOMEM;
+	memcpy(bytes.dsos_bytes_val, sos_key_value(key), bytes.dsos_bytes_len);
 	memset(&obj_res, 0, sizeof(obj_res));
 	pthread_mutex_lock(&client->rpc_lock);
 	switch (iter->action) {
 	case DSOS_ITER_FIND:
 		rpc_err = iter_find_1(cont_id, iter_id, bytes, &obj_res, client->client);
+		break;
+	case DSOS_ITER_GLB:
+		rpc_err = iter_find_glb_1(cont_id, iter_id, bytes, &obj_res, client->client);
+		break;
+	case DSOS_ITER_LUB:
+		rpc_err = iter_find_lub_1(cont_id, iter_id, bytes, &obj_res, client->client);
 		break;
 	default:
 		assert(NULL == "Invalid action for iter_obj_find");
@@ -2375,7 +2382,6 @@ static int iter_obj_find(dsos_iter_t iter, int client_id, sos_key_t key)
 		pthread_mutex_unlock(&iter->obj_tree_lock);
 
 		iter->counts[client_id] += 1;
-		count += 1;
 	}
 	return 0;
 }
@@ -2516,17 +2522,32 @@ sos_obj_t dsos_iter_prev(dsos_iter_t iter)
 
 sos_obj_t dsos_iter_find_glb(dsos_iter_t iter, sos_key_t key)
 {
-	return NULL;
+	int client_id;
+	reset_iter_obj_tree(iter);
+	iter->action = DSOS_ITER_GLB;
+	for (client_id = 0; client_id < iter->cont->sess->client_count; client_id++) {
+		(void)iter_obj_find(iter, client_id, key);
+	}
+	iter->action = DSOS_ITER_NEXT;
+	return iter_obj_min(iter);
 }
 
 sos_obj_t dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key)
 {
-	return NULL;
+	int client_id;
+	reset_iter_obj_tree(iter);
+	iter->action = DSOS_ITER_LUB;
+	for (client_id = 0; client_id < iter->cont->sess->client_count; client_id++) {
+		(void)iter_obj_find(iter, client_id, key);
+	}
+	iter->action = DSOS_ITER_NEXT;
+	return iter_obj_min(iter);
 }
 
 sos_obj_t dsos_iter_find(dsos_iter_t iter, sos_key_t key)
 {
 	int client_id;
+	reset_iter_obj_tree(iter);
 	iter->action = DSOS_ITER_FIND;
 	for (client_id = 0; client_id < iter->cont->sess->client_count; client_id++) {
 		(void)iter_obj_find(iter, client_id, key);
