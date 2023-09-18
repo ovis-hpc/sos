@@ -2329,6 +2329,25 @@ dsos_schema_t dsos_iter_schema(dsos_iter_t iter)
 	return iter->schema;
 }
 
+/*
+ * Remove all objects from the iterator's object tree
+ */
+static void reset_iter_obj_tree(dsos_iter_t iter)
+{
+	sos_obj_t obj;
+	dsos_tree_ref_t ref;
+	struct ods_rbn *rbn;
+
+	while (NULL != (rbn = ods_rbt_min(&iter->obj_tree))) {
+		ref = container_of(rbn, struct dsos_tree_ref_s, rbn);
+		obj = ref->obj;
+		ods_rbt_del(&iter->obj_tree, rbn);
+		sos_value_put(&ref->key_value);
+		sos_obj_put(obj);
+		free(ref);
+	}
+}
+
 static int iter_obj_find(dsos_iter_t iter, int client_id, sos_key_t key)
 {
 	dsos_container_id cont_id = iter->cont->handles[client_id];
@@ -2484,6 +2503,7 @@ static sos_obj_t iter_obj_max(dsos_iter_t iter)
 sos_obj_t dsos_iter_begin(dsos_iter_t iter)
 {
 	int client_id;
+	reset_iter_obj_tree(iter);
 	iter->action = DSOS_ITER_BEGIN;
 	for (client_id = 0; client_id < iter->cont->sess->client_count; client_id++) {
 		(void)iter_obj_add(iter, client_id);
@@ -2495,6 +2515,7 @@ sos_obj_t dsos_iter_begin(dsos_iter_t iter)
 sos_obj_t dsos_iter_end(dsos_iter_t iter)
 {
 	int client_id;
+	reset_iter_obj_tree(iter);
 	iter->action = DSOS_ITER_END;
 	for (client_id = 0; client_id < iter->cont->sess->client_count; client_id++) {
 		(void)iter_obj_add(iter, client_id);
