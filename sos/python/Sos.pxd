@@ -589,6 +589,7 @@ cdef extern from "sos/sos.h":
     sos_obj_t sos_obj_new(sos_schema_t schema)
     sos_obj_t sos_obj_new_with_data(sos_schema_t schema, uint8_t *data, size_t data_size)
     sos_obj_t sos_obj_malloc(sos_schema_t schema)
+    sos_obj_t sos_obj_malloc_size(sos_schema_t schema, size_t reserve)
     int sos_obj_commit(sos_obj_t obj)
     sos_schema_t sos_obj_schema(sos_obj_t obj)
 
