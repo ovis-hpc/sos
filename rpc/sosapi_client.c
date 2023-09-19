@@ -2035,6 +2035,11 @@ sos_obj_t dsos_obj_new(dsos_schema_t schema)
 	return sos_obj_malloc(schema->schema);
 }
 
+extern sos_obj_t dsos_obj_new_size(dsos_schema_t schema, size_t reserve)
+{
+	return sos_obj_malloc_size(schema->schema, reserve);
+}
+
 /**
  * @brief Create a DSOS object
  *
