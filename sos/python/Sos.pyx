@@ -734,42 +734,92 @@ cdef class DsosIterator:
         self.c_iter = c_iter
         self.o = None
 
+    def item(self):
+        return self.o
+
     def begin(self):
+        if self.begin_obj() is None:
+            return False
+        return True
+
+    def begin_obj(self):
         cdef sos_obj_t c_obj
         c_obj = dsos_iter_begin(self.c_iter)
         if c_obj != NULL:
             self.o = Object()
-            return True
-        return False
+            self.o.assign(c_obj)
+        else:
+            self.o = None
+        return self.o
 
     def end(self):
+        if self.end_obj() is None:
+            return False
+        return True
+
+    def end_obj(self):
         cdef sos_obj_t c_obj
         c_obj = dsos_iter_end(self.c_iter)
         if c_obj != NULL:
             self.o = Object()
-            return True
-        return False
+            self.o.assign(c_obj)
+        else:
+            self.o = None
+        return self.o
 
     def next(self):
+        if self.next_obj() is None:
+            return False
+        return True
+
+    def next_obj(self):
         cdef sos_obj_t c_obj
-        o = self.o
         c_obj = dsos_iter_next(self.c_iter)
         if c_obj != NULL:
             self.o = Object()
             self.o.assign(c_obj)
         else:
             self.o = None
-        return o
+        return self.o
 
     def __iter__(self):
         self.begin()
         return self
 
     def __next__(self):
-        o = self.next()
-        if o is not None:
+        o = self.item()
+        if o is None:
+            raise StopIteration
+        self.next()
+        return o
+
+    def find_obj(self, Key key):
+        cdef sos_obj_t c_obj
+        c_obj = dsos_iter_find(self.c_iter, key.c_key)
+        if c_obj != NULL:
+            o = Object()
+            o.assign(c_obj)
             return o
-        raise StopIteration
+        return None
+
+    def find_glb_obj(self, Key key):
+        cdef sos_obj_t c_obj
+        c_obj = dsos_iter_find_glb(self.c_iter, key.c_key)
+        if c_obj != NULL:
+            o = Object()
+            o.assign(c_obj)
+            return o
+        return None
+
+    def find_lub_obj(self, Key key):
+        cdef sos_obj_t c_obj
+        c_obj = dsos_iter_find_lub(self.c_iter, key.c_key)
+        if c_obj != NULL:
+            o = Object()
+            o.assign(c_obj)
+            return o
+        return None
+
 
 cdef class DsosPartState:
     cdef int state_
