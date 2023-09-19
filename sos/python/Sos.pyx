@@ -1930,9 +1930,13 @@ cdef class Schema(SosObject):
         """Returns the name of the schema"""
         return sos_schema_name(self.c_schema).decode('utf-8')
 
-    def malloc(self):
+    def malloc(self, reserve = None):
         """Allocate a new memory object of this type"""
-        cdef sos_obj_t c_obj = sos_obj_malloc(self.c_schema)
+        cdef sos_obj_t c_obj
+        if reserve is not None:
+            c_obj = sos_obj_malloc_size(self.c_schema, reserve)
+        else:
+            c_obj = sos_obj_malloc(self.c_schema)
         if c_obj == NULL:
             self.abort()
         o = Object()
