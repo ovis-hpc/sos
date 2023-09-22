@@ -964,6 +964,26 @@ static int send_request(dsos_client_t client, dsos_client_request_t rqst)
 			goto op_err;
 		}
 		break;
+	case REQ_OBJ_UPDATE:
+		memset(&rqst->obj_update.res, 0, sizeof(rqst->obj_update.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err =
+			obj_update_1(
+				rqst->obj_update.obj_entry,
+				&rqst->obj_update.res,
+				client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "obj_update_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->obj_update.res) {
+			g_last_err = rqst->obj_update.res;
+			err_msg = "obj_update_1() error";
+			/* TODO? Change obj_update to contain proper
+			 *       error message? */
+			goto op_err;
+		}
+		break;
 	default:
 		assert(0 == "Invalid request");
 	}

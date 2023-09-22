@@ -713,6 +713,13 @@ cdef class DsosContainer:
         i.assign(self.c_cont, schema.c_dschema, c_attr, c_iter)
         return i
 
+    def obj_update(self, Object obj):
+        cdef int rc
+        rc = dsos_obj_update(self.c_cont, obj.c_obj)
+        if rc:
+            raise RuntimeError(f"dsos_obj_update() error: {rc}")
+
+
 cdef class DsosIterator:
     cdef dsos_iter_t c_iter
     cdef dsos_schema_t c_schema

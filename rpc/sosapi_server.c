@@ -1343,7 +1343,124 @@ bool_t obj_update_1_svc(dsos_obj_array obj_array, int *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
-	*res = ENOTSUP;
+	struct dsos_session *client;
+	struct dsos_schema *schema;
+	dsos_obj_entry *obj_e;
+	union sos_obj_ref_s ref;
+	struct dsos_part * part;
+	sos_obj_t obj, obj_m;
+	sos_attr_t attr;
+	sos_index_t index;
+	size_t obj_sz;
+	char *obj_data;
+	SOS_VALUE(v);
+	SOS_VALUE(v_m);
+	int reindex;
+
+
+	obj_e = obj_array;
+	while (obj_e) {
+		client = get_client(obj_e->cont_id);
+		if (!client) {
+			*res = DSOS_ERR_CLIENT;
+			goto out_0;
+		}
+		if (!client->sos) {
+			*res = DSOS_ERR_CLIENT;
+			goto out_1;
+		}
+		schema = get_schema(client, obj_e->schema_id);
+		if (!schema) {
+			*res = DSOS_ERR_SCHEMA;
+			goto out_1;
+		}
+
+		if (!obj_e->part_id) {
+			*res = DSOS_ERR_PARAMETER;
+			goto out_2;
+		}
+		part = get_part(client, obj_e->part_id);
+		if (!part) {
+			*res = DSOS_ERR_PARAMETER;
+			goto out_2;
+		}
+		clock_gettime(CLOCK_REALTIME, &client->acc_time);
+
+		/* obj from obj_ref */
+		ref.ref.obj = obj_e->obj_ref;
+		sos_part_uuid(part->part, ref.ref.part_uuid);
+		obj = sos_ref_as_obj(client->sos, ref);
+		if (!obj) {
+			*res = ENOENT;
+			goto out_2;
+		}
+
+		obj_sz = sos_obj_size(obj);
+		if (obj_sz < obj_e->value.dsos_obj_value_len) {
+			/* need rellocation, just delete the old object
+			 * and create a new one. */
+			sos_obj_remove(obj);
+			sos_obj_delete(obj);
+			obj = sos_obj_new_from_data(schema->schema,
+					obj_e->value.dsos_obj_value_val,
+					obj_e->value.dsos_obj_value_len);
+			if (!obj) {
+				*res = errno;
+				goto out_2;
+			}
+			sos_obj_index(obj);
+			goto next;
+		}
+
+		/* no need for reallocation */
+		/* compare the updates; we may not need reindexing */
+		obj_m = sos_obj_new_from_data(schema->schema,
+				obj_e->value.dsos_obj_value_val,
+				obj_e->value.dsos_obj_value_len);
+		reindex = 0;
+		for (attr = sos_schema_attr_first(schema->schema);
+				attr; attr = sos_schema_attr_next(attr)) {
+			index = sos_attr_index(attr);
+			if (!index)
+				continue;
+			sos_value_init(v, obj, attr);
+			sos_value_init(v_m, obj_m, attr);
+			if (sos_value_cmp(v, v_m)) {
+				reindex = 1;
+				sos_value_put(v);
+				sos_value_put(v_m);
+				break;
+			}
+			sos_value_put(v);
+			sos_value_put(v_m);
+		}
+		sos_obj_put(obj_m);
+
+
+		/* update */
+
+		if (reindex)
+			sos_obj_remove(obj);
+		obj_data = sos_obj_ptr(obj);
+		memcpy(obj_data, obj_e->value.dsos_obj_value_val,
+				 obj_e->value.dsos_obj_value_len);
+		sos_obj_commit_part(obj, part->part);
+		if (reindex)
+			sos_obj_index(obj);
+	next:
+		sos_obj_put(obj);
+		put_part(part);
+
+		/* next object */
+		obj_e = obj_e->next;
+		*res = 0;
+	}
+out_2:
+	put_schema(schema);
+out_1:
+	put_client(client);
+out_0:
+	pthread_mutex_unlock(&client_tree_lock);
 	return TRUE;
 }
 
@@ -1440,11 +1557,17 @@ out_0:
 	return TRUE;
 }
 
-static int __make_obj_array(dsos_obj_array_res *result, struct dsos_iter *diter)
+static int __make_obj_array(struct dsos_session *client,
+			    dsos_obj_array_res *result, struct dsos_iter *diter)
 {
 	int count;
 	int rc = 0;
+	sos_obj_ref_t ref;
+	sos_part_t sos_part;
+	struct dsos_part *dsos_part;
+
 	struct dsos_obj_entry *entry = NULL;
+
 	memset(result, 0, sizeof(*result));
 	result->dsos_obj_array_res_u.obj_array.obj_array_len = 0;
 	result->dsos_obj_array_res_u.obj_array.obj_array_val =
@@ -1466,10 +1589,18 @@ static int __make_obj_array(dsos_obj_array_res *result, struct dsos_iter *diter)
 		entry->cont_id = diter->cont_id;
 		entry->schema_id = diter->schema_id;
 
+		ref = sos_obj_ref(obj);
+		sos_part = sos_obj_part(obj);
+		dsos_part = cache_part(client, sos_part);
+		entry->obj_ref = ref.ref.obj;
+		entry->part_id = dsos_part->handle;
+
 		void *obj_data = sos_obj_ptr(obj);
 		entry->value.dsos_obj_value_len = sos_obj_size(obj);
 		entry->value.dsos_obj_value_val = malloc(entry->value.dsos_obj_value_len);
 		memcpy(entry->value.dsos_obj_value_val, obj_data, entry->value.dsos_obj_value_len);
+
+
 		sos_obj_put(obj);
 		count ++;
 		if (count < diter->count)
@@ -1504,7 +1635,7 @@ bool_t iter_begin_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_a
 
 	rc = sos_iter_begin(diter->iter);
 	if (!rc) {
-		rc = __make_obj_array(res, diter);
+		rc = __make_obj_array(client, res, diter);
 	} else {
 		res->error = rc;
 	}
@@ -1538,7 +1669,7 @@ bool_t iter_end_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_arr
 
 	rc = sos_iter_end(diter->iter);
 	if (!rc) {
-		rc = __make_obj_array(res, diter);
+		rc = __make_obj_array(client, res, diter);
 	} else {
 		res->error = rc;
 	}
@@ -1572,7 +1703,7 @@ bool_t iter_next_1_svc(dsos_container_id cont, dsos_iter_id iter_id, dsos_obj_ar
 
 	rc = sos_iter_next(diter->iter);
 	if (!rc) {
-		rc = __make_obj_array(res, diter);
+		rc = __make_obj_array(client, res, diter);
 	} else {
 		res->error = rc;
 	}
@@ -1624,11 +1755,10 @@ static bool_t __iter_find(dsos_container_id cont, dsos_iter_id iter_id,
 
 	rc = iter_fn(diter->iter, key);
 	if (!rc) {
-		rc = __make_obj_array(res, diter);
-	} else {
-		res->error = rc;
+		rc = __make_obj_array(client, res, diter);
 	}
-out_2:
+	res->error = rc;
+
 	free(key);
 out_1:
 	put_client(client);
