@@ -802,9 +802,21 @@ cdef class DsosIterator:
             return o
         return None
 
-    def find_glb_obj(self, Key key):
+    def find_le_obj(self, Key key):
         cdef sos_obj_t c_obj
-        c_obj = dsos_iter_find_glb(self.c_iter, key.c_key)
+        c_obj = dsos_iter_find_le(self.c_iter, key.c_key)
+        if c_obj != NULL:
+            o = Object()
+            o.assign(c_obj)
+            return o
+        return None
+
+    def find_glb_obj(self, Key key):
+        return self.find_le_obj(key)
+
+    def find_ge_obj(self, Key key):
+        cdef sos_obj_t c_obj
+        c_obj = dsos_iter_find_ge(self.c_iter, key.c_key)
         if c_obj != NULL:
             o = Object()
             o.assign(c_obj)
@@ -812,13 +824,7 @@ cdef class DsosIterator:
         return None
 
     def find_lub_obj(self, Key key):
-        cdef sos_obj_t c_obj
-        c_obj = dsos_iter_find_lub(self.c_iter, key.c_key)
-        if c_obj != NULL:
-            o = Object()
-            o.assign(c_obj)
-            return o
-        return None
+        return self.find_ge_obj(key)
 
 
 cdef class DsosPartState:
@@ -2602,11 +2608,9 @@ cdef class AttrIter(SosObject):
             return True
         return False
 
-    def find_sup(self, Key key):
-        """Find the key in the index greater-or-equal to the input key
-
-        Find the index entry with a key that is greator-or-equal the
-        specified input Key
+    def find_ge(self, Key key):
+        """Move iterator position to the object with the key attribute greater
+        than or equal to the given key
 
         Positional arguments:
         -- The key to search for
@@ -2616,25 +2620,46 @@ cdef class AttrIter(SosObject):
         False   Not found
 
         """
-        cdef int rc = sos_iter_sup(self.c_iter, key.c_key)
+        cdef int rc = sos_iter_find_ge(self.c_iter, key.c_key)
         if rc == 0:
             return True
         return False
 
-    def find_inf(self, Key key):
-        """Find the key in the index less-or-equal to the input key
+    def find_sup(self, Key key):
+        """Same as 'find_ge()'
 
-        Find the index entry with a key that is less-or-equal the
-        specified input Key
+        Positional arguments:
+        -- The key to search for
+
+        Returns:
+        True    Found
+        False   Not found
+
+        """
+        return self.find_ge()
+
+    def find_le(self, Key key):
+        """Move iterator position to the object with the key attribute less than
+        or equal to the given key
 
         Returns:
         True    Found
         False   Not found
         """
-        cdef int rc = sos_iter_inf(self.c_iter, key.c_key)
+        cdef int rc = sos_iter_find_le(self.c_iter, key.c_key)
         if rc == 0:
             return True
         return False
+
+
+    def find_inf(self, Key key):
+        """Same as 'find_le()'
+
+        Returns:
+        True    Found
+        False   Not found
+        """
+        return self.find_le(key)
 
     def release(self):
         """Release resources and references associated with the iterator
@@ -4627,12 +4652,12 @@ cdef class Index(object):
             return o.assign(c_obj)
         return None
 
-    def find_inf(self, Key key):
-        """Positions the index at the infinum of the specified key
+    def find_le(self, Key key):
+        """Find an object with the key index attribute less than or equal to the
+        given key
 
-        Return the object at the key that is the infinum (greatest
-        lower bound) of the specified key. If no match was found, None
-        is returned.
+        Return the object at the key that is less than or equal to the specified
+        key. If no match was found, None is returned.
 
         Positional Arguments:
         -- The Key to match
@@ -4640,29 +4665,50 @@ cdef class Index(object):
         -- The Object at the index position or None if the infinum was not found
 
         """
-        cdef sos_obj_t c_obj = sos_index_find_inf(self.c_index, key.c_key)
+        cdef sos_obj_t c_obj = sos_index_find_le(self.c_index, key.c_key)
         if c_obj != NULL:
             o = Object()
             return o.assign(c_obj)
         return None
 
-    def find_sup(self, Key key):
-        """Positions the index at the supremum of the specified key
+    def find_inf(self, Key key):
+        """Same as 'find_le'
 
-        Return the object at the key that is the supremum (least
-        upper bound) of the specified key. If no match was found, None
-        is returned.
+        Positional Arguments:
+        -- The Key to match
+        Returns:
+        -- The Object at the index position or None if the infinum was not found
+
+        """
+        return self.find_le(key)
+
+    def find_ge(self, Key key):
+        """Find an object with the key index attribute greater than or equal to
+        the given key
+
+        Return the object at the key that is greater than or equal to the
+        specified key. If no match was found, None is returned.
 
         Positional Arguments:
         -- The Key to match
         Returns:
         -- The Object at the index position or None if the supremum was not found
         """
-        cdef sos_obj_t c_obj = sos_index_find_sup(self.c_index, key.c_key)
+        cdef sos_obj_t c_obj = sos_index_find_ge(self.c_index, key.c_key)
         if c_obj != NULL:
             o = Object()
             return o.assign(c_obj)
         return None
+
+    def find_sup(self, Key key):
+        """Same as 'find_ge()'
+
+        Positional Arguments:
+        -- The Key to match
+        Returns:
+        -- The Object at the index position or None if the supremum was not found
+        """
+        return self.find_ge(key)
 
     def name(self):
         """Return the name of the index"""

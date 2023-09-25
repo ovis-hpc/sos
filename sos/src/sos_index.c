@@ -668,14 +668,15 @@ sos_obj_t sos_index_find_max(sos_index_t index, sos_key_t *pkey)
 }
 
 /**
- * \brief Find the supremum (least upper bound) of the specified key
+ * \brief Find the first object that its key attribute is greater than or equal
+ *        to the given key.
  *
  * \param index The index handle
- * \param key The key
- * \retval !NULL The object associated with the key
+ * \param key   The key
+ * \retval obj  The object associated with the key
  * \retval NULL The object was not found
  */
-sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key)
+sos_obj_t sos_index_find_ge(sos_index_t index, sos_key_t key)
 {
 	sos_obj_t obj;
 	sos_key_t min_key = NULL;
@@ -710,14 +711,15 @@ sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key)
 }
 
 /**
- * \brief Find the infinum (greatest lower bound) of the specified key
+ * \brief Find the first object that its key attribute is less than or equal
+ *        to the given key.
  *
  * \param index The index handle
- * \param key The key
- * \retval !NULL The object associated with the key
+ * \param key   The key
+ * \retval obj  The object associated with the key
  * \retval NULL The object was not found
  */
-sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key)
+sos_obj_t sos_index_find_le(sos_index_t index, sos_key_t key)
 {
 	sos_obj_t obj;
 	sos_key_t max_key = NULL;
@@ -749,6 +751,36 @@ sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key)
 	if (!obj)
 		errno = ENOMEM;
 	return obj;
+}
+
+/**
+ * \brief Find the supremum (least upper bound) of the specified key
+ *
+ * \note This is the same as \c sos_index_find_ge().
+ *
+ * \param index The index handle
+ * \param key The key
+ * \retval !NULL The object associated with the key
+ * \retval NULL The object was not found
+ */
+sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key)
+{
+	return sos_index_find_ge(index, key);
+}
+
+/**
+ * \brief Find the infimum (greatest lower bound) of the specified key
+ *
+ * \note This is the same as \c sos_index_find_le().
+ *
+ * \param index The index handle
+ * \param key The key
+ * \retval !NULL The object associated with the key
+ * \retval NULL The object was not found
+ */
+sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key)
+{
+	return sos_index_find_le(index, key);
 }
 
 /**

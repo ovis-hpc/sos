@@ -683,27 +683,28 @@ int sos_iter_end(sos_iter_t i)
 }
 
 /**
- * \brief Position the iterator at the supremum of the specified key
+ * \brief Position the iterator at the object with key attribute greater than or
+ *        equal to the given key.
  *
- * Position the iterator at the object whose key is the least
- * upper bound of the specified key.
+ * Position the iterator at the object whose key is greater than or equal to the
+ * specified key.
  *
- * If the supremum is a duplicate key, the cursor is positioned at
- * the first instance of the key.
+ * In the case of multiple objects having the same key, the cursor is positioned
+ * at the first instance of the key.
  *
  * This behavior can be changed using the sos_iter_flags_set()
  * function to set the SOS_ITER_F_SUP_LAST_DUP option. This will cause
  * this function to place the iterator position at the last
- * duplicate. Note that this _may_ break the axiom that INF(set) <=
- * SUP(set)
+ * duplicate.
  *
  * \param i Pointer to the iterator
  * \param key The key.
  *
- * \retval 0 The iterator is positioned at the supremum
- * \retval ENOENT No supremum exists
+ * \retval 0 The iterator is positioned at the object greater than or equal to
+ *           the given key
+ * \retval ENOENT No such object exists
  */
-int sos_iter_sup(sos_iter_t i, sos_key_t key)
+int sos_iter_find_ge(sos_iter_t i, sos_key_t key)
 {
 	ods_iter_ref_t iter_ref;
 	int rc;
@@ -731,27 +732,43 @@ int sos_iter_sup(sos_iter_t i, sos_key_t key)
 }
 
 /**
- * \brief Position the iterator at the infinum of the specified key.
- *
- * Position the iterator at the object whose key is the greatest
- * lower bound of the specified key.
- *
- * If the infininum is a duplicate key, the cursor is positioned at
- * the first instance of the key.
- *
- * This behavior can be changed using the sos_iter_flags_set()
- * function to set the SOS_ITER_F_INF_LAST_DUP option. This will cause
- * this function to place the iterator position at the last
- * duplicate. Note that this _may_ break the axiom that INF(set) <=
- * SUP(set)
+ * \brief Same as \c sos_iter_find_ge()
  *
  * \param i Pointer to the iterator
  * \param key The key.
  *
- * \retval 0 if the iterator is positioned at the infinum
- * \retval ENOENT if the infinum does not exist
+ * \retval 0 The iterator is positioned at the object greater than or equal to
+ *           the given key
+ * \retval ENOENT No such object exists
  */
-int sos_iter_inf(sos_iter_t i, sos_key_t key)
+int sos_iter_sup(sos_iter_t i, sos_key_t key)
+{
+	return sos_iter_find_ge(i, key);
+}
+
+/**
+ * \brief Position the iterator at the object with key attribute less than or
+ *        equal to the given key.
+ *
+ * Position the iterator at the object whose key is less than or equal to the
+ * specified key.
+ *
+ * In the case of multiple objects having the same key, the cursor is positioned
+ * at the first instance of the key.
+ *
+ * This behavior can be changed using the sos_iter_flags_set()
+ * function to set the SOS_ITER_F_INF_LAST_DUP option. This will cause
+ * this function to place the iterator position at the last
+ * duplicate.
+ *
+ * \param i Pointer to the iterator
+ * \param key The key.
+ *
+ * \retval 0 The iterator is positioned at the object less than or equal to
+ *           the given key
+ * \retval ENOENT No such object exists
+ */
+int sos_iter_find_le(sos_iter_t i, sos_key_t key)
 {
 	ods_iter_ref_t iter_ref;
 	int rc;
@@ -784,6 +801,21 @@ int sos_iter_inf(sos_iter_t i, sos_key_t key)
 
 	/* Return the greatest of the lower bounds */
 	return __sos_iter_pos_max(i);
+}
+
+/**
+ * \brief Same as \c sos_iter_find_le()
+ *
+ * \param i Pointer to the iterator
+ * \param key The key.
+ *
+ * \retval 0 The iterator is positioned at the object less than or equal to
+ *           the given key
+ * \retval ENOENT No such object exists
+ */
+int sos_iter_inf(sos_iter_t i, sos_key_t key)
+{
+	return sos_iter_find_le(i, key);
 }
 
 /**
