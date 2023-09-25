@@ -725,8 +725,13 @@ int sos_index_remove(sos_index_t index, sos_key_t key, sos_obj_t obj);
 int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, void *arg);
 sos_obj_t sos_index_find(sos_index_t index, sos_key_t key);
 int sos_index_find_ref(sos_index_t index, sos_key_t key, sos_obj_ref_t *ref);
+
 sos_obj_t sos_index_find_inf(sos_index_t index, sos_key_t key);
 sos_obj_t sos_index_find_sup(sos_index_t index, sos_key_t key);
+
+sos_obj_t sos_index_find_ge(sos_index_t index, sos_key_t key);
+sos_obj_t sos_index_find_le(sos_index_t index, sos_key_t key);
+
 sos_obj_t sos_index_find_min(sos_index_t index, sos_key_t *pkey);
 sos_obj_t sos_index_find_max(sos_index_t index, sos_key_t *pkey);
 int sos_index_commit(sos_index_t index, sos_commit_t flags);
@@ -857,6 +862,8 @@ int sos_iter_find_first(sos_iter_t iter, sos_key_t key);
 int sos_iter_find_last(sos_iter_t iter, sos_key_t key);
 int sos_iter_inf(sos_iter_t i, sos_key_t key);
 int sos_iter_sup(sos_iter_t i, sos_key_t key);
+int sos_iter_find_le(sos_iter_t i, sos_key_t key);
+int sos_iter_find_ge(sos_iter_t i, sos_key_t key);
 sos_attr_t sos_iter_attr(sos_iter_t i);
 
 int sos_iter_flags_set(sos_iter_t i, sos_iter_flags_t flags);

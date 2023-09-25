@@ -2565,7 +2565,7 @@ sos_obj_t dsos_iter_prev(dsos_iter_t iter)
 	return iter_obj_max(iter);
 }
 
-sos_obj_t dsos_iter_find_glb(dsos_iter_t iter, sos_key_t key)
+sos_obj_t dsos_iter_find_le(dsos_iter_t iter, sos_key_t key)
 {
 	int client_id;
 	reset_iter_obj_tree(iter);
@@ -2577,7 +2577,7 @@ sos_obj_t dsos_iter_find_glb(dsos_iter_t iter, sos_key_t key)
 	return iter_obj_min(iter);
 }
 
-sos_obj_t dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key)
+sos_obj_t dsos_iter_find_ge(dsos_iter_t iter, sos_key_t key)
 {
 	int client_id;
 	reset_iter_obj_tree(iter);
@@ -2587,6 +2587,16 @@ sos_obj_t dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key)
 	}
 	iter->action = DSOS_ITER_NEXT;
 	return iter_obj_min(iter);
+}
+
+sos_obj_t dsos_iter_find_glb(dsos_iter_t iter, sos_key_t key)
+{
+	return dsos_iter_find_le(iter, key);
+}
+
+sos_obj_t dsos_iter_find_lub(dsos_iter_t iter, sos_key_t key)
+{
+	return dsos_iter_find_ge(iter, key);
 }
 
 sos_obj_t dsos_iter_find(dsos_iter_t iter, sos_key_t key)
