@@ -320,6 +320,12 @@ struct dsos_query_s {
 
 };
 
+typedef enum dsos_index_find_action {
+	DSOS_INDEX_FIND = 1,
+	DSOS_INDEX_FIND_LE,
+	DSOS_INDEX_FIND_GE,
+} dsos_index_find_action_t;
+
 struct dsos_session_s g_session;
 static int g_last_err;
 static char g_last_errmsg[1024];
@@ -2334,23 +2340,28 @@ dsos_schema_t dsos_iter_schema(dsos_iter_t iter)
 	return iter->schema;
 }
 
-/*
- * Remove all objects from the iterator's object tree
- */
-static void reset_iter_obj_tree(dsos_iter_t iter)
+static void reset_obj_tree(struct ods_rbt *obj_tree)
 {
 	sos_obj_t obj;
 	dsos_tree_ref_t ref;
 	struct ods_rbn *rbn;
 
-	while (NULL != (rbn = ods_rbt_min(&iter->obj_tree))) {
+	while (NULL != (rbn = ods_rbt_min(obj_tree))) {
 		ref = container_of(rbn, struct dsos_tree_ref_s, rbn);
 		obj = ref->obj;
-		ods_rbt_del(&iter->obj_tree, rbn);
+		ods_rbt_del(obj_tree, rbn);
 		sos_value_put(&ref->key_value);
 		sos_obj_put(obj);
 		free(ref);
 	}
+}
+
+/*
+ * Remove all objects from the iterator's object tree
+ */
+static inline void reset_iter_obj_tree(dsos_iter_t iter)
+{
+	reset_obj_tree(&iter->obj_tree);
 }
 
 static int iter_obj_find(dsos_iter_t iter, int client_id, sos_key_t key)
@@ -2918,4 +2929,129 @@ sos_schema_t dsos_query_schema(dsos_query_t query)
 sos_attr_t dsos_query_index_attr(dsos_query_t query)
 {
 	return query->key_attr;
+}
+
+static sos_obj_t __client_index_find(dsos_index_find_action_t act,
+			dsos_container_t cont, int client_id,
+			dsos_schema_t dschema,
+			sos_attr_t attr, sos_key_t key)
+{
+	if (!sos_attr_is_indexed(attr)) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	dsos_container_id cont_id = cont->handles[client_id];
+	dsos_client_t client = &cont->sess->clients[client_id];
+	int schema_id = dschema->handles[client_id];
+
+	enum clnt_stat rpc_err = 0;
+	dsos_obj_array_res obj_res;
+	dsos_obj_entry *obj_e;
+	sos_obj_t obj;
+	int count = 0;
+	int attr_id;
+	dsos_bytes bytes;
+
+	bytes.dsos_bytes_len = sos_key_len(key);
+	bytes.dsos_bytes_val = malloc(bytes.dsos_bytes_len);
+	if (!bytes.dsos_bytes_val) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	memcpy(bytes.dsos_bytes_val, sos_key_value(key), bytes.dsos_bytes_len);
+	memset(&obj_res, 0, sizeof(obj_res));
+	pthread_mutex_lock(&client->rpc_lock);
+
+	attr_id = sos_attr_id(attr);
+
+	switch (act) {
+	case DSOS_INDEX_FIND:
+		rpc_err = index_find_1(cont_id, schema_id, attr_id, bytes,
+					&obj_res, client->client);
+		break;
+	case DSOS_INDEX_FIND_LE:
+		rpc_err = index_find_le_1(cont_id, schema_id, attr_id, bytes,
+					&obj_res, client->client);
+		break;
+	case DSOS_INDEX_FIND_GE:
+		rpc_err = index_find_ge_1(cont_id, schema_id, attr_id, bytes,
+					&obj_res, client->client);
+		break;
+	default:
+		assert("Invalid INDEX_FIND action");
+		break;
+	}
+
+	pthread_mutex_unlock(&client->rpc_lock);
+	if (rpc_err != RPC_SUCCESS) {
+		errno = RPC_ERROR(rpc_err);
+		return NULL;
+	}
+	if (obj_res.error) {
+		errno = obj_res.error;
+		return NULL;
+	}
+
+	int entry_count = obj_res.dsos_obj_array_res_u.obj_array.obj_array_len;
+	if (!entry_count) {
+		errno = ENOENT;
+		return NULL;
+	}
+
+	obj_e = &obj_res.dsos_obj_array_res_u.obj_array.obj_array_val[count];
+	obj = sos_obj_from_entry(client_id, dschema->schema, obj_e);
+	return obj;
+}
+
+static sos_obj_t __index_find(dsos_index_find_action_t act,
+			      dsos_container_t cont, dsos_schema_t dschema,
+			      sos_attr_t attr, sos_key_t key)
+{
+	int client_id;
+	struct ods_rbt rbt;
+	struct ods_rbn *rbn;
+	sos_obj_t obj;
+	dsos_tree_ref_t tree_ref;
+
+	ods_rbt_init(&rbt, key_comparator, NULL);
+
+	for (client_id = 0; client_id < cont->sess->client_count; client_id++) {
+		obj = __client_index_find(act, cont, client_id, dschema,
+				   attr, key);
+		if (obj)
+			cache_sos_object(&rbt, obj, attr);
+	}
+
+	rbn = ods_rbt_min(&rbt);
+	if (!rbn) {
+		/* errno should've been set from one of the __index_find() call
+		 * above */
+		return NULL;
+	}
+	tree_ref = container_of(rbn, struct dsos_tree_ref_s, rbn);
+	obj = tree_ref->obj;
+	ods_rbt_del(&rbt, rbn);
+	sos_value_put(&tree_ref->key_value);
+	free(tree_ref);
+	reset_obj_tree(&rbt);
+	return obj;
+}
+
+sos_obj_t dsos_index_find(dsos_container_t cont, dsos_schema_t dschema,
+			  sos_attr_t attr, sos_key_t key)
+{
+	return __index_find(DSOS_INDEX_FIND, cont, dschema, attr, key);
+}
+
+sos_obj_t dsos_index_find_le(dsos_container_t cont, dsos_schema_t dschema,
+			  sos_attr_t attr, sos_key_t key)
+{
+	return __index_find(DSOS_INDEX_FIND_LE, cont, dschema, attr, key);
+}
+
+sos_obj_t dsos_index_find_ge(dsos_container_t cont, dsos_schema_t dschema,
+			  sos_attr_t attr, sos_key_t key)
+{
+	return __index_find(DSOS_INDEX_FIND_GE, cont, dschema, attr, key);
 }

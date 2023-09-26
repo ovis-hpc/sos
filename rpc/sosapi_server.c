@@ -2048,3 +2048,131 @@ int sosdb_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
 
 	return 1;
 }
+
+static int __make_obj(struct dsos_session *client, dsos_container_id cont,
+		      struct dsos_schema *dschema, dsos_obj_array_res *res,
+		      sos_obj_t obj)
+{
+	sos_obj_ref_t ref;
+	sos_part_t sos_part;
+	struct dsos_part *dsos_part;
+	struct dsos_obj_entry *entry = NULL;
+	void *mem;
+
+	memset(res, 0, sizeof(*res));
+	res->dsos_obj_array_res_u.obj_array.obj_array_len = 0;
+	mem = calloc(1, sizeof(*entry));
+	if (!mem)
+		return ENOMEM;
+	res->dsos_obj_array_res_u.obj_array.obj_array_val = mem;
+	assert(res->dsos_obj_array_res_u.obj_array.obj_array_val);
+	res->error = 0;
+
+	entry = &res->dsos_obj_array_res_u.obj_array.obj_array_val[0];
+	entry->next = NULL;
+	res->dsos_obj_array_res_u.obj_array.obj_array_len = 1;
+
+	entry->cont_id = cont;
+	entry->schema_id = dschema->handle;
+	ref = sos_obj_ref(obj);
+	sos_part = sos_obj_part(obj);
+	dsos_part = cache_part(client, sos_part);
+	if (!dsos_part)
+		return errno;
+	entry->obj_ref = ref.ref.obj;
+	entry->part_id = dsos_part->handle;
+	void *obj_data = sos_obj_ptr(obj);
+	entry->value.dsos_obj_value_len = sos_obj_size(obj);
+	entry->value.dsos_obj_value_val = malloc(entry->value.dsos_obj_value_len);
+	memcpy(entry->value.dsos_obj_value_val, obj_data, entry->value.dsos_obj_value_len);
+
+	return 0;
+}
+
+bool_t __index_find(sos_obj_t (*find_fn)(sos_index_t, sos_key_t),
+		    dsos_container_id cont, dsos_schema_id schema_id,
+		    dsos_schema_attr attr_id, dsos_bytes bytes,
+		    dsos_obj_array_res *res, struct svc_req *req)
+{
+	if (!authenticate_request(req, __func__))
+		return FALSE;
+	struct dsos_session *client;
+	struct dsos_schema *dschema;
+	sos_attr_t attr;
+	sos_index_t index;
+	sos_obj_t obj;
+
+	sos_key_t key;
+
+	client = get_client(cont);
+	if (!client) {
+		res->error = DSOS_ERR_CLIENT;
+		goto out_0;
+	}
+
+	dschema = get_schema(client, schema_id);
+	if (!dschema) {
+		res->error = DSOS_ERR_SCHEMA;
+		goto out_1;
+	}
+
+	attr = sos_schema_attr_by_id(dschema->schema, attr_id);
+	if (!attr) {
+		res->error = DSOS_ERR_PARAMETER;
+		goto out_1;
+	}
+
+	index = sos_attr_index(attr);
+	if (!index) {
+		res->error = DSOS_ERR_PARAMETER;
+		goto out_1;
+	}
+
+	key = sos_key_new(bytes.dsos_bytes_len);
+	if (!key) {
+		res->error = DSOS_ERR_MEMORY;
+		goto out_1;
+	}
+	sos_key_set(key, bytes.dsos_bytes_val, bytes.dsos_bytes_len);
+
+	obj = find_fn(index, key);
+	if (!obj) {
+		res->error = ENOENT;
+		goto out_2;
+	}
+
+	res->error = __make_obj(client, cont, dschema, res, obj);
+
+	sos_obj_put(obj);
+
+out_2:
+	free(key);
+out_1:
+	put_client(client);
+out_0:
+	return TRUE;
+}
+
+bool_t index_find_1_svc(dsos_container_id cont, dsos_schema_id schema_id,
+		dsos_schema_attr attr_id,
+		dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
+{
+	return __index_find(sos_index_find, cont, schema_id, attr_id, bytes,
+			    res, req);
+}
+
+bool_t index_find_le_1_svc(dsos_container_id cont, dsos_schema_id schema_id,
+		dsos_schema_attr attr_id,
+		dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
+{
+	return __index_find(sos_index_find_le, cont, schema_id, attr_id, bytes,
+			    res, req);
+}
+
+bool_t index_find_ge_1_svc(dsos_container_id cont, dsos_schema_id schema_id,
+		dsos_schema_attr attr_id,
+		dsos_bytes bytes, dsos_obj_array_res *res, struct svc_req *req)
+{
+	return __index_find(sos_index_find_ge, cont, schema_id, attr_id, bytes,
+			    res, req);
+}

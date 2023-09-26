@@ -369,11 +369,23 @@ cdef class Session:
 cdef class DsosSchema(Schema):
     cdef DsosContainer dcont
     cdef dsos_schema_t c_dschema
+
     def __init__(self, cont):
         Schema.__init__(self)
         self.dcont = cont
         self.c_dschema = <dsos_schema_t>NULL
         self.dcont = None
+
+    def attr_iter(self):
+        return iter(self)
+
+    def __iter__(self):
+        cdef int n
+        n = self.attr_count()
+        for i in range(0, n):
+            # HERE
+            dattr = DsosAttr(self, attr_id = i)
+            yield dattr
 
     def obj_create(self, obj_):
         cdef int rc
@@ -383,6 +395,12 @@ cdef class DsosSchema(Schema):
                              <sos_obj_t>obj.c_obj)
         if rc:
             raise ValueError(f"Error {rc} creating object of type {str(self)}")
+
+    def attr_by_name(self, name):
+        return DsosAttr(self, attr_name = name)
+
+    def attr_by_id(self, attr_id):
+        return DsosAttr(self, attr_id = attr_id)
 
 cdef class DsosContainer:
     cdef object session
@@ -2008,9 +2026,9 @@ cdef class Schema(SosObject):
 
     def __getitem__(self, attr_id):
         if type(attr_id) == int:
-            return Attr(self, attr_id=attr_id)
+            return self.attr_by_id(attr_id)
         elif type(attr_id) == str:
-            return Attr(self, attr_name=attr_id)
+            return self.attr_by_name(attr_id)
         raise ValueError("The index must be a string or an integer.")
 
     def index_add(self, attr):
@@ -2955,6 +2973,73 @@ cdef class Attr(SosObject):
             s += ', "indexed" : "true"'
         s += '}'
         return s
+
+cdef class DsosAttr(Attr):
+    cdef DsosSchema dschema
+
+    def __init__(self, DsosSchema dschema, attr_id = None, attr_name = None):
+        cdef sos_schema_t c_schema
+        Attr.__init__(self, dschema, attr_id, attr_name)
+        self.dschema = dschema
+
+    def index(self):
+        raise NotImplementedError(f"'DsosAttr.index()' is not supported")
+
+    def attr_iter(self):
+        cdef dsos_iter_t c_diter
+        dcont = self.dschema.dcont
+        if not dcont:
+            raise ValueError(f"DsosAttr.dschema is not associated with DsosContainer")
+        return dcont.attr_iter(self.dschema, self.name())
+
+    def find(self, Key key):
+        return self.find_obj(key)
+
+    def find_obj(self, Key key):
+        cdef sos_obj_t c_obj
+        dcont = self.dschema.dcont
+        if not dcont:
+            raise ValueError(f"DsosAttr.dschema is not associated with DsosContainer")
+        c_obj = dsos_index_find(dcont.c_cont, self.dschema.c_dschema,
+                                self.c_attr, key.c_key)
+        if c_obj == NULL:
+            return None
+        o = Object()
+        o.assign(c_obj)
+        return o
+
+    def find_le(self, Key key):
+        return self.find_le_obj(key)
+
+    def find_le_obj(self, Key key):
+        cdef sos_obj_t c_obj
+        dcont = self.dschema.dcont
+        if not dcont:
+            raise ValueError(f"DsosAttr.dschema is not associated with DsosContainer")
+        c_obj = dsos_index_find_le(dcont.c_cont, self.dschema.c_dschema,
+                                self.c_attr, key.c_key)
+        if c_obj == NULL:
+            return None
+        o = Object()
+        o.assign(c_obj)
+        return o
+
+    def find_ge(self, Key key):
+        return self.find_ge_obj(key)
+
+    def find_ge_obj(self, Key key):
+        cdef sos_obj_t c_obj
+        dcont = self.dschema.dcont
+        if not dcont:
+            raise ValueError(f"DsosAttr.dschema is not associated with DsosContainer")
+        c_obj = dsos_index_find_ge(dcont.c_cont, self.dschema.c_dschema,
+                                self.c_attr, key.c_key)
+        if c_obj == NULL:
+            return None
+        o = Object()
+        o.assign(c_obj)
+        return o
+
 
 COND_LT = SOS_COND_LT
 COND_LE = SOS_COND_LE
