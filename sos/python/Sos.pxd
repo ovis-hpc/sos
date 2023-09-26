@@ -891,4 +891,10 @@ cdef extern from "dsos.h":
     sos_obj_t dsos_query_next(dsos_query_t query)
     sos_schema_t dsos_query_schema(dsos_query_t query)
     void dsos_name_array_free(dsos_name_array_t name)
+    sos_obj_t dsos_index_find(dsos_container_t cont, dsos_schema_t dschema,
+                              sos_attr_t attr, sos_key_t key)
+    sos_obj_t dsos_index_find_le(dsos_container_t cont, dsos_schema_t dschema,
+                                 sos_attr_t attr, sos_key_t key)
+    sos_obj_t dsos_index_find_ge(dsos_container_t cont, dsos_schema_t dschema,
+                                 sos_attr_t attr, sos_key_t key)
 

@@ -216,6 +216,7 @@ const PARTITION_OPS     = 300;
 const ITERATOR_OPS      = 400;
 const OBJECT_OPS        = 500;
 const QUERY_OPS         = 600;
+const INDEX_OPS         = 700;
 
 program SOSDB {
     version SOSVERS {
@@ -266,5 +267,10 @@ program SOSDB {
 	dsos_query_select_res QUERY_SELECT(dsos_container_id, dsos_query_id, dsos_query) = 601;
 	dsos_query_next_res QUERY_NEXT(dsos_container_id, dsos_query_id) = 602;
 	dsos_query_destroy_res QUERY_DESTROY(dsos_container_id, dsos_query_id) = 603;
+
+	/* Index operations */
+	dsos_obj_array_res INDEX_FIND(dsos_container_id, dsos_schema_id, dsos_schema_attr, dsos_bytes) = INDEX_OPS;
+	dsos_obj_array_res INDEX_FIND_LE(dsos_container_id, dsos_schema_id, dsos_schema_attr, dsos_bytes) = 701;
+	dsos_obj_array_res INDEX_FIND_GE(dsos_container_id, dsos_schema_id, dsos_schema_attr, dsos_bytes) = 702;
     } = 1;
 } = 40009862;
