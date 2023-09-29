@@ -735,6 +735,12 @@ cdef class DsosContainer:
         if rc:
             raise RuntimeError(f"dsos_obj_update() error: {rc}")
 
+    def obj_delete(self, Object obj):
+        cdef int rc
+        rc = dsos_obj_delete(self.c_cont, obj.c_obj)
+        if rc:
+            raise RuntimeError(f"dsos_obj_delete() error: {rc}")
+
 
 cdef class DsosIterator:
     cdef dsos_iter_t c_iter
