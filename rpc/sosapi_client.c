@@ -185,6 +185,11 @@ typedef struct dsos_client_request_s {
 			int res;
 		} obj_update;
 
+		struct obj_delete_rqst_s {
+			dsos_obj_entry *obj_entry;
+			int res;
+		} obj_delete;
+
 		struct query_create_rqst_s {
 			dsos_query_t query;
 			dsos_query_options opts;
@@ -987,6 +992,24 @@ static int send_request(dsos_client_t client, dsos_client_request_t rqst)
 			err_msg = "obj_update_1() error";
 			/* TODO? Change obj_update to contain proper
 			 *       error message? */
+			goto op_err;
+		}
+		break;
+	case REQ_OBJ_DELETE:
+		memset(&rqst->obj_delete.res, 0, sizeof(rqst->obj_delete.res));
+		pthread_mutex_lock(&client->rpc_lock);
+		rqst->rpc_err =
+			obj_delete_1(
+				rqst->obj_delete.obj_entry,
+				&rqst->obj_delete.res,
+				client->client);
+		pthread_mutex_unlock(&client->rpc_lock);
+		op_name = "obj_delete_1";
+		if (rqst->rpc_err != RPC_SUCCESS)
+			goto rpc_err;
+		if (rqst->obj_delete.res) {
+			g_last_err = rqst->obj_delete.res;
+			err_msg = "obj_delete_1() error";
 			goto op_err;
 		}
 		break;
@@ -2223,6 +2246,90 @@ int dsos_obj_update(dsos_container_t cont, sos_obj_t obj)
 	rqst->completion = completion;
 	rqst->kind = REQ_OBJ_UPDATE;
 	rqst->obj_update.obj_entry = obj_e;
+	TAILQ_INSERT_TAIL(&client->x_queue, rqst, x_link);
+	client->request_count += 1.0;
+	pthread_mutex_unlock(&client->x_queue_lock);
+enomem:
+	return rc;
+}
+
+/**
+ * @brief Delete a DSOS object
+ *
+ * The caller must have previously started a
+ * transaction to call this function.
+ *
+ * When the caller calls dsos_transaction_end() all outstanding
+ * object deletes will be flushed to the storage servers.
+ *
+ * @param cont	  The container handle
+ * @param obj	  The local SOS object
+ * @return ENOMEM	There was insufficent local memory to create the object
+ * @return 0		The object is queued for creation
+ */
+int dsos_obj_delete(dsos_container_t cont, sos_obj_t obj)
+{
+	dsos_obj_entry *obj_e;
+	dsos_client_t client;
+	int client_id;
+	int rc = 0;
+	sos_obj_ref_t ref;
+	dsos_client_request_t rqst;
+	/*
+	 * sos_obj_t from a DSOS server is a memory based object that
+	 * uses the sos_obj_ref_t structure and ods_obj_ref_t to keep
+	 * information about the origin of the remote object so that
+	 * this information can be mirrored back to the server so that
+	 * the server can delete it.
+	 *
+	 * The information in particular is the following:
+	 * - client_id : The client handle for the remote container. This
+	 *               identifies which dsosd server provided the object.
+	 * - cont_id   : The remote container's container handle
+	 * - schema_id : The remote container schema_id for this object
+	 * - part_id   : Identifies the partition in the remote container
+	 * - obj_ref   : The ODS object reference in the remote partition
+	 */
+	ref = sos_obj_ref(obj);
+	client_id = ref.dsos_ref.client_id;
+	client = &cont->sess->clients[client_id];
+	obj_e = malloc(sizeof *obj_e);
+	if (!obj_e)
+		goto enomem;
+
+	obj_e->cont_id = ref.dsos_ref.cont_id;
+	obj_e->part_id = ref.dsos_ref.part_id;
+	obj_e->schema_id = ref.dsos_ref.schema_id;
+	obj_e->obj_ref = ref.dsos_ref.obj_ref;
+
+	/*
+	 * No need to actually copy the values but it could be informative
+	 * for debugging.
+	 */
+
+	size_t obj_sz = sos_obj_size(obj);
+	obj_e->value.dsos_obj_value_len = obj_sz;
+	obj_e->value.dsos_obj_value_val = malloc(obj_sz);
+	memcpy(obj_e->value.dsos_obj_value_val, sos_obj_ptr(obj), obj_sz);
+	obj_e->next = NULL;
+
+	pthread_mutex_lock(&client->x_queue_lock);
+
+	dsos_completion_t completion = malloc(sizeof *completion);
+	if (!completion)
+		goto enomem;
+	completion->count = 0;
+	pthread_mutex_init(&completion->lock, NULL);
+	pthread_cond_init(&completion->cond, NULL);
+
+	rqst = malloc(sizeof *rqst);
+	if (!rqst) {
+		free(completion);
+		goto enomem;
+	}
+	rqst->completion = completion;
+	rqst->kind = REQ_OBJ_DELETE;
+	rqst->obj_delete.obj_entry = obj_e;
 	TAILQ_INSERT_TAIL(&client->x_queue, rqst, x_link);
 	client->request_count += 1.0;
 	pthread_mutex_unlock(&client->x_queue_lock);

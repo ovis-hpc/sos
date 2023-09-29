@@ -872,6 +872,7 @@ cdef extern from "dsos.h":
     int dsos_transaction_end(dsos_container_t cont)
     int dsos_obj_create(dsos_container_t cont, dsos_part_t part, dsos_schema_t schema, sos_obj_t obj)
     int dsos_obj_update(dsos_container_t cont, sos_obj_t obj)
+    int dsos_obj_delete(dsos_container_t cont, sos_obj_t obj)
     dsos_iter_t dsos_iter_create(dsos_container_t cont, dsos_schema_t schema, const char *attr_name)
     sos_obj_t dsos_iter_begin(dsos_iter_t iter)
     sos_obj_t dsos_iter_end(dsos_iter_t iter)

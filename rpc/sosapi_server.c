@@ -1335,7 +1335,67 @@ bool_t obj_delete_1_svc(dsos_obj_array obj_array, int *res, struct svc_req *req)
 {
 	if (!authenticate_request(req, __func__))
 		return FALSE;
-	*res = ENOTSUP;
+	struct dsos_session *client;
+	struct dsos_schema *schema;
+	dsos_obj_entry *obj_e;
+	union sos_obj_ref_s ref;
+	struct dsos_part * part;
+	sos_obj_t obj;
+
+
+	obj_e = obj_array;
+	while (obj_e) {
+		client = get_client(obj_e->cont_id);
+		if (!client) {
+			*res = DSOS_ERR_CLIENT;
+			goto out_0;
+		}
+		if (!client->sos) {
+			*res = DSOS_ERR_CLIENT;
+			goto out_1;
+		}
+		schema = get_schema(client, obj_e->schema_id);
+		if (!schema) {
+			*res = DSOS_ERR_SCHEMA;
+			goto out_1;
+		}
+
+		if (!obj_e->part_id) {
+			*res = DSOS_ERR_PARAMETER;
+			goto out_2;
+		}
+		part = get_part(client, obj_e->part_id);
+		if (!part) {
+			*res = DSOS_ERR_PARAMETER;
+			goto out_2;
+		}
+		clock_gettime(CLOCK_REALTIME, &client->acc_time);
+
+		/* obj from obj_ref */
+		ref.ref.obj = obj_e->obj_ref;
+		sos_part_uuid(part->part, ref.ref.part_uuid);
+		obj = sos_ref_as_obj(client->sos, ref);
+		if (!obj) {
+			*res = ENOENT;
+			goto out_2;
+		}
+
+		sos_obj_remove(obj);
+		sos_obj_delete(obj);
+
+		sos_obj_put(obj);
+		put_part(part);
+
+		/* next object */
+		obj_e = obj_e->next;
+		*res = 0;
+	}
+out_2:
+	put_schema(schema);
+out_1:
+	put_client(client);
+out_0:
+	pthread_mutex_unlock(&client_tree_lock);
 	return TRUE;
 }
 
