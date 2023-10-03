@@ -249,6 +249,7 @@ struct dsos_session_s {
 		ERROR
 	} state;
 	pthread_mutex_t lock;	/* Mutex across entire session */
+	pthread_cond_t  cond;	/* For busy/idle condition */
 };
 
 struct dsos_container_s {
@@ -1225,6 +1226,7 @@ dsos_container_open(
 	if (!cont)
 		return NULL;
 	pthread_mutex_init(&sess->lock, NULL);
+	pthread_cond_init(&sess->cond, NULL);
 	cont->sess = sess;
 	cont->handle_count = sess->client_count;
 	cont->path = strdup(path);
@@ -1971,13 +1973,30 @@ int dsos_transaction_begin(dsos_container_t cont, struct timespec *timeout)
 	int rc = 0;
 	dsos_session_t sess = cont->sess;
 	struct timespec now;
+	struct timespec until;
+
 	(void)clock_gettime(CLOCK_REALTIME, &now);
+	if (timeout) {
+		until.tv_nsec = now.tv_nsec + timeout->tv_nsec;
+		until.tv_sec = now.tv_sec + timeout->tv_sec + until.tv_nsec/1000000000;
+		until.tv_nsec %= 1000000000;
+	}
 
 	pthread_mutex_lock(&sess->lock);
-	/* Check if any client is in a transaction and error if so */
+again:
+	/* Check if any client is in a transaction */
 	for (client_id = 0; client_id < sess->client_count; client_id++) {
 		if (x_active(&sess->clients[client_id].x_start)) {
-			rc = EBUSY;
+			if (!timeout) {
+				/* block & wait */
+				pthread_cond_wait(&sess->cond, &sess->lock);
+				goto again;
+			}
+			/* block & wait with a timeout */
+			rc = pthread_cond_timedwait(&sess->cond, &sess->lock,
+						    &until);
+			if (0 == rc)
+				goto again;
 			goto out;
 		}
 	}
@@ -2079,6 +2098,7 @@ int dsos_transaction_end(dsos_container_t cont)
 		client->x_end = x_end;
 		x_clear(&client->x_start);
 	}
+	pthread_cond_signal(&sess->cond);
 out:
 	pthread_mutex_unlock(&sess->lock);
 	return rc;
