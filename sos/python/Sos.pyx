@@ -280,6 +280,7 @@ cdef class Session:
 
     """
     cdef dsos_session_t c_session
+    cdef object path_
     def __init__(self, config_file):
         """Create a D/SOS session with a cluster
 
@@ -360,11 +361,14 @@ cdef class Session:
                                      <sos_perm_t>o_perm, o_mode)
         if c_cont == NULL:
             raise ValueError(f"The container {path} could not be opened")
-
+        self.path_ = path
         cont = DsosContainer(self)
         cont.assign(c_cont)
         cont.assign_session(self.c_session)
         return cont
+
+    def path(self):
+        return self.path_
 
 cdef class DsosSchema(Schema):
     cdef DsosContainer dcont
@@ -420,6 +424,7 @@ cdef class DsosContainer:
 
     def __init__(self, session):
         self.session = <Session>session
+        self.path_ = self.session.path()
 
     def error(self):
         """Return a tuple of server error data
