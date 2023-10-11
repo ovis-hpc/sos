@@ -838,6 +838,7 @@ cdef extern from "dsos.h":
     void dsos_container_close(dsos_container_t cont)
     void dsos_container_commit(dsos_container_t cont)
     dsos_container_t dsos_container_open(dsos_session_t sess, const char *path, sos_perm_t perm, int mode)
+    const char *dsos_container_path(dsos_container_t cont)
     int dsos_container_error(dsos_container_t cont, const char **err_msg)
     dsos_schema_t dsos_schema_create(dsos_container_t cont, sos_schema_t schema, dsos_res_t *res)
     dsos_name_array_t dsos_schema_query(dsos_container_t cont)

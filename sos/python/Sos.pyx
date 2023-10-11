@@ -406,7 +406,6 @@ cdef class DsosContainer:
     cdef object session
     cdef dsos_container_t c_cont
     cdef dsos_session_t c_sess
-    cdef object path_
     cdef sos_perm_t o_perm
     cdef int o_mode
 
@@ -435,7 +434,7 @@ cdef class DsosContainer:
 
     def path(self):
         """Return the container path/name"""
-        return self.path_
+        return dsos_container_path(self.c_cont)
 
     def close(self):
         """Close a container

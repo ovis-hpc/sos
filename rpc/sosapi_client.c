@@ -1220,6 +1220,11 @@ dsos_container_open(
 	return NULL;
 }
 
+const char *dsos_container_path(dsos_container_t cont)
+{
+	return cont->path;
+}
+
 static inline dsos_schema_t dsos_schema_alloc(dsos_container_t cont)
 {
 	dsos_schema_t s;
