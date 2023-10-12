@@ -374,7 +374,6 @@ cdef class DsosSchema(Schema):
         Schema.__init__(self)
         self.dcont = cont
         self.c_dschema = <dsos_schema_t>NULL
-        self.dcont = None
 
     def attr_iter(self):
         return iter(self)
