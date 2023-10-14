@@ -2655,7 +2655,8 @@ cdef class AttrIter(SosObject):
         return False
 
     def find_sup(self, Key key):
-        """Same as 'find_ge()'
+        """Move iterator position to the object with the key attribute greater
+        than or equal to the given key
 
         Positional arguments:
         -- The key to search for
@@ -2665,7 +2666,7 @@ cdef class AttrIter(SosObject):
         False   Not found
 
         """
-        return self.find_ge()
+        return self.find_ge(key)
 
     def find_le(self, Key key):
         """Move iterator position to the object with the key attribute less than
@@ -2682,7 +2683,8 @@ cdef class AttrIter(SosObject):
 
 
     def find_inf(self, Key key):
-        """Same as 'find_le()'
+        """Move iterator position to the object with the key attribute less than
+        or equal to the given key
 
         Returns:
         True    Found
