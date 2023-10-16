@@ -2942,8 +2942,13 @@ cdef class Attr(SosObject):
         return key
 
     def find(self, Key key):
-        cdef sos_index_t c_index = sos_attr_index(self.c_attr)
-        cdef sos_obj_t c_obj = sos_index_find(c_index, key.c_key)
+        cdef sos_index_t c_index
+        cdef sos_obj_t c_obj
+        c_index = sos_attr_index(self.c_attr)
+        if not c_index:
+            raise RuntimeError(f"Cannot get index from attribute " \
+                               f"{self.name()}, errno: {errno}")
+        c_obj = sos_index_find(c_index, key.c_key)
         if c_obj == NULL:
             return None
         o = Object()
