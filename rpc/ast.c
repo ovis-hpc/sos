@@ -1857,7 +1857,7 @@ static int __resolve_sos_entities(struct ast *ast)
 		/* Pick the 1st indexed attribute in the schema */
 		for (a = sos_schema_attr_first(schema_e->schema); a;
 		     a = sos_schema_attr_next(a)) {
-			if (sos_attr_is_indexed(a))
+			if (!sos_attr_is_indexed(a))
 				continue;
 			best_attr_e = attr_alloc(a, schema_e);
 			goto create_iterator;
@@ -1952,6 +1952,16 @@ static int __resolve_sos_entities(struct ast *ast)
 		ast->key_count = 1;
 		ast->succ_key[0] = AST_KEY_MORE;
 		ast->key_limits[0] = NULL;
+		TAILQ_FOREACH(attr_e, &ast->where_list, link) {
+			if (0 == strcmp(attr_e->name,best_attr_e->name)) {
+				/* Update the attribute limits */
+				struct ast_attr_limits *limits;
+				struct ods_rbn *rbn = ods_rbt_find(&ast->attr_tree, attr_e->name);
+				assert(rbn);
+				limits = container_of(rbn, struct ast_attr_limits, rbn);
+				ast->key_limits[0] = limits;
+			}
+		}
 		/* Ensure that best_attr is in the result schema */
 		sos_attr_t res_a = sos_schema_attr_by_name(res_schema, best_attr_e->name);
 		if (!res_a) {
@@ -2164,7 +2174,6 @@ static int limit_check(struct ast *ast, sos_obj_t obj)
 		limits = ast->key_limits[idx];
 		if (!limits)
 			continue;
-		assert(limits->join_idx == idx);
 		if (limits->max_v) {
 			v = sos_value_init(&v_, obj, limits->attr);
 			assert(v);

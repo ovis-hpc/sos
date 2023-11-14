@@ -427,7 +427,7 @@ int dsosql_create_schema(dsos_container_t cont, char *schema_name, char *templat
 	/* Each item is a dictionary of 'name', 'type', + optional 'size' and 'join_list' */
 	if (!json_is_object(t)) {
 		rc = EINVAL;
-		printf("Thhe schema template must be a dictionary.\n");
+		printf("The schema template must be a dictionary.\n");
 		goto err;
 	}
 	json_t *uuid = json_object_get(t, "uuid");
