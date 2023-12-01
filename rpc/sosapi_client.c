@@ -2915,7 +2915,10 @@ query_select_complete_fn(dsos_client_t client,
 		derr = RPC_ERROR(request->rpc_err);
 	} else {
 		derr = sres->error;
-		if (derr == 0 && request->query_select.query->schema == NULL) {
+		if (derr == 0) {
+			reset_query_obj_tree(request->query_select.query);
+			if (request->query_select.query->schema != NULL)
+				sos_schema_free(request->query_select.query->schema);
 			request->query_select.query->schema =
 				dsos_schema_from_spec(sres->dsos_query_select_res_u.select.spec);
 			if (!request->query_select.query->schema)

@@ -407,6 +407,7 @@ cdef class DsosContainer:
     cdef dsos_session_t c_sess
     cdef sos_perm_t o_perm
     cdef int o_mode
+    cdef int error
 
     cdef assign(self, dsos_container_t c_cont):
         self.c_cont = c_cont
@@ -434,6 +435,16 @@ cdef class DsosContainer:
     def path(self):
         """Return the container path/name"""
         return dsos_container_path(self.c_cont)
+
+    def abort(self, error=None):
+        if error:
+            self.error = error
+        else:
+            self.error = errno
+        if self.error in libc_errno_str:
+            raise Exception(libc_errno_str[self.error])
+        else:
+            raise Exception("Error {0}".format[self.error])
 
     def close(self):
         """Close a container
