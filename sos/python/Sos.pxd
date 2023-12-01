@@ -783,7 +783,7 @@ cdef extern from "sos/sos.h":
     int sos_filter_flags_set(sos_filter_t filt, sos_iter_flags_t flags)
     sos_iter_flags_t sos_filter_flags_get(sos_filter_t filt)
 
-cdef extern from "dsos.h":
+cdef extern from "dsos.h" nogil:
 
     cdef enum dsos_error:
         DSOS_ERR_OK,

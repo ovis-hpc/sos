@@ -699,15 +699,18 @@ cdef class DsosContainer:
         if wait_secs:
             tv.tv_secs = int(wait_secs)
             tv.tv_nsecs = 0
-            rc = dsos_transaction_begin(self.c_cont, &tv)
+            with nogil:
+                rc = dsos_transaction_begin(self.c_cont, &tv)
         else:
-            rc = dsos_transaction_begin(self.c_cont, NULL)
+            with nogil:
+                rc = dsos_transaction_begin(self.c_cont, NULL)
         if rc != 0:
             raise ValueError(f"Error {rc} attempting to start a transaction")
 
     def transaction_end(self):
         cdef int rc
-        rc = dsos_transaction_end(self.c_cont)
+        with nogil:
+            rc = dsos_transaction_end(self.c_cont)
         if rc != 0:
             raise ValueError(f"Error {rc} attempting to start a transaction")
 
