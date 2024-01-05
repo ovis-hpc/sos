@@ -52,7 +52,7 @@ static struct ods_rbt dylib_tree = { 0, dylib_comparator };
 void *load_library(const char *library, const char *pfx, const char *sym)
 {
 	char *errstr;
-	static char libpath[PATH_MAX];
+	char libpath[PATH_MAX];
 	void *p = NULL;
 
 	sprintf(libpath, "lib%s_%s.so", pfx, library);

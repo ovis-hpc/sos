@@ -166,7 +166,7 @@ sos_key_t __sos_key_maybe_new(sos_key_t key, int required_size)
  *      int count = (sos_attr_is_array(attr) ? array_elements(data) : 0);
  *      sos_key_t = sos_key_for_attr(NULL, attr, data, count)
  * '''
- * If the attr is not ann array, then count is simply ignored.
+ * If the attr is not an array, then count is simply ignored.
  *
  * \param key A key to use or NULL if one is to be allocated.
  * \param attr The schema attribute describing the value of the key

@@ -186,7 +186,7 @@ if __name__ == "__main__":
                          help="Create a new partition. ")
     actions.add_argument("--set", action="store_true",
                          help="Set user-id, group-id, and permission bits"
-                            "for accessing a partition's contents")
+                            "for accessing a partition's contents.")
     actions.add_argument("--attach", action="store_true",
                          help="Attach a partition to a container.")
     actions.add_argument("--state", metavar="STATE-NAME",
@@ -207,15 +207,16 @@ if __name__ == "__main__":
     actions.add_argument("--verify", action="store_true",
                          help="Verify the signature in all ODS in the partition")
 
-    parser.add_argument("--path", metavar="DB-PATH", required=False,
+    parser.add_argument("--path", metavar="PART-PATH", required=False,
                         help="Specifies the path to the partition.")
-    parser.add_argument("--cont", default=None, metavar="PATH",
+    parser.add_argument("--cont", default=None, metavar="CONT-PATH",
                         help="The path to the container used with the "
                         "--attach, --detach, and --query actions.")
     parser.add_argument("--name", metavar="PART-NAME", default=None,
-                        help="Specifies the parition name.")
+                        help="Specifies the parition name in the container")
     parser.add_argument("--mode", metavar="MODE", default=None,
-                        help="The file access mode if creating a partition")
+                        help="The file access mode if creating a partition. "
+                        "Use the Python octal syntax, i.e. 0oXXX")
     parser.add_argument("--user", metavar="USER", default=None,
                         help="The user name or user-id that owns the container")
     parser.add_argument("--group", metavar="GROUP", default=None,
@@ -354,10 +355,13 @@ if __name__ == "__main__":
         sys.exit(0)
 
     #
-    # Change a partition's ownership and access rights
+    # Change a partition's ownership, access rights and description
     #
     if args.set:
         part = Sos.Partition()
+        if not args.path:
+            print("The --part argument is required with the --set request")
+            sys.exit(1)
         try:
             part.open(args.path)
         except Exception as e:
@@ -466,7 +470,7 @@ if __name__ == "__main__":
     #
     if args.show_schema:
         if args.path is None:
-            print("The --path PATH argument is required for --show-schma")
+            print("The --path argument is required with the --show-schema request")
             sys.exit(1)
         part = Sos.Partition()
         try:

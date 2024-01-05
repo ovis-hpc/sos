@@ -23,7 +23,8 @@ AM_CFLAGS = -Wno-unused-variable \
 	-I$(srcdir)/../include \
 	-I$(top_srcdir)/ods/include \
 	-I$(top_srcdir)/sos/include \
-	-I$(top_srcdir)/sos/src
+	-I$(top_srcdir)/sos/src \
+	-I$(top_srcdir)/ods/src
 
 libdsos_la_SOURCES = sosapi_client.c sosapi_server.c sosapi_common.c \
 	../ods/src/ods_rbt.c sosapi_svc.c sosapi_xdr.c sosapi_clnt.c \

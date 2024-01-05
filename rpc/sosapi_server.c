@@ -2044,7 +2044,7 @@ err_0:
 }
 
 static int __make_query_obj_bins(struct dsos_session *client, struct ast *ast,
-				  dsos_query_next_res *result)
+				 dsos_query_next_res *result)
 {
 	enum ast_eval_e eval;
 	sos_iter_t iter = ast->sos_iter;
@@ -2059,7 +2059,7 @@ static int __make_query_obj_bins(struct dsos_session *client, struct ast *ast,
 	result->dsos_query_next_res_u.result.obj_array.obj_array_val =
 		calloc(count, sizeof(dsos_obj_entry));
 
-	while (!rc && count) {
+	while (!rc && count > ast->bin_tree.card) {
 		obj = sos_iter_obj(iter);
 		if (!obj) {
 			result->error = errno;
@@ -2080,12 +2080,77 @@ static int __make_query_obj_bins(struct dsos_session *client, struct ast *ast,
 		rc = ast_resample_obj_add(ast, obj);
 		if (!rc)
 			rc = sos_iter_next(iter);
-		count--;
 	}
 out:
 	obj_id = 0;
 	result->error = 0;
 	while (NULL != (obj = ast_resample_obj_next(ast))) {
+		sos_obj_ref_t ref;
+		void *obj_data;
+		entry = &result->dsos_query_next_res_u.result.obj_array.obj_array_val[obj_id++];
+		result->dsos_query_next_res_u.result.obj_array.obj_array_len += 1;
+		result->dsos_query_next_res_u.result.format = 0;
+		entry->next = NULL;
+		entry->cont_id = client->handle;
+		entry->part_id = 0;
+		entry->schema_id = 0;
+		ref = sos_obj_ref(obj);
+		entry->obj_ref = ref.ref.obj;
+		obj_data = sos_obj_ptr(obj);
+		entry->value.dsos_obj_value_len = sos_obj_size(obj);
+		entry->value.dsos_obj_value_val =
+			malloc(entry->value.dsos_obj_value_len);
+		memcpy(entry->value.dsos_obj_value_val, obj_data,
+		       entry->value.dsos_obj_value_len);
+		sos_obj_put(obj);
+	}
+	return result->error;
+err_0:
+	return -1;
+}
+
+static int __make_query_obj_group(struct dsos_session *client, struct ast *ast,
+				  dsos_query_next_res *result)
+{
+	enum ast_eval_e eval;
+	sos_iter_t iter = ast->sos_iter;
+	int count = QUERY_OBJECT_COUNT;
+	sos_obj_t obj;
+	struct dsos_obj_entry *entry = NULL;
+	int obj_id, rc = 0;
+	ast_attr_entry_t attr_e;
+
+	memset(result, 0, sizeof(*result));
+	result->error = DSOS_ERR_QUERY_EMPTY;
+	result->dsos_query_next_res_u.result.obj_array.obj_array_val =
+		calloc(count, sizeof(dsos_obj_entry));
+
+	while (!rc && count > ast->group_tree.card) {
+		obj = sos_iter_obj(iter);
+		if (!obj) {
+			result->error = errno;
+			goto err_0;
+		}
+		eval = ast_eval(ast, obj);
+		switch (eval) {
+		case AST_EVAL_NOMATCH:
+			sos_obj_put(obj);
+			rc = sos_iter_next(iter);
+			continue;
+		case AST_EVAL_EMPTY:
+			sos_obj_put(obj);
+			goto out;
+		case AST_EVAL_MATCH:
+			break;
+		}
+		rc = ast_group_obj_add(ast, obj);
+		if (!rc)
+			rc = sos_iter_next(iter);
+	}
+out:
+	obj_id = 0;
+	result->error = 0;
+	while (NULL != (obj = ast_group_obj_next(ast))) {
 		sos_obj_ref_t ref;
 		void *obj_data;
 		entry = &result->dsos_query_next_res_u.result.obj_array.obj_array_val[obj_id++];
@@ -2160,6 +2225,8 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 			goto empty;
 		if (query->ast->bin_width)
 			rc = __make_query_obj_bins(client, query->ast, res);
+		else if (!TAILQ_EMPTY(&query->ast->group_list))
+			rc = __make_query_obj_group(client, query->ast, res);
 		else
 			rc = __make_query_obj_array(client, query->ast, res);
 		if (!rc)
@@ -2176,6 +2243,8 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 			goto empty;
 		if (query->ast->bin_width)
 			rc = __make_query_obj_bins(client, query->ast, res);
+		else if (!TAILQ_EMPTY(&query->ast->group_list))
+			rc = __make_query_obj_group(client, query->ast, res);
 		else
 			rc = __make_query_obj_array(client, query->ast, res);
 		if (rc)

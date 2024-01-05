@@ -33,6 +33,7 @@ enum ast_token_e {
 	ASTT_WHERE,         /* 'where' */
 	ASTT_LIMIT,	    /* 'limit' */
 	ASTT_RESAMPLE,	    /* 'resample' */
+	ASTT_GROUP_BY,	    /* 'group_by' */
 	ASTT_NAME,          /* An alphanumeric name that doesn't match
 			     * any of the above */
 };
@@ -79,6 +80,13 @@ struct ast_term_binop {
 };
 
 struct ast;
+
+struct ast_operator_s {
+	const char *key;
+	void (*op)(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
+		   sos_obj_t res_obj, sos_obj_t src_obj);
+};
+
 typedef struct ast_schema_entry_s *ast_schema_entry_t;
 struct ast_attr_entry_s {
 	const char *name;
@@ -88,8 +96,7 @@ struct ast_attr_entry_s {
 	int  join_attr_idx;	/* Position the attribute appears in the join */
 	unsigned min_join_idx;
 	int  rank;
-	void (*op)(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
-		   sos_obj_t res_obj, sos_obj_t src_obj);
+	struct ast_operator_s *op;
 	struct ast_term *binop;	/* The expression that this attr appears in */
 	ast_schema_entry_t schema;
 	struct ast_term_attr *value_attr;
@@ -140,6 +147,7 @@ struct ast {
 	int result_limit;	/* Maximum objects returned */
 	double bin_width;	/* Resample bin width */
 	struct ods_rbt bin_tree;/* Tree of bin objects */
+	struct ods_rbt group_tree;/* Tree of group objects */
 	ods_idx_t bin_cmp_arg;
 
 	/* Key used to position iterator */
@@ -152,7 +160,7 @@ struct ast {
 	struct ast_attr_limits *key_limits[AST_MAX_JOIN_KEYS];
 
 	/* !0 if there may be successor matching recods in the
-            index. Indexed by the key order */
+	 * index. Indexed by the key order */
 	enum ast_succ_e succ_key[AST_MAX_JOIN_KEYS];
 
 	uint64_t query_id;
@@ -162,6 +170,9 @@ struct ast {
 	TAILQ_HEAD(select_attr_list, ast_attr_entry_s) select_list;
 	TAILQ_HEAD(where_attr_list, ast_attr_entry_s) where_list;
 	TAILQ_HEAD(index_attr_list, ast_attr_entry_s) index_list;
+	TAILQ_HEAD(group_by_list, ast_attr_entry_s) group_list;
+	sos_comp_key_spec_t group_comp_key_spec;
+	struct ods_idx_comparator *group_cmp;
 	LIST_HEAD(binop_list, ast_term_binop) binop_list;
 
 	struct ods_rbt attr_tree;
@@ -191,4 +202,6 @@ extern struct ast_term *ast_find_term(struct ast_term *term, const char *name);
 extern int ast_start_key(struct ast *ast, sos_key_t start_key);
 extern int ast_resample_obj_add(struct ast *ast, sos_obj_t obj);
 extern sos_obj_t ast_resample_obj_next(struct ast *ast);
+extern int ast_group_obj_add(struct ast *ast, sos_obj_t obj);
+sos_obj_t ast_group_obj_next(struct ast *ast);
 #endif

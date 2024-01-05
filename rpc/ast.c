@@ -8,12 +8,51 @@
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
+#include <dlfcn.h>
 #include <sos/sos.h>
+#include <linux/limits.h>
 #include "sos_priv.h"
+#include "ods_idx_priv.h"
 #include "ast.h"
+
+static void *load_library(const char *library, const char *pfx, const char *sym)
+{
+	char *errstr;
+	char libpath[PATH_MAX];
+	void *p = NULL;
+
+	sprintf(libpath, "lib%s_%s.so", pfx, library);
+	void *d = dlopen(libpath, RTLD_LAZY | RTLD_DEEPBIND);
+	if (!d) {
+		/* The library doesn't exist */
+		printf("dlopen: %s\n", dlerror());
+		goto err;
+	}
+	dlerror();
+	void *(*get)() = dlsym(d, sym);
+	errstr = dlerror();
+	if (errstr || !get) {
+		printf("dlsym: %s\n", errstr);
+		goto err;
+	}
+	p = get();
+ err:
+	return p;
+}
 
 static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *ppos);
 static void ast_term_destroy(struct ast *ast, struct ast_term *term);
+static int64_t bin_cmp(void *a, const void *b, void *arg)
+{
+	struct ast *ast = arg;
+	return sos_iter_key_cmp(ast->sos_iter, (sos_key_t)a, (sos_key_t)b);
+}
+
+static int64_t group_cmp(void *a, const void *b, void *arg)
+{
+	struct ast *ast = arg;
+	return ast->group_cmp->compare_fn((ods_key_t)a, (ods_key_t)b);
+}
 
 static int is_comparator(enum ast_token_e token)
 {
@@ -39,6 +78,7 @@ static int key_word_comparator(const void *a_, const void *b_)
 static struct ast_key_word_s key_words[] = {
 	{ "and", ASTT_AND },
 	{ "from", ASTT_FROM },
+	{ "group_by", ASTT_GROUP_BY },
 	{ "limit", ASTT_LIMIT },
 	{ "not", ASTT_NOT },
 	{ "or", ASTT_OR },
@@ -48,16 +88,10 @@ static struct ast_key_word_s key_words[] = {
 	{ "where", ASTT_WHERE },
 };
 
-struct operator_s {
-	const char *key;
-	void (*op)(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
-		   sos_obj_t res_obj, sos_obj_t src_obj);
-};
-
 static int op_comparator(const void *a_, const void *b_)
 {
 	const char *a = a_;
-	struct operator_s const *b = b_;
+	struct ast_operator_s const *b = b_;
 	return strcasecmp(a, b->key);
 }
 
@@ -401,7 +435,7 @@ void max_op(struct ast *ast, struct ast_attr_entry_s *ae, size_t count,
 	}
 }
 
-static struct operator_s operators[] = {
+static struct ast_operator_s operators[] = {
 	{ "avg", avg_op },
 	{ "bin", bin_op },
 	{ "first", first_op },
@@ -464,7 +498,7 @@ int ast_resample_obj_add(struct ast *ast, sos_obj_t obj)
 		ast_attr_entry_t attr_e;
 		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
 			if (attr_e->op)
-				attr_e->op(ast, attr_e, be->count, be->res_obj, obj);
+				attr_e->op->op(ast, attr_e, be->count, be->res_obj, obj);
 		}
 		be->count += 1;
 		sos_obj_put(obj);
@@ -482,7 +516,7 @@ int ast_resample_obj_add(struct ast *ast, sos_obj_t obj)
 		}
 		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
 			if (attr_e->op)
-				attr_e->op(ast, attr_e, 0, result_obj, obj);
+				attr_e->op->op(ast, attr_e, 0, result_obj, obj);
 		}
 		be->res_obj = result_obj;
 		be->count = 1;
@@ -500,6 +534,75 @@ sos_obj_t ast_resample_obj_next(struct ast *ast)
 	struct ods_rbn *rbn = ods_rbt_min(&ast->bin_tree);
 	struct bin_tree_entry *be = container_of(rbn, struct bin_tree_entry, rbn);
 	ods_rbt_del(&ast->bin_tree, rbn);
+	sos_key_put(be->bin_k);
+	obj = be->res_obj;
+	free(be);
+	return obj;
+}
+
+int ast_group_obj_add(struct ast *ast, sos_obj_t obj)
+{
+	struct ast_attr_entry_s *ae;
+	sos_comp_key_spec_t spec;
+	int i;
+	struct sos_value_s src_v_;
+	sos_value_t src_v;
+	SOS_KEY(res_key);
+	/*
+	 * Create a key from the attribute values in the group_list
+	 */
+	i = 0;
+	TAILQ_FOREACH(ae, &ast->group_list, link) {
+		src_v = sos_value_init(&src_v_, obj, ae->src_attr);
+		ast->group_comp_key_spec[i++].data = src_v->data;
+	}
+	int rc = sos_comp_key_set(res_key, i, ast->group_comp_key_spec);
+
+	/* Find the bin for this object */
+	struct ods_rbn *rbn = ods_rbt_find(&ast->group_tree, res_key);
+	if (rbn) {
+		struct bin_tree_entry *be =
+			container_of(rbn, struct bin_tree_entry, rbn);
+		assert(be->res_obj);
+		/* Apply resample op to the values in the object */
+		ast_attr_entry_t attr_e;
+		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
+			if (attr_e->op)
+				attr_e->op->op(ast, attr_e, be->count, be->res_obj, obj);
+		}
+		be->count += 1;
+		sos_obj_put(obj);
+	} else {
+		struct bin_tree_entry *be = calloc(1, sizeof(*be));
+		be->bin_k = sos_key_new(sos_key_size(res_key));
+		sos_key_copy(be->bin_k, res_key);
+		// sos_key_put(res_key);
+		ods_rbn_init(&be->rbn, be->bin_k);
+		sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
+		ast_attr_entry_t attr_e;
+		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
+			sos_obj_attr_copy(result_obj, attr_e->res_attr,
+					  obj, attr_e->src_attr);
+		}
+		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
+			if (attr_e->op)
+				attr_e->op->op(ast, attr_e, 0, result_obj, obj);
+		}
+		be->res_obj = result_obj;
+		be->count = 1;
+		ods_rbt_ins(&ast->group_tree, &be->rbn);
+	}
+	return rc;
+}
+
+sos_obj_t ast_group_obj_next(struct ast *ast)
+{
+	sos_obj_t obj;
+	if (ods_rbt_empty(&ast->group_tree))
+		return NULL;
+	struct ods_rbn *rbn = ods_rbt_min(&ast->group_tree);
+	struct bin_tree_entry *be = container_of(rbn, struct bin_tree_entry, rbn);
+	ods_rbt_del(&ast->group_tree, rbn);
 	sos_key_put(be->bin_k);
 	obj = be->res_obj;
 	free(be);
@@ -820,14 +923,15 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 			break;
 		}
 		term->kind = ASTV_CONST;
-		term->value = sos_value_init_const(
-						   &term->value_,
+		term->value = sos_value_init_const(&term->value_,
 						   SOS_TYPE_DOUBLE,
 						   strtod(token_str, NULL));
 		break;
 	default:
-		ast->result = ASTP_ERROR;
+		ast->result = ASTP_SYNTAX;
 		ast->pos = *ppos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			 "Unexpected '%s' token in expression at column %d.", token_str, ast->pos);
 		term = NULL;
 	}
 	return term;
@@ -1393,7 +1497,7 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
  */
 int handle_op(struct ast_attr_entry_s *ae, char **token_str)
 {
-	struct operator_s *op;
+	struct ast_operator_s *op;
 	char *token = *token_str;
 	char *op_name;
 	char *paren = strstr(token, "(");
@@ -1407,12 +1511,12 @@ int handle_op(struct ast_attr_entry_s *ae, char **token_str)
 	/* Operator lookup */
 	op = bsearch(op_name,
 		     operators, sizeof(operators) / sizeof(operators[0]),
-		     sizeof (struct operator_s),
+		     sizeof (struct ast_operator_s),
 		     op_comparator);
 	if (!op)
 		return EINVAL;
 
-	ae->op = op->op;
+	ae->op = op;
 
 	/* clean up attribute name */
 	token = strdup(++paren);
@@ -1447,6 +1551,36 @@ int ast_parse_select_clause(struct ast *ast, const char *expr, int *ppos)
 			/* End of schema name list, do not consume token */
 			break;
 	}
+	return ast->result;
+}
+
+int ast_parse_group_by_clause(struct ast *ast, const char *expr, int *ppos)
+{
+	char *token_str;
+	enum ast_token_e token;
+	int next_pos = *ppos;
+	TAILQ_INIT(&ast->group_list);
+
+	for (token = ast_lex(ast, expr, &next_pos, &token_str);
+	     token == ASTT_NAME;
+	     token = ast_lex(ast, expr, &next_pos, &token_str)) {
+		struct ast_attr_entry_s *ae = calloc(1, sizeof *ae);
+		ae->name = strdup(token_str);
+		*ppos = next_pos;	/* consume this token */
+		TAILQ_INSERT_TAIL(&ast->group_list, ae, link);
+		/* Check for a ',' indicating another name */
+		token = ast_lex(ast, expr, &next_pos, &token_str);
+		if (token != ASTT_COMMA)
+			/* End of attribute name list, do not consume token */
+			break;
+	}
+	ods_rbt_init(&ast->group_tree, group_cmp, ast);
+
+	ast->group_cmp = (struct ods_idx_comparator *)
+		load_library("COMPOUND", "key", "get");
+	if (!ast->group_cmp)
+		return errno;
+
 	return ast->result;
 }
 
@@ -1519,7 +1653,8 @@ int ast_parse_limit_clause(struct ast *ast, const char *expr, int *ppos)
 		ast->result = ASTP_ERROR;
 		ast->pos = *ppos;
 		snprintf(ast->error_msg, sizeof(ast->error_msg),
-			 "Expected an integer record count but found '%s'", token_str);
+			 "Expected an integer record count but found '%s' "
+			 "at column %d", token_str, *ppos);
 		goto out;
 	}
 	ast->result_limit = strtol(token_str, NULL, 0);
@@ -1527,17 +1662,12 @@ int ast_parse_limit_clause(struct ast *ast, const char *expr, int *ppos)
 		ast->result = ASTP_ERROR;
 		ast->pos = *ppos;
 		snprintf(ast->error_msg, sizeof(ast->error_msg),
-			 "The limit result count must be > 0, found '%s'", token_str);
+			 "The limit result count must be > 0, found '%s' "
+			 "at column %d", token_str, *ppos);
 		goto out;
 	}
  out:
 	return ast->result;
-}
-
-static int64_t bin_cmp(void *a, const void *b, void *arg)
-{
-	struct ast *ast = arg;
-	return sos_iter_key_cmp(ast->sos_iter, (sos_key_t)a, (sos_key_t)b);
 }
 
 int ast_parse_resample_clause(struct ast *ast, const char *expr, int *ppos)
@@ -1674,7 +1804,8 @@ static int __resolve_sos_entities(struct ast *ast)
 		free(attr_e);
 		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
 			sos_attr_t attr;
-			for (attr = sos_schema_attr_first(schema_e->schema); attr; attr = sos_schema_attr_next(attr)) {
+			for (attr = sos_schema_attr_first(schema_e->schema);
+			     attr; attr = sos_schema_attr_next(attr)) {
 				if (sos_attr_type(attr) == SOS_TYPE_JOIN)
 					continue;
 				attr_e = calloc(1, sizeof(*attr_e));
@@ -1697,6 +1828,7 @@ static int __resolve_sos_entities(struct ast *ast)
 	sos_schema_t res_schema = sos_schema_new(res_schema_name);
 
 	TAILQ_FOREACH(attr_e, &ast->select_list, link) {
+		char res_name[256];
 		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
 			attr_e->src_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
 			attr_e->schema = schema_e;
@@ -1710,9 +1842,14 @@ static int __resolve_sos_entities(struct ast *ast)
 				 attr_e->name);
 			return ast->result;
 		}
-		int rc = sos_schema_attr_add(res_schema, attr_e->name, sos_attr_type(attr_e->src_attr));
+		if (attr_e->op) {
+			sprintf(res_name, "%s_%s", attr_e->op->key, attr_e->name);
+		} else {
+			sprintf(res_name, "%s", attr_e->name);
+		}
+		int rc = sos_schema_attr_add(res_schema, res_name, sos_attr_type(attr_e->src_attr));
 		assert(!rc);
-		sos_attr_t res_attr = sos_schema_attr_by_name(res_schema, attr_e->name);
+		sos_attr_t res_attr = sos_schema_attr_by_name(res_schema, res_name);
 		attr_e->res_attr = res_attr;
 	}
 	ast->result_schema = res_schema;
@@ -1752,7 +1889,9 @@ static int __resolve_sos_entities(struct ast *ast)
 	 */
 	TAILQ_FOREACH(attr_e, &ast->index_list, link) {
 		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
-			attr_e->src_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
+			attr_e->src_attr =
+				sos_schema_attr_by_name(schema_e->schema,
+							attr_e->name);
 			assert(attr_e->value_attr);
 			attr_e->value_attr->attr = attr_e->src_attr;
 			if (attr_e->src_attr) {
@@ -1767,6 +1906,38 @@ static int __resolve_sos_entities(struct ast *ast)
 				 attr_e->name);
 			return ast->result;
 		}
+	}
+
+	/*
+	 * Resolve all of the attributes in the 'group_by' clause
+	 */
+	int group_count = 0;
+	TAILQ_FOREACH(attr_e, &ast->group_list, link) {
+		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
+			attr_e->src_attr =
+				sos_schema_attr_by_name(schema_e->schema,
+							attr_e->name);
+			if (attr_e->src_attr) {
+				attr_e->schema = schema_e;
+				break;
+			}
+		}
+		if (!attr_e->src_attr) {
+			ast->result = ASTP_BAD_ATTR_NAME;
+			snprintf(ast->error_msg, sizeof(ast->error_msg),
+				 "The '%s' attribute was not found in any "
+				 "schema in the 'from' clause.",
+				 attr_e->name);
+			return ast->result;
+		}
+		group_count += 1;
+	}
+	/* Build the group composite key spec */
+	ast->group_comp_key_spec = calloc(group_count, sizeof(struct sos_comp_key_spec));
+	assert(ast->group_comp_key_spec);
+	int group = 0;
+	TAILQ_FOREACH(attr_e, &ast->group_list, link) {
+		ast->group_comp_key_spec[group++].type = sos_attr_type(attr_e->src_attr);
 	}
 
 	struct ast_term_binop *binop;
@@ -1794,7 +1965,9 @@ static int __resolve_sos_entities(struct ast *ast)
 				if (join_list->data.uint32_[join_idx]
 				    == sos_attr_id(attr_e->src_attr)) {
 					join_attr_e->rank += join_count - join_idx;
-					/* If this join is preferred over ones previously found, replace it */
+					/* If this join is preferred
+					 * over ones previously found,
+					 * replace it */
 					if (join_idx < attr_e->min_join_idx) {
 						attr_e->join_attr = attr_e->src_attr;
 						attr_e->join_attr_idx = join_idx;
@@ -1995,6 +2168,8 @@ int ast_parse(struct ast *ast, char *expr)
 	char *token_str;
 	enum ast_token_e token;
 	int rc, pos;
+	int resample = 0;
+	int group = 0;
 
 	ast->pos = pos = 0;
 	ast->error_msg[0] = '\0';
@@ -2025,11 +2200,32 @@ int ast_parse(struct ast *ast, char *expr)
 			rc = ast_parse_limit_clause(ast, expr, &pos);
 			break;
 		case ASTT_RESAMPLE:
+			resample = 1;
+			if (group) {
+				rc = EINVAL;
+				ast->result = ASTP_SYNTAX;
+				ast->pos = pos;
+				snprintf(ast->error_msg, sizeof(ast->error_msg),
+					 "The 'resample' clause cannot be used with the 'group_by' clause");
+				break;
+			}
 			rc = ast_parse_resample_clause(ast, expr, &pos);
+			break;
+		case ASTT_GROUP_BY:
+			group = 1;
+			if (resample) {
+				rc = EINVAL;
+				ast->result = ASTP_SYNTAX;
+				ast->pos = pos;
+				snprintf(ast->error_msg, sizeof(ast->error_msg),
+					 "The 'resample' clause cannot be used with the 'group_by' clause");
+				break;
+			}
+			rc = ast_parse_group_by_clause(ast, expr, &pos);
 			break;
 		default:
 			rc = EINVAL;
-			ast->result = ASTP_ERROR;
+			ast->result = ASTP_SYNTAX;
 			ast->pos = pos;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
 				"Expected 'select', 'from', 'where', or 'order_by', but found '%s'",

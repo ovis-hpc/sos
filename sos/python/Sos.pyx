@@ -316,6 +316,11 @@ cdef class Session:
         self.close()
 
     def close(self):
+        """Close a D/SOS Session with peers
+
+        If the application has sessions that become idle/unused before
+        exiting, this method must be called to avoid linking memory.
+        """
         if self.c_session != NULL:
             dsos_session_close(self.c_session)
             self.c_session = NULL;
@@ -325,14 +330,15 @@ cdef class Session:
 
         Open and optionally create a container in a D/SOS cluster.
         The only required parameter is the container path and/or name.
-        An optional configuration file called the 'directory' can
-        be loaded at the server in order to map container names to
-        local paths. This is useful to hide the local path from the
+
+        An optional configuration file called the `directory` can
+        be loaded at the server in order to map a container `name` to
+        a local `path`. This is useful to hide the local path from the
         client and/or to allow shared storage to host multiple dsosd
         daemons. See dsosd(8) for more information.
 
         Positional Parameters:
-        - Path/name of the container in the cluster
+        - Path/name (string) of the container in the cluster
 
         Keyword Parameters:
         o_perm - A permissions bitmask requested for the container. By default
@@ -353,6 +359,8 @@ cdef class Session:
         cont = sess.open('aContainer', o_perm = Sos.PERM_CREAT | Sos.PERM_RW,
                          o_mode = 0o660)
 
+        Raises:
+        ValueError if the container could not be opened.
         """
         cdef dsos_container_t c_cont
         c_cont = dsos_container_open(<dsos_session_t>self.c_session,
@@ -376,17 +384,18 @@ cdef class DsosSchema(Schema):
         self.c_dschema = <dsos_schema_t>NULL
 
     def attr_iter(self):
+        """Return an iterator for the attributes in the schema"""
         return iter(self)
 
     def __iter__(self):
         cdef int n
         n = self.attr_count()
         for i in range(0, n):
-            # HERE
             dattr = DsosAttr(self, attr_id = i)
             yield dattr
 
     def obj_create(self, obj_):
+        """Create an object instance of this schema type."""
         cdef int rc
         cdef Object obj = obj_
         rc = dsos_obj_create(self.dcont.c_cont, NULL,
@@ -396,9 +405,33 @@ cdef class DsosSchema(Schema):
             raise ValueError(f"Error {rc} creating object of type {str(self)}")
 
     def attr_by_name(self, name):
+        """Return the attribute with specified name
+
+        Returns an instance of DsosAttr for attribute with the
+        matching name. If the attribute doesn't exist in the schema,
+        a ValueError exception is thrown.
+
+        Parameters:
+        - The attribute name
+
+        Returns:
+        - DsosAttr instance
+        """
         return DsosAttr(self, attr_name = name)
 
     def attr_by_id(self, attr_id):
+        """Return the attribute with specified id
+
+        Returns an instance of DsosAttr for attribute with the
+        matching id. If the attribute doesn't exist in the schema,
+        a ValueError exception is thrown.
+
+        Parameters:
+        - The attribute id
+
+        Returns:
+        - DsosAttr instance
+        """
         return DsosAttr(self, attr_id = attr_id)
 
 cdef class DsosContainer:
@@ -451,7 +484,6 @@ cdef class DsosContainer:
 
         Closes the container. If the container is not open, an
         exception is thrown.
-
         """
         if self.c_cont == NULL:
             self.abort(EINVAL)
@@ -463,7 +495,6 @@ cdef class DsosContainer:
 
         If the container is not open, an
         exception is thrown.
-
         """
         if self.c_cont == NULL:
             self.abort(EINVAL)
@@ -2835,7 +2866,7 @@ cdef class Attr(SosObject):
             raise ValueError("Comparison not supported for type {0}".format(type(b)))
 
     def schema(self):
-        """Returns the schema for which this attribute is a member"""
+        """Returns the schema of which this attribute is a member"""
         s = Schema()
         s.c_schema = sos_attr_schema(self.c_attr)
         return s
@@ -3041,7 +3072,7 @@ cdef class DsosAttr(Attr):
         cdef dsos_iter_t c_diter
         dcont = self.dschema.dcont
         if not dcont:
-            raise ValueError(f"DsosAttr.dschema is not associated with DsosContainer")
+            raise ValueError(f"DsosAttr.dschema is not associated with a DsosContainer")
         return dcont.attr_iter(self.dschema, self.name())
 
     def find(self, Key key):
@@ -3051,7 +3082,7 @@ cdef class DsosAttr(Attr):
         cdef sos_obj_t c_obj
         dcont = self.dschema.dcont
         if not dcont:
-            raise ValueError(f"DsosAttr.dschema is not associated with DsosContainer")
+            raise ValueError(f"DsosAttr.dschema is not associated with a DsosContainer")
         c_obj = dsos_index_find(dcont.c_cont, self.dschema.c_dschema,
                                 self.c_attr, key.c_key)
         if c_obj == NULL:
@@ -3067,7 +3098,7 @@ cdef class DsosAttr(Attr):
         cdef sos_obj_t c_obj
         dcont = self.dschema.dcont
         if not dcont:
-            raise ValueError(f"DsosAttr.dschema is not associated with DsosContainer")
+            raise ValueError(f"DsosAttr.dschema is not associated with a DsosContainer")
         c_obj = dsos_index_find_le(dcont.c_cont, self.dschema.c_dschema,
                                 self.c_attr, key.c_key)
         if c_obj == NULL:
@@ -3083,7 +3114,7 @@ cdef class DsosAttr(Attr):
         cdef sos_obj_t c_obj
         dcont = self.dschema.dcont
         if not dcont:
-            raise ValueError(f"DsosAttr.dschema is not associated with DsosContainer")
+            raise ValueError(f"DsosAttr.dschema is not associated with a DsosContainer")
         c_obj = dsos_index_find_ge(dcont.c_cont, self.dschema.c_dschema,
                                 self.c_attr, key.c_key)
         if c_obj == NULL:

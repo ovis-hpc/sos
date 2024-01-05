@@ -125,7 +125,7 @@ int add_column(sos_schema_t schema, const char *str, struct col_list_s *col_list
 	TAILQ_INSERT_TAIL(col_list, col, entry);
 	sos_attr_t attr = sos_schema_attr_by_name(schema, s);
 	if (!attr)
-goto err;
+		goto err;
 	col->id = sos_attr_id(attr);
 	return 0;
  err:
@@ -329,8 +329,12 @@ void table_footer(FILE *outp, int rec_count, int iter_count, struct col_list_s *
 	/* Print the footer separators */
 	TAILQ_FOREACH(col, col_list, entry) {
 		int i;
-		for (i = 0; i < col->width; i++)
-			fprintf(outp, "-");
+		if (col->width > 0)
+			for (i = 0; i < col->width; i++)
+				fprintf(outp, "-");
+		else
+			for (i = 0; i < strlen(col->name); i++)
+				fprintf(outp, "-");
 		fprintf(outp, " ");
 	}
 	fprintf(outp, "\n");
