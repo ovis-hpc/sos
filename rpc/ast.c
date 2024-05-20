@@ -1435,6 +1435,18 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 		free(binop);
 		return NULL;
 	}
+	/* Check if the user accidentally quoted an attribute name */
+	if (binop->lhs->kind == ASTV_CONST &&
+		binop->lhs->value->type == SOS_TYPE_CHAR_ARRAY) {
+		ast->result = ASTP_SYNTAX;
+		ast->pos = next_pos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			"Attribute names (\"%s\") should not be quoted strings.",
+			binop->lhs->value->data->array.data.char_);
+		ast_term_destroy(ast, binop->lhs);
+		free(binop);
+		return NULL;
+	}
 	next_pos = *ppos;
 	binop->op = ast_lex(ast, expr, &next_pos, &token_str);
 	if (binop->op == ASTT_EOF || binop->op >= ASTT_KEYWORD) {
