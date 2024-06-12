@@ -1859,8 +1859,21 @@ static int __resolve_sos_entities(struct ast *ast)
 		} else {
 			sprintf(res_name, "%s", attr_e->name);
 		}
+		if (sos_attr_type(attr_e->src_attr) == SOS_TYPE_JOIN) {
+			ast->result = ASTP_BAD_ATTR_TYPE;
+			snprintf(ast->error_msg, sizeof(ast->error_msg),
+				 "The JOIN attribute, '%s', is not allowed "
+				 "in the select list.", attr_e->name);
+			return ast->result;
+		}
 		int rc = sos_schema_attr_add(res_schema, res_name, sos_attr_type(attr_e->src_attr));
-		assert(!rc);
+		if (rc) {
+			ast->result = ASTP_BAD_ATTR_NAME;
+			snprintf(ast->error_msg, sizeof(ast->error_msg),
+				 "Error %d encounted adding the attribute '%s' to the select list.",
+				 rc, attr_e->name);
+			return ast->result;
+		}
 		sos_attr_t res_attr = sos_schema_attr_by_name(res_schema, res_name);
 		attr_e->res_attr = res_attr;
 	}
