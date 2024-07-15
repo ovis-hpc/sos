@@ -351,7 +351,6 @@ sos_index_t sos_index_open(sos_t sos, const char *name)
 		}
 		ods_idx_ref = malloc(sizeof *ods_idx_ref);
 		if (!ods_idx_ref) {
-			errno = ENOMEM;
 			goto err_4;
 		}
 		ods_idx_ref->idx = idx;
@@ -443,6 +442,8 @@ int sos_index_visit(sos_index_t index, sos_key_t key, sos_visit_cb_fn_t cb_fn, v
 	ods_idx_ref_t iref;
 	LIST_FOREACH(iref, &index->active_idx_list, entry) {
 		struct sos_visit_cb_ctxt_s *ctxt = malloc(sizeof *ctxt);
+		if (!ctxt)
+			return errno;
 		ctxt->index = index;
 		ctxt->cb_fn = cb_fn;
 		ctxt->arg = arg;
@@ -869,6 +870,8 @@ const char *sos_index_key_to_str(sos_index_t index, sos_key_t key)
 	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
 	size_t keylen = ods_idx_key_str_size(iref->idx, key);
 	char *keystr = malloc(keylen);
+	if (!keystr)
+		return NULL;
 	return ods_key_to_str(iref->idx, key, keystr, keylen);
 }
 
