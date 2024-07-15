@@ -102,6 +102,8 @@ class SchemaMonitor(object):
 
             if t0 != 0.0:
                 diff_time = math.floor(t1 - t0)
+                if diff_time == 0:
+                    return row
                 insert_rate = (c - self.cards[i]) // diff_time
                 dup_rate = (d - self.dups[i]) // diff_time
                 size_rate  = (s - self.sizes[i]) // diff_time
@@ -176,8 +178,13 @@ if __name__ == "__main__":
                 row += 2
             t0 = time.time()
             stdscr.refresh()
-            time.sleep(args.refresh)
-
+            for i in range(1, args.refresh):
+                stdscr.refresh()
+                if stdscr.getch() == -1:
+                    time.sleep(1)
+                else:
+                    break;
+            stdscr.refresh()
     except Exception as ex:
         stdscr.addstr(24, 0, repr(ex))
 
