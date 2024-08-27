@@ -9,7 +9,7 @@ The Distributed Scalable Object Store (DSOS) (pronounced "dee-sôs") is a layer 
 Dsosql
 ********
 
-For demonstration purposes, let's assume we have two nodes, node1 ande node2, with a SOS database at /storage/sos/database. 
+For demonstration purposes, let's assume we have two nodes, node1 ande node2, with a SOS database at /storage/sos/database.
 Our cluster configuration file, let's call it dsos.conf, would simply be
 
 .. code-block:: console
@@ -17,7 +17,7 @@ Our cluster configuration file, let's call it dsos.conf, would simply be
   node1
   node2
 
-Dsosql expects the path to this dsos.conf and the database path for correct functionality. These can be entered as options in to dsosql using the -a and -o options, respectively. They can also be entered after dropping into the dsosql shell, like ldmsd_controller, commands to dsosql can be entered after going into a shell or by echo'ing them into the utility. 
+Dsosql expects the path to this dsos.conf and the database path for correct functionality. These can be entered as options in to dsosql using the -a and -o options, respectively. They can also be entered after dropping into the dsosql shell, like ldmsd_controller, commands to dsosql can be entered after going into a shell or by echo'ing them into the utility.
 
 .. code-block:: console
 
@@ -49,7 +49,7 @@ Dsosql expects the path to this dsos.conf and the database path for correct func
   ------------------------ ---------------------------------------- -------- -------- -------------
   default                  default                                  33       33       -rw-rw---
 
-Commands available in dsosql are attach, create_part, create_schema, help, import, open, select, set, show, show_part, and show_schema. 
+Commands available in dsosql are attach, create_part, create_schema, help, import, open, select, set, show, show_part, and show_schema.
 
 
 Select Syntax and Options
@@ -82,7 +82,7 @@ Like dsosql, python expects a dsos.conf path and a database path. A Sos.Session 
     sess = Sos.Session("dsos.conf")
     cont = sess.open("/storage/sos/database")
     query = Sos.SqlQuery(cont,1024*1024)
-    query.select('select Active from meminfo') 
+    query.select('select Active from meminfo')
     df = query.next()
 
 The query.next() can be run multiple times to get more data matching the query. The next() will return None if no further data matches the query. A function to return all data matching a query can be written as:
@@ -100,12 +100,12 @@ The query.next() can be run multiple times to get more data matching the query. 
         del df
         return res
 
-To manually add a record to a DSOS database we can use the insert_df function for a sos container object. 
-The dataframe inserted must have rows that match the types and length of the schema being inserted into, otherwise an error will be raised. 
-The data will be round robin-ed into the SOS containers referenced in the dsos.conf. 
+To manually add a record to a DSOS database we can use the insert_df function for a sos container object.
+The dataframe inserted must have rows that match the types and length of the schema being inserted into, otherwise an error will be raised.
+The data will be round robin-ed into the SOS containers referenced in the dsos.conf.
 
 .. code-block:: python
-   
+
     import pandas as pd
     from sosdb import Sos
     sess = Sos.Session("dsos.conf")
@@ -113,7 +113,7 @@ The data will be round robin-ed into the SOS containers referenced in the dsos.c
     schema = cont.schema_by_name('meminfo')
     in_df = {DATAFRAME OF RECORD(S) TO BE INSERTED}
     cont.insert_df(schema,in_df)
-       
+
 To update a record in a DSOS database, the update needs to be bounded by a transaction begin and end to prevent data corruption.
 Create a key to find the record to be updated, change the values desired, and then update the record.
 

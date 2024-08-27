@@ -194,15 +194,15 @@ This environment variable specifies what log messages are printed by the
 SOS libraries. The value is a bit mask as follows:
 
 =======================================================
-Value \| Description                               
+Value \| Description
 =======================================================
-0 \| No messages are logged                        
-1 \| **Fatal** errors (i.e. the process will exit) 
-2 \| **Errors**                                    
-4 \| **Warnings**                                  
-8 \| **Informational** messages                    
-16 \| **Debug** messages                           
-255 \| **All** messages are logged                 
+0 \| No messages are logged
+1 \| **Fatal** errors (i.e. the process will exit)
+2 \| **Errors**
+4 \| **Warnings**
+8 \| **Informational** messages
+16 \| **Debug** messages
+255 \| **All** messages are logged
 =======================================================
 
 SEE ALSO

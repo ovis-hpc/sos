@@ -51,7 +51,7 @@ EXAMPLES
 
       Monitoring schema meminfo in container database at 2023-07-20 10:22:45.192586
 
-      Name              Cardinality      Inserts/s        Duplicates       Inserts/s        Size             Bytes/s         
+      Name              Cardinality      Inserts/s        Duplicates       Inserts/s        Size             Bytes/s
       time_job_comp           3,962,974               0               0               0     953,745,408               0
       time_comp_job           3,962,974               0               0               0     912,850,944               0
       job_comp_time           3,962,974               0               0               0     907,608,064               0

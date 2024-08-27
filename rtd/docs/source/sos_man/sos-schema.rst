@@ -131,7 +131,7 @@ Query Verbose
 
       $ sos-schema --path database --query --verbose --schema meminfo
       d2641326-77a2-48cf-99d3-83a37dbdf65e        0 meminfo
-      Id   Type                     Indexed      Name                            
+      Id   Type                     Indexed      Name
       ---- ------------------------ ------------ --------------------------------
          0 TIMESTAMP                             timestamp
          1 UINT64                                component_id
@@ -156,7 +156,7 @@ Query the details for a single schema.
 
       $ sos-schema --path database --query --verbose --schema meminfo
       d2641326-77a2-48cf-99d3-83a37dbdf65e        0 meminfo
-      Id   Type                     Indexed      Name                            
+      Id   Type                     Indexed      Name
       ---- ------------------------ ------------ --------------------------------
          0 TIMESTAMP                             timestamp
          1 UINT64                                component_id
@@ -209,14 +209,14 @@ ODS_LOG_MASK
 This environment variable specifies what log messages are printed by the
 SOS libraries. The value is a bit mask as follows:
 
-Value \| Description                               
-* 0 - No messages are logged                        
-* 1 - **Fatal** errors (i.e. the process will exit) 
-* 2 - **Errors**                                    
-* 4 - **Warnings**                                  
-* 8 - **Informational** messages                    
-* 16 - **Debug** messages                           
-* 255 - **All** messages are logged                 
+Value \| Description
+* 0 - No messages are logged
+* 1 - **Fatal** errors (i.e. the process will exit)
+* 2 - **Errors**
+* 4 - **Warnings**
+* 8 - **Informational** messages
+* 16 - **Debug** messages
+* 255 - **All** messages are logged
 
 SEE ALSO
 ===============

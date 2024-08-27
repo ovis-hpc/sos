@@ -31,4 +31,4 @@ The DSOS python API is the currently supported query syntax for the OVIS Web Ser
    :caption: SOS Man Pages
 
    sos_man/index
-  
+

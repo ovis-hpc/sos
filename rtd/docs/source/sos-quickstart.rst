@@ -56,7 +56,7 @@ cd into the top level sos checkout directory
 
 The build will result in /home/XXX/BuildSos/lib/python3.X/site-packages with sosdb and numsos modules. The sosdb module includes the DataSet class and also the Array and Sos modules, which are written in C for efficiency. The numsos module includes the DataSource, DataSink, Stack, and Transform classes.
 
-Set the environment variables appropriately using: 
+Set the environment variables appropriately using:
 
 .. code-block:: console
 
@@ -75,11 +75,11 @@ Importing a CSV file and using the command line tools
       - sos-schema --add
       - A schema definition file
     * - meminfo_qs.map.json
-      - sos-import-csv --map 	
+      - sos-import-csv --map
       - A file that tells the import tool which CSV columns go to which schema attributes
     * - meminfo_qs.csv
-      - sos-import-csv --csv 	
-      - 1000 lines of CSV meminfo data 
+      - sos-import-csv --csv
+      - 1000 lines of CSV meminfo data
 
 These files can be obtained from a clone of the wiki under the quickstart directory in the top level of the sos repo.
 
@@ -155,7 +155,7 @@ a. Using sos-schema:
 
  > sos-schema --path /dir/my-container --query --verbose
  meminfo_qs
- Id   Type             Indexed      Name                            
+ Id   Type             Indexed      Name
  ---- ---------------- ------------ --------------------------------
    0 TIMESTAMP        True         timestamp
    1 UINT64           True         component_id
@@ -247,7 +247,7 @@ Note that there is no data yet in the container (using sos_cmd):
 
  > sos_cmd -C /dir/my-container -q -S meminfo_qs -X time_job_comp
  ...
- -------------------------------- ------------------  ... -------------------------------- 
+ -------------------------------- ------------------  ... --------------------------------
  Records 0/0.
 
 Importing CSV data into a container
@@ -277,15 +277,15 @@ Querying data in a container
 
  > sos_cmd -C /dir/my-container -q -S meminfo_qs -X time_job_comp
  ...
- -------------------------------- ------------------ ... -------------------------------- 
+ -------------------------------- ------------------ ... --------------------------------
  Records 1000/1000.
 
 b. Query only for certain variables (also using an index):
 
 .. code-block:: console
 
- > sos_cmd -C /tmp/my-container/ -q -S meminfo_qs -X time_job_comp -f table -V timestamp -V component_id -V Active 
- timestamp                        component_id       Active             
+ > sos_cmd -C /tmp/my-container/ -q -S meminfo_qs -X time_job_comp -f table -V timestamp -V component_id -V Active
+ timestamp                        component_id       Active
  timestamp                        component_id Active
  -------------------------------- ------------ ------------------
                1703188156.000797 5427           29557660
@@ -302,8 +302,8 @@ c. Querying with a filter:
 .. code-block:: console
 
  > sos_cmd -C /tmp/my-container/ -q -S meminfo_qs -X time_job_comp -f table -V timestamp -V component_id -V Active -F timestamp:gt:1703188160
- timestamp                        component_id       Active             
- -------------------------------- ------------------ ------------------ 
+ timestamp                        component_id       Active
+ -------------------------------- ------------------ ------------------
    ...
                1703188161.001580 282            1999556
                1703188161.001588 5651          111678236
@@ -317,8 +317,8 @@ d. Querying with multiple filters:
 .. code-block:: console
 
  > sos_cmd -C /tmp/my-container/ -q -S meminfo_qs -X time_job_comp -f table -V timestamp -V component_id -V Active -F timestamp:gt:1703188160 -F component_id:gt:9000
- timestamp                        component_id       Active             
- -------------------------------- ------------------ ------------------ 
+ timestamp                        component_id       Active
+ -------------------------------- ------------------ ------------------
  ...
                1703188161.001453               9274           26774688
                1703188161.001530               9593            2218724

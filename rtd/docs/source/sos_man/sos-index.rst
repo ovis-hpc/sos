@@ -76,10 +76,10 @@ attribute specified by the -a option.
    container. If the --index NAME option is specified, only the index
    NAME will be verified.
 
--p,--path PATH 
+-p,--path PATH
    The **PATH** to the SOS container.
 
--n,--index NAME 
+-n,--index NAME
    The optional **NAME** of the index to verify. If not specified, all
    indices will be verified.
 
@@ -89,7 +89,7 @@ attribute specified by the -a option.
 -a,--attr NAME
    The attribute **NAME** to index, required with the -A and -R options.
 
--v,--verbose 
+-v,--verbose
    This option can be used with the -V option to control the level of
    error messages printed when a corruption error is detected. If
    specified once, the partition name containing the corrupted index is
