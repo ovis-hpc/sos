@@ -131,8 +131,8 @@ if __name__ == "__main__":
     if args.export_path:
         try:
             sdir = Sos.export_schema(args.path, args.export_path)
-        except:
-            print(f"Error accessing container '{args.path}'")
+        except Exception as e:
+            print(f"{e}")
             sys.exit(1)
         sys.exit(0)
 
