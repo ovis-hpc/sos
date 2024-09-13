@@ -593,9 +593,11 @@ void sos_end_x(sos_t sos)
  */
 void sos_index_info(sos_index_t index, FILE *fp)
 {
-	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
-	ods_idx_info(iref->idx, fp);
-	ods_info(ods_idx_ods(iref->idx), fp, ODS_INFO_ALL);
+	ods_idx_ref_t iref;
+	LIST_FOREACH(iref, &index->active_idx_list, entry) {
+		ods_idx_info(iref->idx, fp);
+		ods_info(ods_idx_ods(iref->idx), fp, ODS_INFO_ALL);
+	}
 }
 
 int print_schema(struct ods_rbn *n, void *fp_, int level)

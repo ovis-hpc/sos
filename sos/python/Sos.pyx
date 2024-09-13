@@ -1295,16 +1295,17 @@ cdef class Container(SosObject):
 
         - The time in seconds to wait to acquire the transaction. If
           the transaction cannot be acquired within the specified
-          timeout, a TimeoutError exception is thrown.
+          timeout, the PID of the process owning the transaction is
+          returned.
 
         """
         cdef timespec ts
         if timeout:
             ts.tv_sec = timeout
             ts.tv_nsec = 0
-            sos_begin_x_wait(self.c_cont, &ts)
+            return sos_begin_x_wait(self.c_cont, &ts)
         else:
-            sos_begin_x_wait(self.c_cont, NULL)
+            return sos_begin_x_wait(self.c_cont, NULL)
 
     def end(self):
         """End a transaction on the container

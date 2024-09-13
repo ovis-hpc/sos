@@ -448,7 +448,7 @@ cdef extern from "sos/sos.h":
     int sos_container_stat(sos_t sos, stat *sb)
     void sos_container_close(sos_t c, sos_commit_t flags)
     int sos_container_commit(sos_t c, sos_commit_t flags)
-    void sos_begin_x_wait(sos_t c, timespec *ts)
+    int sos_begin_x_wait(sos_t c, timespec *ts)
     void sos_begin_x(sos_t c)
     void sos_end_x(sos_t c)
     void sos_container_info(sos_t sos, FILE* fp)

@@ -72,9 +72,11 @@ if __name__ == "__main__":
                         "database.")
     actions.add_argument("--query", action="store_true",
                         help="Query a container's storage information")
-    actions.add_argument("--transaction", 
+    actions.add_argument("--transaction",
                         help="Start/End a container transaction")
 
+    parser.add_argument("--timeout", type=int,
+                        help="Transaction timeout in seconds")
     parser.add_argument("--path", required=True,
                         help="The path to the database.")
     parser.add_argument("--mode", metavar="PERM", default="0o660",
@@ -136,7 +138,9 @@ if __name__ == "__main__":
             print(f"The container {args.path} could not be opened.")
             sys.exit(1)
         if args.transaction.lower() == "begin":
-            cont.begin()
+            rc = cont.begin(timeout=args.timeout)
+            if rc != 0:
+                print(f"The transaction is held by process {rc}")
         elif args.transaction.lower() == "end":
             cont.end()
         else:

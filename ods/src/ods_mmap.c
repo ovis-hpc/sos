@@ -1934,10 +1934,10 @@ static int ods_mmap_begin(ods_t ods_, struct timespec *wait)
 
 	clock_gettime(CLOCK_REALTIME, &now);
 	if (now.tv_sec > wait->tv_sec) {
-		return ETIMEDOUT;
+		return rc;
 	} else if (now.tv_sec == wait->tv_sec) {
 		if (now.tv_nsec > wait->tv_nsec) {
-			return ETIMEDOUT;
+			return rc;
 		}
 	}
 	goto retry;
