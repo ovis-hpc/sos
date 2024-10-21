@@ -931,11 +931,6 @@ int sos_index_verify(sos_index_t index, FILE *fp, int verbose)
 	return rc;
 }
 
-struct sos_container_index_iter_s {
-	sos_t sos;
-	ods_iter_t iter;
-};
-
 sos_container_index_iter_t sos_container_index_iter_new(sos_t sos)
 {
 	sos_container_index_iter_t iter = calloc(1, sizeof *iter);

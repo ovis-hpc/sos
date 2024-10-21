@@ -557,9 +557,8 @@ int open_session(cmd_t cmd, av_list_t avl)
 	av_t av = LIST_FIRST(&avl->head);
 	g_session = dsos_session_open(av->value_str);
 	if (!g_session) {
-		printf("The cluster defined in '%s' is not available\n",
-		       av->value_str);
-		return 0;
+		perror(NULL);
+		return ENOENT;
 	}
 	return 0;
 }
@@ -672,7 +671,8 @@ int open_container(cmd_t cmd, av_list_t avl)
 
 	g_cont = dsos_container_open(g_session, path, perm, mode);
 	if (!g_cont) {
-		printf("Error %d opening the container.\n", errno);
+		perror(NULL);
+		return errno;
 	}
 	return 0;
 }
@@ -704,7 +704,7 @@ int show_schema(cmd_t cmd, av_list_t avl)
 	} else {
 		dsos_schema_t schema = dsos_schema_by_name(g_cont, av->value_str);
 		if (!schema) {
-			printf("The schema '%s' could not b e found.\n", av->value_str);
+			printf("The schema '%s' could not be found.\n", av->value_str);
 			goto out;
 		}
 		dsos_schema_print(schema, stdout);
@@ -1169,22 +1169,28 @@ int main(int argc, char *argv[])
 		printf("warning: read_history returned %d\n", rc);
 
 	if (attach_file) {
-		printf("Attaching to cluster %s ...", attach_file);
+		printf("Attaching to cluster '%s' ... ", attach_file);
 		fflush(stdout);
 		snprintf(command, sizeof(command), "attach path %s", attach_file);
-		execute_line(command);
-		printf(" OK\n");
+		rc = execute_line(command);
+		if (!rc)
+			printf("OK\n");
+		else
+			exit(1);
 	}
 	if (open_file) {
 		if (!attach_file) {
 			printf("The -o option must be specified with -a option\n");
 			usage(argc, argv);
 		}
-		printf("Opening the container %s ...", open_file);
+		printf("Opening the container '%s' ... ", open_file);
 		fflush(stdout);
 		snprintf(command, sizeof(command), "open path %s", open_file);
-		execute_line(command);
-		printf(" OK\n");
+		rc = execute_line(command);
+		if (!rc)
+			printf("OK\n");
+		else
+			exit(1);
 	}
 	/* Loop reading and executing lines until the user quits. */
 	for (; done == 0;) {

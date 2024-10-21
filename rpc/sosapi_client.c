@@ -601,110 +601,6 @@ static sos_obj_t sos_obj_from_entry(int client_id, sos_schema_t schema, dsos_obj
 	return obj;
 }
 
-#if 0
-static int handle_obj_create(dsos_client_t client, dsos_client_request_t rqst)
-{
-	dsos_create_res create_res = {};
-
-	pthread_mutex_lock(&client->rpc_lock);
-	enum clnt_stat rpc_err = obj_create_1(rqst->obj_create.obj_entry,
-					      &create_res, client->client);
-	pthread_mutex_unlock(&client->rpc_lock);
-	if (rpc_err != RPC_SUCCESS) {
-		fprintf(stderr,
-			"obj_create_1 failed with RPC error %s\n",
-			rpc_err_str(rpc_err));
-		return rpc_err;
-	}
-	if (create_res.error)
-		fprintf(stderr,
-			"obj_create_1 returned error %s\n",
-			(create_res.error);
-	dsos_obj_entry *obj_e = rqst->obj_create.obj_entry;
-	while (obj_e) {
-		dsos_obj_entry *next_obj_e = obj_e->next;
-		free(obj_e->value.dsos_obj_value_val);
-		free(obj_e);
-		obj_e = next_obj_e;
-	}
-	free(rqst);
-	return create_res.error;
-}
-
-/*
- * Processes the flush queue for a DSOS RPC client
- */
-void *flush_proc_fn(void *arg)
-{
-	dsos_client_t client = arg;
-	dsos_client_request_t rqst;
-	struct timespec timeout;
-next:
-	pthread_mutex_lock(&client->flush_lock);
-	while (TAILQ_EMPTY(&client->flush_q)) {
-		if (client->shutdown)
-			return NULL;
-		/* This timeout is short to allow for checking client->shutdown */
-		timeout.tv_sec = time(NULL) + 1;
-		timeout.tv_nsec = 0;
-		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-		int rc = pthread_cond_timedwait(&client->flush_cond,
-						&client->flush_lock, &timeout);
-		if (rc && rc != ETIMEDOUT)
-			fprintf(stderr,
-				"Error %d waiting for queue condition "
-				"variable on client %d\n",
-				rc, client->client_id);
-	}
-	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-	while (!TAILQ_EMPTY(&client->flush_q)) {
-		dsos_container_id cont_id;
-		rqst = TAILQ_FIRST(&client->flush_q);
-		TAILQ_REMOVE(&client->flush_q, rqst, r_link);
-		client->queue_depth -= 1;
-
-		switch (rqst->kind) {
-		case REQ_OBJ_CREATE:
-			cont_id = rqst->obj_create.obj_entry->cont_id;
-			handle_obj_create(client, rqst);
-			break;
-		case REQ_TRANSACTION_BEGIN:
-			cont_id = rqst->transaction_begin.cont_id;
-			handle_transaction_begin(client, rqst);
-			break;
-		default:
-			assert(0 == "Invalid request type");
-		};
-
-		/*
-		 * If this was the last request in the flush queue, complete
-		 * the transaction
-		 */
-		// TODO: it's possible that requests refer to different containers. This code does not handle that.
-		if (TAILQ_EMPTY(&client->flush_q)) {
-			int rres;
-			pthread_mutex_lock(&client->rpc_lock);
-			enum clnt_stat rpc_err = transaction_end_1(cont_id, &rres, client->client);
-			pthread_mutex_unlock(&client->rpc_lock);
-			if (rpc_err != RPC_SUCCESS) {
-				fprintf(stderr,
-					"transaction_end_1 failed on client %d with RPC error %s\n",
-					client->client_id, rpc_err_str(rpc_err));
-			}
-			if (rres) {
-				fprintf(stderr,
-					"transaction_begin_1 failed on client %d with error %s\n",
-					client->client_id, rres);
-			}
-		}
-	}
-	pthread_mutex_unlock(&client->flush_lock);
-	goto next;
-
-	return NULL;
-}
-#endif
-
 static int send_request(dsos_client_t client, dsos_client_request_t rqst)
 {
 	const char *op_name;
@@ -1331,33 +1227,35 @@ schema_by_name_complete_fn(dsos_client_t client,
 		derr = sres->error;
 		if (derr == 0 && rqst->schema->schema == NULL) {
 			/*
-			 * We only need to instantiate one local
-			 * instance of the schema
-			 */
+			* We only need to instantiate one local
+			* instance of the schema
+			*/
 			rqst->schema->schema =
 				dsos_schema_from_spec(sres->dsos_schema_res_u.spec);
 			if (!rqst->schema->schema)
 				derr = errno;
-		} else {
+		} else if (derr == 0) {
+#if 1
 			/*
-			 * Make certain this schema's UUID matches the one
-			 * we instantiated for the first schema. Otherwise,
-			 * we have different schema with the same name.
-			 */
+			* Make certain this schema's UUID matches the one
+			* we instantiated for the first schema. Otherwise,
+			* we have different schema with the same name.
+			*/
 			uuid_t uuid;
 			sos_schema_uuid(rqst->schema->schema, uuid);
 			if (uuid_compare(sres->dsos_schema_res_u.spec->uuid,
-					 uuid)) {
+					uuid)) {
 				/* We received a remote schema with a mismatched UUID */
 				derr = EEXIST;
 				g_last_err = derr;
 				snprintf(g_last_errmsg, sizeof(g_last_errmsg),
-					 "%s: schema UUID mismatch on client %d\n",
-					 __func__, client->client_id);
+					"%s: schema UUID mismatch on client %d\n",
+					__func__, client->client_id);
 			}
+#endif
+			request->schema_by_name.schema->handles[client->client_id] =
+					sres->dsos_schema_res_u.spec->id;
 		}
-		request->schema_by_name.schema->handles[client->client_id] =
-			sres->dsos_schema_res_u.spec->id;
 	}
 	if (!res->any_err)
 		res->any_err = derr;

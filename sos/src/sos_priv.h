@@ -244,7 +244,9 @@ struct sos_index_s {
 
 	/*
 	 * The list of active partition indices. Iteration, search, etc...
-	 * consult these indices.
+	 * consult these indices. The generation number above must match the
+	 * number cached in the container for the list here to be valid. If they
+	 * don't match, the index is reopened.
 	 */
 	LIST_HEAD(sos_idx_list_head, ods_idx_ref_s) active_idx_list;
 };

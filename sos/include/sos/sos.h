@@ -127,7 +127,8 @@ int sos_container_clone(sos_t sos, const char *path);
 int sos_container_verify(sos_t sos);
 int sos_container_move(const char *path_arg, const char *new_path);
 int sos_container_delete(sos_t c);
-int sos_container_stat(sos_t sos, struct stat *sb);
+#define SOS_CONTAINER_STATS_ALL	0
+char *sos_container_stats(sos_t sos, uint64_t mask);
 void sos_container_close(sos_t c, sos_commit_t flags);
 int sos_container_commit(sos_t c, sos_commit_t flags);
 void sos_container_info(sos_t sos, FILE* fp);
@@ -746,6 +747,10 @@ void sos_index_print(sos_index_t index, FILE *fp);
 const char *sos_index_name(sos_index_t index);
 int sos_index_stat(sos_index_t index, sos_index_stat_t sb);
 int sos_index_verify(sos_index_t index, FILE *fp, int verbose);
+typedef struct sos_container_index_iter_s {
+	sos_t sos;
+	ods_iter_t iter;
+} *sos_container_index_iter_t;
 void sos_container_index_list(sos_t sos, FILE *fp);
 typedef struct sos_container_index_iter_s *sos_container_index_iter_t;
 sos_container_index_iter_t sos_container_index_iter_new(sos_t sos);

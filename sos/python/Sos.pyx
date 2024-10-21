@@ -214,6 +214,24 @@ def export_schema(path, dir_path):
     json.dump(sdir, fp3, indent=2)
     return sdir
 
+def lock_info(path):
+    """Print container lock information to stdout"""
+    cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
+    cdef int c_rc
+    c_rc = sos_container_lock_info(path.encode(), c_fp)
+
+def cont_stats(path = None):
+    """Print container status information to stdout"""
+    cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
+    cdef sos_t c_cont
+    if path is not None:
+        c_cont = sos_container_open(path.encode('utf-8'), <sos_perm_t>SOS_PERM_RW, 0660)
+        if c_cont == NULL:
+            raise ValueError("The container {0} could not be opened.".format(path))
+        s = sos_container_stats(c_cont, 0)
+    else:
+        s = sos_container_stats(NULL, 0);
+
 cdef class SosObject:
     cdef int error
     def __init__(self):
@@ -1139,6 +1157,7 @@ cdef class Container(SosObject):
             self.open(path, o_perm=o_perm, o_mode=o_mode)
 
     def path(self):
+        """Return the filesystem path for the open container."""
         return self.path_
 
     def version(self):
