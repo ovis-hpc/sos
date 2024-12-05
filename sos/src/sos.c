@@ -638,21 +638,7 @@ void sos_container_info(sos_t sos, FILE *fp)
 			ods_info(part->obj_ods, fp, ODS_INFO_ALL);
 	}
 }
-#if 0
-	size_t len = strlen(path);
-	char tmp_path[PATH_MAX];
 
-	if (strlen(path) >= PATH_MAX)
-		return ENAMETOOLONG;
-	strcpy(tmp_path, path);
-	if (strcmp(&tmp_path[len-3], ".BE"))
-		return 0;
-	/* strip the .BE, ods_lock_info will append it */
-	tmp_path[len-3] = '\0';
-	ods_lock_info(tmp_path, stdout);
-	return 0;
-}
-#endif
 static int release_locks(const char *path, const struct stat *sb,
 			 int typeflags, struct FTW *ftw)
 {
@@ -670,6 +656,23 @@ static int release_locks(const char *path, const struct stat *sb,
 	return 0;
 }
 
+static int show_locks(const char *path, const struct stat *sb,
+		      int typeflags, struct FTW *ftw)
+{
+	int len = strlen(path);
+	char tmp_path[PATH_MAX];
+	strcpy(tmp_path, path);
+	if (strcmp(&tmp_path[len - 3], ".BE"))
+		/* Skip lock files, object files, etc... */
+		return 0;
+	/* strip the .PG, ods_lock_info will append it */
+	tmp_path[len - 3] = '\0';
+	fprintf(stdout, "Checking '%s' ... ", tmp_path);
+	int rc = ods_lock_info(tmp_path, stdout);
+	fprintf(stdout, "done(%d)\n", rc);
+	return 0;
+}
+
 /**
  * \brief Print container lock information
  *
@@ -680,18 +683,8 @@ static int release_locks(const char *path, const struct stat *sb,
  */
 int sos_container_lock_info(const char *path, FILE *fp)
 {
-	int i, rc;
+	int i, rc, res = 0;
 	char tmp_path[PATH_MAX];
-#if 0
-	size_t len = strlen(path);
-	sos_part_iter_t part_iter;
-	ods_iter_t idx_iter;
-	sos_obj_ref_t idx_ref;
-	ods_idx_t idx;
-	ods_obj_t idx_obj;
-	int rc, res = 0;
-	rc = nftw(path, show_locks, 1024, FTW_DEPTH);
-#endif
 	const char *ods_path[] = {
 		".__config",
 		".__config_idx",
@@ -705,50 +698,48 @@ int sos_container_lock_info(const char *path, FILE *fp)
 	for (i = 0; i < sizeof(ods_path)/sizeof(ods_path[0]); i++) {
 		snprintf(tmp_path, sizeof(tmp_path), "%s/%s", path, ods_path[i]);
 		rc = ods_lock_info(tmp_path, stdout);
-		if (rc)
+		if (rc) {
+			res = -1;
 			printf("Error %d from ods_lock_info on path '%s'.\n", rc, tmp_path);
-	}
-#if 0
-	/* Report lock information for the partition ODS */
-	part_iter = sos_part_iter_new(sos);
-	if (!part_iter)
-		return errno;
-	idx_iter = ods_iter_new(sos->idx_idx);
-	if (!idx_iter)
-		return errno;
-	for (part = sos_part_first(part_iter); part; part = sos_part_next(part_iter)) {
-		if (sos_part_state(part) == SOS_PART_STATE_OFFLINE) {
-			sos_part_put(part);
-			continue;
 		}
-		for (rc = ods_iter_begin(idx_iter); !rc; rc = ods_iter_next(idx_iter)) {
-			idx_ref.idx_data = ods_iter_data(idx_iter);
-			idx_obj = ods_ref_as_obj(sos->idx_ods, idx_ref.ref.obj);
-			sprintf(tmp_path, "%s/%s_idx", sos_part_path(part), SOS_IDX(idx_obj)->name);
-			printf("Verifying %s ... ", tmp_path);
-			fflush(stdout);
-			idx = ods_idx_open(tmp_path, sos->o_perm);
-			ods_obj_put(idx_obj);
-			if (!idx) {
-				printf("OPEN error %d\n", errno);
-				res = errno;
-				continue;
-			}
-			rc = ods_idx_verify(idx, stdout);
-			if (rc) {
-				res = rc;
-				printf("VERIFY error %d\n", rc);
-			} else {
-				printf("OK\n");
-			}
-		}
-		sos_part_put(part);
 	}
-	ods_iter_delete(idx_iter);
-	sos_part_iter_free(part_iter);
+	/*
+	 * Iterate through all of the partitions and dump the lock info
+	 * for each ODS in each partition
+	 */
+	ods_t part_ref_ods;
+
+	/* Open the partition ODS */
+	sprintf(tmp_path, "%s/.__part", path);
+	part_ref_ods = ods_open(tmp_path, ODS_PERM_RW);
+	if (!part_ref_ods) {
+		res = errno;
+		goto err;
+	}
+	ods_obj_t part_ref_udata = ods_get_user_data(part_ref_ods);
+	if (!part_ref_udata) {
+		res = errno;
+		goto err;
+	}
+	ods_obj_t part_ref =
+		ods_ref_as_obj(part_ref_ods,
+			SOS_PART_REF_UDATA(part_ref_udata)->head);
+	while (part_ref) {
+		const char *part_path = SOS_PART_REF(part_ref)->path;
+		rc = nftw(part_path, show_locks, 1024, FTW_DEPTH | FTW_PHYS);
+		if (rc)
+			res = rc;
+		ods_obj_t next_ref = ods_ref_as_obj(part_ref_ods, SOS_PART_REF(part_ref)->next);
+		ods_obj_put(part_ref);
+		part_ref = next_ref;
+	}
+	ods_obj_put(part_ref_udata);
+	ods_close(part_ref_ods, ODS_COMMIT_ASYNC);
 	return res;
-#endif
-	return 0;
+err:
+	ods_obj_put(part_ref_udata);
+	ods_close(part_ref_ods, ODS_COMMIT_ASYNC);
+	return res;
 }
 
 /**
