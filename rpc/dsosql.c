@@ -38,6 +38,21 @@
 #include "dsos.h"
 #include "dsosql.h"
 
+#define DSOS_ERR_FIRST 512
+const char *dsos_error_str[] = {
+	[DSOS_ERR_MEMORY]		= "ERR_MEMORY",
+	[DSOS_ERR_CLIENT]		= "ERR_CLIENT",
+	[DSOS_ERR_SCHEMA]		= "ERR_SCHEMA",
+	[DSOS_ERR_ATTR]			= "ERR_ATTR",
+	[DSOS_ERR_ITER]			= "ERR_ITER",
+	[DSOS_ERR_ITER_EMPTY]		= "ERR_ITER_EMPTY",
+	[DSOS_ERR_QUERY_ID]		= "ERR_QUERY_ID",
+	[DSOS_ERR_QUERY_EMPTY]		= "ERR_QUERY_EMPTY",
+	[DSOS_ERR_QUERY_BAD_SELECT]	= "ERR_QUERY_BAD_SELECT",
+	[DSOS_ERR_PARAMETER]		= "ERR_PARAMETER",
+	[DSOS_ERR_TRANSPORT]		= "ERR_TRANSPORT",
+};
+
 int output_format = TABLE;
 int query_limit = -1;
 
@@ -138,8 +153,9 @@ struct cmd_s commands[] = {
 			{ SOS_TYPE_STRING, "limit" },
 		}
 	},
-	[CREATE_PART_CMD] = { "create_part", create_part,
-				"create_part name NAME path PATH desc STRING perm OCTAL uid UID gid GID",
+	[CREATE_PART_CMD] = {
+		"create_part", create_part,
+		"create_part name NAME path PATH desc STRING perm OCTAL uid UID gid GID",
 		6,
 		{
 			{ SOS_TYPE_STRING, "name" },
@@ -352,7 +368,7 @@ static cmd_t current_command;
 /* Execute a command line. */
 int execute_line(char *line)
 {
-	register int i;
+	register int i, rc;
 	cmd_t cmd;
 	char *word;
 
@@ -381,8 +397,14 @@ int execute_line(char *line)
 	word = line + i;
 
 	av_list_t avl = av_parse_args(cmd, word);
-	int rc = cmd->cmd_fn(cmd, avl);
+	if (!avl) {
+		fprintf(stderr, "Syntax error parsing command.\n");
+		rc = EINVAL;
+		goto out;
+	}
+	rc = cmd->cmd_fn(cmd, avl);
 	av_free_args(avl);
+out:
 	return rc;
 }
 
@@ -599,7 +621,10 @@ int show_command(cmd_t cmd, av_list_t avl)
 	attr_name = av->value_str;
 	iter = dsos_iter_create(g_cont, dschema, attr_name);
 	if (!iter) {
-		printf("Error %d creating the iterator.\n", errno);
+		char err_s[256];
+		char *s = strerror_r(errno, err_s, sizeof(err_s));
+		printf("Error %s creating the iterator.\n",
+			errno < DSOS_ERR_FIRST ? err_s : dsos_error_str[errno]);
 		goto out;
 	}
 	sos_attr_t index_attr = sos_schema_attr_by_name(schema, attr_name);

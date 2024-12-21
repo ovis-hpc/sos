@@ -170,7 +170,7 @@ static sos_schema_t __sos_schema_new(const char *name, const uuid_t uuid)
  * containers. See the sos_schema_add() function to add a schema to a
  * container so that objects of that type can subsequently be created
  * in the container. Once a schema has been added, it can be looked up
- * with the sos_schema_by_name() and sos_schema_by_id() functions.
+ * with the sos_schema_by_name() and sos_schema_by_uuid() functions.
  *
  * Objects are created with the sos_obj_new() function. This function
  * takes a schema-handle as its argument. The schema-id is saved

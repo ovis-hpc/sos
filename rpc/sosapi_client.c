@@ -1235,7 +1235,7 @@ schema_by_name_complete_fn(dsos_client_t client,
 			if (!rqst->schema->schema)
 				derr = errno;
 		} else if (derr == 0) {
-#if 1
+#if 0
 			/*
 			* Make certain this schema's UUID matches the one
 			* we instantiated for the first schema. Otherwise,
