@@ -107,6 +107,7 @@ if __name__ == "__main__":
                 cont.open(args.path, perm)
         except Exception as ex:
             print(f"The container {args.path} could not be created.")
+            print(str(ex))
             sys.exit(1)
 
     if args.query:
@@ -115,6 +116,7 @@ if __name__ == "__main__":
             cont.open(args.path)
         except Exception as e:
             print(f"The container {args.path} could not be opened.")
+            print(str(e))
             sys.exit(1)
 
         pi = cont.part_iter()
