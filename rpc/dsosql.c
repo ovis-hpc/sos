@@ -118,13 +118,13 @@ enum dsosql_command_id_e {
 };
 
 struct cmd_s commands[] = {
-	[ATTACH_CMD] = {"attach", open_session, "Open a session with the DSOSD cluster specified by FILE",
+	[ATTACH_CMD] = {"attach", open_session, "attach path PATH\n\tOpen a session to the cluster specified by PATH.",
 		1,
 		{
 			{ SOS_TYPE_STRING, "path" },
 		}
 	},
-	[OPEN_CMD] = {"open", open_container, "open path PATH [perm SOS_PERM_RW/RO] [mode 0660]",
+	[OPEN_CMD] = {"open", open_container, "open path PATH [perm SOS_PERM_RW/RO] [mode 0660].\n\tOpen the container located at PATH",
 	      3,
 	      {
 		      { SOS_TYPE_STRING, "path"},
@@ -132,14 +132,20 @@ struct cmd_s commands[] = {
 		      { SOS_TYPE_UINT32, "mode"}
 	      }
 	},
-	[CREATE_SCHEMA_CMD] = { "create_schema", create_schema, "create_schema name NAME from PATH",
+	[CREATE_SCHEMA_CMD] = { "create_schema", create_schema,
+		"create_schema name NAME from PATH."
+		"\n\tCreate the schema NAME from the schema template in file PATH.",
 		2,
 		{
 			 { SOS_TYPE_STRING, "name" },
 			 { SOS_TYPE_STRING, "from" }
 		}
 	},
-	[SHOW_SCHEMA_CMD] = { "show_schema", show_schema, "show_schema [ name NAME ] [ regex REGEX ]",
+	[SHOW_SCHEMA_CMD] = { "show_schema", show_schema,
+		"show_schema [ name NAME ] [ regex REGEX ]"
+		"\n\tIf name and regex are not specified. A list of schema names are printed."
+		"\n\tIf name is specifed the detail for schema NAME is printed."
+		"\n\tIf regex is specified the defail for all schema matching REGEX are printed",
 		2,
 		{
 			{ SOS_TYPE_STRING, "name" },
@@ -173,14 +179,22 @@ struct cmd_s commands[] = {
 			{ SOS_TYPE_STRING, "regex" },
 		}
 	},
-	[IMPORT_CMD] = {"import", import_csv, "import schema SCHEMA-NAME from CSV-FILE-NAME",
+	[IMPORT_CMD] = {"import", import_csv, "import schema SCHEMA-NAME from CSV-FILE-NAME"
+			"\n\tImport all the data in the the file CSV-FILE-NAME into objects of type SCHEMA-NAME",
 		2,
 		{
 			{ SOS_TYPE_STRING, "schema" },
 			{ SOS_TYPE_STRING, "from" }
 		}
 	},
-	[SELECT_CMD] = {"select", select_command, "select COLS from SCHEMA where COND",
+	[SELECT_CMD] = {"select", select_command, "select COLS from SCHEMA [where COND] [group_by GROUP] [order_by INDEX] [limit INT]"
+			"\n\tCOLS\t- A list of column names in SCHEMA. '*' means all columns in SCHEMA"
+			"\n\tSCHEMA\t- The schema containing the attributes listed in COLS"
+			"\n\tCOND\t- A set of conditions separated by boolean comparators, 'or', 'and', e.g. attr-name == value"
+			"\n\tGROUP\t- The index/key over which aggregates will be calculated"
+			"\n\tINDEX\t- The index that will govern the order of the objects returned by the query"
+			"\n\tINT\t- The maximum number of records that will be returned by the query"
+			"\n\t",
 	},
 	[SHOW_CMD] = {"show", show_command, "Display information about a DSOSD object.",
 		2,
@@ -189,7 +203,12 @@ struct cmd_s commands[] = {
 			{ SOS_TYPE_STRING, "from", },
 		}
 	},
-	[HELP_CMD] = {"help", help_command, "help"},
+	[HELP_CMD] = {"help", help_command, "help [cmd NAME]",
+		1,
+		{
+			{ SOS_TYPE_STRING, "cmd", }
+		}
+	},
 	[HELP_CMD_2] = {"?", help_command, "Synonym for `help'"},
 	[LAST_CMD] = {}
 };
@@ -542,21 +561,13 @@ int help_command(cmd_t cmd, av_list_t avl)
 	if (avl->count == 0) {
 		int i, column = 0;
 		for (i = 0; commands[i].name; i++) {
-			if (column == 6) {
-				column = 0;
-				printf("\n");
-			}
-			printf("%s\t", commands[i].name);
-			column++;
+			printf("%s:\n\t%s\n", commands[i].name, commands[i].doc);
 		}
-
-		if (column)
-			printf("\n");
 	} else {
 		av_t av = LIST_FIRST(&avl->head);
-		cmd = find_command(av->name);
-		if (cmd) {
-			printf("usage: %s\n", cmd->doc);
+		cmd_t help = find_command(av->value_str);
+		if (help) {
+			printf("usage: %s\n", help->doc);
 		} else {
 			printf("'%s' is not a dsosql command.\n", av->name);
 		}
@@ -585,6 +596,96 @@ int open_session(cmd_t cmd, av_list_t avl)
 	return 0;
 }
 
+static void index_header(FILE *outp, sos_attr_t index_attr, struct col_list_s *col_list)
+{
+	struct col_s *col;
+	fprintf(outp, "Index Key Column Information\n");
+	fprintf(outp, "----------------------------\n");
+	if (index_attr) {
+		if (sos_attr_type(index_attr) != SOS_TYPE_JOIN) {
+			fprintf(outp, "ORDER_BY \"%s\"\n", sos_attr_name(index_attr));
+		} else {
+			int join_idx;
+			sos_array_t join_list = sos_attr_join_list(index_attr);
+			sos_schema_t schema = sos_attr_schema(index_attr);
+			fprintf(outp, "ORDER_BY ");
+			for (join_idx = 0; join_idx < join_list->count; join_idx++) {
+				sos_attr_t join_attr = sos_schema_attr_by_id(schema,
+									     join_list->data.uint32_[join_idx]);
+				fprintf(outp, "\"%s\"", sos_attr_name(join_attr));
+				if (join_idx < join_list->count - 1) {
+					fprintf(outp, ", ");
+				}
+			}
+			fprintf(outp, "\n");
+		}
+	}
+	fprintf(outp, "\nKey Column Limit Information\n");
+	fprintf(outp, "----------------------------\n");
+	/* Print the header labels */
+
+	fprintf(outp, "     ");
+	TAILQ_FOREACH(col, col_list, entry) {
+		if (col->width > 0)
+			fprintf(outp, "%-*s ", col->width, col->name);
+		else
+			fprintf(outp, "%-s ", col->name);
+	}
+	fprintf(outp, "\n");
+	fprintf(outp, "     ");
+	/* Print the header separators */
+	TAILQ_FOREACH(col, col_list, entry) {
+		int i;
+		if (col->width > 0)
+			for (i = 0; i < col->width; i++)
+				fprintf(outp, "-");
+		else
+			for (i = 0; i < strlen(col->name); i++)
+				fprintf(outp, "-");
+		fprintf(outp, " ");
+	}
+	fprintf(outp, "\n");
+}
+
+static void index_row(FILE *outp, sos_schema_t schema, sos_obj_t obj, struct col_list_s *col_list, char *pfx)
+{
+	struct col_s *col;
+	int col_len;
+	sos_attr_t attr;
+	char *col_str;
+	char str[80];
+	fprintf(outp, "%s", pfx);
+	TAILQ_FOREACH(col, col_list, entry) {
+		attr = sos_schema_attr_by_id(schema, col->id);
+		if (col->width > 0 && col->width < sizeof(str)) {
+			col_len = col->width;
+			col_str = str;
+		} else {
+			if (col->width > 0)
+				col_len = col->width;
+			else
+				col_len = sos_obj_attr_strlen(obj, attr);
+			size_t col_name_len = strlen(sos_attr_name(attr));
+			if (col_len < col_name_len)
+				col_len = col_name_len;
+			if (col_len < sizeof(str))
+				col_str = str;
+			else
+				col_str = malloc(col_len);
+		}
+		if (col->width > 0) {
+			fprintf(outp, "%*s ", col->width,
+				sos_obj_attr_to_str(obj, attr, col_str, col_len));
+		} else {
+			fprintf(outp, "%*s ", col_len,
+				sos_obj_attr_to_str(obj, attr, col_str, col_len));
+		}
+		if (col_str != str)
+			free(col_str);
+	}
+	fprintf(outp, "\n");
+}
+
 int show_command(cmd_t cmd, av_list_t avl)
 {
 	dsos_res_t res;
@@ -596,7 +697,7 @@ int show_command(cmd_t cmd, av_list_t avl)
 	struct col_list_s col_list = TAILQ_HEAD_INITIALIZER(col_list);
 
 	if (!g_cont) {
-		printf("There is not container open.\n");
+		printf("There is no container open.\n");
 		goto out;
 	}
 
@@ -645,13 +746,15 @@ int show_command(cmd_t cmd, av_list_t avl)
 		printf("The iterator for '%s' is empty.\n", attr_name);
 		goto out;
 	}
-	table_header(stdout, index_attr, &col_list);
-	table_row(stdout, schema, obj, &col_list);
+	index_header(stdout, index_attr, &col_list);
+	index_row(stdout, schema, obj, &col_list, "Min: ");
 	sos_obj_put(obj);
 	obj = dsos_iter_end(iter);
-	table_row(stdout, schema, obj, &col_list);
+	index_row(stdout, schema, obj, &col_list, "Max: ");
 	sos_obj_put(obj);
 
+	fprintf(stdout, "\nIndex Statistics\n");
+	fprintf(stdout, "-------------------------\n");
 	dsos_iter_stats_t stats = dsos_iter_stats(iter);
 	fprintf(stdout, "%-*s : %lu\n", 12, "Cardinality", stats.cardinality);
 	fprintf(stdout, "%-*s : %lu\n", 12, "Duplicates", stats.duplicates);
