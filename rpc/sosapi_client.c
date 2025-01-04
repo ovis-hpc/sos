@@ -1225,6 +1225,8 @@ schema_by_name_complete_fn(dsos_client_t client,
 		derr = RPC_ERROR(request->rpc_err);
 	} else {
 		derr = sres->error;
+		request->schema_by_name.schema->handles[client->client_id] =
+				sres->dsos_schema_res_u.spec->id;
 		if (derr == 0 && rqst->schema->schema == NULL) {
 			/*
 			* We only need to instantiate one local
@@ -1253,8 +1255,6 @@ schema_by_name_complete_fn(dsos_client_t client,
 					__func__, client->client_id);
 			}
 #endif
-			request->schema_by_name.schema->handles[client->client_id] =
-					sres->dsos_schema_res_u.spec->id;
 		}
 	}
 	if (!res->any_err)
