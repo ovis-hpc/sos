@@ -64,6 +64,7 @@ typedef struct dsos_client_request_s {
 
 	enum dsos_client_request_type_e {
 		REQ_CONTAINER_OPEN = 1,
+		REQ_SCHEMA_CREATE,
 		REQ_SCHEMA_QUERY,
 		REQ_SCHEMA_BY_NAME,
 		REQ_SCHEMA_BY_UUID,
@@ -93,6 +94,11 @@ typedef struct dsos_client_request_s {
 			int mode;
 			dsos_open_res res;
 		} open;
+
+		struct schema_create_req_s {
+			dsos_container_t cont;
+			dsos_schema_create_res res;
+		} schema_create;
 
 		struct schema_query_req_s {
 			dsos_container_t cont;
@@ -380,6 +386,10 @@ static void format_request_va(dsos_client_request_t request, va_list ap)
 		request->open.name = va_arg(ap, char *);
 		request->open.perm = va_arg(ap, sos_perm_t);
 		request->open.mode = va_arg(ap, int);
+		break;
+	case REQ_SCHEMA_CREATE:
+		memset(&request->schema_create, 0, sizeof(request->schema_create));
+		request->schema_create.cont = va_arg(ap, dsos_container_t);
 		break;
 	case REQ_SCHEMA_QUERY:
 		memset(&request->schema_query, 0, sizeof(request->schema_query));

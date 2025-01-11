@@ -106,6 +106,13 @@ union dsos_schema_attr_res switch (int error) {
 
 typedef string dsos_name<>;
 
+union dsos_schema_create_res switch (int error) {
+	case 0:
+		dsos_schema_id id;	/* The server-local schema-id */
+	default:
+		string error_msg<>;
+};
+
 union dsos_schema_query_res switch (int error) {
     case 0:
 	dsos_name names<>;

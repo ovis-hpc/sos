@@ -1,0 +1,163 @@
+.\" Manpage for the dsosql command
+.TH man 8 "23 Dec 2024" "v1" "dsosql command man page"
+
+.SH NAME
+
+.SH SYNOPSIS
+dsosql [-a sesssion-file-path] [-o container-path]
+
+.SH DESCRIPTION
+The \fBdsosql\fR command interpretter is the interactive D/SOS
+parallel NOSQL interpreter.
+
+The interpreter supports command completion, help, and
+command history.
+
+Commands can be submitted to the interpretter from stdin by
+echoing strings into the daemon, so for example:
+.nf
+echo "show_schema | dsosql -a cluster.json -o my-container
+.fi
+Will display all of the schema in the container my-container
+defined in the cluster cluster.json.
+
+If the command is run with no options, the interpretter is entered
+without attaching to any cluster or opening a container. This mode
+is primarily supported so that the \fIhelp\fR command can
+used to obtain the interpretter syntax usage.
+
+.SH OPTIONS
+.TP
+.BI -a " PATH"
+.br
+Specifies the path to the \fIsession-file\fR that contains
+the namees of the hosts that are running the \fBdsosd\fR
+parallel server. The format of this file is simply a list of
+host name as follows:
+
+.BI -o " NAME-PATH"
+Specifies the container name and/or path that the \fBdsosd\fR
+will use to query the container. The \fBdsosd\fR will interpret
+this NAME-PATH based on its dsosd-directory configuration file.
+
+.SH "COMMAND LINE SYNTAX"
+.SS Overview
+The general syntax for \fBdsosql\fR commands is:
+
+.RS 4
+.nf
+<command-name> [ <arg-name> <arg-value> ... ]
+.fi
+.RE
+
+Command names and argument names are case sensitive. Values are quoted strings,
+integers, or floating point values. Optionally, an '=' sign can be placed
+between the argument name and argument value.
+
+.SS "Help Command"
+The \fIhelp\fR command prints the command usage for all commands known to the interpretter.
+For example:
+
+.RS 4
+.EX
+dsosql: help
+attach:
+        attach path PATH
+        Open a session to the cluster specified by PATH.
+open:
+        open path PATH [perm SOS_PERM_RW/RO] [mode 0660].
+        Open the container located at PATH
+create_schema:
+        create_schema name NAME from PATH.
+        Import all of the schema defined in the file at PATH into the cluster.
+show_schema:
+        show_schema [ name NAME ] [ regex REGEX ]
+        If neither NAME nor REGEX are specified a list of all schema names are printed.
+        If NAME is specifed the detail for schema NAME is printed.
+        If REGEX is specified the defail for all schema matching REGEX are printed.
+create_part:
+        create_part name NAME path PATH desc STRING perm OCTAL uid UID gid GID
+show_part:
+        show_part [ name NAME ] [ regex REGEX ]
+import:
+        import schema SCHEMA-NAME from CSV-FILE-NAME
+        Import all the data in the the file CSV-FILE-NAME into objects of type SCHEMA-NAME
+select:
+        select COLS from SCHEMA [where COND] [group_by GROUP] [order_by INDEX] [limit INT]
+        COLS    - A list of column names in SCHEMA. '*' means all columns in SCHEMA
+        SCHEMA  - The schema containing the attributes listed in COLS
+        COND    - A set of conditions separated by boolean comparators, 'or', 'and', e.g. attr-name == value
+        GROUP   - The index/key over which aggregates will be calculated
+        INDEX   - The index that will govern the order of the objects returned by the query
+        INT     - The maximum number of records that will be returned by the query
+
+show:
+        Display information about a DSOSD object.
+set:
+        set [ format FORMAT ] [ limit INT ]
+        Sets the format and/or limit options used to format result output.
+        FORMAT is one of 'table', 'csv', or 'json'
+                'table' is a table oriented human readable format with text headers for each attribute in the reesult.
+                'csv' is a comma-separated-file with columns separated by commas. The header is prefixed with a '#'.
+                'json' is a JSON formatted string which is suitable for import into Python or other JSON parser.
+        The limit INT specifies the maximum number or rows accepted from each node in the cluster
+help:
+        help [cmd NAME]
+?:
+        Synonym for `help'
+.EE
+.RE
+
+.SS "Attach Command"
+The \fIattach\fR command can be used after starting the interpretter without the
+\fB-a\fR option to attach to a cluster.
+
+For example:
+
+.RS 4
+.nf
+attach path /opt/ovis/etc/orion.session
+.fi
+.RE
+
+If a session has already been attached, an error is reported and no action
+is taken.
+
+.SS "Open Command"
+The \fIopen\fR command is used to open a container on all nodes in
+the cluster. Only one container may be open at a time. If the \fIopen\fR
+command is issed to another container, the affect is that all of the
+schema in the previous container will be purged and the schema from the
+new container will be loaded.
+
+If the container does not exist the error "No such file or directory" is returned.
+
+.SH FILES
+.SS "Session File"
+The session file specifies the list of hosts that are
+running the \fBdsosd\fR parallel server. This file has
+the following format:
+
+.RS 4
+.nf
+hostname-01
+hostname-02
+"..."
+hostname-\fIN\fR
+.fi
+.RE
+
+.SH ENVIRONMENT
+The following environment variables may be used to affect the
+behavior of the dsosql commands.
+.TP
+HISTORY_PATH
+The path to the location of the command history file. By default,
+this is the home directory of the current user.
+.TP
+HISTORY_FILE
+The name of the file in which command history will be
+read from and stored. By default this is '.dsosql_history'.
+
+.SH SEE ALSO
+dsosd(8), dsosd_directory(7), dsosql_nosql(7)

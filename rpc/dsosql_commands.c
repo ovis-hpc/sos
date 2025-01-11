@@ -48,19 +48,6 @@ int value_from_str(sos_attr_t attr, sos_value_t cond_value, char *value_str, cha
 	return rc;
 }
 
-int create(const char *path, int o_mode)
-{
-	int rc = 0;
-	sos_t sos = sos_container_open(path, SOS_PERM_CREAT|SOS_PERM_RW, o_mode);
-	if (!sos) {
-		rc = errno;
-		perror("The container could not be created");
-	} else {
-		sos_container_close(sos, SOS_COMMIT_ASYNC);
-	}
-	return rc;
-}
-
 int col_widths[] = {
 	[SOS_TYPE_INT16] = 6,
 	[SOS_TYPE_INT32] = 12,
@@ -360,6 +347,7 @@ struct type_def_s {
 
 struct type_def_s types[] = {
 	{ "bytes", SOS_TYPE_BYTE_ARRAY },
+	{ "char_array", SOS_TYPE_STRING },
 	{ "double", SOS_TYPE_DOUBLE },
 	{ "double_array", SOS_TYPE_DOUBLE_ARRAY },
 	{ "float", SOS_TYPE_FLOAT },
@@ -387,7 +375,7 @@ int type_cmp(const void *a_, const void *b_)
 {
 	const char *a = a_;
 	struct type_def_s *b = (struct type_def_s *)b_;
-	return strcmp(a, b->name);
+	return strcasecmp(a, b->name);
 }
 
 sos_type_t lookup_type(const char *name)
@@ -397,116 +385,148 @@ sos_type_t lookup_type(const char *name)
 			sizeof(types) / sizeof(types[0]),
 			sizeof(types[0]),
 			type_cmp);
+	if (!def) {
+		printf("Invalid type '%s' specified in type specification.\n", name);
+		return -1;
+	}
 	return def->type;
 }
 
-int dsosql_create_schema(dsos_container_t cont, char *schema_name, char *template)
+int dsosql_import_schema(dsos_container_t cont, char *schema_dict)
 {
 	sos_schema_t schema;
 	dsos_schema_t dschema;
 	dsos_res_t res;
 	json_error_t error;
-	json_t *t, *i, *j, *attr;
-	int rc = 0;
+	json_t *js_dict, *js_array, *jschema, *js_attr;
+	int rc = 0, x;
 
-	t = json_loads(template, 0, &error);
-	if (!t) {
-		printf("Error parsing the schema template:\n");
+	js_dict = json_loads(schema_dict, 0, &error);
+	if (!js_dict) {
+		printf("Error parsing the schema dictionary:\n");
 		printf("    %s\n", error.text);
 		printf("    %s\n", error.source);
 		printf("    %*s\n", error.column, "^");
 		rc = EINVAL;
 		goto err;
 	}
-	schema = sos_schema_new(schema_name);
-	if (!schema) {
-		printf("Error %d creating the schema %s\n", errno, schema_name);
-		rc = errno;
-		goto err;
-	}
-	/* Each item is a dictionary of 'name', 'type', + optional 'size' and 'join_list' */
-	if (!json_is_object(t)) {
-		rc = EINVAL;
-		printf("The schema template must be a dictionary.\n");
-		goto err;
-	}
-	json_t *uuid = json_object_get(t, "uuid");
-	if (!uuid || !json_is_string(uuid)) {
-		printf("The \"uuid\" attribute is missing from the template or is not a string.\n");
+	js_array = json_object_get(js_dict, "schemas");
+	if (!js_array) {
+		printf("The 'schemas' attribute of the schema dictionary is missing.");
 		rc = EINVAL;
 		goto err;
 	}
-	json_t *attr_list = json_object_get(t, "attrs");
-	if (!attr_list || !json_is_array(attr_list)) {
-		printf("The \"attrs\" attribute is missing from the template or is not an array.\n");
-		rc = EINVAL;
-		goto err;
-	}
-	int attr_id;
-	json_array_foreach(attr_list, attr_id, attr) {
-		if (!json_is_object(attr)) {
-			printf("The attribute entry is not an object.\n");
+	/* Iterate through all the schema definitions in the dictionary. Create
+	 * a schema from each one, create a local schema and create it on the
+	 * cluster members
+	 */
+	json_array_foreach(js_array, x, jschema) {
+		/* Each item is a dictionary of 'name', 'type', + optional 'size' and 'join_list' */
+		if (!json_is_object(jschema)) {
+			rc = EINVAL;
+			printf("The schema template must be a dictionary.\n");
+			goto err;
+		}
+		json_t *js_name = json_object_get(jschema, "name");
+		if (!js_name || !json_is_string(js_name)) {
+			printf("The 'name' attribute is missing or not a string in the schema dictionary.");
 			rc = EINVAL;
 			goto err;
 		}
-
-		i = json_object_get(attr, "name");
-		if (!i || !json_is_string(i)) {
-			printf("The \"name\" attribute is missing from the object.\n");
+		json_t *js_uuid = json_object_get(jschema, "uuid");
+		if (!js_uuid || !json_is_string(js_uuid)) {
+			printf("The \"uuid\" attribute is missing from the template or is not a string.\n");
 			rc = EINVAL;
 			goto err;
 		}
-		const char *attr_name = json_string_value(i);
-
-		i = json_object_get(attr, "type");
-		if (!i || !json_is_string(i)) {
-			printf("The \"type\" attribute is missing from the object.\n");
+		uuid_t uuid;
+		uuid_parse(json_string_value(js_uuid), uuid);
+		schema = sos_schema_create(json_string_value(js_name), uuid);
+		if (!schema) {
+			printf("Error %d creating the schema %s\n", errno, json_string_value(js_name));
+			rc = errno;
+			goto err;
+		}
+		json_t *js_attr_list = json_object_get(jschema, "attrs");
+		if (!js_attr_list || !json_is_array(js_attr_list)) {
+			printf("The \"attrs\" attribute is missing from the template or is not an array.\n");
 			rc = EINVAL;
 			goto err;
 		}
-		const char *type_str = json_string_value(i);
-		sos_type_t type = lookup_type(type_str);
-		int size = 0;
-		if (type == SOS_TYPE_STRUCT) {
-			j = json_object_get(i, "size");
-			if (j) {
-				if (!json_is_integer(j)) {
-					printf("The template file has an invalid attribute 'size' value, must be an integer\n");
-					rc = EINVAL;
-					goto err;
-				}
-				size = json_integer_value(j);
-			}
-		}
-
-		char **attr_names = NULL;
-		if (type == SOS_TYPE_JOIN) {
-			json_t *join = json_object_get(i, "join_attrs");
-			json_t *join_entry;
-			if (!join || !json_is_array(join)) {
-				printf("The template file has an invalid or missing join_attrs value, must be a list []\n");
+		int attr_id;
+		json_array_foreach(js_attr_list, attr_id, js_attr) {
+			if (!json_is_object(js_attr)) {
+				printf("The attribute entry is not an object.\n");
 				rc = EINVAL;
 				goto err;
 			}
-			int item_no;
-			size = json_array_size(join);
-			attr_names = calloc(size, sizeof(char *));
-			json_array_foreach(join, item_no, join_entry) {
-				if (!json_is_string(join_entry)) {
-					printf("The template file attribute join_list members must be quoted strings.\n");
+			json_t *ja_name = json_object_get(js_attr, "name");
+			if (!ja_name || !json_is_string(ja_name)) {
+				printf("The \"name\" is missing from the attribute definition.\n");
+				rc = EINVAL;
+				goto err;
+			}
+			json_t *ja_type = json_object_get(js_attr, "type");
+			if (!ja_type || !json_is_string(ja_type)) {
+				printf("The \"type\" is missing from the attribute definition.\n");
+				rc = EINVAL;
+				goto err;
+			}
+			sos_type_t type = lookup_type(json_string_value(ja_type));
+			if (type < 0) {
+				rc = EINVAL;
+				goto err;
+			}
+
+			int size = 0;
+			json_t *ja_size;
+			if (type == SOS_TYPE_STRUCT) {
+				ja_size = json_object_get(ja_type, "size");
+				if (ja_size) {
+					if (!json_is_integer(ja_size)) {
+						printf("The template file has an invalid attribute 'size' value, must be an integer\n");
+						rc = EINVAL;
+						goto err;
+					}
+					size = json_integer_value(ja_size);
+				}
+			}
+
+			char **attr_names = NULL;
+			if (type == SOS_TYPE_JOIN) {
+				json_t *join = json_object_get(js_attr, "join_attrs");
+				json_t *join_entry;
+				if (!join || !json_is_array(join)) {
+					printf("The template file has an invalid or missing join_attrs value, must be a list []\n");
 					rc = EINVAL;
 					goto err;
 				}
-				attr_names[item_no] = strdup(json_string_value(join_entry));
+				int item_no;
+				size = json_array_size(join);
+				attr_names = calloc(size, sizeof(char *));
+				json_array_foreach(join, item_no, join_entry) {
+					if (!json_is_string(join_entry)) {
+						printf("The template file attribute join_list members must be quoted strings.\n");
+						rc = EINVAL;
+						goto err;
+					}
+					attr_names[item_no] = strdup(json_string_value(join_entry));
+				}
 			}
+			rc = sos_schema_attr_add(schema, json_string_value(ja_name), type, size, attr_names);
+			if (json_object_get(js_attr, "index"))
+				rc = sos_schema_index_add(schema, json_string_value(ja_name));
 		}
-		rc = sos_schema_attr_add(schema, attr_name, type, size, attr_names);
-		if (json_object_get(i, "index"))
-			rc = sos_schema_index_add(schema, attr_name);
+		dschema = dsos_schema_create(cont, schema, &res);
+		if (dschema) {
+			printf("Created schema '%s'\n", json_string_value(js_name));
+		} else {
+			printf("Error creating schema '%s': %s\n",
+				json_string_value(js_name),
+				strerror(res.any_err));
+		}
 	}
-	json_decref(t);
-	dschema = dsos_schema_create(cont, schema, &res);
-	printf("%p\n", dschema);
+	json_decref(js_dict);
  err:
 	return rc;
 }
