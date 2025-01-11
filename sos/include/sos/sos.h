@@ -109,9 +109,9 @@ typedef struct sos_config_data_s {
  * @{
  */
 #pragma pack(1)
-#define SOS_VERS_MAJOR	ODS_VER_MAJOR
-#define SOS_VERS_MINOR	ODS_VER_MINOR
-#define SOS_VERS_FIX	ODS_VER_FIX
+#define SOS_VERS_MAJOR	6
+#define SOS_VERS_MINOR	1
+#define SOS_VERS_FIX	0
 struct sos_version_s {
 	uint8_t major;		/* Binary compatability */
 	uint8_t minor;		/* Feature availability */
@@ -233,10 +233,10 @@ typedef union sos_obj_ref_s {
 		ods_ref_t obj;		/* The object reference */
 	} ref;
 	struct dsos_ref_s {
-		u_long cont_id;
-		u_long client_id;
-		u_long part_id;
-		u_long schema_id;
+		uint64_t cont_id;
+		uint64_t client_id;
+		uint64_t part_id;
+		uint64_t schema_id;
 		ods_ref_t obj_ref;
 	} dsos_ref;
 } sos_obj_ref_t;

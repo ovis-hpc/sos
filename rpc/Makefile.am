@@ -53,5 +53,5 @@ bin_PROGRAMS += dsosql
 
 AM_YFLAGS = -d
 
-dist_man8_MANS= dsosd.man
+dist_man8_MANS= dsosd.man dsosd_directory.man dsosql.man
 

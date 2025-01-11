@@ -8,10 +8,12 @@ dsosd \- Start an instance of the D/SOS RPC service on a node
 dsosd
 
 .SH DESCRIPTION
-The dsosd command starts the D/SOS RPC service on a node. The D/SOS
-RPC service registers the D/SOS program number with the with the RPC
-portmapper on the TCP and UDP transports. Only a single instance of
-the daemon should be run at a time.
+The \fBdsosd\fR command starts the D/SOS RPC service on a node. The D/SOS
+RPC service registers the D/SOS program number with the  RPC
+portmapper on the TCP and UDP transports.
+
+Use the \fBrpcinfo\fR command to determine if the \fBdossd\fR daemon is
+running on a particular node.
 
 .SH ENVIRONMENT
 .SS
@@ -31,6 +33,6 @@ standard out.
 
 
 .SH SEE ALSO
-dsosql(8), dsosd_directory(7)
+dsosql(8), dsosd_directory(7), rpcinfo(8)
 
 

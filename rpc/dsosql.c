@@ -79,6 +79,7 @@ typedef struct cmd_arg_s {
 struct cmd_s {
 	char *name;     /* User printable name of the function. */
 	cmd_fn_t cmd_fn;
+	char *synopsis;
 	char *doc;      /* Documentation for this function.  */
 	int args_count;
 	struct cmd_arg_s args[255];   /* Array of valid arguments to the commmand */
@@ -118,41 +119,60 @@ enum dsosql_command_id_e {
 };
 
 struct cmd_s commands[] = {
-	[ATTACH_CMD] = {"attach", open_session, "attach path PATH\n\tOpen a session to the cluster specified by PATH.",
+	[ATTACH_CMD] = {"attach", open_session,
+		"attach path PATH",
+		"\n\tOpen a session to the cluster specified by PATH.",
 		1,
 		{
 			{ SOS_TYPE_STRING, "path" },
 		}
 	},
-	[OPEN_CMD] = {"open", open_container, "open path PATH [perm SOS_PERM_RW/RO] [mode 0660].\n\tOpen the container located at PATH",
-	      3,
-	      {
-		      { SOS_TYPE_STRING, "path"},
-		      { SOS_TYPE_STRING, "perm"},
-		      { SOS_TYPE_UINT32, "mode"}
-	      }
-	},
-	[CREATE_SCHEMA_CMD] = { "create_schema", create_schema,
-		"create_schema name NAME from PATH."
-		"\n\tCreate the schema NAME from the schema template in file PATH.",
-		2,
+	[OPEN_CMD] = {"open", open_container,
+		"open path PATH [perm PERM] [mode MODE]",
+		"\n\tOpen the container located at PATH"
+		"\n\tPERM Specifies the access rights of the client"
+		"\n\t\tRO     The client has read-only access to the container"
+		"\n\t\tRW     The client has read-write acccess to the container"
+		"\n\t\tCREATE The container should be created if it does not already exist"
+		"\n\t\t       and implies read-write access."
+		"\n\tMODE Specifies the access mode bits of the container (in octal)"
+		"\n\t     if CREATE is specified as PERM",
+		3,
 		{
-			 { SOS_TYPE_STRING, "name" },
-			 { SOS_TYPE_STRING, "from" }
+			{ SOS_TYPE_STRING, "path"},
+			{ SOS_TYPE_STRING, "perm"},
+			{ SOS_TYPE_UINT32, "mode"}
+		}
+	},
+	[CREATE_SCHEMA_CMD] = { "create_schema",
+		create_schema,
+		"create_schema path PATH",
+		"\n\tImport all of the schema defined in the schema template file"
+		"\n\tlocated at PATH into the open container.",
+		1,
+		{
+			 { SOS_TYPE_STRING, "path" }
 		}
 	},
 	[SHOW_SCHEMA_CMD] = { "show_schema", show_schema,
-		"show_schema [ name NAME ] [ regex REGEX ]"
-		"\n\tIf name and regex are not specified. A list of schema names are printed."
-		"\n\tIf name is specifed the detail for schema NAME is printed."
-		"\n\tIf regex is specified the defail for all schema matching REGEX are printed",
+		"show_schema [ name NAME ] [ regex REGEX ]",
+		"\n\tIf neither NAME nor REGEX are specified a list of all schema names are printed."
+		"\n\tIf NAME is specifed the detail for schema NAME is printed."
+		"\n\tIf REGEX is specified the defail for all schema matching REGEX are printed.",
 		2,
 		{
 			{ SOS_TYPE_STRING, "name" },
 			{ SOS_TYPE_STRING, "regex" },
 		}
 	},
-	[SET_CMD] = { "set", set_option, "set { format VALUE, limit VALUE }",
+	[SET_CMD] = { "set", set_option,
+		"set [ format FORMAT ] [ limit INT ]",
+		"\n\tSets the format and/or limit options used to format result output."
+		"\n\tFORMAT is one of 'table', 'csv', or 'json'"
+		"\n\t\t'table' is a table oriented human readable format with text headers for each attribute in the result."
+		"\n\t\t'csv' is a comma-separated-file with columns separated by commas. The header is prefixed with a '#'."
+		"\n\t\t'json' is a JSON formatted string which is suitable for import into Python or other JSON parser."
+		"\n\tThe limit INT specifies the maximum number or rows accepted from each node in the cluster",
 		2,
 		{
 			{ SOS_TYPE_STRING, "format" },
@@ -162,6 +182,7 @@ struct cmd_s commands[] = {
 	[CREATE_PART_CMD] = {
 		"create_part", create_part,
 		"create_part name NAME path PATH desc STRING perm OCTAL uid UID gid GID",
+		"",
 		6,
 		{
 			{ SOS_TYPE_STRING, "name" },
@@ -172,44 +193,49 @@ struct cmd_s commands[] = {
 			{ SOS_TYPE_STRING, "group" },
 		}
 	},
-	[SHOW_PART_CMD] = { "show_part", show_part, "show_part [ name NAME ] [ regex REGEX ]",
+	[SHOW_PART_CMD] = { "show_part", show_part,
+		"show_part [ name NAME ] [ regex REGEX ]",
+		"",
 		2,
 		{
 			{ SOS_TYPE_STRING, "name" },
 			{ SOS_TYPE_STRING, "regex" },
 		}
 	},
-	[IMPORT_CMD] = {"import", import_csv, "import schema SCHEMA-NAME from CSV-FILE-NAME"
-			"\n\tImport all the data in the the file CSV-FILE-NAME into objects of type SCHEMA-NAME",
+	[IMPORT_CMD] = {"import_csv", import_csv,
+		"import_csv schema SCHEMA-NAME from CSV-FILE-NAME",
+		"\n\tImport all the data in the the file CSV-FILE-NAME into objects of type SCHEMA-NAME",
 		2,
 		{
 			{ SOS_TYPE_STRING, "schema" },
 			{ SOS_TYPE_STRING, "from" }
 		}
 	},
-	[SELECT_CMD] = {"select", select_command, "select COLS from SCHEMA [where COND] [group_by GROUP] [order_by INDEX] [limit INT]"
-			"\n\tCOLS\t- A list of column names in SCHEMA. '*' means all columns in SCHEMA"
-			"\n\tSCHEMA\t- The schema containing the attributes listed in COLS"
-			"\n\tCOND\t- A set of conditions separated by boolean comparators, 'or', 'and', e.g. attr-name == value"
-			"\n\tGROUP\t- The index/key over which aggregates will be calculated"
-			"\n\tINDEX\t- The index that will govern the order of the objects returned by the query"
-			"\n\tINT\t- The maximum number of records that will be returned by the query"
-			"\n\t",
+	[SELECT_CMD] = {"select", select_command,
+		"select COLS from SCHEMA [where COND] [group_by GROUP] [order_by INDEX] [limit INT]",
+		"\n\tCOLS\t- A list of column names in SCHEMA. '*' means all columns in SCHEMA"
+		"\n\tSCHEMA\t- The schema containing the attributes listed in COLS"
+		"\n\tCOND\t- A set of conditions separated by boolean comparators, 'or', 'and', e.g. attr-name == value"
+		"\n\tGROUP\t- The index/key over which aggregates will be calculated"
+		"\n\tINDEX\t- The index that will govern the order of the objects returned by the query"
+		"\n\tINT\t- The maximum number of records that will be returned by the query",
 	},
-	[SHOW_CMD] = {"show", show_command, "Display information about a DSOSD object.",
+	[SHOW_CMD] = {"show", show_command,
+		"show index NAME from SCHEMA-NAME",
+		"Display information about a DSOSD object.",
 		2,
 		{
 			{ SOS_TYPE_STRING, "index", },
 			{ SOS_TYPE_STRING, "from", },
 		}
 	},
-	[HELP_CMD] = {"help", help_command, "help [cmd NAME]",
+	[HELP_CMD] = {"help", help_command, "help [cmd NAME]", "",
 		1,
 		{
 			{ SOS_TYPE_STRING, "cmd", }
 		}
 	},
-	[HELP_CMD_2] = {"?", help_command, "Synonym for `help'"},
+	[HELP_CMD_2] = {"?", help_command, "Synonym for `help'", ""},
 	[LAST_CMD] = {}
 };
 
@@ -561,13 +587,14 @@ int help_command(cmd_t cmd, av_list_t avl)
 	if (avl->count == 0) {
 		int i, column = 0;
 		for (i = 0; commands[i].name; i++) {
-			printf("%s:\n\t%s\n", commands[i].name, commands[i].doc);
+			printf("%s: %s",commands[i].name, commands[i].synopsis);
+			printf("\t%s\n", commands[i].doc);
 		}
 	} else {
 		av_t av = LIST_FIRST(&avl->head);
 		cmd_t help = find_command(av->value_str);
 		if (help) {
-			printf("usage: %s\n", help->doc);
+			printf("usage: %s\n", help->synopsis);
 		} else {
 			printf("'%s' is not a dsosql command.\n", av->name);
 		}
@@ -777,16 +804,18 @@ int open_container(cmd_t cmd, av_list_t avl)
 	}
 	av = av_find(avl, "path");
 	if (!av) {
-		printf("The path parameter is required.\n");
+		printf("The path argument is required.\n");
 		return 0;
 	}
 	path = av->value_str;
 	av = av_find(avl, "perm");
 	if (av) {
-		if (0 == strcasecmp(av->value_str, "ro"))
+		if (strstr(av->value_str, "ro"))
 			perm = SOS_PERM_RD;
 		else
 			perm = SOS_PERM_RW;
+		if (strstr(av->value_str, "create"))
+			perm = SOS_PERM_CREAT | SOS_PERM_RW;
 	} else {
 		perm = SOS_PERM_RW;
 	}
@@ -1013,21 +1042,21 @@ int create_part(cmd_t cmd, av_list_t avl)
 	}
 	av = av_find(avl, "name");
 	if (!av) {
-		printf("The 'name' parameter is required.\n");
+		printf("The 'name' argument is required.\n");
 		goto err;
 	}
 	name = av->value_str;
 
 	av = av_find(avl, "desc");
 	if (!av) {
-		printf("The 'desc' parameter is required.\n");
+		printf("The 'desc' argument is required.\n");
 		goto err;
 	}
 	desc = av->value_str;
 
 	av = av_find(avl, "path");
 	if (!av) {
-		printf("The 'path' parameter is required.\n");
+		printf("The 'path' argument is required.\n");
 		goto err;
 	}
 	path = av->value_str;
@@ -1103,15 +1132,9 @@ int create_schema(cmd_t cmd, av_list_t avl)
 		printf("You cannot create a schema until you open a container\n");
 		goto err;
 	}
-	av = av_find(avl, "name");
+	av = av_find(avl, "path");
 	if (!av) {
-		printf("The 'name' parameter is required.\n");
-		goto err;
-	}
-	schema = av->value_str;
-	av = av_find(avl, "from");
-	if (!av) {
-		printf("The 'from' parameter is required.\n");
+		printf("The 'path' argument is required.\n");
 		goto err;
 	}
 	template = av->value_str;
@@ -1135,7 +1158,7 @@ int create_schema(cmd_t cmd, av_list_t avl)
 		nbuf = &buf[tot_bytes];
 	}
 	template = buf;
-	int rc = dsosql_create_schema(g_cont, schema, template);
+	int rc = dsosql_import_schema(g_cont, template);
 	free(buf);
 	return 0;
  err:
@@ -1158,13 +1181,13 @@ int import_csv(cmd_t cmd, av_list_t avl)
 	}
 	av = av_find(avl, "schema");
 	if (!av) {
-		printf("The 'schema' parameter is required.\n");
+		printf("The 'schema' argument is required.\n");
 		goto err;
 	}
 	schema = av->value_str;
 	av = av_find(avl, "from");
 	if (!av) {
-		printf("The 'from' parameter is required.\n");
+		printf("The 'from' argument is required.\n");
 		goto err;
 	}
 	path = av->value_str;
