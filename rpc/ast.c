@@ -1931,6 +1931,14 @@ static int __resolve_sos_entities(struct ast *ast)
 				 attr_e->name);
 			return ast->result;
 		}
+		/* Ensure the attribute is indexed */
+		if (!sos_attr_index(attr_e->src_attr)) {
+			ast->result = ASTP_ATTR_NOT_INDEXED;
+			snprintf(ast->error_msg, sizeof(ast->error_msg),
+				 "The '%s' attribute specified in the order_by clause is not indexed.",
+				 attr_e->name);
+			return ast->result;
+		}
 	}
 
 	/*

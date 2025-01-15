@@ -237,6 +237,9 @@ void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj, struct col_list_s
 				col_len = col->width;
 			else
 				col_len = sos_obj_attr_strlen(obj, attr);
+			size_t col_name_len = strlen(sos_attr_name(attr));
+			if (col_len < col_name_len)
+				col_len = col_name_len;
 			if (col_len < sizeof(str))
 				col_str = str;
 			else

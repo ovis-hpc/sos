@@ -161,7 +161,6 @@ sos_iter_t sos_attr_iter_new(sos_attr_t attr)
 	sos_index_t index = sos_attr_index(attr);
 
 	if (!index) {
-		errno = EINVAL;
 		return NULL;
 	}
 

@@ -49,6 +49,7 @@ enum ast_parse_e {
 	ASTP_BAD_OP_NAME,
 	ASTP_SYNTAX,
 	ASTP_ENOMEM,
+	ASTP_ATTR_NOT_INDEXED,
 };
 
 typedef struct ast_attr_entry_s *ast_attr_entry_t;

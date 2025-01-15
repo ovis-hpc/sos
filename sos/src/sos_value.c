@@ -160,7 +160,11 @@ static int TIMESTAMP_cmp(sos_value_t a, sos_value_t b, size_t size)
 	return 0;
 }
 
-static int OBJ_cmp(sos_value_t a, sos_value_t b, size_t size)
+/*
+ * Note that this function is named inconsistently because
+ * OBJ_cmp is an EVP/OpenSSL data type
+ */
+static int __OBJ_cmp(sos_value_t a, sos_value_t b, size_t size)
 {
 	return memcmp(a->data->prim.ref_.idx_data.bytes, b->data->prim.ref_.idx_data.bytes, sizeof(ods_idx_data_t));
 }
@@ -361,7 +365,7 @@ static cmp_fn_t cmp_fn_table[] = {
 	[SOS_TYPE_DOUBLE] = DOUBLE_cmp,
 	[SOS_TYPE_LONG_DOUBLE] = LONG_DOUBLE_cmp,
 	[SOS_TYPE_JOIN] = JOIN_cmp,
-	[SOS_TYPE_OBJ] = OBJ_cmp,
+	[SOS_TYPE_OBJ] = __OBJ_cmp,
 	[SOS_TYPE_STRUCT] = STRUCT_cmp,
 	[SOS_TYPE_TIMESTAMP] = TIMESTAMP_cmp,
 	[SOS_TYPE_CHAR_ARRAY] = CHAR_ARRAY_cmp,
