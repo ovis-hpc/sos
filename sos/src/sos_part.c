@@ -724,6 +724,8 @@ int sos_part_state_set(sos_part_t part, sos_part_state_t new_state)
 		assert(0);
 		break;
 	}
+	ods_atomic_inc(&SOS_PART_REF_UDATA(sos->part_ref_udata)->gen);
+
  out:
 	SOS_PART_UDATA(part->udata_obj)->is_busy = 0;
 	ods_obj_update(part->udata_obj);

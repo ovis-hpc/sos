@@ -64,13 +64,16 @@ def add_schema(cont, path):
 
 def query_schema(cont, schema_name=None, uuid_str=None, verbose=False):
     count = 0
+    print(f"{'UUID':36} {'Gen Num':8} {'Name':32}")
+    print("{0} {1} {2}".
+                format('-'.ljust(36, '-'), '-'.ljust(8, '-'), '-'.ljust(32, '-')))
     for s in cont.schema_iter():
         if schema_name is not None and s.name() != schema_name:
             continue
         if uuid_str is not None and s.uuid() != uuid.UUID(uuid_str):
             continue
         count += 1
-        print(f"{s.uuid()} {s.gen():>8} {s.name()}")
+        print("{0} {1:8} {2:32}".format(s.uuid(), s.gen(), s.name()))
         if verbose:
             print("{0:4} {1:24} {2:12} {3:32}".format("Id", "Type", "Indexed", "Name"))
             print("{0} {1} {2} {3}".\
@@ -131,8 +134,8 @@ if __name__ == "__main__":
     if args.export_path:
         try:
             sdir = Sos.export_schema(args.path, args.export_path)
-        except:
-            print(f"Error accessing container '{args.path}'")
+        except Exception as e:
+            print(f"{e}")
             sys.exit(1)
         sys.exit(0)
 

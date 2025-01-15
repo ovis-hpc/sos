@@ -214,6 +214,24 @@ def export_schema(path, dir_path):
     json.dump(sdir, fp3, indent=2)
     return sdir
 
+def lock_info(path):
+    """Print container lock information to stdout"""
+    cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
+    cdef int c_rc
+    c_rc = sos_container_lock_info(path.encode(), c_fp)
+
+def cont_stats(path = None):
+    """Print container status information to stdout"""
+    cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
+    cdef sos_t c_cont
+    if path is not None:
+        c_cont = sos_container_open(path.encode('utf-8'), <sos_perm_t>SOS_PERM_RW, 0660)
+        if c_cont == NULL:
+            raise ValueError("The container {0} could not be opened.".format(path))
+        s = sos_container_stats(c_cont, 0)
+    else:
+        s = sos_container_stats(NULL, 0);
+
 cdef class SosObject:
     cdef int error
     def __init__(self):
@@ -1139,6 +1157,7 @@ cdef class Container(SosObject):
             self.open(path, o_perm=o_perm, o_mode=o_mode)
 
     def path(self):
+        """Return the filesystem path for the open container."""
         return self.path_
 
     def version(self):
@@ -1295,16 +1314,17 @@ cdef class Container(SosObject):
 
         - The time in seconds to wait to acquire the transaction. If
           the transaction cannot be acquired within the specified
-          timeout, a TimeoutError exception is thrown.
+          timeout, the PID of the process owning the transaction is
+          returned.
 
         """
         cdef timespec ts
         if timeout:
             ts.tv_sec = timeout
             ts.tv_nsec = 0
-            sos_begin_x_wait(self.c_cont, &ts)
+            return sos_begin_x_wait(self.c_cont, &ts)
         else:
-            sos_begin_x_wait(self.c_cont, NULL)
+            return sos_begin_x_wait(self.c_cont, NULL)
 
     def end(self):
         """End a transaction on the container
@@ -2987,8 +3007,13 @@ cdef class Attr(SosObject):
         return key
 
     def find(self, Key key):
-        cdef sos_index_t c_index = sos_attr_index(self.c_attr)
-        cdef sos_obj_t c_obj = sos_index_find(c_index, key.c_key)
+        cdef sos_index_t c_index
+        cdef sos_obj_t c_obj
+        c_index = sos_attr_index(self.c_attr)
+        if not c_index:
+            raise RuntimeError(f"Cannot get index from attribute " \
+                               f"{self.name()}, errno: {errno}")
+        c_obj = sos_index_find(c_index, key.c_key)
         if c_obj == NULL:
             return None
         o = Object()

@@ -170,7 +170,7 @@ static sos_schema_t __sos_schema_new(const char *name, const uuid_t uuid)
  * containers. See the sos_schema_add() function to add a schema to a
  * container so that objects of that type can subsequently be created
  * in the container. Once a schema has been added, it can be looked up
- * with the sos_schema_by_name() and sos_schema_by_id() functions.
+ * with the sos_schema_by_name() and sos_schema_by_uuid() functions.
  *
  * Objects are created with the sos_obj_new() function. This function
  * takes a schema-handle as its argument. The schema-id is saved
@@ -1056,7 +1056,7 @@ ods_obj_t __sos_obj_new(ods_t ods, size_t size, pthread_mutex_t *lock)
  * sos_value_t obtained on the object become undefined after a call to
  * this function.
  *
- * \param val The value in which to return the array data 
+ * \param val The value in which to return the array data
  * \param attr The schema attribute for the array
  * \param count The number of array elements
  * \returns The \c val parameter pointer on success or NULL on failure
@@ -1759,9 +1759,9 @@ static sos_schema_t __sos_schema_by_name(sos_t sos, const char *name)
 		goto out;
 	}
 	schema = container_of(rbn, struct sos_schema_s, name_rbn);
+out:
 	if (!schema)
 		errno = ENOENT;
-out:
 	return schema;
 }
 

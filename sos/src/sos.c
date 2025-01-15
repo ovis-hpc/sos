@@ -142,6 +142,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <ftw.h>
+#include <jansson.h>
 
 #include <sos/sos.h>
 #include <ods/ods.h>
@@ -593,9 +594,11 @@ void sos_end_x(sos_t sos)
  */
 void sos_index_info(sos_index_t index, FILE *fp)
 {
-	ods_idx_ref_t iref = LIST_FIRST(&index->active_idx_list);
-	ods_idx_info(iref->idx, fp);
-	ods_info(ods_idx_ods(iref->idx), fp, ODS_INFO_ALL);
+	ods_idx_ref_t iref;
+	LIST_FOREACH(iref, &index->active_idx_list, entry) {
+		ods_idx_info(iref->idx, fp);
+		ods_info(ods_idx_ods(iref->idx), fp, ODS_INFO_ALL);
+	}
 }
 
 int print_schema(struct ods_rbn *n, void *fp_, int level)
@@ -636,23 +639,6 @@ void sos_container_info(sos_t sos, FILE *fp)
 	}
 }
 
-static int show_locks(const char *path, const struct stat *sb,
-			int typeflags, struct FTW *ftw)
-{
-	size_t len = strlen(path);
-	char tmp_path[PATH_MAX];
-
-	if (strlen(path) >= PATH_MAX)
-		return ENAMETOOLONG;
-	strcpy(tmp_path, path);
-	if (strcmp(&tmp_path[len-3], ".BE"))
-		return 0;
-	/* strip the .BE, ods_lock_info will append it */
-	tmp_path[len-3] = '\0';
-	ods_lock_info(tmp_path, stdout);
-	return 0;
-}
-
 static int release_locks(const char *path, const struct stat *sb,
 			 int typeflags, struct FTW *ftw)
 {
@@ -670,6 +656,23 @@ static int release_locks(const char *path, const struct stat *sb,
 	return 0;
 }
 
+static int show_locks(const char *path, const struct stat *sb,
+		      int typeflags, struct FTW *ftw)
+{
+	int len = strlen(path);
+	char tmp_path[PATH_MAX];
+	strcpy(tmp_path, path);
+	if (strcmp(&tmp_path[len - 3], ".BE"))
+		/* Skip lock files, object files, etc... */
+		return 0;
+	/* strip the .PG, ods_lock_info will append it */
+	tmp_path[len - 3] = '\0';
+	fprintf(stdout, "Checking '%s' ... ", tmp_path);
+	int rc = ods_lock_info(tmp_path, stdout);
+	fprintf(stdout, "done(%d)\n", rc);
+	return 0;
+}
+
 /**
  * \brief Print container lock information
  *
@@ -680,9 +683,63 @@ static int release_locks(const char *path, const struct stat *sb,
  */
 int sos_container_lock_info(const char *path, FILE *fp)
 {
-	int rc;
-	rc = nftw(path, show_locks, 1024, FTW_DEPTH);
-	return rc;
+	int i, rc, res = 0;
+	char tmp_path[PATH_MAX];
+	const char *ods_path[] = {
+		".__config",
+		".__config_idx",
+		".__index",
+		".__index_idx",
+		".__part",
+		".__schema_idx",
+		".__schemas"
+	};
+	/* Report lock information for the container management ODS */
+	for (i = 0; i < sizeof(ods_path)/sizeof(ods_path[0]); i++) {
+		snprintf(tmp_path, sizeof(tmp_path), "%s/%s", path, ods_path[i]);
+		rc = ods_lock_info(tmp_path, stdout);
+		if (rc) {
+			res = -1;
+			printf("Error %d from ods_lock_info on path '%s'.\n", rc, tmp_path);
+		}
+	}
+	/*
+	 * Iterate through all of the partitions and dump the lock info
+	 * for each ODS in each partition
+	 */
+	ods_t part_ref_ods;
+
+	/* Open the partition ODS */
+	sprintf(tmp_path, "%s/.__part", path);
+	part_ref_ods = ods_open(tmp_path, ODS_PERM_RW);
+	if (!part_ref_ods) {
+		res = errno;
+		goto err;
+	}
+	ods_obj_t part_ref_udata = ods_get_user_data(part_ref_ods);
+	if (!part_ref_udata) {
+		res = errno;
+		goto err;
+	}
+	ods_obj_t part_ref =
+		ods_ref_as_obj(part_ref_ods,
+			SOS_PART_REF_UDATA(part_ref_udata)->head);
+	while (part_ref) {
+		const char *part_path = SOS_PART_REF(part_ref)->path;
+		rc = nftw(part_path, show_locks, 1024, FTW_DEPTH | FTW_PHYS);
+		if (rc)
+			res = rc;
+		ods_obj_t next_ref = ods_ref_as_obj(part_ref_ods, SOS_PART_REF(part_ref)->next);
+		ods_obj_put(part_ref);
+		part_ref = next_ref;
+	}
+	ods_obj_put(part_ref_udata);
+	ods_close(part_ref_ods, ODS_COMMIT_ASYNC);
+	return res;
+err:
+	ods_obj_put(part_ref_udata);
+	ods_close(part_ref_ods, ODS_COMMIT_ASYNC);
+	return res;
 }
 
 /**
@@ -1222,20 +1279,110 @@ int sos_container_verify(sos_t sos)
 	return res;
 }
 
+static char *__sos_container_stats(sos_t sos, uint64_t mask)
+{
+	char tmp_path[PATH_MAX];
+	sos_part_t part;
+	sos_part_iter_t part_iter;
+	sos_container_index_iter_t index_iter;
+	sos_index_t index;
+	ods_iter_t idx_iter;
+	sos_obj_ref_t idx_ref;
+	ods_idx_t idx;
+	ods_obj_t idx_obj;
+	int rc;
+	char *json = NULL;
+	ods_idx_ref_t iref;
+
+	part = __sos_primary_obj_part(sos);
+	printf("Path: %s, Primary Partition - Name: %s, Path: %s\n",
+		sos_container_path(sos),
+		sos_part_name(part),
+		sos_part_path(part));
+	index_iter = sos_container_index_iter_new(sos);
+	if (!index_iter)
+		return NULL;
+	for (index = sos_container_index_iter_first(index_iter); index;
+		index = sos_container_index_iter_next(index_iter)) {
+		printf("Index Name: %s, Index Generation No.: %u, Part Table Generation No.: %u\n",
+			index->name, sos->part_gn, index->part_gn);
+		LIST_FOREACH(iref, &index->active_idx_list, entry) {
+			printf("\tiref: %p, Part: %p, Name: %s, State: %d, Path %s\n",
+				iref, part,
+				sos_part_name(iref->part),
+				sos_part_state(iref->part),
+				sos_part_path(iref->part));
+		}
+	}
+#if 1
+	part_iter = sos_part_iter_new(sos);
+	if (!part_iter)
+		return NULL;
+	idx_iter = ods_iter_new(sos->idx_idx);
+	if (!idx_iter)
+		return NULL;
+
+	for (part = sos_part_first(part_iter); part; part = sos_part_next(part_iter)) {
+		for (rc = ods_iter_begin(idx_iter); !rc; rc = ods_iter_next(idx_iter)) {
+			goto skip;
+			idx_ref.idx_data = ods_iter_data(idx_iter);
+			idx_obj = ods_ref_as_obj(sos->idx_ods, idx_ref.ref.obj);
+			sprintf(tmp_path, "%s/%s_idx", sos_part_path(part), SOS_IDX(idx_obj)->name);
+			printf("Verifying %s ... ", tmp_path);
+			fflush(stdout);
+			idx = ods_idx_open(tmp_path, sos->o_perm);
+			ods_obj_put(idx_obj);
+			if (!idx) {
+				printf("OPEN error %d\n", errno);
+				continue;
+			}
+			rc = ods_idx_verify(idx, stdout);
+			if (rc) {
+				errno = rc;
+				printf("VERIFY error %d\n", rc);
+			} else {
+				printf("OK\n");
+			}
+		}
+	skip:
+		sos_part_put(part);
+	}
+	ods_iter_delete(idx_iter);
+	sos_part_iter_free(part_iter);
+	return json;
+#endif
+}
+
 /**
- * \brief Return information about a container
+ * \brief Return information about a container as a JSON object
  *
- * Fills a Unix struct stat buffer with information about a container's meta data.
+ * Returns a JSON string object with information about the state
+ * of the partitions and indices in the container. The returned string
+ * is suitable to be parsed with json_parse_buffer().
+ *
+ * The caller should call free() when finished with the returned string.
  *
  * \param sos The container handle
- * \param sb The struct stat buffer
- * \retval 0 Success
- * \retval !0 A Unix error code
+ * \param mask A bit field for selecting which information is returned in
+ *             the JSON object. The default is 0, which selects everything.
+ * \return NULL on error or a JSON string.
  */
-int sos_container_stat(sos_t sos, struct stat *sb)
+char *sos_container_stats(sos_t sos, uint64_t mask)
 {
-	sos_part_t part = TAILQ_FIRST(&sos->part_list);
-	return ods_stat(part->obj_ods, sb);
+	char *json;
+	if (sos) {
+		printf("%s:%d\n", __func__, __LINE__);
+		json = __sos_container_stats(sos, mask);
+	} else {
+		pthread_mutex_lock(&cont_list_lock);
+		LIST_FOREACH(sos, &cont_list, entry) {
+			char *json = __sos_container_stats(sos, mask);
+			printf(json);
+		}
+		pthread_mutex_unlock(&cont_list_lock);
+	}
+	fflush(stdout);
+	return json;
 }
 
 /**
@@ -1790,8 +1937,15 @@ ods_idx_t __sos_idx_find(sos_index_t index, sos_obj_t obj)
 	sos_part_t part = obj->part;
 	if (part) {
 		LIST_FOREACH(iref, &index->active_idx_list, entry) {
-			if (iref->part == part)
+			if (iref->part == part) {
+#if 0
+				printf("Ins./Del. Part: %p, Name: %s, State: %d, Path %s\n",
+				part, sos_part_name(iref->part),
+				sos_part_state(iref->part),
+				sos_part_path(iref->part));
+#endif
 				return iref->idx;
+			}
 		}
 	}
 	return NULL;

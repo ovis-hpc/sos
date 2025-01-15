@@ -781,9 +781,17 @@ static int ods_mmap_lock_info(const char *path, FILE *fp)
 		goto err_1;
 	}
 
+	if (pgt->pgt_x) {
+		if (do_hdr) {
+			do_lock_header(path, fp);
+			do_hdr = 0;
+		}
+		fprintf(fp, "%2d %6s %8d %8d %12ld %8d\n",
+			-1, "Trans", -1, 1,
+			(long)pgt->pgt_x, 1);
+	}
 	mtx = &pgt->pgt_lock.mutex;
 	print_lock(fp, &do_hdr, tmp_path, "Global", 0, mtx);
-
 	for (id = 0; id < ODS_LOCK_CNT; id++) {
 		mtx = &pgt->lck_tbl[id].mutex;
 		print_lock(fp, &do_hdr, tmp_path, "User", id, mtx);
@@ -1934,10 +1942,10 @@ static int ods_mmap_begin(ods_t ods_, struct timespec *wait)
 
 	clock_gettime(CLOCK_REALTIME, &now);
 	if (now.tv_sec > wait->tv_sec) {
-		return ETIMEDOUT;
+		return rc;
 	} else if (now.tv_sec == wait->tv_sec) {
 		if (now.tv_nsec > wait->tv_nsec) {
-			return ETIMEDOUT;
+			return rc;
 		}
 	}
 	goto retry;

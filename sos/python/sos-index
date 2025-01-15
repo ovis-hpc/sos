@@ -86,10 +86,10 @@ if __name__ == "__main__":
         attr = None
         schema = None
         if args.schema_name is None:
-            printf("The --schema NAME argument is required.")
+            print("The --schema NAME argument is required.")
             sys.exit(1)
         if args.attr_name is None:
-            printf("The --attr NAME argument is required.")
+            print("The --attr NAME argument is required.")
             sys.exit(1)
         try:
             schema = cont.schema_by_name(args.schema_name)
@@ -107,10 +107,10 @@ if __name__ == "__main__":
         attr = None
         schema = None
         if args.schema_name is None:
-            printf("The --schema NAME argument is required.")
+            print("The --schema NAME argument is required.")
             sys.exit(1)
         if args.attr_name is None:
-            printf("The --attr NAME argument is required.")
+            print("The --attr NAME argument is required.")
             sys.exit(1)
         try:
             schema = cont.schema_by_name(args.schema_name)
@@ -125,9 +125,20 @@ if __name__ == "__main__":
                 print(e)
 
     if args.query:
+        print("{0:40} {1:12} {2:12} {3:12}".
+              format("Name", "Cardinality", "Duplicates", "Size(B)"))
+        print("{0} {1} {2} {3}".
+                format('-'.ljust(40, '-'), '-'.ljust(12, '-'), '-'.ljust(12, '-'),
+                       '-'.ljust(12,'-')))
         idx_iter = cont.index_iter()
         for idx in idx_iter:
-            print(f"{idx.name()}")
+            stats = idx.stats()
+            print("{0:40} {1:12} {2:12} {3:12}".
+                    format(idx.name(),
+                    stats["cardinality"],
+                    stats["duplicates"],
+                    stats["size"]))
+
         sys.exit(0)
 
     if not args.verify:
