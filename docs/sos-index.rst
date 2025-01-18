@@ -27,6 +27,12 @@ The DSOS python API is the currently supported query syntax for the OVIS Web Ser
    sos-tutorial
 
 .. toctree::
+   :maxdepth: 6
+   :caption: Deployment
+
+   deployment/index
+
+.. toctree::
    :maxdepth: 2
    :caption: SOS Man Pages
 

@@ -3,11 +3,6 @@
 
    SPDX-License-Identifier: (LGPL-3.0)
 
-.. Flux documentation master file, created by
-   sphinx-quickstart on Fri Jan 10 15:11:07 2020.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 Welcome To OVIS-HPC Documentation!
 ====================================
 .. image:: https://github.com/ovis-hpc/readthedocs/blob/main/docs/source/images/ovis-logo.png?raw=true
@@ -19,35 +14,21 @@ Welcome To OVIS-HPC Documentation!
 
 .. toctree::
    :maxdepth: 2
-   :caption: OVIS and Group Activity
+   :caption: SOS
 
-   About Ovis <https://ovis-hpc.readthedocs.io/en/latest/aboutovis.html>
-   LDMS Users Group Conference (LDMSCON) <https://ovis-hpc.readthedocs.io/projects/ldms/en/latest/ldmscon.html>
-   LDSM Users Group <https://ovis-hpc.readthedocs.io/projects/ldms/en/latest/ug.html>
-   OVIS Publications <https://ovis-hpc.readthedocs.io/en/latest/publications.html>
+   sos-index
 
 .. toctree::
    :maxdepth: 4
-   :caption: OVIS Components
+   :caption: OVIS Subproject Documentation
 
    LDMS <https://ovis-hpc.readthedocs.io/projects/ldms/en/latest/ldms-index.html>
-   sos-index
    Maestro <https://ovis-hpc.readthedocs.io/projects/maestro/en/latest/maestro-index.html>
    Baler <https://ovis-hpc.readthedocs.io/projects/baler/en/latest/baler-index.html>
    ASF <https://ovis-hpc.readthedocs.io/projects/ldms/en/latest/asf/index.html>
 
-.. toctree::
-   :maxdepth: 6
-   :caption: Deployment
 
-   LDMS <https://ovis-hpc.readthedocs.io/projects/ldms/en/latest/deployment/index.html>
-   SOS <deployment/index>
-   Maestro <https://ovis-hpc.readthedocs.io/projects/maestro/en/latest/deployment/index.html>
-   Baler <https://ovis-hpc.readthedocs.io/projects/baler/en/latest/deployment/index.html>
-   ASF <https://ovis-hpc.readthedocs.io/projects/ldms/en/latest/asf/deployment/index.html>
-
-
-Other Projects
+OVIS Subproject Github Repositories
 ====================================
 
 `ldms <https://github.com/ovis-hpc/ovis>`_
