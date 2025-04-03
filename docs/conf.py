@@ -2,8 +2,8 @@
 
 # -- Project information
 
-project = 'OVIS-HPC'
-copyright = '2024, Sandia National Laboratories and Open Grid Computing, Inc.'
+project = 'SOS'
+copyright = '2025, Sandia National Laboratories and Open Grid Computing, Inc.'
 author = 'SNL/OGC'
 
 release = '0.1'
@@ -29,6 +29,7 @@ intersphinx_mapping = {
     "maestro": ("https://ovis-hpc.readthedocs.io/projects/maestro/en/latest/", None),
     "baler": ("https://ovis-hpc.readthedocs.io/projects/baler/en/latest/", None),
     "ldms": ("https://ovis-hpc.readthedocs.io/projects/ldms/en/latest/", None),
+    "containers": ("https://ovis-hpc.readthedocs.io/projects/containers/en/latest/", None),
 
 }
 intersphinx_disabled_domains = ['std']
@@ -39,11 +40,11 @@ templates_path = ['_templates']
 # -- Options for HTML output
 
 html_theme = 'sphinx_rtd_theme'
-html_static_path = ['static']
-html_logo = "https://github.com/ovis-hpc/readthedocs/blob/main/docs/source/images/ovis-logo.png?raw=true"
+html_logo = 'https://ovis-hpc.readthedocs.io/en/latest/_images/ovis-logo.png'
 html_theme_options = {
     'logo_only': True,
     'display_version': False,
+    'navigation_depth': 6,
 }
 
 # -- Options for EPUB output

@@ -1,25 +1,25 @@
+.. _dsosd:
+
 =====
 dsosd
 =====
 
+----------------------------------------------------
+Start an instance of the D/SOS RPC service on a node
+----------------------------------------------------
+
 :Date: 14 Mar 2022
-
-.. contents::
-   :depth: 3
-..
-
-NAME
-======
-
-dsosd - Start an instance of the D/SOS RPC service on a node
+:Version: v5
+:Manual section: 8
+:Manual group: DSOSD
 
 SYNOPSIS
-==========
+========
 
 dsosd
 
 DESCRIPTION
-=============
+===========
 
 The dsosd command starts the D/SOS RPC service on a node. The D/SOS RPC
 service registers the D/SOS program number with the with the RPC
@@ -27,7 +27,7 @@ portmapper on the TCP and UDP transports. Only a single instance of the
 daemon should be run at a time.
 
 ENVIRONMENT
-=============
+===========
 
 The following environment variables may be used to affect the
 -------------------------------------------------------------
@@ -46,6 +46,6 @@ DSOSD_LOG_LEVEL The log level at which log messages are written to
    standard out.
 
 SEE ALSO
-==========
+========
 
-dsosql(8), dsosd_directory(7)
+:ref:`dsosql(8) <dsosql>`, :ref:`dsosd_directory(7) <dsosd_directory>`

@@ -1,32 +1,29 @@
+.. _sos-schema:
+
 ==========
 sos-schema
 ==========
 
+-----------------
+Manage SOS Schema
+-----------------
+
 :Date: 20 July 2023
-
-.. contents::
-   :depth: 3
-..
-
-NAME
-===========
-
-sos-schema - Manage SOS Schema
+:Version: v6
+:Manual section: 8
+:Manual group: SOS
 
 SYNOPSIS
-===============
+========
 
 sos-schema [OPTION...]
 
 DESCRIPTION
-==================
+===========
 
-The **sos-schema** command is used to manage SOS schema. Schema define
-the format of objects in a container. This format includes the
-attributes in the object that will be indexed.
+The **sos-schema** command is used to manage SOS schema. Schema define the format of objects in a container. This format includes the attributes in the object that will be indexed.
 
-A schema is defined outside the container as a text file called a
-**template**. The **template** file is JSON dictionary, for example:
+A schema is defined outside the container as a text file called a **template**. The **template** file is JSON dictionary, for example:
 
    ::
 
@@ -52,12 +49,9 @@ A schema is defined outside the container as a text file called a
         ]
       }
 
-In the template above, the last attribute is called a *JOIN*. A *JOIN*
-attribute occupies no space in the object, but allows a collection of
-attributes to be used as a key in an index.
+In the template above, the last attribute is called a *JOIN*. A *JOIN* attribute occupies no space in the object, but allows a collection of attributes to be used as a key in an index.
 
-The *UUID* is a Universally Unique ID computed using **libuuid**. The
-attribute names, types, and indices are used to compute this value.
+The *UUID* is a Universally Unique ID computed using **libuuid**. The attribute names, types, and indices are used to compute this value.
 
 A template may also contain multiple schema definitions.
 
@@ -72,41 +66,34 @@ A template may also contain multiple schema definitions.
       }
 
 OPTIONS
-==============
+=======
 
 --path PATH
    Specifies the **PATH** to the container.
 
 --query
-   Query the schema defined in the container. Use with the --verbose
-   option to provide detail information for each schema.
+   Query the schema defined in the container. Use with the --verbose option to provide detail information for each schema.
 
 --add PATH
-   Adds a single schema defined in the *template file PATH* to the
-   container.
+   Adds a single schema defined in the *template file PATH* to the container.
 
 --export PATH
-   Export all schema defined in the container to a multi-schema
-   *template* file at **PATH**.
+   Export all schema defined in the container to a multi-schema *template* file at **PATH**.
 
 --import PATH
-   Add all schema defined in multi-schema *template* file at **PATH** to
-   the container.
+   Add all schema defined in multi-schema *template* file at **PATH** to the container.
 
 --verbase
-   When querying schema provide detail information of the schema
-   contents. Absent this option, only the schema name are printed.
+   When querying schema provide detail information of the schema contents. Absent this option, only the schema name are printed.
 
 --schema NAME
-   Used with the --query option to print information only for the schema
-   *NAME*.
+   Used with the --query option to print information only for the schema *NAME*.
 
 --uuid UUID
-   Used with the --query option to print information only for the schema
-   with the Universally Unique ID *UUID*.
+   Used with the --query option to print information only for the schema with the Universally Unique ID *UUID*.
 
 EXAMPLES
-===============
+========
 
 Query Schema
 ------------
@@ -118,11 +105,7 @@ Query Schema
       d2641326-77a2-48cf-99d3-83a37dbdf65e        0 meminfo
       3ac614f6-ec43-4498-8bc6-b5c58a7e1f0d        0 lustre_client
 
-In this example, the first column is the *UUID*, the second is the
-schema *generation* number, and the third is the schema name. The
-*generation* number is incremented whenever indices are added to or
-removed from the schema. See the **sos-index** command for information
-on how indices can be added and removed.
+In this example, the first column is the *UUID*, the second is the schema *generation* number, and the third is the schema name. The *generation* number is incremented whenever indices are added to or removed from the schema. See the **sos-index** command for information on how indices can be added and removed.
 
 Query Verbose
 -------------
@@ -131,7 +114,7 @@ Query Verbose
 
       $ sos-schema --path database --query --verbose --schema meminfo
       d2641326-77a2-48cf-99d3-83a37dbdf65e        0 meminfo
-      Id   Type                     Indexed      Name
+      Id   Type                     Indexed      Name                            
       ---- ------------------------ ------------ --------------------------------
          0 TIMESTAMP                             timestamp
          1 UINT64                                component_id
@@ -156,7 +139,7 @@ Query the details for a single schema.
 
       $ sos-schema --path database --query --verbose --schema meminfo
       d2641326-77a2-48cf-99d3-83a37dbdf65e        0 meminfo
-      Id   Type                     Indexed      Name
+      Id   Type                     Indexed      Name                            
       ---- ------------------------ ------------ --------------------------------
          0 TIMESTAMP                             timestamp
          1 UINT64                                component_id
@@ -184,8 +167,7 @@ Add a single schema to the container.
 Export All Schema in a Container
 --------------------------------
 
-Export all schema in a container to a JSON template file. This is useful
-for adding schema defined in one container to another.
+Export all schema in a container to a JSON template file. This is useful for adding schema defined in one container to another.
 
    ::
 
@@ -201,24 +183,26 @@ Import all schema defined in a JSON template file to a container.
       $ sos-schema --path database --import multi-schema-template.json
 
 ENVIRONMENT
-==================
+===========
 
 ODS_LOG_MASK
 ------------
 
-This environment variable specifies what log messages are printed by the
-SOS libraries. The value is a bit mask as follows:
+This environment variable specifies what log messages are printed by the SOS libraries. The value is a bit mask as follows:
 
-Value \| Description
-* 0 - No messages are logged
-* 1 - **Fatal** errors (i.e. the process will exit)
-* 2 - **Errors**
-* 4 - **Warnings**
-* 8 - **Informational** messages
-* 16 - **Debug** messages
-* 255 - **All** messages are logged
+==================================================
+Value \| Description                               
+==================================================
+0 \| No messages are logged                        
+1 \| **Fatal** errors (i.e. the process will exit) 
+2 \| **Errors**                                    
+4 \| **Warnings**                                  
+8 \| **Informational** messages                    
+16 \| **Debug** messages                           
+255 \| **All** messages are logged                 
+==================================================
 
 SEE ALSO
-===============
+========
 
-sos-index(8), sos-part(8), sos-monitor(8), sos-import-csv(8)
+:ref:`sos-index(8) <sos-index>`, :ref:`sos-part(8) <sos-part>`, :ref:`sos-monitor(8) <sos-monitor>`, :ref:`sos-import-csv(8) <sos-import-csv>`

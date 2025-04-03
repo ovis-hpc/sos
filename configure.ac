@@ -134,6 +134,17 @@ AC_ARG_ENABLE(symvers,
       [],[enable_symvers=yes])
 AM_CONDITIONAL(SYMVERS, test "x$enable_symvers" = xyes)
 
+AC_ARG_VAR([RST2MAN], [rst2man command])
+AC_CHECK_PROG([RST2MAN], [rst2man], [rst2man], [no])
+AS_IF([test "x$RST2MAN" = "xno"],
+      [AC_MSG_ERROR([rst2man not found. Please install python3-docutils package.])])
+
+AC_ARG_VAR([RPCGEN], [rpcgen command])
+AC_CHECK_PROG([RPCGEN], [rpcgen], [rpcgen], [no])
+AS_IF([test "x$RPCGEN" = "xno"],
+      [AC_MSG_ERROR([rpcgen not found. Please install the appropriate package for your system.])])
+
+
 AC_CANONICAL_BUILD
 # Check for which host we are on and setup a few things
 # specifically based on the host
@@ -198,6 +209,7 @@ AC_CONFIG_FILES([
 		Makefile
 		doc/Doxyfile
 		doc/Makefile
+		docs/Makefile
 		ods/Makefile
 		ods/include/Makefile
 		ods/src/Makefile

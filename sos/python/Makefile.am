@@ -1,3 +1,5 @@
+include $(top_srcdir)/rules.mk
+
 CFLAGS := $(filter-out -Werror, ${CFLAGS})
 PY_INCLUDES = -I$(srcdir)/../include \
 	   -I$(top_srcdir)/rpc \

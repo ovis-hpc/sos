@@ -1,15 +1,20 @@
+.. _dsosd_directory:
+
 ===============
 dsosd_directory
 ===============
 
-:Date: 15 May 2023
+-----------------------------
+dsosd directory file man page
+-----------------------------
 
-.. contents::
-   :depth: 3
-..
+:Date: 15 May 2023
+:Version: v6
+:Manual section: 7
+:Manual group: DSOSD
 
 DESCRIPTION
-=======================
+===========
 
 The dsosd directory file maps container names to local filesystem path
 names. The directory is formatted as JSON and has a separate section for
@@ -40,7 +45,7 @@ The *<container name>* is the *path* parameter provided to the
 filesysystem path to the SOS container.
 
 EXAMPLE
-===================
+=======
 
    ::
 
@@ -64,12 +69,9 @@ EXAMPLE
       }
 
 ENVIRONMENT
-=======================
+===========
 
-The following environment variables may be used to affect the
--------------------------------------------------------------
-
-configuration of the dsosd daemon.
+The following environment variables may be used to affect the configuration of the dsosd daemon.
 
 DSOSD_DIRECTORY The path to a JSON formatted file that maps container
    names to local filesystem paths.
@@ -80,6 +82,6 @@ DSOSD_SERVER_ID A logical name for this dsosd instance. If not
    apply to this dsosd instance.
 
 SEE ALSO
-====================
+========
 
-dsosd(8)
+:ref:`dsosd(8) <dsosd>`

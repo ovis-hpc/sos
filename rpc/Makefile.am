@@ -1,3 +1,5 @@
+include $(top_srcdir)/rules.mk
+
 AUTOMAKE_OPTIONS=subdir-objects
 SUBDIRS = . # python
 EXTRA_DIST=
@@ -54,4 +56,4 @@ bin_PROGRAMS += dsosql
 AM_YFLAGS = -d
 
 dist_man8_MANS= dsosd.man
-
+dist_man7_MANS= dsosd_directory.man
