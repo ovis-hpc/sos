@@ -620,6 +620,7 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 {
 	static char token_str[256];
 	const char *s = &expr[*ppos];
+	int is_name = 0;
 	int rc;
 
 	if (*ppos >= strlen(expr))
@@ -634,6 +635,13 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 	token_str[0] = '\0';
 	*token_val = token_str;
 
+	/* Explicit Name */
+	if (*s == 'N' && (s[1] == '"' || s[1] == '\'')) {
+		is_name = 1; /* fall through to handle string part */
+		s++;
+		*ppos += 1;
+	}
+
 	/* DQuoted string */
 	if (*s == '\"') {
 		regmatch_t match[2];
@@ -644,6 +652,8 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 				match[0].rm_eo - 1);
 			token_str[match[0].rm_eo - 1] = '\0';
 			*ppos += match[0].rm_eo + 1;	/* skip closing quote */;
+			if (is_name)
+				return ASTT_NAME;
 			return ASTT_DQSTRING;
 		}
 		strncpy(token_str, s, sizeof(token_str));
@@ -660,6 +670,8 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 				match[0].rm_eo - 1);
 			token_str[match[0].rm_eo-1] = '\0';
 			*ppos += match[0].rm_eo + 1;	/* skip closing quote */;
+			if (is_name)
+				return ASTT_NAME;
 			return ASTT_SQSTRING;
 		}
 		strncpy(token_str, s, sizeof(token_str));
