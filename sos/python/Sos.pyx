@@ -50,6 +50,7 @@ from libc.stdio cimport fdopen, fclose
 import os
 import datetime as dt
 import numpy as np
+cimport numpy as cnp
 import struct
 import sys
 import copy
@@ -57,8 +58,6 @@ import binascii
 import uuid
 import grp
 import pwd
-from sosdb.DataSet import DataSet
-cimport numpy as np
 from pandas import DataFrame, DatetimeIndex, Timestamp
 import json
 
@@ -1530,7 +1529,7 @@ cdef class PartStat(object):
     def __str__(self):
         return str(self.c_stat)
 
-cdef int __obj_reindex_cb(sos_part_t part, void *arg, uint64_t count):
+cdef int __obj_reindex_cb(sos_part_t part, void *arg, uint64_t count) noexcept:
     print(f"{count} objects reindexed")
     return 0
 
@@ -3147,7 +3146,6 @@ cdef class DsosAttr(Attr):
         o = Object()
         o.assign(c_obj)
         return o
-
 
 COND_LT = SOS_COND_LT
 COND_LE = SOS_COND_LE
@@ -6417,255 +6415,6 @@ cdef class QueryInputer:
         if c_obj:
             return False
         return True
-
-    def to_timeseries(self, Query query, timestamp='timestamp', interval_ms=None,
-                      max_array=DEFAULT_ARRAY_LIMIT,
-                      max_string=DEFAULT_ARRAY_LIMIT):
-        """Return the QueryResult data as a DataSet"""
-        cdef sos_obj_t c_o
-        cdef sos_value_s v_, t_
-        cdef sos_value_t v, t
-        cdef int idx
-        cdef int attr_idx
-        cdef int res_idx
-        cdef int atype
-        cdef int nattr
-        cdef Schema schema
-        cdef Attr attr
-        cdef sos_attr_t c_attr, t_attr
-        cdef sos_attr_t *res_attr
-        cdef int *res_type
-        cdef nda_setter_opt res_acc
-        cdef int type_id
-        cdef double obj_time
-        cdef double bin_width, bin_time, bin_value, bin_samples
-        cdef typ_str
-        cdef ColSpec col
-
-        nattr = len(query.columns)
-
-        res_attr = <sos_attr_t *>malloc(sizeof(sos_attr_t) * nattr)
-        if res_attr == NULL:
-            raise MemoryError("Insufficient memory to allocate dimension array")
-        res_type = <int *>malloc(sizeof(uint64_t) * nattr)
-        if res_type == NULL:
-            free(res_attr)
-            raise MemoryError("Insufficient memory to allocate type array")
-        res_acc = <nda_setter_opt>malloc(sizeof(nda_setter_opt_s) * nattr)
-        if res_acc == NULL:
-            free(res_attr)
-            free(res_type)
-            raise MemoryError("Insufficient memory to allocate type array")
-
-        schema = query.filters[0].get_attr().schema()
-        t_attr = sos_schema_attr_by_name(schema.c_schema, timestamp.encode())
-        if t_attr == NULL:
-            raise ValueError("The timestamp attribute was not found in the schema. "
-                             "Consider specifying the timestamp keyword parameter")
-        if sos_attr_type(t_attr) != SOS_TYPE_TIMESTAMP:
-            raise ValueError("The timestamp attribute {0} "
-                             "is not a SOS_TYPE_TIMESTAMP".format(timestamp))
-
-        result = []
-        try:
-            idx = 0
-            for col in query.columns:
-
-                attr = col.attr
-                res_attr[idx] = <sos_attr_t>attr.c_attr
-                res_type[idx] = attr.type()
-
-                # set access defaults
-                res_acc[idx].idx = col.cursor_idx
-                res_acc[idx].setter_fn = nda_setters[res_type[idx]]
-                res_acc[idx].resample_fn = nda_resamplers[res_type[idx]]
-
-                atyp = col.attr_type
-                if atyp == SOS_TYPE_TIMESTAMP:
-                    typ_str = 'datetime64[us]'
-                elif atyp == SOS_TYPE_STRUCT:
-                    typ_str = 'uint8'
-                elif atyp == SOS_TYPE_UINT64:
-                    typ_str = 'double'
-                elif atyp == SOS_TYPE_UINT32:
-                    typ_str = 'double'
-                elif atyp == SOS_TYPE_INT64:
-                    typ_str = 'double'
-                elif atyp == SOS_TYPE_INT32:
-                    typ_str = 'double'
-                else:
-                    typ_str = sos_type_strs[atyp].lower()
-                    typ_str = typ_str.replace('_array', '')
-
-                if atyp >= TYPE_IS_ARRAY:
-                    if atyp == SOS_TYPE_STRING:
-                        data = np.zeros([ self.row_limit ],
-                                        dtype=np.dtype('U{0}'.format(max_string)))
-                    else:
-                        data = np.zeros([ self.row_limit, int(max_array) ],
-                                        dtype=np.dtype(typ_str))
-                elif atyp == SOS_TYPE_STRUCT:
-                    data = np.zeros([ self.row_limit, sos_attr_size(attr.c_attr) ],
-                                    dtype=np.dtype(np.uint8))
-                else:
-                    data = np.zeros([ self.row_limit ], dtype=np.dtype(typ_str))
-                result.append(data)
-                idx += 1
-        except Exception as e:
-                free(res_attr)
-                free(res_type)
-                free(res_acc)
-                raise ValueError("Error '{0}' processing the "
-                                 "shape keyword parameter".format(str(e)))
-
-        c_o = self.objects[0]
-        t = sos_value_init(&t_, c_o, t_attr)
-        obj_time = (<double>t.data.prim.timestamp_.tv.tv_sec * 1.0e6) + \
-                   <double>t.data.prim.timestamp_.tv.tv_usec
-        sos_value_put(t)
-
-        if interval_ms is not None:
-            bin_width = interval_ms * 1.0e3
-        else:
-            bin_width = 0.0
-
-        res_idx = 0
-        obj_idx = 0
-
-        if bin_width == 0.0:
-            for row_idx in range(0, self.row_limit):
-                obj_idx = row_idx * self.col_count
-                for attr_idx in range(0, nattr):
-                    c_o = self.objects[obj_idx + res_acc[attr_idx].idx]
-                    v = sos_value_init(&v_, c_o, res_attr[attr_idx])
-                    res_acc[attr_idx].setter_fn(result[attr_idx], res_idx, v)
-                    sos_value_put(v)
-                res_idx += 1
-        else:
-            bin_start = obj_time - (obj_time % bin_width)
-            bin_end = bin_start + bin_width
-            bin_samples = 0.0
-            for row_idx in range(0, self.row_limit):
-
-                for attr_idx in range(0, nattr):
-                    c_o = self.objects[obj_idx + res_acc[attr_idx].idx]
-                    v = sos_value_init(&v_, c_o, res_attr[attr_idx])
-                    res_acc[attr_idx].resample_fn(result[attr_idx], res_idx, v,
-                                                  bin_samples, bin_width)
-                    sos_value_put(v)
-
-                obj_idx += self.col_count
-                c_o = self.objects[obj_idx]
-                t = sos_value_init(&t_, c_o, t_attr)
-                obj_time = (<double>t.data.prim.timestamp_.tv.tv_sec * 1.0e6) + \
-                           <double>t.data.prim.timestamp_.tv.tv_usec
-                sos_value_put(t)
-
-                if obj_time >= bin_end:
-                    bin_start = bin_end
-                    bin_end = bin_start + bin_width
-                    bin_samples = 0.0
-                    res_idx += 1
-                else:
-                    bin_samples += 1.0
-
-        free(res_attr)
-        free(res_type)
-        free(res_acc)
-        res = DataSet()
-        for attr_idx in range(0, nattr):
-            res.append_array(res_idx, query.columns[attr_idx].col_name,
-                             result[attr_idx])
-        return res
-
-    def to_dataset(self, Query query, max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
-        """Return the Query data as a DataSet"""
-        cdef sos_obj_t c_o
-        cdef sos_value_s v_
-        cdef sos_value_t v
-        cdef int idx
-        cdef int attr_idx
-        cdef int res_idx
-        cdef int obj_idx
-        cdef int row_idx
-        cdef int nattr
-        cdef Attr attr
-        cdef int *res_type
-        cdef nda_setter_opt res_acc
-        cdef typ_str
-        cdef ColSpec col
-
-        nattr = len(query.columns)
-        if nattr == 0 or self.row_count == 0:
-            return None
-
-        res_acc = <nda_setter_opt>malloc(sizeof(nda_setter_opt_s) * nattr)
-        if res_acc == NULL:
-            raise MemoryError("Insufficient memory")
-
-        idx = 0
-        result = []
-
-        for col in query.columns:
-
-            attr = col.attr
-
-            res_acc[idx].attr = <sos_attr_t>attr.c_attr
-            res_acc[idx].idx = col.cursor_idx
-            res_acc[idx].setter_fn = nda_setters[attr.type()]
-            res_acc[idx].resample_fn = nda_resamplers[attr.type()]
-
-            atyp = col.attr_type
-            if atyp == SOS_TYPE_TIMESTAMP:
-                typ_str = 'datetime64[us]'
-            elif atyp == SOS_TYPE_STRUCT:
-                typ_str = 'uint8'
-            elif atyp == SOS_TYPE_UINT64:
-                typ_str = 'double'
-            elif atyp == SOS_TYPE_UINT32:
-                typ_str = 'double'
-            elif atyp == SOS_TYPE_INT64:
-                typ_str = 'double'
-            elif atyp == SOS_TYPE_INT32:
-                typ_str = 'double'
-            else:
-                typ_str = sos_type_strs[atyp].lower()
-                typ_str = typ_str.replace('_array', '')
-
-            if atyp >= TYPE_IS_ARRAY:
-                if atyp == SOS_TYPE_STRING:
-                    data = np.zeros([ self.row_count ],
-                                    dtype=np.dtype('U{0}'.format(max_string)))
-                else:
-                    data = np.zeros([ self.row_count, max_array ],
-                                    dtype=np.dtype(typ_str))
-            elif atyp == SOS_TYPE_STRUCT:
-                data = np.zeros([ self.row_limit, sos_attr_size(attr.c_attr) ],
-                                dtype=np.dtype(np.uint8))
-            else:
-                data = np.zeros([ self.row_count ], dtype=np.dtype(typ_str))
-            result.append(data)
-            idx += 1
-
-        res_idx = 0
-        for row_idx in range(0, self.row_count):
-            obj_idx = row_idx * self.col_count
-            for attr_idx in range(0, nattr):
-                c_o = self.objects[obj_idx + res_acc[attr_idx].idx]
-                v = sos_value_init(&v_, c_o, res_acc[attr_idx].attr)
-                res_acc[attr_idx].setter_fn(result[attr_idx], res_idx, v)
-                sos_value_put(v)
-            res_idx += 1
-        self.row_count = 0
-
-        res = DataSet()
-        for attr_idx in range(0, nattr):
-            res.append_array(res_idx,
-                             sos_attr_name(res_acc[attr_idx].attr).decode(),
-                             result[attr_idx])
-        res.set_series_size(res_idx)
-        free(res_acc)
-        return res
 
     def to_dataframe(self, Query query, index=None,
                      max_array=DEFAULT_ARRAY_LIMIT, max_string=DEFAULT_ARRAY_LIMIT):
