@@ -1529,7 +1529,7 @@ cdef class PartStat(object):
     def __str__(self):
         return str(self.c_stat)
 
-cdef int __obj_reindex_cb(sos_part_t part, void *arg, uint64_t count) noexcept:
+cdef int __obj_reindex_cb(sos_part_t part, void *arg, uint64_t count):
     print(f"{count} objects reindexed")
     return 0
 

@@ -578,7 +578,7 @@ cdef extern from "sos/sos.h":
                           sos_part_obj_iter_fn_t fn, void *arg)
     size_t sos_part_remap_schema_uuid(sos_part_t part, const char *dst_path, const char *src_path)
     sos_part_uuid_entry_t sos_part_query_schema_uuid(sos_part_t part, size_t *count)
-    ctypedef int (*sos_part_reindex_callback_fn)(sos_part_t part, void *arg, uint64_t obj_count)
+    ctypedef int (*sos_part_reindex_callback_fn)(sos_part_t part, void *arg, uint64_t obj_count) except *
     size_t sos_part_reindex(sos_part_t part,
                             sos_part_reindex_callback_fn callback_fn, void *callback_arg,
                             size_t obj_count)
