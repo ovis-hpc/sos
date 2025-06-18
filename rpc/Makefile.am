@@ -17,6 +17,8 @@ $(BUILT_SOURCES) : sosapi.x
 
 sosapi.h : sosapi.x xdr-files
 	rpcgen -N -M $(srcdir)/sosapi.x
+	sed "s/fprintf (stderr, \"%s\", \"svc_run returned\");//g" $(srcdir)/sosapi_svc.c > $(srcdir)/xx.c
+	mv $(srcdir)/xx.c $(srcdir)/sosapi_svc.c
 
 AM_CFLAGS = -Wno-unused-variable \
 	-I$(top_srcdir)/libtirpc/tirpc \
