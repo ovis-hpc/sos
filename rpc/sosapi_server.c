@@ -1999,8 +1999,16 @@ static int __make_query_obj_array(struct dsos_session *client, struct ast *ast,
 		}
 		sos_obj_t result_obj = sos_obj_malloc(ast->result_schema);
 		TAILQ_FOREACH(attr_e, &ast->select_list, link) {
-			sos_obj_attr_copy(result_obj, attr_e->res_attr,
-					  obj, attr_e->src_attr);
+			if (attr_e->expr) {
+				SOS_VALUE(value);
+				sos_type_t attr_type = -1;
+				char v_str[1024];
+				sos_value_init(value, result_obj, attr_e->res_attr);
+				ast_expr_eval(ast, attr_e->expr, value, &attr_type, obj);
+			} else {
+				sos_obj_attr_copy(result_obj, attr_e->res_attr,
+						  obj, attr_e->src_attr);
+			}
 		}
 		struct dsos_part *dpart;
 		sos_part_t part = sos_obj_part(obj);
