@@ -20,6 +20,10 @@ enum ast_token_e {
 	ASTT_GE,	    /* '>=' */
 	ASTT_GT,	    /* '>' */
 	ASTT_NE,	    /* '!=' */
+	ASTT_ADD,	    /* '+' */
+	ASTT_SUB,	    /* '-' */
+	// ASTT_MULL,	    /* '*' -- this is an alias for ASTT_ASTERISK */
+	ASTT_DIV,	    /* '/' */
 	ASTT_COMMA,         /* ',' */
 	ASTT_OR,	    /* 'or' */
 	ASTT_AND,	    /* 'and' */
@@ -34,6 +38,7 @@ enum ast_token_e {
 	ASTT_LIMIT,	    /* 'limit' */
 	ASTT_RESAMPLE,	    /* 'resample' */
 	ASTT_GROUP_BY,	    /* 'group_by' */
+	ASTT_AS,	    /* 'as' */
 	ASTT_NAME,          /* An alphanumeric name that doesn't match
 			     * any of the above */
 };
@@ -64,12 +69,14 @@ struct ast_term {
 		ASTV_CONST,
 		ASTV_ATTR,
 		ASTV_BINOP,
+		ASTV_EXPR,
 	} kind;
 	struct sos_value_s value_;
 	sos_value_t value;
 	union {
 		struct ast_term_attr *attr;
 		struct ast_term_binop *binop;
+		struct ast_term_binop *expr;
 	};
 };
 
@@ -99,6 +106,7 @@ struct ast_attr_entry_s {
 	int  rank;
 	struct ast_operator_s *op;
 	struct ast_term *binop;	/* The expression that this attr appears in */
+	struct ast_term *expr;	/* The expression used to evaluate the value */
 	ast_schema_entry_t schema;
 	struct ast_term_attr *value_attr;
 	TAILQ_ENTRY(ast_attr_entry_s) link;
@@ -166,6 +174,7 @@ struct ast {
 
 	uint64_t query_id;
 	struct ast_term *where;
+	struct ast_term *select;
 
 	TAILQ_HEAD(ast_schema_list, ast_schema_entry_s) schema_list;
 	TAILQ_HEAD(select_attr_list, ast_attr_entry_s) select_list;
@@ -205,4 +214,7 @@ extern int ast_resample_obj_add(struct ast *ast, sos_obj_t obj);
 extern sos_obj_t ast_resample_obj_next(struct ast *ast);
 extern int ast_group_obj_add(struct ast *ast, sos_obj_t obj);
 sos_obj_t ast_group_obj_next(struct ast *ast);
+sos_value_t ast_expr_eval(struct ast *ast, struct ast_term *term,
+			  sos_value_t result, sos_type_t *type, sos_obj_t obj);
+sos_type_t ast_expr_type(struct ast_term *expr);
 #endif

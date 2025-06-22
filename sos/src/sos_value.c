@@ -511,7 +511,9 @@ int sos_value_true(sos_value_t a)
 
 sos_value_t sos_value_new()
 {
-	return calloc(1, sizeof(struct sos_value_s));
+	sos_value_t v = calloc(1, sizeof(struct sos_value_s));
+	v->data = &v->data_;
+	return v;
 }
 
 void sos_value_free(sos_value_t v)

@@ -627,13 +627,12 @@ sos_part_t sos_obj_part(sos_obj_t obj);
 size_t sos_obj_size(sos_obj_t obj);
 int sos_obj_copy(sos_obj_t dst, sos_obj_t src);
 int sos_obj_attr_copy(sos_obj_t dst_obj, sos_attr_t dst_attr,
-					sos_obj_t src_obj, sos_attr_t src_attr);
+		      sos_obj_t src_obj, sos_attr_t src_attr);
 sos_obj_ref_t sos_obj_ref(sos_obj_t obj);
 sos_obj_ref_t *sos_obj_ref_ptr(sos_obj_t obj);
 void sos_obj_ref_init(sos_obj_t obj, sos_obj_ref_t ref);
 sos_obj_t sos_ref_as_obj(sos_t sos, sos_obj_ref_t ref);
 
-sos_obj_t sos_obj_from_value(sos_t sos, sos_value_t ref_val);
 void sos_obj_delete(sos_obj_t obj);
 sos_obj_t sos_obj_get(sos_obj_t obj);
 void sos_obj_put(sos_obj_t obj);

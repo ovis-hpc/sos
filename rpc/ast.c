@@ -40,6 +40,9 @@ static void *load_library(const char *library, const char *pfx, const char *sym)
 	return p;
 }
 
+static char *__clean_name(char *name);
+static struct ast_term *ast_parse_expr(struct ast *ast, const char *expr, int *ppos);
+static struct ast_term *ast_parse_expr_term(struct ast *ast, const char *expr, int *ppos);
 static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *ppos);
 static void ast_term_destroy(struct ast *ast, struct ast_term *term);
 static int64_t bin_cmp(void *a, const void *b, void *arg)
@@ -77,6 +80,7 @@ static int key_word_comparator(const void *a_, const void *b_)
 
 static struct ast_key_word_s key_words[] = {
 	{ "and", ASTT_AND },
+	{ "as", ASTT_AS },
 	{ "from", ASTT_FROM },
 	{ "group_by", ASTT_GROUP_BY },
 	{ "limit", ASTT_LIMIT },
@@ -616,9 +620,14 @@ static void ast_enomem(struct ast *ast, int pos)
 	snprintf(ast->error_msg, sizeof(ast->error_msg), "Insufficient memory");
 }
 
-enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **token_val)
+/*
+ * The 'token_str' pointer returned points to static storage. The user
+ * should strdup this token if it is to be stored.
+ */
+enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos,
+			 char **token_val)
 {
-	static char token_str[256];
+	static char token_str[1024];
 	const char *s = &expr[*ppos];
 	int is_name = 0;
 	int rc;
@@ -648,7 +657,7 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 		rc = regexec(&ast->dqstring_re, s, 2, match, REG_EXTENDED);
 		if (rc == 0) {
 			strncpy(token_str,
-				&s[1],					/* skip starting quote */
+				&s[1],			/* skip starting quote */
 				match[0].rm_eo - 1);
 			token_str[match[0].rm_eo - 1] = '\0';
 			*ppos += match[0].rm_eo + 1;	/* skip closing quote */;
@@ -666,7 +675,7 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 		rc = regexec(&ast->sqstring_re, s, 2, match, REG_EXTENDED);
 		if (rc == 0) {
 			strncpy(token_str,
-				&s[1],					/* skip starting quote */
+				&s[1],			/* skip starting quote */
 				match[0].rm_eo - 1);
 			token_str[match[0].rm_eo-1] = '\0';
 			*ppos += match[0].rm_eo + 1;	/* skip closing quote */;
@@ -678,6 +687,25 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos, char **to
 		token_str[sizeof(token_str)-1] = '\0';
 		return ASTT_ERR;
 	}
+	/* Expression operators */
+	if ((*s == '-' || *s == '+' ||
+	     *s == '*' || *s == '/')
+	    && !isdigit(*s)) {
+		*ppos += 1;
+		token_str[0] = *s;
+		token_str[1] = '\0';
+		switch (*s) {
+		case '-':
+			return ASTT_SUB;
+		case '+':
+			return ASTT_ADD;
+		case '*':
+			return ASTT_ASTERISK;
+		case '/':
+			return ASTT_DIV;
+		}
+	}
+	/* Numbers */
 	if (*s == '-' || *s == '+' || isdigit(*s)) {
 		char number[255];
 		regmatch_t match[2];
@@ -829,6 +857,181 @@ static enum ast_parse_e parse_attr(struct ast *ast, const char *name, struct ast
 }
 
 /*
+ * Strip off operation name from the attribute name
+ */
+static int handle_op(struct ast_attr_entry_s *ae, char **token_str)
+{
+	struct ast_operator_s *op;
+	char *token = *token_str;
+	char *op_name;
+	char *op_delim = strstr(token, "(");
+	if (!op_delim)
+		return 0;
+	/* Strip the operation name and attach it's 'op' function to
+	 * the attribute */
+	op_name = token;
+	*op_delim = '\0';
+
+	/* Operator lookup */
+	op = bsearch(op_name,
+		     operators, sizeof(operators) / sizeof(operators[0]),
+		     sizeof (struct ast_operator_s),
+		     op_comparator);
+	if (!op)
+		return EINVAL;
+
+	ae->op = op;
+
+	/* clean up attribute name */
+	token = strdup(++op_delim);
+	*token_str = token;
+	while (*token != '\0' && *token != ')')
+		token++;
+	*token = '\0';
+	return 0;
+}
+
+static enum ast_parse_e
+parse_expr_attr(struct ast *ast, char *name,
+		struct ast_term_attr *value_attr, struct ast_term *expr_attr)
+{
+	ast_attr_entry_t ae = calloc(1, sizeof *ae);
+	if (!ae) {
+		ast_enomem(ast, 0);
+		return ast->result;
+	}
+	ae->value_attr = value_attr;
+	handle_op(ae, &name);
+	ae->name = strdup(name);
+	if (!ae->name) {
+		ast_enomem(ast, 0);
+		free(ae);
+		return ast->result;
+	}
+
+	ae->expr = expr_attr;
+	ae->rank = 0;
+	ae->join_attr_idx = -1;
+	value_attr->entry = ae;
+	TAILQ_INSERT_TAIL(&ast->select_list, ae, link);
+	return 0;
+}
+
+static struct ast_term *ast_parse_expr_term(struct ast *ast, const char *expr, int *ppos)
+{
+	char *token_str;
+	enum ast_token_e token;
+	struct ast_term *term;
+	enum ast_parse_e err;
+	int rparen;
+	struct ast_term *newb;
+
+	token = ast_lex(ast, expr, ppos, &token_str);
+	switch (token) {
+	case ASTT_LPAREN:
+		rparen = 0;
+		term = ast_parse_expr(ast, expr, ppos);
+		if (!term)
+			return NULL;
+		while (!rparen) {
+			token = ast_lex(ast, expr, ppos, &token_str);
+			switch (token) {
+			case ASTT_RPAREN:
+				return term;
+			case ASTT_ADD:
+			case ASTT_SUB:
+			case ASTT_ASTERISK:
+			case ASTT_DIV:
+				newb = calloc(1, sizeof(*newb));
+				newb->kind = ASTV_EXPR;
+				newb->expr = calloc(1, sizeof(*newb->binop));
+				LIST_INSERT_HEAD(&ast->binop_list, newb->binop, entry);
+				newb->expr->lhs = term;
+				newb->expr->op = token;
+				newb->expr->rhs = ast_parse_expr(ast, expr, ppos);
+				if (ast->result)
+					break;
+				term = newb;
+				break;
+			default:
+				ast->result = ASTP_UNBALANCED_PAREN;
+				ast->pos = *ppos;
+				snprintf(ast->error_msg, sizeof(ast->error_msg),
+					 "Expected ')' but got '%s'", token_str);
+				ast_term_destroy(ast, term);
+				term = NULL;
+				rparen = 1;
+				break;
+			}
+		}
+		break;
+	case ASTT_NAME:	/* Attribute */
+		term = calloc(1, sizeof(*term));
+		if (!term) {
+			ast_enomem(ast, *ppos);
+			break;
+		}
+		term->kind = ASTV_ATTR;
+		term->attr = calloc(1, sizeof(*term->attr));
+		if (!term->attr) {
+			ast_enomem(ast, *ppos);
+			free(term);
+			term = NULL;
+			break;
+		}
+		err = parse_expr_attr(ast, token_str, term->attr, NULL);
+		if (err) {
+			free(term->attr);
+			free(term);
+			term = NULL;
+			break;
+		}
+		break;
+	case ASTT_DQSTRING:
+	case ASTT_SQSTRING:	/* String value */
+		term = calloc(1, sizeof(*term));
+		if (!term) {
+			ast_enomem(ast, *ppos);
+			break;
+		}
+		term->kind = ASTV_CONST;
+		term->value = sos_value_init_const(&term->value_,
+						   SOS_TYPE_CHAR_ARRAY,
+						   token_str,
+						   strlen(token_str));
+		break;
+	case ASTT_INTEGER:
+		term = calloc(1, sizeof(*term));
+		if (!term) {
+			ast_enomem(ast, *ppos);
+			break;
+		}
+		term->kind = ASTV_CONST;
+		term->value = sos_value_init_const(&term->value_, SOS_TYPE_DOUBLE,
+						   strtod(token_str, NULL));
+		break;
+	case ASTT_FLOAT:
+		term = calloc(1, sizeof(*term));
+		if (!term) {
+			ast_enomem(ast, *ppos);
+			break;
+		}
+		term->kind = ASTV_CONST;
+		term->value = sos_value_init_const(&term->value_,
+						   SOS_TYPE_DOUBLE,
+						   strtod(token_str, NULL));
+		break;
+	default:
+		ast->result = ASTP_SYNTAX;
+		ast->pos = *ppos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			 "Unexpected '%s' token in expression at column %d.", token_str, ast->pos);
+		term = NULL;
+	}
+	return term;
+}
+
+/*
  * A term is one of:
  * - string,
  * - integer,
@@ -925,8 +1128,8 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 			break;
 		}
 		term->kind = ASTV_CONST;
-		term->value = sos_value_init_const(&term->value_, SOS_TYPE_INT64,
-						   strtol(token_str, NULL, 0));
+		term->value = sos_value_init_const(&term->value_, SOS_TYPE_DOUBLE,
+						   strtod(token_str, NULL));
 		break;
 	case ASTT_FLOAT:
 		term = calloc(1, sizeof(*term));
@@ -1433,6 +1636,86 @@ static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
 	return ast->result;
 }
 
+static int is_expr_op(enum ast_token_e token)
+{
+	if ((token >= ASTT_ADD && token <= ASTT_DIV)
+	    || token == ASTT_ASTERISK)
+		return 1;
+	return 0;
+}
+
+/*
+ * <term> <op> <term>
+ * <op> is one of '+', '-', '*', '/'
+ */
+static struct ast_term *ast_parse_expr(struct ast *ast, const char *expr, int *ppos)
+{
+	char *token_str;
+	int next_pos;
+	struct ast_term *term;
+	struct ast_term_binop *binop;
+
+	binop = calloc(1, sizeof(*binop));
+	binop->lhs = ast_parse_expr_term(ast, expr, ppos);
+	if (!binop->lhs) {
+		free(binop);
+		return NULL;
+	}
+	/* Check if the user accidentally quoted an attribute name */
+	if (binop->lhs->kind == ASTV_CONST &&
+		binop->lhs->value->type == SOS_TYPE_CHAR_ARRAY) {
+		ast->result = ASTP_SYNTAX;
+		ast->pos = next_pos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			"Attribute names (\"%s\") should not be quoted strings.",
+			binop->lhs->value->data->array.data.char_);
+		ast_term_destroy(ast, binop->lhs);
+		free(binop);
+		return NULL;
+	}
+	next_pos = *ppos;
+	binop->op = ast_lex(ast, expr, &next_pos, &token_str);
+	if (binop->op == ASTT_EOF
+	    || binop->op >= ASTT_KEYWORD) {
+		term = binop->lhs;
+		free(binop);
+		return term;
+	}
+	*ppos = next_pos;
+	if (!is_expr_op(binop->op)) {
+		ast->result = ASTP_SYNTAX;
+		ast->pos = *ppos;
+		snprintf(ast->error_msg, sizeof(ast->error_msg),
+			 "Expected '+', '-', '*', or '/' but got '%s'",
+			 token_str);
+		ast_term_destroy(ast, binop->lhs);
+		free(binop);
+		return NULL;
+	}
+
+	switch (binop->op) {
+	case ASTT_ADD:
+	case ASTT_SUB:
+	case ASTT_ASTERISK:
+	case ASTT_DIV:
+	default:
+		/* Can be any term */
+		binop->rhs = ast_parse_expr_term(ast, expr, ppos);
+		break;
+	}
+	if (!binop->rhs) {
+		ast_term_destroy(ast, binop->lhs);
+		free(binop);
+		return NULL;
+	}
+	term = calloc(1, sizeof(*term));
+	term->kind = ASTV_BINOP;
+	term->binop = binop;
+	LIST_INSERT_HEAD(&ast->binop_list, binop, entry);
+
+	return term;
+}
+
 /*
  * <term> <op> <term>
  */
@@ -1516,65 +1799,173 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 	return term;
 }
 
-/*
- * Strip off operation name from the attribute name
- */
-int handle_op(struct ast_attr_entry_s *ae, char **token_str)
+static char *is_expr(struct ast *ast, char *expr)
 {
-	struct ast_operator_s *op;
-	char *token = *token_str;
-	char *op_name;
-	char *paren = strstr(token, "(");
-	if (!paren)
+	char token[1024];
+	char *end = strstr(expr, ",");
+	if (!end)
+		end = strcasestr(expr, "FROM");
+	if (!end)
 		return 0;
-	/* Strip the operation name and attach it's 'op' function to
-	 * the attribute */
-	op_name = token;
-	*paren = '\0';
+	int i = 0;
+	char *s = expr;
 
-	/* Operator lookup */
-	op = bsearch(op_name,
-		     operators, sizeof(operators) / sizeof(operators[0]),
-		     sizeof (struct ast_operator_s),
-		     op_comparator);
-	if (!op)
-		return EINVAL;
+	/* Strip leading spaces */
+	while (end != s && isspace(*s)) {
+		s++;
+	}
 
-	ae->op = op;
+	if (*s != '(')
+		return NULL;
 
-	/* clean up attribute name */
-	token = strdup(++paren);
-	*token_str = token;
-	while (*token != '\0' && *token != ')')
-		token++;
-	*token = '\0';
+#if 0
+	/* Check for naked '*'. This is an issue because the wildcard
+	 * '*' aliases with the multiply operator
+	 */
+	if (*s == '*')
+		return NULL;
+#endif
+	while (end != s) {
+		token[i++] = *s++;
+	}
+	token[i] = '\0';
+#if 0
+	if (strstr(token, "("))
+		goto out;
+	if (strstr(token, "+"))
+		goto out;
+	if (strstr(token, "-"))
+		goto out;
+	if (strstr(token, "*"))
+		goto out;
+	if (strstr(token, "/"))
+		goto out;
+	return NULL;
+ out:
+#endif
+	return __clean_name(token);
+}
+
+static int parse_rename(struct ast *ast, const char *expr, int *ppos, char **expr_name)
+{
+	int next_pos;
+	char *token_str;
+	int token;
+
+	/* Check if the user want's to name this expression */
+	next_pos = *ppos;
+	token = ast_lex(ast, expr, &next_pos, &token_str);
+	if (token == ASTT_AS) {
+		token = ast_lex(ast, expr, &next_pos, &token_str);
+		if (token == ASTT_DQSTRING || token == ASTT_SQSTRING) {
+			free(*expr_name);
+			*expr_name = strdup(token_str);
+			*ppos = next_pos;
+		} else {
+			ast->result = ASTP_SYNTAX;
+			ast->pos = next_pos;
+			snprintf(ast->error_msg, sizeof(ast->error_msg),
+				 "Expected quoted string, but received '%s'",
+				 token_str);
+			return ASTP_SYNTAX;
+		}
+	}
 	return 0;
 }
 
 int ast_parse_select_clause(struct ast *ast, const char *expr, int *ppos)
 {
+	struct ast_attr_entry_s *ae;
 	char *token_str;
 	enum ast_token_e token;
 	int next_pos = *ppos;
+	struct ast_term *term, *expr_term;
+	enum ast_parse_e err;
+
 	TAILQ_INIT(&ast->select_list);
 
 	for (token = ast_lex(ast, expr, &next_pos, &token_str);
-	     token == ASTT_NAME || token == ASTT_ASTERISK;
+	     token == ASTT_NAME || token == ASTT_ASTERISK || token == ASTT_LPAREN;
 	     token = ast_lex(ast, expr, &next_pos, &token_str)) {
-		struct ast_attr_entry_s *ae = calloc(1, sizeof *ae);
-		if (handle_op(ae, &token_str)) {
-			ast->result = ASTP_BAD_OP_NAME;
+		char *expr_name;
+		if (token == ASTT_ASTERISK)
+			goto wildcard;
+		expr_name = is_expr(ast, (char *)&expr[*ppos]);
+		if (expr_name)
+			goto parse_expr;
+		if (token != ASTT_NAME && token != ASTT_ASTERISK) {
+			ast->result = ASTP_SYNTAX;
+			ast->pos = *ppos;
+			snprintf(ast->error_msg, sizeof(ast->error_msg),
+				 "Expected a NAME or EXPR, but received '%s'\n",
+				 token_str);
+			goto err;
+		}
+	wildcard:
+		term = calloc(1, sizeof(*term));
+		if (!term) {
+			ast_enomem(ast, *ppos);
 			break;
 		}
-		ae->name = strdup(token_str);
-		*ppos = next_pos;	/* consume this token */
-		TAILQ_INSERT_TAIL(&ast->select_list, ae, link);
+		term->kind = ASTV_ATTR;
+		term->attr = calloc(1, sizeof(*term->attr));
+		if (!term->attr) {
+			ast_enomem(ast, *ppos);
+			free(term);
+			goto err;
+		}
+		err = parse_expr_attr(ast, token_str, term->attr, NULL);
+		if (err) {
+			free(term->attr);
+			free(term);
+			ast->result = err;
+			ast->pos = *ppos;
+			snprintf(ast->error_msg, sizeof(ast->error_msg),
+				 "Error %d processing token '%s'\n", err, token_str);
+			goto err;
+		}
+		*ppos = next_pos;
+		goto next_entry;
+	parse_expr:
+		term = calloc(1, sizeof(*term));
+		if (!term) {
+			ast_enomem(ast, *ppos);
+			break;
+		}
+		term->kind = ASTV_EXPR;
+		term->attr = calloc(1, sizeof(*term->attr));
+		if (!term->attr) {
+			ast_enomem(ast, *ppos);
+			free(term);
+			goto err;
+		}
+		expr_term = ast_parse_expr_term(ast, expr, ppos);
+		if (parse_rename(ast, expr, ppos, &expr_name))
+			goto err;
+		err = parse_expr_attr(ast, expr_name, term->attr, expr_term);
+		if (err) {
+			free(term->attr);
+			free(term);
+			ast->result = err;
+			ast->pos = *ppos;
+			snprintf(ast->error_msg, sizeof(ast->error_msg),
+				 "Error %d processing token '%s'\n", err, token_str);
+			goto err;
+		}
+		next_pos = *ppos;
+	next_entry:
 		/* Check for a ',' indicating another name */
 		token = ast_lex(ast, expr, &next_pos, &token_str);
-		if (token != ASTT_COMMA)
-			/* End of schema name list, do not consume token */
+		if (token != ASTT_COMMA) {
+			/* End of select list, do not consume
+			 * token. This is likely the ASTT_FROM
+			 * token */
 			break;
+		}
+		/*Consume the ',' */
+		*ppos = next_pos;
 	}
+ err:
 	return ast->result;
 }
 
@@ -1788,12 +2179,72 @@ static struct ast_attr_entry_s
 	return ae;
 }
 
+static char *__clean_name(char *name)
+{
+	char res_name[1024];
+	char *s = name;
+	char *res = res_name;
+	while (*s) {
+		switch (*s) {
+		case '(':
+			*res++ = '_';
+			break;
+		case ')':
+			*res++ = '_';
+			break;
+		case '$':
+			*res++ = '_';
+			break;
+		case '#':
+			*res++ = '_';
+			break;
+		case '.':
+			*res++ = '_';
+			break;
+		case ' ':
+			*res++ = '_';
+			break;
+		case '%':
+			*res++ = '_';
+			break;
+		case '/':
+			*res++ = 'D';
+			*res++ = 'I';
+			*res++ = 'V';
+			break;
+		case '*':
+			*res++ = 'M';
+			*res++ = 'U';
+			*res++ = 'L';
+			break;
+		case '+':
+			*res++ = 'A';
+			*res++ = 'D';
+			*res++ = 'D';
+			break;
+		case '-':
+			*res++ = 'S';
+			*res++ = 'U';
+			*res++ = 'B';
+			break;
+		default:
+			*res++ = *s;
+			break;
+		}
+		s++;
+	}
+	*res = '\0';
+	return strdup(res_name);
+}
+
 static int __resolve_sos_entities(struct ast *ast)
 {
 	struct ast_attr_entry_s *attr_e;
 	struct ast_schema_entry_s *schema_e;
 	sos_array_t join_list;
 	ast_attr_entry_t join_attr_e;
+	enum ast_parse_e err;
+	struct ast_term *term;
 
 	/* Resolve all the schema in the 'from' clause. */
 	TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
@@ -1832,11 +2283,32 @@ static int __resolve_sos_entities(struct ast *ast)
 			     attr; attr = sos_schema_attr_next(attr)) {
 				if (sos_attr_type(attr) == SOS_TYPE_JOIN)
 					continue;
-				attr_e = calloc(1, sizeof(*attr_e));
-				attr_e->name = strdup(sos_attr_name(attr));
-				attr_e->src_attr = attr;
-				attr_e->schema = schema_e;
-				TAILQ_INSERT_TAIL(&ast->select_list, attr_e, link);
+				term = calloc(1, sizeof(*term));
+				if (!term) {
+					assert(0 == "OOM");
+					break;
+				}
+				term->attr = calloc(1, sizeof(*term->attr));
+				if (!term->attr) {
+					free(term);
+					ast->result = ENOMEM;
+					snprintf(ast->error_msg, sizeof(ast->error_msg),
+						 "Out of memroy processing '%s'",
+						 attr_e->name);
+					return ast->result;
+				}
+				char *attr_name = strdup(sos_attr_name(attr));
+				err = parse_expr_attr(ast, attr_name,
+						      term->attr, NULL);
+				if (err) {
+					free(term->attr);
+					free(term);
+					ast->result = err;
+					snprintf(ast->error_msg, sizeof(ast->error_msg),
+						 "Error %d processing token '%s'\n",
+						 err, attr_e->name);
+					return ast->result;
+				}
 			}
 		}
 	}
@@ -1853,11 +2325,22 @@ static int __resolve_sos_entities(struct ast *ast)
 
 	TAILQ_FOREACH(attr_e, &ast->select_list, link) {
 		char res_name[256];
+		sos_type_t type;
+		int rc;
+
+		if (attr_e->expr) {
+			strcpy(res_name, attr_e->name);
+			type = ast_expr_type(attr_e->expr);
+			goto add_res_attr;
+		}
 		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
 			attr_e->src_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
-			attr_e->schema = schema_e;
-			if (attr_e->src_attr)
+			assert(attr_e->value_attr);
+			attr_e->value_attr->attr = attr_e->src_attr;
+			if (attr_e->src_attr) {
+				attr_e->schema = schema_e;
 				break;
+			}
 		}
 		if (!attr_e->src_attr) {
 			ast->result = ASTP_BAD_ATTR_NAME;
@@ -1878,16 +2361,21 @@ static int __resolve_sos_entities(struct ast *ast)
 				 "in the select list.", attr_e->name);
 			return ast->result;
 		}
-		int rc = sos_schema_attr_add(res_schema, res_name, sos_attr_type(attr_e->src_attr));
-		if (rc) {
+		type = sos_attr_type(attr_e->src_attr);
+	add_res_attr:
+		if (attr_e->expr)
+			rc = sos_schema_attr_add(res_schema, res_name, SOS_TYPE_DOUBLE);
+		else
+			rc = sos_schema_attr_add(res_schema, res_name, type);
+
+		if (rc && rc != EEXIST) {
 			ast->result = ASTP_BAD_ATTR_NAME;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
 				 "Error %d encounted adding the attribute '%s' to the select list.",
 				 rc, attr_e->name);
 			return ast->result;
 		}
-		sos_attr_t res_attr = sos_schema_attr_by_name(res_schema, res_name);
-		attr_e->res_attr = res_attr;
+		attr_e->res_attr = sos_schema_attr_by_name(res_schema, res_name);
 	}
 	ast->result_schema = res_schema;
 
@@ -2251,7 +2739,8 @@ int ast_parse(struct ast *ast, char *expr)
 				ast->result = ASTP_SYNTAX;
 				ast->pos = pos;
 				snprintf(ast->error_msg, sizeof(ast->error_msg),
-					 "The 'resample' clause cannot be used with the 'group_by' clause");
+					 "The 'resample' clause cannot be used "
+					 "with the 'group_by' clause");
 				break;
 			}
 			rc = ast_parse_resample_clause(ast, expr, &pos);
@@ -2263,7 +2752,8 @@ int ast_parse(struct ast *ast, char *expr)
 				ast->result = ASTP_SYNTAX;
 				ast->pos = pos;
 				snprintf(ast->error_msg, sizeof(ast->error_msg),
-					 "The 'resample' clause cannot be used with the 'group_by' clause");
+					 "The 'resample' clause cannot be used "
+					 "with the 'group_by' clause");
 				break;
 			}
 			rc = ast_parse_group_by_clause(ast, expr, &pos);
@@ -2273,7 +2763,8 @@ int ast_parse(struct ast *ast, char *expr)
 			ast->result = ASTP_SYNTAX;
 			ast->pos = pos;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
-				"Expected 'select', 'from', 'where', or 'order_by', but found '%s'",
+				"Expected 'select', 'from', 'where', or "
+				 "'order_by', but found '%s'",
 				token_str);
 		}
 	}
@@ -2479,6 +2970,385 @@ enum ast_eval_e ast_eval_limits(struct ast *ast, sos_obj_t obj)
 	return AST_EVAL_MATCH;
 }
 
+void add_op(struct ast *ast, sos_type_t type,
+	    sos_value_t lhs, sos_value_t rhs,
+	    sos_value_t res)
+{
+	switch (type) {
+	case SOS_TYPE_INT16:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int16_ +
+			(double)rhs->data->prim.int16_;
+		break;
+	case SOS_TYPE_INT32:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int32_ +
+			(double)rhs->data->prim.int32_;
+		break;
+	case SOS_TYPE_INT64:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int64_ +
+			(double)rhs->data->prim.int64_;
+		break;
+	case SOS_TYPE_UINT16:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint16_ +
+			(double)rhs->data->prim.uint16_;
+		break;
+	case SOS_TYPE_UINT32:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint32_ +
+			(double)rhs->data->prim.uint32_;
+		break;
+	case SOS_TYPE_UINT64:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint64_ +
+			(double)rhs->data->prim.uint64_;
+		break;
+	case SOS_TYPE_FLOAT:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.float_ +
+			(double)rhs->data->prim.float_;
+		break;
+	case SOS_TYPE_DOUBLE:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.double_ +
+			(double)rhs->data->prim.double_;
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		res->data->prim.long_double_ =
+			(double)lhs->data->prim.long_double_ +
+			(double)rhs->data->prim.long_double_;
+		break;
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+	case SOS_TYPE_OBJ_ARRAY:
+		break;
+	}
+}
+
+void sub_op(struct ast *ast, sos_type_t type, sos_value_t lhs, sos_value_t rhs,
+	    sos_value_t res)
+{
+	switch (type) {
+	case SOS_TYPE_INT16:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int16_ -
+			(double)rhs->data->prim.int16_;
+		break;
+	case SOS_TYPE_INT32:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int32_ -
+			(double)rhs->data->prim.int32_;
+		break;
+	case SOS_TYPE_INT64:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int64_ -
+			(double)rhs->data->prim.int64_;
+		break;
+	case SOS_TYPE_UINT16:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint16_ -
+			(double)rhs->data->prim.uint16_;
+		break;
+	case SOS_TYPE_UINT32:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint32_ -
+			(double)rhs->data->prim.uint32_;
+		break;
+	case SOS_TYPE_UINT64:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint64_ -
+			(double)rhs->data->prim.uint64_;
+		break;
+	case SOS_TYPE_FLOAT:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.float_ -
+			(double)rhs->data->prim.float_;
+		break;
+	case SOS_TYPE_DOUBLE:
+		res->data->prim.double_ =
+			lhs->data->prim.double_ -
+			rhs->data->prim.double_;
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		res->data->prim.long_double_ =
+			lhs->data->prim.long_double_ -
+			rhs->data->prim.long_double_;
+		break;
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+	case SOS_TYPE_OBJ_ARRAY:
+		break;
+	}
+}
+
+void mul_op(struct ast *ast,
+	    sos_type_t type, sos_value_t lhs, sos_value_t rhs,
+	    sos_value_t res)
+{
+	switch (type) {
+	case SOS_TYPE_INT16:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int16_ *
+			(double)rhs->data->prim.int16_;
+		break;
+	case SOS_TYPE_INT32:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int32_ *
+			(double)rhs->data->prim.int32_;
+		break;
+	case SOS_TYPE_INT64:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int64_ *
+			(double)rhs->data->prim.int64_;
+		break;
+	case SOS_TYPE_UINT16:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint16_ *
+			(double)rhs->data->prim.uint16_;
+		break;
+	case SOS_TYPE_UINT32:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint32_ *
+			(double)rhs->data->prim.uint32_;
+		break;
+	case SOS_TYPE_UINT64:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint64_ *
+			(double)rhs->data->prim.uint64_;
+		break;
+	case SOS_TYPE_FLOAT:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.float_ *
+			(double)rhs->data->prim.float_;
+		break;
+	case SOS_TYPE_DOUBLE:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.double_ *
+			(double)rhs->data->prim.double_;
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		res->data->prim.long_double_ =
+			(double)lhs->data->prim.long_double_ *
+			(double)rhs->data->prim.long_double_;
+		break;
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+	case SOS_TYPE_OBJ_ARRAY:
+		break;
+	}
+}
+
+void div_op(struct ast *ast,
+	    sos_type_t type, sos_value_t lhs, sos_value_t rhs,
+	    sos_value_t res)
+{
+	switch (type) {
+	case SOS_TYPE_INT16:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int16_ /
+			(double)rhs->data->prim.int16_;
+		break;
+	case SOS_TYPE_INT32:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int32_ /
+			(double)rhs->data->prim.int32_;
+		break;
+	case SOS_TYPE_INT64:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.int64_ /
+			(double)rhs->data->prim.int64_;
+		break;
+	case SOS_TYPE_UINT16:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint16_ /
+			(double)rhs->data->prim.uint16_;
+		break;
+	case SOS_TYPE_UINT32:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint32_ /
+			(double)rhs->data->prim.uint32_;
+		break;
+	case SOS_TYPE_UINT64:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.uint64_ /
+			(double)rhs->data->prim.uint64_;
+		break;
+	case SOS_TYPE_FLOAT:
+		res->data->prim.double_ =
+			(double)lhs->data->prim.float_ /
+			(double)rhs->data->prim.float_;
+		break;
+	case SOS_TYPE_DOUBLE:
+		res->data->prim.double_ =
+			lhs->data->prim.double_ /
+			rhs->data->prim.double_;
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+		res->data->prim.long_double_ =
+			lhs->data->prim.long_double_ /
+			rhs->data->prim.long_double_;
+		break;
+	case SOS_TYPE_TIMESTAMP:
+	case SOS_TYPE_JOIN:
+	case SOS_TYPE_OBJ:
+	case SOS_TYPE_STRUCT:
+	case SOS_TYPE_CHAR_ARRAY:
+	case SOS_TYPE_BYTE_ARRAY:
+	case SOS_TYPE_INT16_ARRAY:
+	case SOS_TYPE_INT32_ARRAY:
+	case SOS_TYPE_INT64_ARRAY:
+	case SOS_TYPE_UINT16_ARRAY:
+	case SOS_TYPE_UINT32_ARRAY:
+	case SOS_TYPE_UINT64_ARRAY:
+	case SOS_TYPE_FLOAT_ARRAY:
+	case SOS_TYPE_DOUBLE_ARRAY:
+	case SOS_TYPE_LONG_DOUBLE_ARRAY:
+	case SOS_TYPE_OBJ_ARRAY:
+		break;
+	}
+}
+
+sos_type_t ast_expr_type(struct ast_term *expr)
+{
+	switch (expr->kind) {
+	case ASTV_ATTR:
+		return sos_attr_type(expr->attr->attr);
+	case ASTV_EXPR:
+	case ASTV_BINOP:
+		return ast_expr_type(expr->expr->lhs);
+	case ASTV_CONST:
+		assert(0 == "A constant is not an expression");
+	}
+	assert(0 == "Invalid expression op");
+}
+
+static void cast_attr_value(sos_value_t cast, sos_value_t value, sos_attr_t attr)
+{
+	switch (sos_attr_type(attr)) {
+	case SOS_TYPE_INT16:
+		cast->data->prim.double_ = (double)value->data->prim.int16_;
+		break;
+	case SOS_TYPE_UINT16:
+		cast->data->prim.double_ = (double)value->data->prim.uint16_;
+		break;
+	case SOS_TYPE_INT32:
+		cast->data->prim.double_ = (double)value->data->prim.int32_;
+		break;
+	case SOS_TYPE_UINT32:
+		cast->data->prim.double_ = (double)value->data->prim.uint32_;
+		break;
+	case SOS_TYPE_INT64:
+		cast->data->prim.double_ = (double)value->data->prim.int64_;
+		break;
+	case SOS_TYPE_UINT64:
+		cast->data->prim.double_ = (double)value->data->prim.uint64_;
+		break;
+	case SOS_TYPE_FLOAT:
+		cast->data->prim.double_ = (double)value->data->prim.float_;
+		break;
+	case SOS_TYPE_DOUBLE:
+		cast->data->prim.double_ = (double)value->data->prim.double_;
+		break;
+	case SOS_TYPE_TIMESTAMP:
+		cast->data->prim.double_ = (double)value->data->prim.uint64_;
+		break;
+	case SOS_TYPE_LONG_DOUBLE:
+	default:
+		assert(0);
+	}
+}
+
+sos_value_t ast_expr_eval(struct ast *ast, struct ast_term *term,
+			  sos_value_t result, sos_type_t *type,
+			  sos_obj_t obj)
+{
+	SOS_VALUE(lhs);
+	SOS_VALUE(rhs);
+	SOS_VALUE(lhs_result);
+	SOS_VALUE(rhs_result);
+	SOS_VALUE(cast);
+
+	sos_value_init(lhs_result, NULL, result->attr);
+	sos_value_init(rhs_result, NULL, result->attr);
+
+	switch (term->kind) {
+	case ASTV_ATTR:
+		/* Force all expression attributes to double */
+		sos_value_init(cast, obj, term->attr->attr);
+		cast_attr_value(result, cast, term->attr->attr);
+		*type = SOS_TYPE_DOUBLE;
+		return result;
+	case ASTV_EXPR:
+	case ASTV_BINOP:
+		lhs = ast_expr_eval(ast, term->expr->lhs, lhs_result, type, obj);
+		rhs = ast_expr_eval(ast, term->expr->rhs, rhs_result, type, obj);
+		switch (term->expr->op) {
+		case ASTT_ADD:
+			add_op(ast, *type, lhs, rhs, result);
+			break;
+		case ASTT_SUB:
+			sub_op(ast, *type, lhs, rhs, result);
+			break;
+		case ASTT_ASTERISK:
+			mul_op(ast, *type, lhs, rhs, result);
+			break;
+		case ASTT_DIV:
+			div_op(ast, *type, lhs, rhs, result);
+			break;
+		default:
+			assert(0 == "invalid expression");
+		}
+		/* We cast the type to a double */
+		*type = SOS_TYPE_DOUBLE;
+		return result;
+	case ASTV_CONST:
+		*type = SOS_TYPE_DOUBLE;
+		return term->value;
+	}
+	assert(0 == "Invalid operation type");
+}
+
 enum ast_eval_e ast_eval(struct ast *ast, sos_obj_t obj)
 {
 	if (limit_check(ast, obj))
@@ -2572,6 +3442,13 @@ static void ast_term_destroy(struct ast *ast, struct ast_term *term)
 		ast_term_destroy(ast, term->binop->rhs);
 		sos_value_put(term->value);
 		free(term->binop);
+		free(term);
+		break;
+	case ASTV_EXPR:
+		ast_term_destroy(ast, term->expr->lhs);
+		ast_term_destroy(ast, term->expr->rhs);
+		sos_value_put(term->value);
+		free(term->expr);
 		free(term);
 		break;
 	}
