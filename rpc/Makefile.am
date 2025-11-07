@@ -21,6 +21,7 @@ sosapi.h : sosapi.x xdr-files
 	mv $(srcdir)/xx.c $(srcdir)/sosapi_svc.c
 
 AM_CFLAGS = -Wno-unused-variable \
+	-std=gnu11 \
 	-I$(top_srcdir)/libtirpc/tirpc \
 	-I$(srcdir)/../include \
 	-I$(top_srcdir)/ods/include \

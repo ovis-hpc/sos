@@ -9,7 +9,8 @@ CFLAGS = $(filter-out -Werror, @CFLAGS@)
 noinst_HEADERS = rpc_com.h debug.h clnt_fd_locks.h nis.h libtirpc.map
 
 AM_CPPFLAGS = -I$(top_srcdir)/libtirpc/tirpc -include config.h -DPORTMAP -DINET6 \
-		-D_GNU_SOURCE -Wall -pipe
+		-D_GNU_SOURCE -Wall -pipe \
+		-std=gnu11
 
 lib_LTLIBRARIES = libdsosrpc.la
 
