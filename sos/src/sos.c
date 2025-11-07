@@ -1377,7 +1377,7 @@ char *sos_container_stats(sos_t sos, uint64_t mask)
 		pthread_mutex_lock(&cont_list_lock);
 		LIST_FOREACH(sos, &cont_list, entry) {
 			char *json = __sos_container_stats(sos, mask);
-			printf(json);
+			printf("%s", json);
 		}
 		pthread_mutex_unlock(&cont_list_lock);
 	}
