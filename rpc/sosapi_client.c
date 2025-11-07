@@ -2868,7 +2868,7 @@ int dsos_query_select(dsos_query_t query, const char *clause)
 	if (res.any_err == 0)
 		query->state = DSOS_QUERY_SELECT;
 	else
-		snprintf(g_last_errmsg, sizeof(g_last_errmsg), query->err_msg);
+		snprintf(g_last_errmsg, sizeof(g_last_errmsg), "%s", query->err_msg);
 	return res.any_err;
 }
 
