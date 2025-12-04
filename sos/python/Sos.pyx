@@ -194,7 +194,7 @@ def export_schema(path, dir_path):
     fp = open(tmp_path, "w")
     c_fp = fdopen(fp.fileno(), "w")
     c_rc = sos_schema_export(path.encode(), c_fp)
-    fclose(c_fp);
+    fclose(c_fp)
     fp_exp = open(tmp_path, "r")
     schemas = json.load(fp_exp)
     os.unlink(tmp_path)
@@ -224,12 +224,12 @@ def cont_stats(path = None):
     cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
     cdef sos_t c_cont
     if path is not None:
-        c_cont = sos_container_open(path.encode('utf-8'), <sos_perm_t>SOS_PERM_RW, 0660)
+        c_cont = sos_container_open(path.encode('utf-8'), <sos_perm_t>SOS_PERM_RW, 0o660)
         if c_cont == NULL:
             raise ValueError("The container {0} could not be opened.".format(path))
         s = sos_container_stats(c_cont, 0)
     else:
-        s = sos_container_stats(NULL, 0);
+        s = sos_container_stats(NULL, 0)
 
 cdef class SosObject:
     cdef int error
@@ -340,9 +340,9 @@ cdef class Session:
         """
         if self.c_session != NULL:
             dsos_session_close(self.c_session)
-            self.c_session = NULL;
+            self.c_session = NULL
 
-    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660):
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0o660):
         """Open a container in a D/SOS cluster
 
         Open and optionally create a container in a D/SOS cluster.
@@ -532,8 +532,8 @@ cdef class DsosContainer:
         """
         cdef dsos_schema_t c_dschema
         cdef dsos_res_t c_res
-        cdef char *msg;
-        cdef int err;
+        cdef char *msg
+        cdef int err
         dschema = DsosSchema(self)
         c_dschema = dsos_schema_create(self.c_cont, schema.c_schema, &c_res)
         if c_dschema != NULL:
@@ -552,13 +552,13 @@ cdef class DsosContainer:
         Returns a list of the schema names present in the container
         """
         cdef int i
-        cdef dsos_name_array_t schemas = dsos_schema_query(self.c_cont);
+        cdef dsos_name_array_t schemas = dsos_schema_query(self.c_cont)
         names = []
         for i in range(0, schemas.count):
             name = schemas.names[i]
             name = name.decode()
             names.append(name)
-        dsos_name_array_free(schemas);
+        dsos_name_array_free(schemas)
         return names
 
     def schema_by_name(self, name):
@@ -616,13 +616,13 @@ cdef class DsosContainer:
         each partition.
         """
         cdef int i
-        cdef dsos_name_array_t parts = dsos_part_query(self.c_cont);
+        cdef dsos_name_array_t parts = dsos_part_query(self.c_cont)
         names = []
         for i in range(0, parts.count):
             name = parts.names[i]
             name = name.decode()
             names.append(name)
-        dsos_name_array_free(parts);
+        dsos_name_array_free(parts)
         return names
 
     def part_by_name(self, name):
@@ -1147,7 +1147,7 @@ cdef class Container(SosObject):
     cdef sos_perm_t o_perm
     cdef int o_mode
 
-    def __init__(self, path=None, o_perm=SOS_PERM_RW, o_mode=0660):
+    def __init__(self, path=None, o_perm=SOS_PERM_RW, o_mode=0o660):
         SosObject.__init__(self)
         self.o_perm = o_perm
         self.o_mode = o_mode
@@ -1165,7 +1165,7 @@ cdef class Container(SosObject):
             return sos_container_version(self.c_cont)
         return None
 
-    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, create=False, backend=SOS_BE_MMOS):
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0o660, create=False, backend=SOS_BE_MMOS):
         """Open the container
 
         If the container cannot be opened (or created) an Exception
@@ -1198,7 +1198,7 @@ cdef class Container(SosObject):
         if self.c_cont == NULL:
             raise self.abort(errno)
 
-    def create(self, path, o_mode=0660, backend=SOS_BE_MMOS):
+    def create(self, path, o_mode=0o660, backend=SOS_BE_MMOS):
         """Create the container
 
         This is a convenience method that calls open with
@@ -1224,7 +1224,7 @@ cdef class Container(SosObject):
             raise self.abort(errno)
         sos_container_close(c_cont, SOS_COMMIT_SYNC)
 
-    def clone(self, clone_path, part_list=None, o_mode=0660):
+    def clone(self, clone_path, part_list=None, o_mode=0o660):
         """Clone the schema and selected partitions into a new container
 
         If an error occurs, an exception is thrown.
@@ -1244,7 +1244,7 @@ cdef class Container(SosObject):
         if self.c_cont == NULL:
             self.abort(ENOENT)
         clone = Container()
-        clone.open(clone_path, o_perm=SOS_PERM_CREAT|SOS_PERM_RW,o_mode=0660)
+        clone.open(clone_path, o_perm=SOS_PERM_CREAT|SOS_PERM_RW,o_mode=0o660)
         for schema in self.schema_iter():
             dup = schema.dup()
             dup.add(clone)
@@ -1622,7 +1622,7 @@ cdef class Partition(SosObject):
         if self.c_part == NULL:
             self.abort(errno)
 
-    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0660, desc=None, backend=SOS_BE_MMOS):
+    def open(self, path, o_perm=SOS_PERM_RW, o_mode=0o660, desc=None, backend=SOS_BE_MMOS):
         """Open the partition at path
 
         Positional Arguments:
@@ -1651,7 +1651,7 @@ cdef class Partition(SosObject):
         c_part = sos_part_open(path.encode(), c_perm, o_mode, self.desc_)
         if c_part == NULL:
             self.abort(errno)
-        self.c_part = c_part;
+        self.c_part = c_part
 
     def remap_schema_uuid(self, dst_path, src_path):
         """Remap the partition's UUID from one value to another"""
@@ -1742,8 +1742,8 @@ cdef class Partition(SosObject):
         !0 if any errors were encounted.
         """
         cdef FILE *c_fp = fdopen(fp.fileno(), "w")
-        rc = sos_part_verify(path.encode(), c_fp);
-        fclose(c_fp);
+        rc = sos_part_verify(path.encode(), c_fp)
+        fclose(c_fp)
         return rc
 
     def release(self):
@@ -2272,7 +2272,7 @@ cdef class Key(object):
             i += 2
             j += 1
 
-        i = sos_comp_key_set(self.c_key, count, specs);
+        i = sos_comp_key_set(self.c_key, count, specs)
         if i != 0:
             raise ValueError("Error encoding the composite key")
         for i in range(0, count):
@@ -2986,7 +2986,7 @@ cdef class Attr(SosObject):
                 if typ >= TYPE_IS_ARRAY:
                     j = len(arg)
                 else:
-                    j = 0;
+                    j = 0
                 specs[i].data = sos_value_data_new(<sos_type_t>typ, j)
                 type_setters[typ](attr, specs[i].data, arg)
             size = sos_comp_key_size(specs_len, specs)
@@ -3064,7 +3064,7 @@ cdef class Attr(SosObject):
         v = <object>type_getters[<int>t](c_obj, c_data, self.c_attr)
 
         sos_obj_put(c_obj)
-        sos_key_put(c_key);
+        sos_key_put(c_key)
         if c_arr_obj != NULL:
             sos_obj_put(c_arr_obj)
         return v
@@ -4124,9 +4124,9 @@ cdef class Filter(object):
         cdef Attr attr
         cdef sos_attr_t c_attr
         cdef sos_attr_t *res_attr
-        cdef int *res_dim
+        cdef uint64_t *res_dim
         cdef int dim
-        cdef int *res_type
+        cdef uint64_t *res_type
         cdef shape_opt res_acc
         cdef int type_id
 
@@ -4137,7 +4137,7 @@ cdef class Filter(object):
         res_attr = <sos_attr_t *>malloc(sizeof(sos_attr_t) * nattr)
         if res_attr == NULL:
             raise MemoryError("Insufficient memory to allocate dimension array")
-        res_type = <int *>malloc(sizeof(uint64_t) * nattr)
+        res_type = <uint64_t *>malloc(sizeof(uint64_t) * nattr)
         if res_type == NULL:
             free(res_attr)
             raise MemoryError("Insufficient memory to allocate type array")
@@ -4146,7 +4146,7 @@ cdef class Filter(object):
             free(res_attr)
             free(res_type)
             raise MemoryError("Insufficient memory to allocate type array")
-        res_dim = <int *>malloc(sizeof(uint64_t) * nattr)
+        res_dim = <uint64_t *>malloc(sizeof(uint64_t) * nattr)
         if res_dim == NULL:
             free(res_attr)
             free(res_type)
@@ -4404,9 +4404,9 @@ cdef class Filter(object):
         cdef Attr attr
         cdef sos_attr_t c_attr, t_attr
         cdef sos_attr_t *res_attr
-        cdef int *res_dim
+        cdef uint64_t *res_dim
         cdef int dim
-        cdef int *res_type
+        cdef uint64_t *res_type
         cdef shape_opt res_acc
         cdef int type_id
         cdef double obj_time, prev_time
@@ -4421,7 +4421,7 @@ cdef class Filter(object):
         res_attr = <sos_attr_t *>malloc(sizeof(sos_attr_t) * nattr)
         if res_attr == NULL:
             raise MemoryError("Insufficient memory to allocate dimension array")
-        res_type = <int *>malloc(sizeof(uint64_t) * nattr)
+        res_type = <uint64_t *>malloc(sizeof(uint64_t) * nattr)
         if res_type == NULL:
             free(res_attr)
             raise MemoryError("Insufficient memory to allocate type array")
@@ -4430,7 +4430,7 @@ cdef class Filter(object):
             free(res_attr)
             free(res_type)
             raise MemoryError("Insufficient memory to allocate type array")
-        res_dim = <int *>malloc(sizeof(uint64_t) * nattr)
+        res_dim = <uint64_t *>malloc(sizeof(uint64_t) * nattr)
         if res_dim == NULL:
             free(res_attr)
             free(res_type)
@@ -4891,7 +4891,7 @@ cdef class Index(object):
 
     def show(self):
         """Print the contents of the index to stdout"""
-        sos_index_print(self.c_index, NULL);
+        sos_index_print(self.c_index, NULL)
 
     def verify(self, verbose=0):
         """Verify the contents of the index
@@ -4902,8 +4902,8 @@ cdef class Index(object):
                 - >1 Corruption errors are printed to stdout
         """
         cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
-        cdef int c_rc = sos_index_verify(self.c_index, c_fp, verbose);
-        fclose(c_fp);
+        cdef int c_rc = sos_index_verify(self.c_index, c_fp, verbose)
+        fclose(c_fp)
         return c_rc
 
 ################################
@@ -5015,7 +5015,7 @@ cdef object get_JOIN(sos_obj_t c_obj, sos_value_data_t c_data, sos_attr_t c_attr
     if c_obj == NULL:
         raise ValueError("The c_obj parameter cannot be NULL")
 
-    join_ids = sos_attr_join_list(c_attr);
+    join_ids = sos_attr_join_list(c_attr)
     value = ""
     for i in range(0, join_ids.count):
         c_join_attr = sos_schema_attr_by_id(sos_attr_schema(c_attr), join_ids.data.uint32_[i])
@@ -5118,7 +5118,7 @@ cdef set_BYTE_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
             raise ValueError(f"BYTE_ARRAY accepts only "
                              f"str, list, and bytearray, not {t}")
     s = val
-    memcpy(c_data.array.data.byte_, s, sz);
+    memcpy(c_data.array.data.byte_, s, sz)
 
 cdef set_INT64_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int i, sz = len(val)
@@ -5152,7 +5152,7 @@ cdef set_CHAR_ARRAY(sos_attr_t c_attr, sos_value_data_t c_data, val):
             raise ValueError(f"CHAR_ARRAY accepts only "
                              "str, list, and bytearray, not {t}")
     s = val
-    memcpy(c_data.array.data.char_, s, sz);
+    memcpy(c_data.array.data.char_, s, sz)
 
 cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
     cdef int secs
@@ -5176,12 +5176,12 @@ cdef set_TIMESTAMP(sos_attr_t c_attr, sos_value_data_t c_data, val):
                              "number must be non-negative".format(val))
     elif typ == Timestamp:
         ts = int(val.to_datetime64())
-        secs = ts / 1000000000L
+        secs = ts / 1000000000
         usecs = val.microsecond
     elif typ == np.datetime64:
         ts = val.astype('int')
-        secs = ts / 1000000L
-        usecs = ts % 1000000L
+        secs = ts / 1000000
+        usecs = ts % 1000000
     elif typ == dt.datetime:
         ts = (val - dt.datetime(1970,1,1)).total_seconds()
         secs = int(ts)
@@ -5790,7 +5790,7 @@ cdef class Object(object):
                 c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
                 ret.append(self.get_py_value(self.c_obj, c_attr, c_data))
                 if arr_obj != NULL:
-                    sos_obj_put(arr_obj);
+                    sos_obj_put(arr_obj)
             return ret
         if int == type(idx):
             c_attr = sos_schema_attr_by_id(sos_obj_schema(self.c_obj), idx)
@@ -5820,7 +5820,7 @@ cdef class Object(object):
         c_data = sos_obj_attr_data(self.c_obj, c_attr, &arr_obj)
         res = self.get_py_value(self.c_obj, c_attr, c_data)
         if arr_obj != NULL:
-            sos_obj_put(arr_obj);
+            sos_obj_put(arr_obj)
         return res
 
     def __setitem__(self, idx, val):
@@ -6022,7 +6022,7 @@ cdef void double_nda_setter(np.ndarray nda, int idx, sos_value_t v):
 
 cdef void timestamp_nda_setter(np.ndarray nda, int idx, sos_value_t v):
     # destination numpy data type is assumed to be datetime64[us]
-    nda[idx] = (v.data.prim.timestamp_.tv.tv_sec * 1000000L) + \
+    nda[idx] = (v.data.prim.timestamp_.tv.tv_sec * 1000000) + \
             v.data.prim.timestamp_.tv.tv_usec
 
 cdef void struct_nda_setter(np.ndarray nda, int idx, sos_value_t v):
@@ -6162,7 +6162,7 @@ cdef void timestamp_nda_resample(np.ndarray nda, int idx, sos_value_t v,
     cdef uint64_t bw
     if bin_samples == 0.0:
         bw = int(bin_width)
-        t = (v.data.prim.timestamp_.tv.tv_sec * 1000000L) + \
+        t = (v.data.prim.timestamp_.tv.tv_sec * 1000000) + \
             v.data.prim.timestamp_.tv.tv_usec
         nda[idx] = t - (t % bw)
 
