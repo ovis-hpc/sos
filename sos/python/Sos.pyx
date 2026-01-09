@@ -1096,9 +1096,12 @@ cdef class PartIter(SosObject):
         return p
 
     def __del__(self):
-        self.__dealloc__()
+        self.release()
 
     def __dealloc__(self):
+        self.release()
+
+    def release(self):
         if self.c_iter != NULL:
             sos_part_iter_free(self.c_iter)
             self.c_iter = NULL
@@ -1134,9 +1137,12 @@ cdef class IndexIter(SosObject):
         return idx
 
     def __del__(self):
-        self.__dealloc__()
+        self.release()
 
     def __dealloc__(self):
+        self.release()
+
+    def release(self):
         if self.c_iter != NULL:
             sos_container_index_iter_free(self.c_iter)
             self.c_iter = NULL
@@ -1752,7 +1758,7 @@ cdef class Partition(SosObject):
             self.c_part = NULL
 
     def __del__(self):
-        self.__dealloc__()
+        self.release()
 
     def __dealloc__(self):
         self.release()
@@ -2393,7 +2399,7 @@ cdef class Key(object):
             self.c_key = NULL
 
     def __del__(self):
-        self.__dealloc__()
+        self.release()
 
     def __dealloc__(self):
         self.release()
@@ -4642,7 +4648,7 @@ cdef class Filter(object):
             self.c_filt = NULL
 
     def __del__(self):
-        self.__dealloc__()
+        self.release()
 
     def __dealloc__(self):
         self.release()
@@ -5698,9 +5704,12 @@ cdef class Value(object):
         return self.to_str()
 
     def __del__(self):
-        self.__dealloc__()
+        self.release()
 
     def __dealloc__(self):
+        self.release()
+
+    def release(self):
         if self.c_str:
             free(self.c_str)
         if self.c_v:
@@ -5731,7 +5740,7 @@ cdef class Object(object):
         self.c_schema = NULL
 
     def __del__(self):
-        self.__dealloc__()
+        self.release()
 
     def __dealloc__(self):
         self.release()
