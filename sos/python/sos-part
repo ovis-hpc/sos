@@ -44,7 +44,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 from builtins import str
-import shutil
 import sys
 import os
 import errno
@@ -56,21 +55,21 @@ from sosdb import Sos
 
 def fmt_size(size):
     if size < 1024.0:
-        return "{0:8}B".format(int(size))
+        return f"{size:8}B"
     size /= 1024.0
     if size < 1024.0:
-        return "{0:8.1f}K".format(size)
+        return f"{size:8.1f}K"
     size /= 1024.0
     if size < 1024.0:
-        return "{0:8.1f}M".format(size)
+        return f"{size:8.1f}M"
     size /= 1024.0
     if size < 1024.0:
-        return "{0:8.1f}G".format(size)
+        return f"{size:8.1f}G"
     size /= 1024.0
     if size < 1024.0:
-        return "{0:8.1f}T".format(size)
+        return f"{size:8.1f}T"
     size /= 1024.0
-    return "{0:8.1f}P".format(size)
+    return f"{size:8.1f}P"
 
 class Permission:
     translate = {
@@ -272,7 +271,7 @@ if __name__ == "__main__":
                       f"{os.geteuid()} group {os.getegid()} is authorized to view")
             sys.exit(0)
         if not args.path:
-            print(f"One of --cont or --path must be specified.")
+            print("One of --cont or --path must be specified.")
             sys.exit(1)
         try:
             p = Sos.Partition()
@@ -426,9 +425,9 @@ if __name__ == "__main__":
             part.attach(cont, args.name)
         except Exception as e:
             if part.errno() == errno.EEXIST:
-                print(f"A partition with this name or path already exists in the container.")
+                print("A partition with this name or path already exists in the container.")
             elif part.errno() == errno.EPERM:
-                print(f"You do not have sufficient permission to attach this container/partition.")
+                print("You do not have sufficient permission to attach this container/partition.")
             else:
                 print(f"Error '{str(e)}' attaching partition '{args.name}'.")
             sys.exit(1)

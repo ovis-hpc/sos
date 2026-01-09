@@ -1401,8 +1401,12 @@ const char *sos_part_path(sos_part_t part)
 {
 	if (part->ref_obj)
 		return SOS_PART_REF(part->ref_obj)->path;
-	return "";
+	else if (part->path)
+		return part->path;
+	else
+		return "";
 }
+
 /**
  * \brief Return the partition's description data
  * \param part The partition handle
