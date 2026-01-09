@@ -110,11 +110,38 @@ be removed.
 Specifies the partition name to detach from the container.
 
 .IP "\fB--set\fR" 1c
+Change a partition's ownership, access rights and description. If the
+The --user, --group, --perm, and --desc options are used to update the
+partition's user, group, permission and description data respectively.
+
 .IP "\fB--remap-schema\fR" 1c
+Remap a partition's schema UUID. This option is useful when importing
+a partition into a container with a different schema-name to schema-UUID
+mapping. The schema UUID in a container can be discovered with the
+\c sos-schema command. Note that importing the partition with a
+different schema-UUID for a given name will not fail, however, objects
+with that schema will not be seen by the \c SOS query commands.
+
+The --new_dir argument specifies the location of the new container.
+The --cur_dir argument specifies the location of the current container.
+
 .IP "\fB--show-schema\fR" 1c
+Show schema statistics data for a partition. This shows the object
+count for each schema.
+
 .IP "\fB--reindex\fR" 1c
+Reindex objects in a partition. This is necessary if the partition
+were saved without the object indices to save secondary storage
+space.
+
 .IP "\fB--reindex-status-count\fR" 1c
+If this option is specified, an object reindex count is shown
+perodically during the reindex process.
+
 .IP "\fB--verbose\fR" 1c
+If this option is specified, the partition query output will
+include additional data.
+
 .PP
 .SH EXAMPLES
 .SS "Query Example"
