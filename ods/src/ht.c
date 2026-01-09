@@ -896,7 +896,6 @@ static int ht_iter_pos_get(ods_iter_t oi, ods_pos_t pos_)
 
 static int ht_iter_pos_put(ods_iter_t oi, ods_pos_t pos_)
 {
-	void __ods_obj_delete(ods_obj_t obj);
 	ods_obj_t obj;
 	ht_iter_t i = (ht_iter_t)oi;
 	ht_t t = i->iter.idx->priv;
@@ -905,7 +904,7 @@ static int ht_iter_pos_put(ods_iter_t oi, ods_pos_t pos_)
 	if (!obj)
 		return EINVAL;
 
-	__ods_obj_delete(obj);
+	ods_obj_delete(obj);
 	ods_obj_put(obj);
 	return 0;
 }

@@ -2736,7 +2736,6 @@ static int bxt_iter_pos_get(ods_iter_t oi, ods_pos_t pos)
 
 static int bxt_iter_pos_put(ods_iter_t oi, ods_pos_t pos)
 {
-	void __ods_obj_delete(ods_obj_t obj);
 	ods_obj_t obj;
 	bxt_iter_t i = (bxt_iter_t)oi;
 	bxt_t t = i->iter.idx->priv;
@@ -2745,7 +2744,7 @@ static int bxt_iter_pos_put(ods_iter_t oi, ods_pos_t pos)
 	if (!obj)
 		return EINVAL;
 
-	__ods_obj_delete(obj);
+	ods_obj_delete(obj);
 	ods_obj_put(obj);
 	return 0;
 }
