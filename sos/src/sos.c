@@ -1371,7 +1371,6 @@ char *sos_container_stats(sos_t sos, uint64_t mask)
 {
 	char *json;
 	if (sos) {
-		printf("%s:%d\n", __func__, __LINE__);
 		json = __sos_container_stats(sos, mask);
 	} else {
 		pthread_mutex_lock(&cont_list_lock);

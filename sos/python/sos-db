@@ -50,18 +50,21 @@ from sosdb import Sos
 
 def fmt_size(size):
     if size < 1000.0:
-        return "{0:8.1f}KB".format(size / 1000.0)
-    size /= 1000000.0
-    if size < 1000.0:
-        return "{0:8.1f}MB".format(size)
+        return f"{size:8.1f}B"
     size /= 1000.0
     if size < 1000.0:
-        return "{0:8.1f} GB".format(size)
+        return f"{size:8.1f}KB"
     size /= 1000.0
     if size < 1000.0:
-        return "{0:8.1f} TB".format(size)
+        return f"{size:8.1f}MB"
     size /= 1000.0
-    return "{0:8.1f} PB".format(size)
+    if size < 1000.0:
+        return f"{size:8.1f}GB"
+    size /= 1000.0
+    if size < 1000.0:
+        return f"{size:8.1f}TB"
+    size /= 1000.0
+    return "{size:8.1f}PB"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create a SOS DB")
@@ -88,8 +91,6 @@ if __name__ == "__main__":
     parser.add_argument("--backend", metavar="NAME", default="MMOS",
                         help="Specifies the back-end storage strategy. " \
                         "Supported values are 'mmos' and 'lsos'. The default is 'mmos'")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Request verbose query output")
 
     args = parser.parse_args()
 
@@ -120,21 +121,16 @@ if __name__ == "__main__":
             sys.exit(1)
 
         pi = cont.part_iter()
-        print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
-              format("Name", "State", "Accessed", "Modified", "Size", "Path"))
-        print("{0} {1} {2} {3} {4} {5}". \
-              format('-'.ljust(18,'-'), '-'.ljust(10,'-'),
-                     '-'.ljust(18,'-'), '-'.ljust(18,'-'), '-'.ljust(11,'-'),
-                     '-'.ljust(20,'-')))
+        print(f"{'Name':18} {'State':10} {'Accessed':18} {'Modified':18} {'Size':10} {'Path'}")
+        print(f"{'-'*18} {'-'*10} {'-'*18} {'-'*18} {'-'*10} {'-'*20}")
         for p in pi:
             stat = p.stat()
             accessed = dt.datetime.fromtimestamp(stat.accessed)
             modified = dt.datetime.fromtimestamp(stat.modified)
-            print("{0:18} {1:10} {2:18} {3:18} {4:10} {5}". \
-                  format(p.name(), str(p.state()),
-                         accessed.strftime("%m/%d/%y %H:%M:%S"),
-                         modified.strftime("%m/%d/%y %H:%M:%S"),
-                         fmt_size(stat.size), p.path()))
+            print(f"{p.name():18} {str(p.state()):10} "
+                  f"{accessed.strftime('%m/%d/%y %H:%M:%S'):18} "
+                  f"{modified.strftime('%m/%d/%y %H:%M:%S'):18} "
+                  f"{fmt_size(stat.size):10} {p.path()}")
 
     if args.stats:
         Sos.cont_stats(args.path)
@@ -152,7 +148,7 @@ if __name__ == "__main__":
         elif args.transaction.lower() == "end":
             cont.end()
         else:
-            print(f"The transaction argument must be 'begin' or 'end'")
+            print("The transaction argument must be 'begin' or 'end'")
             sys.exit(1)
 
     if args.locks:

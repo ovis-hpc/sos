@@ -60,7 +60,8 @@ import grp
 import pwd
 from pandas import DataFrame, DatetimeIndex, Timestamp
 import json
-
+import math
+import time
 #
 # Initialize the numpy array support. Numpy arrays are used
 # for all SOS arrays. The array data is therefore not copied
@@ -1325,8 +1326,9 @@ cdef class Container(SosObject):
         """
         cdef timespec ts
         if timeout:
-            ts.tv_sec = timeout
-            ts.tv_nsec = 0
+            now = time.time()
+            ts.tv_sec = timeout + math.floor(now)
+            ts.tv_nsec = (now - ts.tv_sec) * 1000000000
             return sos_begin_x_wait(self.c_cont, &ts)
         else:
             return sos_begin_x_wait(self.c_cont, NULL)

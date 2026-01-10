@@ -1,0 +1,135 @@
+.\" Man page for sos-db
+.\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
+.TH man 8 "17 Mar 2023" "v6" "sos-part man page"
+
+.SH NAME
+sos-db \- Manage and query SOS containers
+
+.SH SYNOPSIS
+sos-db [OPTION...]
+
+.SH "DESCRIPTION"
+.PP
+The \fBsos-db\fR command is used to create, manage and query SOS containers.
+.PP
+.SS "Creating Containers"
+.PP
+Containers are created with the --create option. After creation, the
+container exists, and has a single \fIdefault\fR partition. Use the --query
+option to display information about a container. The user and group for all
+files in the container are those of the caller of \fBsos-db\fR. The --mode
+flag is used to set the access rights to objects in the container.
+.PP
+The --backend option may be used to select a storage backend strategy. There
+are two backend strategies \fBmmos\fR and \fBlsos\fR. The default strategy is \fBmmos\fR.
+.PP
+The Memory Mapped Object Store \fBmmos\fR backend uses \fImmap()\fR to map objects
+into memory. This storage strategy is very efficient for local file systems,
+however, mapping memory over remote file systems (e.g. NFS, LUSTRE, and GPFS)
+can be very inefficient due to the ping-ponging of modified pages between
+concurrent clients of the file system. For this reason, the Log Structred
+Object Store, \fBlsos\fR, may be a better option for remote file systems.
+.PP
+The Log Structured Object Store is a compressed, offset based method for managing
+objects in a partition. This backend maintains objects as offsets in storage and
+reads and decompresses these objects into memory for access by the client. Because
+this backend strategy uses \fIread()\fR and \fIwrite()\fR to load objects into memory
+it may offer bettter performance when the underlying filesystem is distributed.
+.PP
+.SS "Querying Containers"
+.PP
+The set of partitions that are attached to a container may be queried
+with the the --query option. This provides information on the partitions
+that are currently attached to a container. Container locks and transactions
+mainted as storage objects so that they can be seen by concurrent clients of
+the container. This means that a client that exits holding a lock can prevent
+access to the container from concurrent users. The --lock option option reports
+any outstanding locks and reports the PID of the process holding the lock.
+.PP
+.SS "Container Transaction"
+A container implements \fItransaction\fR boundaries. These are used by
+commands that wish to perform multiple changes to a container that are to be
+seen as a single update to clients. This is intended to enable shell scripts
+to perform multiple container changes as a single operation. Typically transactions
+are used to move partitions into and out of containers, and perform other
+storage management functions that require multiple commands. The --transaction
+is used for this purpose.
+.PP
+.SH OPTIONS
+.IP "\fB--create\fR" 1c
+Create a new container. This is used in conjunction with the --path PATH option to
+specify create a new container. A \fIdefault\fR partion is created under this
+PATH along with other control files for the partition.
+
+.IP "\fB--backend BE\fR" 1c
+Specifies the backend storage strategy for object management in the container. Valid
+values for BE are "mmap", and "lsos".
+
+.IP "\fB--mode MODE\fR" 1c
+Specifies the octal parmission bits to apply for container access.
+See the open(3) system call for a description of these bits.
+
+.IP "\fB--transaction begin\fR" 1c
+Begin a SOS DB transaction. Other clients attempting to start a transaction will block.
+The maximum wait-time can be specified with the --timeout argument.
+
+.IP "\fB--timeout SECS\fR" 1c
+Specifies the time to wait in seconds to acquire a transaction before giving up and
+returning an error to the caller.
+
+.IP "\fB--transaction end\fR" 1c
+End a SOS DB transaction. Release the container for use by other clients.
+
+.IP "\fB--query\fR" 1c
+Display the partition information for the container.
+
+.IP "\fB--locks\fR" 1c
+Display the locks held on the container and its partitions.
+
+.IP "\fB--stats\fR" 1c
+Display information about object indices in a container.
+
+.PP
+Display the locks held on the container and its partitions.
+.SH EXAMPLES
+.PP
+.SS "Create Container"
+.PP
+.RS 4
+.nf
+$ sos-db --path /dev/shm/SOS/ldms --create --mode 0o660
+$ sos-db --path /dev/shm/SOS/ldms --query
+Name               State      Accessed           Modified           Size       Path
+------------------ ---------- ------------------ ------------------ ---------- --------------------
+default            PRIMARY    01/09/26 19:20:27  01/09/26 19:20:27      70.9KB /dev/shm/SOS/ldms/default
+.fi
+.RE
+.PP
+.SS "Query Container"
+.PP
+.RS 4
+.nf
+$ sos-db --path /dev/shm/SOS/ldms --query
+Name               State      Accessed           Modified           Size       Path
+------------------ ---------- ------------------ ------------------ ---------- --------------------
+default            ACTIVE     01/09/26 19:02:39  01/05/26 09:38:52     921.0KB /dev/shm/SOS/ldms/default
+1767641931         PRIMARY    01/09/26 19:02:39  01/09/26 19:02:37       2.2GB /dev/shm/SOS/ldms/1767641931
+.fi
+.RE
+.PP
+.SS "Show Container Locks"
+.PP
+.RS 4
+.nf
+$ sos-db --path /dev/shm/SOS/ldms --locks
+foo/.__part
+Id Type   Lock     Count    Owner        Users
+-- ------ -------- -------- ------------ --------
+-1  Trans       -1        1       451904        1
+Checking '/dev/shm/SOS/ldmsfault/objects' ... done(0)
+Checking '/dev/shm/SOS/ldmsfault/1767641931' ... done(0)
+.fi
+.RE
+.PP
+.SH SEE ALSO
+sos-part(8), sos-index(8), sos-schema(8), sos-monitor(8), sos-import-csv(8)
