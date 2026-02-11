@@ -354,6 +354,7 @@ static int __sos_container_new(const char *path, sos_perm_t *p_perm, int o_mode)
 	/* Create the ODS to contain configuration objects */
 	sprintf(tmp_path, "%s/.__config", path);
 	ods = ods_open(tmp_path, o_perm | ODS_PERM_CREAT | ODS_PERM_RW, o_mode);
+	rc = errno;	/* save errno from open */
 	ods_close(ods, ODS_COMMIT_SYNC);
 	if (!ods)
 		goto err_1;
@@ -1369,7 +1370,7 @@ static char *__sos_container_stats(sos_t sos, uint64_t mask)
  */
 char *sos_container_stats(sos_t sos, uint64_t mask)
 {
-	char *json;
+	char *json = NULL;
 	if (sos) {
 		json = __sos_container_stats(sos, mask);
 	} else {
