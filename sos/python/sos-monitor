@@ -178,7 +178,7 @@ if __name__ == "__main__":
                 row += 2
             t0 = time.time()
             stdscr.refresh()
-            for i in range(1, args.refresh):
+            for i in range(0, args.refresh):
                 stdscr.refresh()
                 if stdscr.getch() == -1:
                     time.sleep(1)
