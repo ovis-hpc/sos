@@ -453,6 +453,7 @@ cdef extern from "sos/sos.h":
     void sos_end_x(sos_t c)
     void sos_container_info(sos_t sos, FILE* fp)
     int sos_container_lock_info(const char *path, FILE *fp)
+    int sos_container_print(const char *path, FILE *fp)
     void sos_inuse_obj_info(sos_t sos, FILE *fp)
     void sos_free_obj_info(sos_t sos, FILE *fp)
     int sos_container_config_set(const char *path, const char *option, const char *value)

@@ -1,6 +1,6 @@
 .\" Man page for sos-db
 .\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
-.TH man 8 "17 Mar 2023" "v6" "sos-part man page"
+.TH man 8 "11 Feb 2025" "v6" "sos-part man page"
 
 .SH NAME
 sos-db \- Manage and query SOS containers
@@ -89,8 +89,13 @@ Display the locks held on the container and its partitions.
 .IP "\fB--stats\fR" 1c
 Display information about object indices in a container.
 
-.PP
-Display the locks held on the container and its partitions.
+.IP "\fB--clone\fR" 1c
+Clone a container into a destination container. All schema from the source
+container are included in the destination container. The path to the source
+container is specified by the --path argument, and the path to the destination
+container is specified by the --dest argument. Partitions from the source container
+are not included in the destination container.
+
 .SH EXAMPLES
 .PP
 .SS "Create Container"
@@ -114,6 +119,23 @@ Name               State      Accessed           Modified           Size       P
 ------------------ ---------- ------------------ ------------------ ---------- --------------------
 default            ACTIVE     01/09/26 19:02:39  01/05/26 09:38:52     921.0KB /dev/shm/SOS/ldms/default
 1767641931         PRIMARY    01/09/26 19:02:39  01/09/26 19:02:37       2.2GB /dev/shm/SOS/ldms/1767641931
+.fi
+.RE
+.PP
+.SS "Clone a Container"
+.PP
+.RS 4
+.nf
+$ sos-db --path /dev/shm/SOS/ldms --clone --dest /dev/shm/SOS/ldms-clone
+$ sos-db --path /dev/shm/SOS/ldms --query
+Name               State      Accessed           Modified           Size       Path
+------------------ ---------- ------------------ ------------------ ---------- --------------------
+default            ACTIVE     01/09/26 19:02:39  01/05/26 09:38:52     921.0KB /dev/shm/SOS/ldms/default
+1767641931         PRIMARY    01/09/26 19:02:39  01/09/26 19:02:37       2.2GB /dev/shm/SOS/ldms/1767641931
+$ sos-db --path /dev/shm/SOS/ldms-clone --query
+Name               State      Accessed           Modified           Size       Path
+------------------ ---------- ------------------ ------------------ ---------- --------------------
+default            ACTIVE     01/09/26 19:02:39  01/05/26 09:38:52     921.0KB /dev/shm/SOS/ldms/default
 .fi
 .RE
 .PP

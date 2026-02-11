@@ -73,18 +73,26 @@ if __name__ == "__main__":
                         help="Create a new SOS database. " \
                         "The --path parameter specifies the path to the new " \
                         "database.")
+    actions.add_argument("--clone", action="store_true",
+                        help="Clone a container")
     actions.add_argument("--query", action="store_true",
                         help="Query a container's partition information")
+    actions.add_argument("--info", action="store_true",
+                        help="Print debug information for a container")
     actions.add_argument("--transaction",
                         help="Start/End a container transaction")
     actions.add_argument("--locks", action="store_true",
                         help="Print active container locks")
     actions.add_argument("--stats", action="store_true",
                         help="Print active partition configuration")
+    actions.add_argument("--config", action="store_true",
+                        help="Print configuration information for the container")
     parser.add_argument("--timeout", type=int,
                         help="Transaction timeout in seconds")
     parser.add_argument("--path", required=True,
                         help="The path to the database.")
+    parser.add_argument("--dest",
+                         help="The path to the destination container when cloning")
     parser.add_argument("--mode", metavar="PERM", default="0o660",
                         help="The permissions to assign to SOS database files. "
                         "Specified as an octal number, e.g. 0o666")
@@ -132,6 +140,18 @@ if __name__ == "__main__":
                   f"{modified.strftime('%m/%d/%y %H:%M:%S'):18} "
                   f"{fmt_size(stat.size):10} {p.path()}")
 
+    if args.info:
+        try:
+            cont.open(args.path)
+        except Exception as e:
+            print(f"The container {args.path} could not be opened.")
+            print(str(e))
+            sys.exit(1)
+        cont.info()
+
+    if args.config:
+        Sos.config_info(args.path)
+
     if args.stats:
         Sos.cont_stats(args.path)
 
@@ -153,3 +173,19 @@ if __name__ == "__main__":
 
     if args.locks:
         Sos.lock_info(args.path)
+
+    if args.clone:
+        if args.dest is None:
+            print("The --dest argument is required to clone a container")
+            sys.exit(1)
+        try:
+            cont.open(args.path)
+        except Exception as ex:
+            print(f"The container {args.path} could not be opened.")
+            sys.exit(1)
+        try:
+            cont.clone(args.dest)
+        except Exception as ex:
+            print(f"The container {args.path} could not be cloned to {args.dest}.")
+            print(str(ex))
+            sys.exit(1)

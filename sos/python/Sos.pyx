@@ -219,6 +219,13 @@ def lock_info(path):
     cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
     cdef int c_rc
     c_rc = sos_container_lock_info(path.encode(), c_fp)
+    fclose(c_fp)
+
+def config_info(path):
+    """Print container config information to stdout"""
+    cdef FILE *c_fp = fdopen(sys.stdout.fileno(), "w")
+    sos_config_print(path.encode(), c_fp)
+    fclose(c_fp)
 
 def cont_stats(path = None):
     """Print container status information to stdout"""
@@ -1291,6 +1298,9 @@ cdef class Container(SosObject):
             self.abort(EINVAL)
         sos_container_close(self.c_cont, commit)
         self.c_cont = NULL
+
+    def info(self):
+        sos_container_info(self.c_cont, NULL)
 
     def commit(self, commit=SOS_COMMIT_ASYNC):
         """Commit objects in memory to storage
