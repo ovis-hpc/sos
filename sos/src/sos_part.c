@@ -308,6 +308,14 @@ int __sos_part_create(const char *part_path, const char *part_desc,
 		goto err_0;
 	}
 	ods_obj_t udata = ods_get_user_data(ods);
+	if (!udata) {
+		/* This check is compiler food to avoid triggering warnings
+		 * about array bounds in strcpy when the compiler optimization
+		 * level is > 0
+		 */
+		rc = ENOMEM;
+		goto err_0;
+	}
 	SOS_PART_UDATA(udata)->signature = SOS_PART_SIGNATURE;
 	strcpy(SOS_PART_UDATA(udata)->desc, part_desc);
 	SOS_PART_UDATA(udata)->is_busy = 0;
