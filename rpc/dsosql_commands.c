@@ -71,7 +71,7 @@ int col_widths[] = {
 	[SOS_TYPE_FLOAT] = 12,
 	[SOS_TYPE_DOUBLE] = 24,
 	[SOS_TYPE_LONG_DOUBLE] = 48,
-	[SOS_TYPE_TIMESTAMP] = 32,
+	[SOS_TYPE_TIMESTAMP] = 18,
 	[SOS_TYPE_OBJ] = 8,
 	[SOS_TYPE_STRUCT] = 32,
 	[SOS_TYPE_JOIN] = 32,
@@ -113,12 +113,6 @@ int add_column(sos_schema_t schema, const char *str, struct col_list_s *col_list
 	s = strdup(str);
 	if (!s)
 		goto err;
-	width = strchr(s, '[');
-	if (width) {
-		*width = '\0';
-		width++;
-		col->width = strtoul(width, NULL, 0);
-	}
 	col->name = s;
 	if (!col->name)
 		goto err;
@@ -325,7 +319,7 @@ static void json_row(FILE *outp, sos_schema_t schema, sos_obj_t obj, struct col_
 	fprintf(outp, "}");
 }
 
-void table_footer(FILE *outp, int rec_count, int iter_count, struct col_list_s *col_list)
+void table_footer(FILE *outp, int rec_count, struct col_list_s *col_list)
 {
 	struct col_s *col;
 
@@ -344,15 +338,14 @@ void table_footer(FILE *outp, int rec_count, int iter_count, struct col_list_s *
 	fprintf(outp, "Records %d\n", rec_count);
 }
 
-static void csv_footer(FILE *outp, int rec_count, int iter_count, struct col_list_s *col_list)
+static void csv_footer(FILE *outp, int rec_count, struct col_list_s *col_list)
 {
-	fprintf(outp, "# Records %d/%d.\n", rec_count, iter_count);
+	fprintf(outp, "# Records %d.\n", rec_count);
 }
 
-static void json_footer(FILE *outp, int rec_count, int iter_count, struct col_list_s *col_list)
+static void json_footer(FILE *outp, int rec_count, struct col_list_s *col_list)
 {
-	fprintf(outp, "], \"%s\" : %d, \"%s\" : %d}\n",
-		"totalRecords", rec_count, "recordCount", iter_count);
+	fprintf(outp, "],\n\"%s\" : %d }\n", "totalRecords", rec_count);
 }
 
 ods_atomic_t records;
@@ -745,11 +738,12 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 	sos_schema_t schema;
 	sos_obj_t obj;
 	struct col_s *col;
+	char *s;
 	int rec_count;
 	struct col_list_s col_list = TAILQ_HEAD_INITIALIZER(col_list);
 	void (*header)(FILE *outp, sos_attr_t index_attr, struct col_list_s *col_list);
 	void (*row)(FILE *outp, sos_schema_t schema, sos_obj_t obj, struct col_list_s *col_list);
-	void (*footer)(FILE *outp, int rec_count, int iter_count, struct col_list_s *col_list);
+	void (*footer)(FILE *outp, int rec_count, struct col_list_s *col_list);
 
 	if (!query) {
 		printf("%s\n", dsos_last_errmsg());
@@ -777,6 +771,17 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 			return ENOENT;
 		}
 		col->id = sos_attr_id(attr);
+
+		/* Search the query for this column to check for a column width */
+		s = strstr(select_clause, col->name);
+		if (s) {
+			while (!isspace(*s) && *s != '\0' && *s != '{')
+				s++;
+			if (*s == '{') {
+				s++;
+				col->width = strtol(s, NULL, 0);
+			}
+		}
 		if (!col->width)
 			col->width = col_widths[sos_attr_type(attr)];
 	}
@@ -807,7 +812,7 @@ int dsosql_query_select(dsos_container_t cont, const char *select_clause)
 		sos_obj_put(obj);
 		rec_count += 1;
 	}
-	footer(stdout, rec_count, 0, &col_list);
+	footer(stdout, rec_count, &col_list);
 	while (!TAILQ_EMPTY(&col_list)) {
 		col = TAILQ_FIRST(&col_list);
 		TAILQ_REMOVE(&col_list, col, entry);

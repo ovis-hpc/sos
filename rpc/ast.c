@@ -638,6 +638,22 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos,
 		s++;
 		*ppos +=1 ;
 	}
+	if (*s == '{') {
+		s++;
+		*ppos +=1 ;
+		while (*s != '}' && *s != '\0') {
+			s++;
+			*ppos +=1 ;
+		}
+		if (*s != '}')
+			return ASTT_EOF;
+		s++;
+		*ppos += 1;
+	}
+	while (isspace(*s)) {
+		s++;
+		*ppos +=1 ;
+	}
 	if (*ppos >= strlen(expr))
 		return ASTT_EOF;
 
@@ -798,17 +814,33 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos,
 		token_str[2] = '\0';
 		return ASTT_NE;
 	}
-	/* Look for a keyword */
+	/* Look for a keyword/attribute */
 	if (isalpha(*s)) {
 		char keyword[255];
 		struct ast_key_word_s *kw;
 		rc = 0;
-		while ((isalnum(*s)
-			|| *s == '_' || *s == '$' || *s == '#' || *s == '.'
-			|| *s == '(' || *s == ')')
+		while ((isalnum(*s) || *s == '_' || *s == '$' || *s == '#' || *s == '.')
 		       && rc < sizeof(keyword) - 1) {
 			keyword[rc++] = *s;
 			s++;
+			*ppos += 1;
+		}
+		/* NB: The '(' and ')' are present in some attributes names. This causes
+		 * problems with expression evaluation because we can't tell if the
+		 * parentheses are part of the attribute name or part of an expression.
+		 */
+		if (*s == '(') {
+			while (*s != ')' && *s != '\0' && rc < sizeof(keyword) - 1) {
+				keyword[rc++] = *s;
+				s++;
+				*ppos += 1;
+			}
+			if (*s != ')') {
+				return ASTT_ERR;
+			}
+			keyword[rc++] = *s;
+			s++;
+			*ppos += 1;
 		}
 		keyword[rc] = '\0';
 
@@ -818,7 +850,6 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos,
 			     sizeof (struct ast_key_word_s),
 			     key_word_comparator);
 		strcpy(token_str, keyword);
-		*ppos += strlen(keyword);
 		if (kw)
 			return kw->token;
 		else
@@ -1655,8 +1686,11 @@ static struct ast_term *ast_parse_expr(struct ast *ast, const char *expr, int *p
 	struct ast_term *term;
 	struct ast_term_binop *binop;
 
+	term = ast_parse_expr_term(ast, expr, ppos);
+	if (term->kind == ASTV_CONST)
+		return term;
 	binop = calloc(1, sizeof(*binop));
-	binop->lhs = ast_parse_expr_term(ast, expr, ppos);
+	binop->lhs = term;
 	if (!binop->lhs) {
 		free(binop);
 		return NULL;
@@ -3367,22 +3401,33 @@ enum ast_eval_e ast_eval(struct ast *ast, sos_obj_t obj)
 
 struct ast_term *ast_find_term(struct ast_term *term, const char *attr_name)
 {
+	char attr_name_[1024];
 	struct ast_term *lhs, *rhs;
 	int join_idx, join_count;
 	sos_array_t join_list;
 	if (!term)
 		return NULL;
 
+	/* strip adornment characters from attr_name, '[...]' */
+	char *a = (char *)attr_name;
+	char *a_ = attr_name_;
+	while (*a != '{' && *a != '\0') {
+		*a_ = *a;
+		a++;
+		a_++;
+	}
+	*a_ = '\0';
+
 	switch (term->kind) {
 	case ASTV_CONST:
 		return NULL;
 	case ASTV_ATTR:
-		if (0 == strcmp(attr_name, sos_attr_name(term->attr->attr)))
+		if (0 == strcmp(attr_name_, sos_attr_name(term->attr->attr)))
 			return term;
 		return NULL;
 	case ASTV_BINOP:
-		lhs = ast_find_term(term->binop->lhs, attr_name);
-		rhs = ast_find_term(term->binop->rhs, attr_name);
+		lhs = ast_find_term(term->binop->lhs, attr_name_);
+		rhs = ast_find_term(term->binop->rhs, attr_name_);
 		if (lhs || rhs)
 			return term;
 		break;
@@ -3453,7 +3498,6 @@ static void ast_term_destroy(struct ast *ast, struct ast_term *term)
 		break;
 	}
 }
-
 
 void ast_destroy(struct ast *ast)
 {

@@ -18,6 +18,6 @@ struct col_s {
 TAILQ_HEAD(col_list_s, col_s);
 int add_column(sos_schema_t schema, const char *str, struct col_list_s *col_list);
 void table_header(FILE *outp, sos_attr_t attr, struct col_list_s *col_list);
-void table_footer(FILE *outp, int rec_count, int iter_count, struct col_list_s *col_list);
+void table_footer(FILE *outp, int rec_count, struct col_list_s *col_list);
 void table_row(FILE *outp, sos_schema_t schema, sos_obj_t obj, struct col_list_s *col_list);
 #endif
