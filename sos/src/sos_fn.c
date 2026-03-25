@@ -350,7 +350,7 @@ PRIMITIVE_TO_STR_FN(long_double, "%Lf", long_double_)
 
 static char *timestamp_to_str_fn(sos_value_t v, char *str, size_t len)
 {
-	snprintf(str, len, "%d.%06d",
+	snprintf(str, len, "%u.%06u",
 		 v->data->prim.timestamp_.tv.tv_sec,
 		 v->data->prim.timestamp_.tv.tv_usec);
 	return str;

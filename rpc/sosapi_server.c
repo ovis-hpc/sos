@@ -2213,7 +2213,7 @@ bool_t query_next_1_svc(dsos_container_id cont_id, dsos_query_id query_id, dsos_
 		res->dsos_query_next_res_u.error_msg = strdup(err_msg);
 		goto out_0;
 	}
-	
+
 	switch (query->state) {
 	case DSOSQ_STATE_INIT:
 		sprintf(err_msg,

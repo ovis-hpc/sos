@@ -40,7 +40,7 @@ static void *load_library(const char *library, const char *pfx, const char *sym)
 	return p;
 }
 
-static char *__clean_name(char *name);
+static char *clean_name(const char *name);
 static struct ast_term *ast_parse_expr(struct ast *ast, const char *expr, int *ppos);
 static struct ast_term *ast_parse_expr_term(struct ast *ast, const char *expr, int *ppos);
 static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *ppos);
@@ -731,9 +731,9 @@ enum ast_token_e ast_lex(struct ast *ast, const char *expr, int *ppos,
 				 || s[i] == '+' || s[i] == '-'
 				 || s[i] == '.'
 				 || s[i] == 'e' || s[i] == 'E'); i++)
-			{
-				number[i] = s[i];
-			}
+		{
+			number[i] = s[i];
+		}
 		number[i] = '\0';
 
 		/* Float? */
@@ -988,7 +988,7 @@ static struct ast_term *ast_parse_expr_term(struct ast *ast, const char *expr, i
 				ast->result = ASTP_UNBALANCED_PAREN;
 				ast->pos = *ppos;
 				snprintf(ast->error_msg, sizeof(ast->error_msg),
-					 "Expected ')' but got '%s'", token_str);
+					 "Expected ')', but got '%s'", token_str);
 				ast_term_destroy(ast, term);
 				term = NULL;
 				rparen = 1;
@@ -1109,7 +1109,7 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 				ast->result = ASTP_UNBALANCED_PAREN;
 				ast->pos = *ppos;
 				snprintf(ast->error_msg, sizeof(ast->error_msg),
-					 "Expected ')' but got '%s'", token_str);
+					 "Expected ')', but got '%s'", token_str);
 				ast_term_destroy(ast, term);
 				term = NULL;
 				rparen = 1;
@@ -1159,8 +1159,8 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 			break;
 		}
 		term->kind = ASTV_CONST;
-		term->value = sos_value_init_const(&term->value_, SOS_TYPE_DOUBLE,
-						   strtod(token_str, NULL));
+		term->value = sos_value_init_const(&term->value_, SOS_TYPE_INT64,
+						   strtol(token_str, NULL, 0));
 		break;
 	case ASTT_FLOAT:
 		term = calloc(1, sizeof(*term));
@@ -1184,7 +1184,7 @@ static struct ast_term *ast_parse_term(struct ast *ast, const char *expr, int *p
 }
 
 /*
- * Update the attributes value min and max. If the value_term is not a
+ * Update the attribute's value min and max. If the value_term is not a
  * CONST, ignore the update
  */
 static int update_attr_limits(struct ast *ast, struct ast_term *attr_term,
@@ -1720,7 +1720,7 @@ static struct ast_term *ast_parse_expr(struct ast *ast, const char *expr, int *p
 		ast->result = ASTP_SYNTAX;
 		ast->pos = *ppos;
 		snprintf(ast->error_msg, sizeof(ast->error_msg),
-			 "Expected '+', '-', '*', or '/' but got '%s'",
+			 "Expected '+', '-', '*', or '/', but got '%s'",
 			 token_str);
 		ast_term_destroy(ast, binop->lhs);
 		free(binop);
@@ -1802,7 +1802,7 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 		ast->result = ASTP_SYNTAX;
 		ast->pos = *ppos;
 		snprintf(ast->error_msg, sizeof(ast->error_msg),
-			"Expected 'and', 'or', '<', '<=', '==', '>=', or '>' but got '%s'", token_str);
+			"Expected 'and', 'or', '<', '<=', '==', '>=' or '>', but got '%s'", token_str);
 		ast_term_destroy(ast, binop->lhs);
 		free(binop);
 		return NULL;
@@ -1833,54 +1833,7 @@ static struct ast_term *ast_parse_binop(struct ast *ast, const char *expr, int *
 	return term;
 }
 
-static char *is_expr(struct ast *ast, char *expr)
-{
-	char token[1024];
-	char *end = strstr(expr, ",");
-	if (!end)
-		end = strcasestr(expr, "FROM");
-	if (!end)
-		return 0;
-	int i = 0;
-	char *s = expr;
-
-	/* Strip leading spaces */
-	while (end != s && isspace(*s)) {
-		s++;
-	}
-
-	if (*s != '(')
-		return NULL;
-
-#if 0
-	/* Check for naked '*'. This is an issue because the wildcard
-	 * '*' aliases with the multiply operator
-	 */
-	if (*s == '*')
-		return NULL;
-#endif
-	while (end != s) {
-		token[i++] = *s++;
-	}
-	token[i] = '\0';
-#if 0
-	if (strstr(token, "("))
-		goto out;
-	if (strstr(token, "+"))
-		goto out;
-	if (strstr(token, "-"))
-		goto out;
-	if (strstr(token, "*"))
-		goto out;
-	if (strstr(token, "/"))
-		goto out;
-	return NULL;
- out:
-#endif
-	return __clean_name(token);
-}
-
-static int parse_rename(struct ast *ast, const char *expr, int *ppos, char **expr_name)
+static int parse_as_rename(struct ast *ast, const char *expr, int *ppos, char **expr_name)
 {
 	int next_pos;
 	char *token_str;
@@ -1903,6 +1856,15 @@ static int parse_rename(struct ast *ast, const char *expr, int *ppos, char **exp
 				 token_str);
 			return ASTP_SYNTAX;
 		}
+		/* Strip {} decoration */
+		if (expr[*ppos] == '{') {
+			while (expr[*ppos] && expr[*ppos] != '}')
+				(*ppos)++;
+			if (expr[*ppos] != '}')
+				return ASTP_SYNTAX;
+			(*ppos)++;
+		}
+		return 0;
 	}
 	return 0;
 }
@@ -1911,6 +1873,7 @@ int ast_parse_select_clause(struct ast *ast, const char *expr, int *ppos)
 {
 	struct ast_attr_entry_s *ae;
 	char *token_str;
+	char *new_name;
 	enum ast_token_e token;
 	int next_pos = *ppos;
 	struct ast_term *term, *expr_term;
@@ -1922,72 +1885,62 @@ int ast_parse_select_clause(struct ast *ast, const char *expr, int *ppos)
 	     token == ASTT_NAME || token == ASTT_ASTERISK || token == ASTT_LPAREN;
 	     token = ast_lex(ast, expr, &next_pos, &token_str)) {
 		char *expr_name;
-		if (token == ASTT_ASTERISK)
-			goto wildcard;
-		expr_name = is_expr(ast, (char *)&expr[*ppos]);
-		if (expr_name)
-			goto parse_expr;
-		if (token != ASTT_NAME && token != ASTT_ASTERISK) {
-			ast->result = ASTP_SYNTAX;
-			ast->pos = *ppos;
-			snprintf(ast->error_msg, sizeof(ast->error_msg),
-				 "Expected a NAME or EXPR, but received '%s'\n",
-				 token_str);
-			goto err;
-		}
-	wildcard:
-		term = calloc(1, sizeof(*term));
-		if (!term) {
-			ast_enomem(ast, *ppos);
+		switch (token) {
+		case ASTT_ASTERISK:
+			term = calloc(1, sizeof(*term));
+			if (!term) {
+				ast_enomem(ast, *ppos);
+				break;
+			}
+			term->kind = ASTV_ATTR;
+			term->attr = calloc(1, sizeof(*term->attr));
+			if (!term->attr) {
+				ast_enomem(ast, *ppos);
+				free(term);
+				goto err;
+			}
+			err = parse_expr_attr(ast, token_str, term->attr, NULL);
+			if (err) {
+				free(term->attr);
+				free(term);
+				ast->result = err;
+				ast->pos = *ppos;
+				snprintf(ast->error_msg, sizeof(ast->error_msg),
+					"Error %d processing token '%s'\n", err, token_str);
+				goto err;
+			}
+			/* Consume the asterisk */
+			*ppos = next_pos;
 			break;
+		default:
+			term = calloc(1, sizeof(*term));
+			if (!term) {
+				ast_enomem(ast, *ppos);
+				break;
+			}
+			term->kind = ASTV_EXPR;
+			term->attr = calloc(1, sizeof(*term->attr));
+			if (!term->attr) {
+				ast_enomem(ast, *ppos);
+				free(term);
+				goto err;
+			}
+			expr_name = clean_name(&expr[*ppos]);
+			expr_term = ast_parse_expr_term(ast, expr, ppos);
+			if (parse_as_rename(ast, expr, ppos, &expr_name))
+				goto err;
+			next_pos = *ppos;
+			err = parse_expr_attr(ast, expr_name, term->attr, expr_term);
+			if (err) {
+				free(term->attr);
+				free(term);
+				ast->result = err;
+				ast->pos = *ppos;
+				snprintf(ast->error_msg, sizeof(ast->error_msg),
+					"Error %d processing token '%s'\n", err, token_str);
+				goto err;
+			}
 		}
-		term->kind = ASTV_ATTR;
-		term->attr = calloc(1, sizeof(*term->attr));
-		if (!term->attr) {
-			ast_enomem(ast, *ppos);
-			free(term);
-			goto err;
-		}
-		err = parse_expr_attr(ast, token_str, term->attr, NULL);
-		if (err) {
-			free(term->attr);
-			free(term);
-			ast->result = err;
-			ast->pos = *ppos;
-			snprintf(ast->error_msg, sizeof(ast->error_msg),
-				 "Error %d processing token '%s'\n", err, token_str);
-			goto err;
-		}
-		*ppos = next_pos;
-		goto next_entry;
-	parse_expr:
-		term = calloc(1, sizeof(*term));
-		if (!term) {
-			ast_enomem(ast, *ppos);
-			break;
-		}
-		term->kind = ASTV_EXPR;
-		term->attr = calloc(1, sizeof(*term->attr));
-		if (!term->attr) {
-			ast_enomem(ast, *ppos);
-			free(term);
-			goto err;
-		}
-		expr_term = ast_parse_expr_term(ast, expr, ppos);
-		if (parse_rename(ast, expr, ppos, &expr_name))
-			goto err;
-		err = parse_expr_attr(ast, expr_name, term->attr, expr_term);
-		if (err) {
-			free(term->attr);
-			free(term);
-			ast->result = err;
-			ast->pos = *ppos;
-			snprintf(ast->error_msg, sizeof(ast->error_msg),
-				 "Error %d processing token '%s'\n", err, token_str);
-			goto err;
-		}
-		next_pos = *ppos;
-	next_entry:
 		/* Check for a ',' indicating another name */
 		token = ast_lex(ast, expr, &next_pos, &token_str);
 		if (token != ASTT_COMMA) {
@@ -2213,12 +2166,29 @@ static struct ast_attr_entry_s
 	return ae;
 }
 
-static char *__clean_name(char *name)
+static const char *skip_space(const char *s)
 {
+	while (isspace(*s))
+		s++;
+	if (*s == '\0')
+		return NULL;
+	return s;
+}
+
+static char *clean_name(const char *name)
+{
+	int is_expr = 0;	/* Determines whether whitespace terminates a token */
 	char res_name[1024];
-	char *s = name;
+	const char *s = name;
 	char *res = res_name;
-	while (*s) {
+	/* strip leading whitespace */
+	s = skip_space(s);
+	if (!s)
+		return NULL;
+	if (*s == '(')
+		is_expr = 1;
+
+	while (*s != ',' && *s != '\0') {
 		switch (*s) {
 		case '(':
 			*res++ = '_';
@@ -2233,9 +2203,6 @@ static char *__clean_name(char *name)
 			*res++ = '_';
 			break;
 		case '.':
-			*res++ = '_';
-			break;
-		case ' ':
 			*res++ = '_';
 			break;
 		case '%':
@@ -2261,12 +2228,28 @@ static char *__clean_name(char *name)
 			*res++ = 'U';
 			*res++ = 'B';
 			break;
+		case '{':
+			/* Skip column formatting decoration */
+			while (*s != '}' && *s != '\0')
+				s++;
+			if (*s != '}')
+				return NULL;
+			break;
 		default:
+			if (isspace(*s)) {
+				if (is_expr) {
+					*res++ = '_';
+					break;
+				} else {
+					goto out;
+				}
+			}
 			*res++ = *s;
 			break;
 		}
 		s++;
 	}
+out:
 	*res = '\0';
 	return strdup(res_name);
 }
@@ -2367,6 +2350,8 @@ static int __resolve_sos_entities(struct ast *ast)
 			type = ast_expr_type(attr_e->expr);
 			goto add_res_attr;
 		}
+
+		/* Resolve the schema for this attribute */
 		TAILQ_FOREACH(schema_e, &ast->schema_list, link) {
 			attr_e->src_attr = sos_schema_attr_by_name(schema_e->schema, attr_e->name);
 			assert(attr_e->value_attr);
@@ -2376,7 +2361,9 @@ static int __resolve_sos_entities(struct ast *ast)
 				break;
 			}
 		}
+
 		if (!attr_e->src_attr) {
+			/* The attribute specified was not found in any schema */
 			ast->result = ASTP_BAD_ATTR_NAME;
 			snprintf(ast->error_msg, sizeof(ast->error_msg),
 				 "The '%s' attribute was not found in any schema in the 'from' clause.",
@@ -3351,7 +3338,7 @@ sos_value_t ast_expr_eval(struct ast *ast, struct ast_term *term,
 		/* Force all expression attributes to double */
 		sos_value_init(cast, obj, term->attr->attr);
 		cast_attr_value(result, cast, term->attr->attr);
-		*type = SOS_TYPE_DOUBLE;
+		result->type = *type = SOS_TYPE_DOUBLE;
 		return result;
 	case ASTV_EXPR:
 	case ASTV_BINOP:
