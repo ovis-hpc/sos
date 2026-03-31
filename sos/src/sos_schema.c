@@ -2087,6 +2087,7 @@ void __sos_schema_print(ods_obj_t schema_obj, FILE *fp)
 	fprintf(fp, "    \"name\" : \"%s\",\n", schema_data->name);
 	uuid_unparse_lower(schema_data->uuid, uuid_str);
 	fprintf(fp, "    \"uuid\" : \"%s\",\n", uuid_str);
+	fprintf(fp, "    \"gen\" : %d,\n", schema_data->gen);
 	fprintf(fp, "    \"attrs\" : [");
 	for (idx = 0; idx < schema_data->attr_cnt; idx++) {
 		sos_attr_data_t attr_data = &schema_data->attr_dict[idx];
@@ -2103,7 +2104,8 @@ void __sos_schema_print(ods_obj_t schema_obj, FILE *fp)
 			fprintf(fp, ",\n        \"index\" : {}");
 		if (attr_data->ext_ref) {
 			int join_idx;
-			ext_obj = ods_ref_as_obj(ods_obj_ods(schema_obj), attr_data->ext_ref);
+			ext_obj = ods_ref_as_obj(ods_obj_ods(schema_obj),
+						 attr_data->ext_ref);
 			if (!ext_obj) {
 				errno = EPROTO;
 				goto err_0;
@@ -2219,7 +2221,7 @@ int sos_schema_export(const char *path_arg, FILE *fp)
 	 */
 	iter = ods_iter_new(schema_idx);
 	ods_lock(schema_ods, 0, NULL);
-		int comma = 0;
+	int comma = 0;
 	for (rc = ods_iter_begin(iter); !rc; rc = ods_iter_next(iter)) {
 		sos_obj_ref_t obj_ref;
 		obj_ref.idx_data = ods_iter_data(iter);
