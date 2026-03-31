@@ -82,8 +82,6 @@ typedef enum sos_perm_e {
 	SOS_PERM_USER = 512
 } sos_perm_t;
 
-#define SOS_POS_KEEP_TIME			"POS_KEEP_TIME"
-
 #define SOS_CONTAINER_NAME_LEN  128
 #define SOS_CONFIG_NAME_LEN	128
 
@@ -841,7 +839,6 @@ size_t sos_attr_key_size(sos_attr_t attr);
  * @{
  */
 typedef struct sos_iter_s *sos_iter_t;
-typedef uint32_t sos_pos_t;
 typedef enum sos_iter_flags_e {
 	SOS_ITER_F_ALL = ODS_ITER_F_ALL,
 	/** The iterator will skip duplicate keys in the index */

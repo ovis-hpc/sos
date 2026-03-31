@@ -26,7 +26,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 /*
- * Copyright (c) 1986-1991 by Sun Microsystems Inc. 
+ * Copyright (c) 1986-1991 by Sun Microsystems Inc.
  */
 
 
@@ -39,7 +39,7 @@
  * decryptsessionkey(agent, deskey) - decrypt ditto
  * gendeskey(deskey) - generate a secure des key
  */
- 
+
 #include <pthread.h>
 #include <reentrant.h>
 #include <stdio.h>
@@ -72,9 +72,9 @@
  * implementations of these functions, and to call those in key_call().
  */
 
-cryptkeyres *(*__key_encryptsession_pk_LOCAL)() = 0;
-cryptkeyres *(*__key_decryptsession_pk_LOCAL)() = 0;
-des_block *(*__key_gendes_LOCAL)() = 0;
+cryptkeyres *(*__key_encryptsession_pk_LOCAL)(uid_t, void *) = 0;
+cryptkeyres *(*__key_decryptsession_pk_LOCAL)(uid_t, void *) = 0;
+des_block *(*__key_gendes_LOCAL)(uid_t, void *) = 0;
 
 static int key_call( u_long, xdrproc_t, void *, xdrproc_t, void *);
 

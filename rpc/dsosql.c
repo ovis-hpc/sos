@@ -380,8 +380,8 @@ av_list_t av_parse_args(cmd_t cmd, char *args_)
 }
 
 /* Forward declarations. */
-char *stripwhite();
-cmd_t find_command();
+char *stripwhite(char *);
+cmd_t find_command(char *);
 static cmd_t current_command;
 
 /* Execute a command line. */
@@ -456,9 +456,10 @@ char *stripwhite(char *string)
 	return s;
 }
 
-char *command_generator();
-char *argument_generator();
-char **dsosql_completion();
+char *command_generator(const char *text, int state);
+char *argument_generator(const char *text, int state);
+char **dsosql_completion(const char *text, int start, int end);
+
 extern char **completion_matches(const char *text, rl_compentry_func_t *entry_func);
 
 /* Tell the GNU Readline library how to complete.  We want to try to complete
@@ -477,7 +478,7 @@ void initialize_readline()
  * region of TEXT that contains the word to complete.  We can use the
  * entire line in case we want to do some simple parsing.  Return the
  * array of matches, or NULL if there aren't any. */
-char **dsosql_completion(char *text, int start, int end)
+char **dsosql_completion(const char *text, int start, int end)
 {
 	char **matches;
 
@@ -508,7 +509,7 @@ char **dsosql_completion(char *text, int start, int end)
  * Generator function for command completion. If state is zero, we
  * reset the match index.
  */
-char *command_generator(char *text, int state)
+char *command_generator(const char *text, int state)
 {
 	static int list_index, len;
 	char *name;
@@ -532,7 +533,7 @@ char *command_generator(char *text, int state)
 	return ((char *)NULL);
 }
 
-char *argument_generator(char *text, int state)
+char *argument_generator(const char *text, int state)
 {
 	static int arg_index, len;
 	char *name;

@@ -415,15 +415,21 @@ ods_obj_t _ods_obj_malloc(size_t sz, const char *func, int line)
 	obj = malloc(sz + sizeof(struct ods_obj_s));
 	if (!obj)
 		return NULL;
-	obj->ods = NULL;
-	obj->as.ptr = obj + 1;
-	obj->ref = 0;
+
 	obj->refcount = 1;
-	obj->context = NULL;
+	obj->ods = NULL;
 	obj->size = sz;
+	obj->ref = 0;
+	obj->as.ptr = obj + 1;
+	obj->context = NULL;
 	obj->thread = pthread_self();
 	obj->alloc_line = line;
 	obj->alloc_func = func;
+	obj->put_line = 0;
+	obj->put_func = NULL;
+	obj->entry.le_next = NULL;
+	obj->entry.le_prev = NULL;
+
 	return obj;
 }
 

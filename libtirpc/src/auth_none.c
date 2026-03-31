@@ -62,7 +62,7 @@ static bool_t authnone_validate (AUTH *, struct opaque_auth *);
 static bool_t authnone_refresh (AUTH *, void *);
 static void authnone_destroy (AUTH *);
 
-extern bool_t xdr_opaque_auth();
+extern bool_t xdr_opaque_auth(XDR *, struct opaque_auth *);
 
 static struct auth_ops *authnone_ops();
 
@@ -164,9 +164,9 @@ authnone_ops()
 {
 	static struct auth_ops ops;
 	extern mutex_t ops_lock;
- 
+
 /* VARIABLES PROTECTED BY ops_lock: ops */
- 
+
 	mutex_lock(&ops_lock);
 	if (ops.ah_nextverf == NULL) {
 		ops.ah_nextverf = authnone_verf;

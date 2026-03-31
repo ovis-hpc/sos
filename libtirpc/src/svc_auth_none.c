@@ -37,20 +37,6 @@
 
 #include <rpc/rpc.h>
 
-static bool_t	svcauth_none_destroy();
-static bool_t   svcauth_none_wrap();
-
-struct svc_auth_ops svc_auth_none_ops = {
-	svcauth_none_wrap,
-	svcauth_none_wrap,
-	svcauth_none_destroy
-};
-
-SVCAUTH svc_auth_none = {
-	&svc_auth_none_ops,
-	NULL,
-};
-
 static bool_t
 svcauth_none_destroy(SVCAUTH *auth)
 {
@@ -63,6 +49,17 @@ svcauth_none_wrap(SVCAUTH *auth, XDR *xdrs, xdrproc_t xdr_func,
 {
 	return ((*xdr_func)(xdrs, xdr_ptr));
 }
+
+struct svc_auth_ops svc_auth_none_ops = {
+	svcauth_none_wrap,
+	svcauth_none_wrap,
+	svcauth_none_destroy
+};
+
+SVCAUTH svc_auth_none = {
+	&svc_auth_none_ops,
+	NULL,
+};
 
 enum auth_stat
 _svcauth_none(struct svc_req *rqst, struct rpc_msg *msg)
