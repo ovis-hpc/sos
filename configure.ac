@@ -74,9 +74,23 @@ OPTION_DEFAULT_DISABLE([debug], [ENABLE_DEBUG])
 OPTION_DEFAULT_ENABLE([python], [ENABLE_PYTHON])
 if test -z "$ENABLE_PYTHON_TRUE"; then
 	dnl check for python interpreter
-	test -n "$PYTHON" || export PYTHON=/usr/bin/python3
- 	AM_PATH_PYTHON(,,[:])
- 	AX_PYTHON_DEVEL([>='3'])
+	test -n "$PYTHON" || PYTHON=
+	AM_PATH_PYTHON([3.6],,[:])
+	AX_PYTHON_DEVEL([>='3.6'])
+	dnl Cython < 3 expects Python's imp module, which is absent on
+	dnl newer interpreters. If importing imp fails, require Cython >= 3.0.
+	required_cython_version=0.25
+	AC_MSG_CHECKING([what minimum Cython version is required])
+	AS_IF([$PYTHON -c 'import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+try:
+    import imp
+except ImportError:
+    raise SystemExit(0)
+raise SystemExit(1)' >/dev/null 2>&1],
+		[required_cython_version=3.0],
+		[required_cython_version=0.25])
+	AC_MSG_RESULT([$required_cython_version])
  	NUMPY_INCLUDE_PATH=$($PYTHON -c "import numpy; print(numpy.get_include())")
  	which cython >/dev/null 2>&1 || AC_MSG_ERROR("You need to install cython when building the Python interfaces")
  	test -n "$NUMPY_INCLUDE_PATH" || AC_MSG_ERROR("You need to install numpy when building the Python interfaces.")
