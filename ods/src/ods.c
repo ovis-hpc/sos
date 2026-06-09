@@ -299,7 +299,6 @@ ods_backend_type_t __ods_backend_type(const char *path)
 	sprintf(tmp_path, "%s%s", path, ODS_BE_SUFFIX);
 	pg_fd = open(tmp_path, O_RDWR);
 	if (pg_fd < 0) {
-		errno = ENOENT;
 		return 0;
 	}
 	int cnt = read(pg_fd, &be, sizeof(be));
