@@ -6025,15 +6025,13 @@ cdef void int64_nda_setter(np.ndarray nda, int idx, sos_value_t v):
     nda[idx] = v.data.prim.int64_
 
 cdef void uint16_nda_setter(np.ndarray nda, int idx, sos_value_t v):
-    # have to force unsigned to double
-    nda[idx] = <double>v.data.prim.uint16_
+    nda[idx] = v.data.prim.uint16_
 
 cdef void uint32_nda_setter(np.ndarray nda, int idx, sos_value_t v):
-    # have to force unsigned to double
-    nda[idx] = <double>v.data.prim.uint32_
+    nda[idx] = v.data.prim.uint32_
 
 cdef void uint64_nda_setter(np.ndarray nda, int idx, sos_value_t v):
-    nda[idx] = <double>v.data.prim.uint64_
+    nda[idx] = v.data.prim.uint64_
 
 cdef void float_nda_setter(np.ndarray nda, int idx, sos_value_t v):
     nda[idx] = v.data.prim.float_
