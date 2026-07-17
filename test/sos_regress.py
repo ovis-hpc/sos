@@ -116,7 +116,7 @@ if __name__ == "__main__":
     sos_suite = unittest.TestSuite()
 
     for t in tests:
-        sos_suite.addTest(unittest.makeSuite(t))
+        sos_suite.addTest(unittest.TestLoader().loadTestsFromTestCase(t))
 
     runner = unittest.TextTestRunner(verbosity=2)
     runner.run(sos_suite)
