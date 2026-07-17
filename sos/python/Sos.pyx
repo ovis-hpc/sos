@@ -5724,6 +5724,7 @@ cdef class Value(object):
     def release(self):
         if self.c_str:
             free(self.c_str)
+            self.c_str = NULL
         if self.c_v:
             sos_value_put(self.c_v)
             self.c_v = NULL
