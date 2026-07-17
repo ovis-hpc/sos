@@ -2621,6 +2621,14 @@ static int __resolve_sos_entities(struct ast *ast)
 	}
 
  create_iterator:
+	if (best_attr_e) {
+		/* If there are no indices, or they can't be opened due to
+		 * permissions errors, the best_attr_e will be NULL. This will
+		 * result in a segfault. Check it here and return an error
+		 * indicating that no suitable index could be found.
+		 */
+		return ENOENT;
+	}
 	/* Create the SOS iterator using the best attribute */
 	ast->iter_attr_e = best_attr_e;
 	ast->sos_iter = sos_attr_iter_new(best_attr_e->src_attr);
@@ -2628,7 +2636,8 @@ static int __resolve_sos_entities(struct ast *ast)
 		return errno;
 	ast->sos_iter_schema = sos_schema_by_name(ast->sos, best_attr_e->schema->name);
 	if (SOS_TYPE_JOIN == sos_attr_type(best_attr_e->src_attr)) {
-		/* Ensure all attributes in the join and the join attr are in the result schema */
+		/* Ensure all attributes in the join and the join attr are in
+		 * the result schema */
 		sos_array_t ja = sos_attr_join_list(best_attr_e->src_attr);
 		char **join_list = calloc(ja->count, sizeof(char *));
 		assert(join_list);
@@ -2967,7 +2976,8 @@ enum ast_eval_e ast_eval_limits(struct ast *ast, sos_obj_t obj)
 	for (idx = 0; idx < ast->key_count; idx++) {
 		limits = ast->key_limits[idx];
 		if (!limits) {
-			/* All but the last key must have limits or we can't check the object */
+			/* All but the last key must have limits or we can't
+			 * check the object */
 			if (idx < ast->key_count - 1)
 				return AST_EVAL_MATCH;
 			else
@@ -2991,283 +3001,79 @@ enum ast_eval_e ast_eval_limits(struct ast *ast, sos_obj_t obj)
 	return AST_EVAL_MATCH;
 }
 
-void add_op(struct ast *ast, sos_type_t type,
-	    sos_value_t lhs, sos_value_t rhs,
-	    sos_value_t res)
+double to_double(sos_value_t v)
 {
-	switch (type) {
+	switch (v->type) {
 	case SOS_TYPE_INT16:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int16_ +
-			(double)rhs->data->prim.int16_;
-		break;
+		return (double)v->data->prim.int16_;
 	case SOS_TYPE_INT32:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int32_ +
-			(double)rhs->data->prim.int32_;
-		break;
+		return (double)v->data->prim.int32_;
 	case SOS_TYPE_INT64:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int64_ +
-			(double)rhs->data->prim.int64_;
-		break;
+		return (double)v->data->prim.int64_;
 	case SOS_TYPE_UINT16:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint16_ +
-			(double)rhs->data->prim.uint16_;
-		break;
+		return (double)v->data->prim.uint16_;
 	case SOS_TYPE_UINT32:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint32_ +
-			(double)rhs->data->prim.uint32_;
-		break;
+		return (double)v->data->prim.uint32_;
 	case SOS_TYPE_UINT64:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint64_ +
-			(double)rhs->data->prim.uint64_;
-		break;
+		return (double)v->data->prim.uint64_;
 	case SOS_TYPE_FLOAT:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.float_ +
-			(double)rhs->data->prim.float_;
-		break;
+		return (double)v->data->prim.float_;
 	case SOS_TYPE_DOUBLE:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.double_ +
-			(double)rhs->data->prim.double_;
-		break;
+		return (double)v->data->prim.double_;
 	case SOS_TYPE_LONG_DOUBLE:
-		res->data->prim.long_double_ =
-			(double)lhs->data->prim.long_double_ +
-			(double)rhs->data->prim.long_double_;
-		break;
-	case SOS_TYPE_TIMESTAMP:
-	case SOS_TYPE_JOIN:
-	case SOS_TYPE_OBJ:
-	case SOS_TYPE_STRUCT:
-	case SOS_TYPE_CHAR_ARRAY:
-	case SOS_TYPE_BYTE_ARRAY:
-	case SOS_TYPE_INT16_ARRAY:
-	case SOS_TYPE_INT32_ARRAY:
-	case SOS_TYPE_INT64_ARRAY:
-	case SOS_TYPE_UINT16_ARRAY:
-	case SOS_TYPE_UINT32_ARRAY:
-	case SOS_TYPE_UINT64_ARRAY:
-	case SOS_TYPE_FLOAT_ARRAY:
-	case SOS_TYPE_DOUBLE_ARRAY:
-	case SOS_TYPE_LONG_DOUBLE_ARRAY:
-	case SOS_TYPE_OBJ_ARRAY:
-		break;
+		return v->data->prim.long_double_;
+	default:
+		assert(0 == "Cannot cast to double");
 	}
 }
 
-void sub_op(struct ast *ast, sos_type_t type, sos_value_t lhs, sos_value_t rhs,
+
+void add_op(struct ast *ast,
+	    sos_type_t type, sos_value_t lhs, sos_value_t rhs,
 	    sos_value_t res)
 {
-	switch (type) {
-	case SOS_TYPE_INT16:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int16_ -
-			(double)rhs->data->prim.int16_;
-		break;
-	case SOS_TYPE_INT32:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int32_ -
-			(double)rhs->data->prim.int32_;
-		break;
-	case SOS_TYPE_INT64:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int64_ -
-			(double)rhs->data->prim.int64_;
-		break;
-	case SOS_TYPE_UINT16:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint16_ -
-			(double)rhs->data->prim.uint16_;
-		break;
-	case SOS_TYPE_UINT32:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint32_ -
-			(double)rhs->data->prim.uint32_;
-		break;
-	case SOS_TYPE_UINT64:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint64_ -
-			(double)rhs->data->prim.uint64_;
-		break;
-	case SOS_TYPE_FLOAT:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.float_ -
-			(double)rhs->data->prim.float_;
-		break;
-	case SOS_TYPE_DOUBLE:
-		res->data->prim.double_ =
-			lhs->data->prim.double_ -
-			rhs->data->prim.double_;
-		break;
-	case SOS_TYPE_LONG_DOUBLE:
-		res->data->prim.long_double_ =
-			lhs->data->prim.long_double_ -
-			rhs->data->prim.long_double_;
-		break;
-	case SOS_TYPE_TIMESTAMP:
-	case SOS_TYPE_JOIN:
-	case SOS_TYPE_OBJ:
-	case SOS_TYPE_STRUCT:
-	case SOS_TYPE_CHAR_ARRAY:
-	case SOS_TYPE_BYTE_ARRAY:
-	case SOS_TYPE_INT16_ARRAY:
-	case SOS_TYPE_INT32_ARRAY:
-	case SOS_TYPE_INT64_ARRAY:
-	case SOS_TYPE_UINT16_ARRAY:
-	case SOS_TYPE_UINT32_ARRAY:
-	case SOS_TYPE_UINT64_ARRAY:
-	case SOS_TYPE_FLOAT_ARRAY:
-	case SOS_TYPE_DOUBLE_ARRAY:
-	case SOS_TYPE_LONG_DOUBLE_ARRAY:
-	case SOS_TYPE_OBJ_ARRAY:
-		break;
-	}
+	double l, r;
+	l = to_double(lhs);
+	r = to_double(rhs);
+	res->type = SOS_TYPE_DOUBLE;
+	res->data->prim.double_ = l + r;
+	return;
+}
+
+void sub_op(struct ast *ast,
+	    sos_type_t type, sos_value_t lhs, sos_value_t rhs,
+	    sos_value_t res)
+{
+	double l, r;
+	l = to_double(lhs);
+	r = to_double(rhs);
+	res->type = SOS_TYPE_DOUBLE;
+	res->data->prim.double_ = l - r;
+	return;
 }
 
 void mul_op(struct ast *ast,
 	    sos_type_t type, sos_value_t lhs, sos_value_t rhs,
 	    sos_value_t res)
 {
-	switch (type) {
-	case SOS_TYPE_INT16:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int16_ *
-			(double)rhs->data->prim.int16_;
-		break;
-	case SOS_TYPE_INT32:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int32_ *
-			(double)rhs->data->prim.int32_;
-		break;
-	case SOS_TYPE_INT64:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int64_ *
-			(double)rhs->data->prim.int64_;
-		break;
-	case SOS_TYPE_UINT16:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint16_ *
-			(double)rhs->data->prim.uint16_;
-		break;
-	case SOS_TYPE_UINT32:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint32_ *
-			(double)rhs->data->prim.uint32_;
-		break;
-	case SOS_TYPE_UINT64:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint64_ *
-			(double)rhs->data->prim.uint64_;
-		break;
-	case SOS_TYPE_FLOAT:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.float_ *
-			(double)rhs->data->prim.float_;
-		break;
-	case SOS_TYPE_DOUBLE:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.double_ *
-			(double)rhs->data->prim.double_;
-		break;
-	case SOS_TYPE_LONG_DOUBLE:
-		res->data->prim.long_double_ =
-			(double)lhs->data->prim.long_double_ *
-			(double)rhs->data->prim.long_double_;
-		break;
-	case SOS_TYPE_TIMESTAMP:
-	case SOS_TYPE_JOIN:
-	case SOS_TYPE_OBJ:
-	case SOS_TYPE_STRUCT:
-	case SOS_TYPE_CHAR_ARRAY:
-	case SOS_TYPE_BYTE_ARRAY:
-	case SOS_TYPE_INT16_ARRAY:
-	case SOS_TYPE_INT32_ARRAY:
-	case SOS_TYPE_INT64_ARRAY:
-	case SOS_TYPE_UINT16_ARRAY:
-	case SOS_TYPE_UINT32_ARRAY:
-	case SOS_TYPE_UINT64_ARRAY:
-	case SOS_TYPE_FLOAT_ARRAY:
-	case SOS_TYPE_DOUBLE_ARRAY:
-	case SOS_TYPE_LONG_DOUBLE_ARRAY:
-	case SOS_TYPE_OBJ_ARRAY:
-		break;
-	}
+	double l, r;
+	l = to_double(lhs);
+	r = to_double(rhs);
+	res->type = SOS_TYPE_DOUBLE;
+	res->data->prim.double_ = l * r;
+	return;
 }
 
 void div_op(struct ast *ast,
 	    sos_type_t type, sos_value_t lhs, sos_value_t rhs,
 	    sos_value_t res)
 {
-	switch (type) {
-	case SOS_TYPE_INT16:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int16_ /
-			(double)rhs->data->prim.int16_;
-		break;
-	case SOS_TYPE_INT32:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int32_ /
-			(double)rhs->data->prim.int32_;
-		break;
-	case SOS_TYPE_INT64:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.int64_ /
-			(double)rhs->data->prim.int64_;
-		break;
-	case SOS_TYPE_UINT16:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint16_ /
-			(double)rhs->data->prim.uint16_;
-		break;
-	case SOS_TYPE_UINT32:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint32_ /
-			(double)rhs->data->prim.uint32_;
-		break;
-	case SOS_TYPE_UINT64:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.uint64_ /
-			(double)rhs->data->prim.uint64_;
-		break;
-	case SOS_TYPE_FLOAT:
-		res->data->prim.double_ =
-			(double)lhs->data->prim.float_ /
-			(double)rhs->data->prim.float_;
-		break;
-	case SOS_TYPE_DOUBLE:
-		res->data->prim.double_ =
-			lhs->data->prim.double_ /
-			rhs->data->prim.double_;
-		break;
-	case SOS_TYPE_LONG_DOUBLE:
-		res->data->prim.long_double_ =
-			lhs->data->prim.long_double_ /
-			rhs->data->prim.long_double_;
-		break;
-	case SOS_TYPE_TIMESTAMP:
-	case SOS_TYPE_JOIN:
-	case SOS_TYPE_OBJ:
-	case SOS_TYPE_STRUCT:
-	case SOS_TYPE_CHAR_ARRAY:
-	case SOS_TYPE_BYTE_ARRAY:
-	case SOS_TYPE_INT16_ARRAY:
-	case SOS_TYPE_INT32_ARRAY:
-	case SOS_TYPE_INT64_ARRAY:
-	case SOS_TYPE_UINT16_ARRAY:
-	case SOS_TYPE_UINT32_ARRAY:
-	case SOS_TYPE_UINT64_ARRAY:
-	case SOS_TYPE_FLOAT_ARRAY:
-	case SOS_TYPE_DOUBLE_ARRAY:
-	case SOS_TYPE_LONG_DOUBLE_ARRAY:
-	case SOS_TYPE_OBJ_ARRAY:
-		break;
-	}
+	double l, r;
+	l = to_double(lhs);
+	r = to_double(rhs);
+	res->type = SOS_TYPE_DOUBLE;
+	res->data->prim.double_ = l / r;
+	return;
 }
 
 sos_type_t ast_expr_type(struct ast_term *expr)
@@ -3335,10 +3141,8 @@ sos_value_t ast_expr_eval(struct ast *ast, struct ast_term *term,
 
 	switch (term->kind) {
 	case ASTV_ATTR:
-		/* Force all expression attributes to double */
-		sos_value_init(cast, obj, term->attr->attr);
-		cast_attr_value(result, cast, term->attr->attr);
-		result->type = *type = SOS_TYPE_DOUBLE;
+		sos_value_init(result, obj, term->attr->attr);
+		*type = result->type;
 		return result;
 	case ASTV_EXPR:
 	case ASTV_BINOP:
