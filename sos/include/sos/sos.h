@@ -107,9 +107,9 @@ typedef struct sos_config_data_s {
  * @{
  */
 #pragma pack(1)
-#define SOS_VERS_MAJOR	6
-#define SOS_VERS_MINOR	1
-#define SOS_VERS_FIX	0
+#define SOS_VERS_MAJOR	ODS_VER_MAJOR
+#define SOS_VERS_MINOR	ODS_VER_MINOR
+#define SOS_VERS_FIX	ODS_VER_FIX
 struct sos_version_s {
 	uint8_t major;		/* Binary compatability */
 	uint8_t minor;		/* Feature availability */
