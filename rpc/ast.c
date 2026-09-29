@@ -2621,7 +2621,7 @@ static int __resolve_sos_entities(struct ast *ast)
 	}
 
  create_iterator:
-	if (best_attr_e) {
+	if (!best_attr_e) {
 		/* If there are no indices, or they can't be opened due to
 		 * permissions errors, the best_attr_e will be NULL. This will
 		 * result in a segfault. Check it here and return an error
