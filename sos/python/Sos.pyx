@@ -7187,7 +7187,7 @@ cdef class SqlQuery:
             if c_o == NULL:
                 break
             self.c_objects[row_idx] = c_o
-        self.c_row_count = row_idx
+            self.c_row_count += 1
         if self.c_row_count == 0:
             return None
         self.result = []
